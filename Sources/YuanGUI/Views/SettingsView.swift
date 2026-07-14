@@ -92,7 +92,7 @@ struct SettingsView: View {
             Form {
                 TextField("API 基础地址", text: $ai.baseURL)
                 TextField("模型", text: $ai.model)
-                SecureField("API Key（保存在 macOS 钥匙串）", text: Binding(
+                SecureField("API Key（保存在本机，仅当前用户可读）", text: Binding(
                     get: { ai.apiKey },
                     set: ai.updateAPIKey
                 ))

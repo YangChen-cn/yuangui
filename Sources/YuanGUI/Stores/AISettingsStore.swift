@@ -23,7 +23,7 @@ final class AISettingsStore: ObservableObject {
     private let keychainService = "com.yang.yuangui.mimo-api-key"
     private let keychainAccount = "default"
 
-    init(defaults: UserDefaults = .standard, secrets: SecretStoring = KeychainStore()) {
+    init(defaults: UserDefaults = .standard, secrets: SecretStoring = LocalSecretStore()) {
         self.defaults = defaults
         self.secrets = secrets
         baseURL = defaults.string(forKey: "aiBaseURL") ?? Self.defaultBaseURL
@@ -51,9 +51,9 @@ final class AISettingsStore: ObservableObject {
             } else {
                 try secrets.save(apiKey, service: keychainService, account: keychainAccount)
             }
-            saveMessage = "已保存，API Key 存放在 macOS 钥匙串"
+            saveMessage = "已保存到本机应用数据（仅当前用户可读）"
         } catch {
-            saveMessage = "钥匙串保存失败，本次运行仍可使用：\(error.localizedDescription)"
+            saveMessage = "本地保存失败，本次运行仍可使用：\(error.localizedDescription)"
         }
     }
 

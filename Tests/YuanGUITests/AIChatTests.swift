@@ -19,6 +19,25 @@ final class AIChatTests: XCTestCase {
         XCTAssertNil(AIChatService.chatEndpoint(from: "ftp://example.com/v1"))
     }
 
+    func testLocalSecretStorePersistsWithOwnerOnlyPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalSecretStoreTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("ai-api-key")
+        let store = LocalSecretStore(fileURL: file)
+
+        try store.save("test-secret", service: "test", account: "default")
+
+        XCTAssertEqual(store.read(service: "test", account: "default"), "test-secret")
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+        XCTAssertEqual((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
+
+        try store.delete(service: "test", account: "default")
+        XCTAssertNil(store.read(service: "test", account: "default"))
+    }
+
     @MainActor
     func testSettingsUseMiMoDefaultsAndPersistWithoutRealKeychain() {
         let suite = "AISettingsStoreTests-\(UUID().uuidString)"
