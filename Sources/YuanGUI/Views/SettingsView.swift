@@ -136,8 +136,8 @@ struct SettingsView: View {
                                 get: { Double(pet.ambientChatterIntervalMinutes) },
                                 set: { pet.setAmbientChatterIntervalMinutes(Int($0.rounded())) }
                             ),
-                            in: 5...120,
-                            step: 5
+                            in: 1...120,
+                            step: 1
                         )
                         Text("\(pet.ambientChatterIntervalMinutes) 分钟")
                             .monospacedDigit()
@@ -147,7 +147,7 @@ struct SettingsView: View {
                         get: { pet.weatherAnnouncementsEnabled },
                         set: pet.setWeatherAnnouncementsEnabled
                     ))
-                    Text("天气约每 15 分钟后台更新；城市名由系统定位结果转换，无法识别时只说“当前位置”。")
+                    Text("天气约每 15 分钟后台更新；识别到的城市名也会随机出现在日常对白中，无法识别时只说“当前位置”。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

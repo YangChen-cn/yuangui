@@ -8,7 +8,7 @@ private final class StatusDashboardPanel: NSPanel {
 
 @MainActor
 final class StatusDashboardPanelController {
-    private static let preferredWidth: CGFloat = 360
+    private static let preferredWidth = MenuBarDashboardView.preferredWidth
     private static let preferredHeight: CGFloat = 480
     private static let screenInset: CGFloat = 8
 
@@ -47,7 +47,7 @@ final class StatusDashboardPanelController {
         panel.becomesKeyOnlyIfNeeded = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        installContent(height: Self.preferredHeight)
+        installContent(width: Self.preferredWidth, height: Self.preferredHeight)
     }
 
     func toggle(relativeTo button: NSStatusBarButton) {
@@ -69,7 +69,7 @@ final class StatusDashboardPanelController {
         let visible = screen.visibleFrame
         let width = min(Self.preferredWidth, visible.width - Self.screenInset * 2)
         let height = min(Self.preferredHeight, visible.height - Self.screenInset * 2)
-        installContent(height: height)
+        installContent(width: width, height: height)
         panel.setContentSize(NSSize(width: width, height: height))
 
         if let window = button.window {
@@ -93,9 +93,10 @@ final class StatusDashboardPanelController {
         installClickMonitors()
     }
 
-    private func installContent(height: CGFloat) {
+    private func installContent(width: CGFloat, height: CGFloat) {
         let rootView = MenuBarDashboardView(
             store: store,
+            dashboardWidth: width,
             dashboardHeight: height,
             togglePet: togglePet,
             showPet: showPet,

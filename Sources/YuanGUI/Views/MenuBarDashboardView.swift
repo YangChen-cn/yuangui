@@ -2,7 +2,10 @@ import AppKit
 import SwiftUI
 
 struct MenuBarDashboardView: View {
+    static let preferredWidth: CGFloat = 400
+
     @ObservedObject var store: PetStore
+    let dashboardWidth: CGFloat
     let dashboardHeight: CGFloat
     let togglePet: () -> Void
     let showPet: () -> Void
@@ -39,7 +42,7 @@ struct MenuBarDashboardView: View {
                     showPet()
                 }
                 Spacer(minLength: 0)
-                HStack(spacing: 3) {
+                HStack(spacing: 5) {
                     Button {
                         store.toggleInteractionLock()
                         showPet()
@@ -67,14 +70,15 @@ struct MenuBarDashboardView: View {
                         Image(systemName: "ellipsis.circle")
                     }
                     .menuStyle(.borderlessButton)
-                    .frame(width: 22)
+                    .frame(width: 28)
                 }
+                .font(.system(size: 13, weight: .semibold))
                 .fixedSize(horizontal: true, vertical: false)
             }
-            .controlSize(.mini)
+            .controlSize(.small)
         }
         .padding(12)
-        .frame(width: 360, height: dashboardHeight)
+        .frame(width: dashboardWidth, height: dashboardHeight)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .background(themeGradient, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.35), lineWidth: 0.8))
@@ -88,7 +92,7 @@ struct MenuBarDashboardView: View {
     private func dashboardTextButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .lineLimit(1)
         }
         .fixedSize(horizontal: true, vertical: false)

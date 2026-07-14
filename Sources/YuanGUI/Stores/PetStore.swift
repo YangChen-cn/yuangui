@@ -121,7 +121,7 @@ final class PetStore: ObservableObject {
         self.ambientChatterEnabled = defaults.object(forKey: "ambientChatterEnabled") == nil
             ? true : defaults.bool(forKey: "ambientChatterEnabled")
         let savedChatterInterval = defaults.object(forKey: "ambientChatterIntervalMinutes") as? Int ?? 15
-        self.ambientChatterIntervalMinutes = min(max(savedChatterInterval, 5), 120)
+        self.ambientChatterIntervalMinutes = min(max(savedChatterInterval, 1), 120)
         self.weatherAnnouncementsEnabled = defaults.object(forKey: "weatherAnnouncementsEnabled") == nil
             ? true : defaults.bool(forKey: "weatherAnnouncementsEnabled")
         self.lockedControlsVisible = initiallyLocked
@@ -208,7 +208,7 @@ final class PetStore: ObservableObject {
     }
 
     func setAmbientChatterIntervalMinutes(_ minutes: Int) {
-        ambientChatterIntervalMinutes = min(max(minutes, 5), 120)
+        ambientChatterIntervalMinutes = min(max(minutes, 1), 120)
         defaults.set(ambientChatterIntervalMinutes, forKey: "ambientChatterIntervalMinutes")
         if ambientChatterEnabled { scheduleNextAmbientChatter() }
     }

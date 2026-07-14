@@ -55,14 +55,21 @@ final class PetStoreTests: XCTestCase {
         store.setAmbientChatterIntervalMinutes(2)
         store.setWeatherAnnouncementsEnabled(false)
         XCTAssertFalse(store.ambientChatterEnabled)
-        XCTAssertEqual(store.ambientChatterIntervalMinutes, 5)
+        XCTAssertEqual(store.ambientChatterIntervalMinutes, 2)
         XCTAssertFalse(store.weatherAnnouncementsEnabled)
+
+        store.setAmbientChatterIntervalMinutes(0)
+        XCTAssertEqual(store.ambientChatterIntervalMinutes, 1)
 
         store.setAmbientChatterIntervalMinutes(200)
         XCTAssertEqual(store.ambientChatterIntervalMinutes, 120)
         XCTAssertFalse(defaults.bool(forKey: "ambientChatterEnabled"))
         XCTAssertEqual(defaults.integer(forKey: "ambientChatterIntervalMinutes"), 120)
         XCTAssertFalse(defaults.bool(forKey: "weatherAnnouncementsEnabled"))
+    }
+
+    func testDashboardKeepsRoomForReadableBottomActions() {
+        XCTAssertGreaterThanOrEqual(MenuBarDashboardView.preferredWidth, 400)
     }
 
     func testRecycleUsesInjectedHandlerWithoutTouchingFilesystem() async {
