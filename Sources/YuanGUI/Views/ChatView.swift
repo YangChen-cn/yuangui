@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PetReplyBubble: View {
     @ObservedObject var chat: ChatStore
@@ -79,55 +81,124 @@ struct PetChatComposer: View {
     @ObservedObject var chat: ChatStore
     @ObservedObject var pet: PetStore
     @State private var draft = ""
+    @State private var attachments: [PreparedChatAttachment] = []
+    @State private var attachmentError: String?
     @FocusState private var inputFocused: Bool
+    private let preparer: AttachmentPreparing = AttachmentPreparer()
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.sparkles.fill")
-                .foregroundStyle(.pink)
-                .font(.system(size: 15, weight: .semibold))
-
-            TextField("直接和我们说话…", text: $draft)
-                .textFieldStyle(.plain)
-                .focused($inputFocused)
-                .onSubmit(send)
-
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 22))
+        VStack(spacing: 7) {
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(attachments) { attachment in
+                            HStack(spacing: 5) {
+                                Image(systemName: attachment.metadata.kind == .image ? "photo.fill" : "doc.text.fill")
+                                Text(attachment.metadata.name).lineLimit(1)
+                                Button { attachments.removeAll { $0.id == attachment.id } } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(.pink.opacity(0.11), in: Capsule())
+                        }
+                    }
+                }
+                Text("附件内容会发送给当前 AI 服务商，但原文件不会保存到历史")
+                    .font(.system(size: 9, design: .rounded)).foregroundStyle(.secondary)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.pink)
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chat.isSending)
 
-            Divider().frame(height: 20)
+            HStack(spacing: 8) {
+                Button(action: chooseAttachments) {
+                    Image(systemName: "paperclip.circle.fill").font(.system(size: 19))
+                }
+                .buttonStyle(.plain).foregroundStyle(.pink).help("添加图片或文件")
 
-            Button { pet.showSettings() } label: { Image(systemName: "gearshape") }
-                .buttonStyle(.borderless)
-                .help("AI 设置")
-            Button { chat.dismiss() } label: { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-                .help("收起对话")
+                TextField("直接和我们说话…", text: $draft)
+                    .textFieldStyle(.plain)
+                    .focused($inputFocused)
+                    .onSubmit(send)
+
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 22))
+                }
+                .buttonStyle(.borderless).foregroundStyle(.pink)
+                .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || chat.isSending)
+
+                Divider().frame(height: 20)
+                Button { chat.showHistory() } label: { Image(systemName: "clock.arrow.circlepath") }
+                    .buttonStyle(.borderless).help("对话历史")
+                Button { pet.showSettings() } label: { Image(systemName: "gearshape") }
+                    .buttonStyle(.borderless).help("AI 设置")
+                Button { chat.dismiss() } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("收起对话")
+            }
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 10)
         .frame(width: 426)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
             LinearGradient(colors: [.white.opacity(0.38), .pink.opacity(0.11)], startPoint: .top, endPoint: .bottom),
-            in: Capsule()
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
         )
-        .overlay(Capsule().stroke(.white.opacity(0.64), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.64), lineWidth: 0.8))
         .shadow(color: .black.opacity(0.13), radius: 13, y: 5)
         .onAppear { inputFocused = true }
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleDrop)
+        .alert("附件无法添加", isPresented: Binding(
+            get: { attachmentError != nil },
+            set: { if !$0 { attachmentError = nil } }
+        )) { Button("好") { attachmentError = nil } } message: { Text(attachmentError ?? "") }
     }
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !attachments.isEmpty else { return }
+        let sendingAttachments = attachments
         draft = ""
-        Task { await chat.send(text, petMode: pet.mode) }
+        attachments = []
+        Task { await chat.send(text, attachments: sendingAttachments, petMode: pet.mode) }
+    }
+
+    private func chooseAttachments() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.image, .pdf, .plainText, .json, .commaSeparatedText, .sourceCode]
+        guard panel.runModal() == .OK else { return }
+        addAttachments(panel.urls)
+    }
+
+    private func addAttachments(_ urls: [URL]) {
+        for url in urls.prefix(6) {
+            do {
+                let attachment = try preparer.prepare(url: url)
+                if !attachments.contains(where: { $0.metadata.name == attachment.metadata.name }) {
+                    attachments.append(attachment)
+                }
+            } catch {
+                attachmentError = error.localizedDescription
+            }
+        }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        let providers = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !providers.isEmpty else { return false }
+        for provider in providers.prefix(6) {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                let url: URL?
+                if let value = item as? URL { url = value }
+                else if let data = item as? Data { url = URL(dataRepresentation: data, relativeTo: nil) }
+                else { url = nil }
+                guard let url else { return }
+                DispatchQueue.main.async { addAttachments([url]) }
+            }
+        }
+        return true
     }
 }
 

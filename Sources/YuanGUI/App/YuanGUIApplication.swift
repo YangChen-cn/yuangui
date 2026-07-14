@@ -19,11 +19,15 @@ enum YuanGUIApplication {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = PetStore()
     private let aiSettings = AISettingsStore()
+    private let loginItemStore = LoginItemStore()
     private lazy var chatStore = ChatStore(settings: aiSettings)
+    private lazy var maintenanceStore = MaintenanceStore(pet: store)
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardController: StatusDashboardPanelController?
     private var settingsController: SettingsWindowController?
+    private var chatHistoryController: ChatHistoryWindowController?
+    private var maintenanceController: MaintenanceWindowController?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -33,12 +37,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController = SettingsWindowController(
             petStore: store,
             aiSettings: aiSettings,
+            loginItem: loginItemStore,
             showPet: { [weak self] in self?.panelController?.show() }
         )
+        chatHistoryController = ChatHistoryWindowController(chat: chatStore)
+        maintenanceController = MaintenanceWindowController(store: maintenanceStore)
         installMenuBarItem()
         chatStore.$isPresented
             .removeDuplicates()
-            .sink { [weak self] presented in self?.store.setChatting(presented) }
+            .sink { [weak self] presented in
+                self?.store.setChatting(presented)
+                if presented { self?.panelController?.focusForChatInput() }
+            }
             .store(in: &cancellables)
     }
 
@@ -81,15 +91,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in
                     guard let self else { return }
                     self.chatStore.togglePresented()
-                    if self.chatStore.isPresented {
-                        self.panelController?.focusForChatInput()
-                    }
                 }
             }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .showYuanGUISettings)
             .sink { [weak self] _ in
                 Task { @MainActor in self?.settingsController?.show() }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .showYuanGUIChatHistory)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.chatHistoryController?.show() }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .showYuanGUIMaintenance)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.maintenanceController?.show() }
             }
             .store(in: &cancellables)
         self.statusItem = statusItem

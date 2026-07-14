@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import YuanGUI
@@ -57,7 +58,7 @@ final class AIChatTests: XCTestCase {
     }
 
     @MainActor
-    func testChatKeepsOnlyLatestReplyAndSendsNoHistory() async {
+    func testChatKeepsLatestBubbleAndSendsCurrentSessionContext() async {
         let suite = "ChatStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -65,7 +66,8 @@ final class AIChatTests: XCTestCase {
         secrets.value = "test-key"
         let settings = AISettingsStore(defaults: defaults, secrets: secrets)
         let service = SequencedChatService(replies: ["第一次回复", "第二次回复"])
-        let chat = ChatStore(settings: settings, service: service)
+        let history = MemoryChatHistoryStore()
+        let chat = ChatStore(settings: settings, service: service, history: history)
 
         await chat.send("第一问", petMode: .duo)
         XCTAssertEqual(chat.latestReply, "第一次回复")
@@ -73,7 +75,82 @@ final class AIChatTests: XCTestCase {
 
         XCTAssertEqual(chat.latestReply, "第二次回复")
         let received = await service.receivedContents()
-        XCTAssertEqual(received, [["第一问"], ["第二问"]])
+        XCTAssertEqual(received, [["第一问"], ["第一问", "第一次回复", "第二问"]])
+        XCTAssertEqual(chat.sessions.first?.messages.count, 4)
+    }
+
+    func testChatHistoryFileStorePersistsDeletesAndProtectsFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ChatHistoryTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ChatHistoryFileStore(directoryURL: directory)
+        let session = ChatSession(title: "测试", messages: [ChatMessage(role: .user, content: "你好")])
+
+        try store.saveSessions([session])
+
+        let loaded = try store.loadSessions()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded.first?.id, session.id)
+        XCTAssertEqual(loaded.first?.title, session.title)
+        XCTAssertEqual(loaded.first?.messages.map(\.content), ["你好"])
+        XCTAssertEqual(loaded.first?.createdAt.timeIntervalSince1970 ?? 0, session.createdAt.timeIntervalSince1970, accuracy: 1)
+        let file = directory.appendingPathComponent("sessions.json")
+        let fileAttributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        XCTAssertEqual((fileAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        try store.deleteSession(id: session.id)
+        XCTAssertEqual(try store.loadSessions(), [])
+    }
+
+    func testAttachmentPreparerExtractsAndTruncatesText() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("large-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try String(repeating: "元", count: AttachmentPreparer.maximumCharacters + 20).write(to: file, atomically: true, encoding: .utf8)
+
+        let prepared = try AttachmentPreparer().prepare(url: file)
+
+        XCTAssertTrue(prepared.metadata.wasTruncated)
+        if case .extractedText(let content) = prepared.payload {
+            XCTAssertEqual(content.count, AttachmentPreparer.maximumCharacters)
+        } else {
+            XCTFail("Expected extracted text")
+        }
+    }
+
+    func testAttachmentPreparerResizesImageAsBase64DataURL() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("image-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let image = NSImage(size: NSSize(width: 16, height: 8))
+        image.lockFocus()
+        NSColor.systemPink.setFill()
+        NSRect(x: 0, y: 0, width: 16, height: 8).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            return XCTFail("Unable to create fixture")
+        }
+        try png.write(to: file)
+
+        let prepared = try AttachmentPreparer().prepare(url: file)
+
+        XCTAssertEqual(prepared.metadata.kind, .image)
+        if case .imageDataURL(let value) = prepared.payload {
+            XCTAssertTrue(value.hasPrefix("data:image/jpeg;base64,"))
+            XCTAssertNotNil(Data(base64Encoded: String(value.dropFirst("data:image/jpeg;base64,".count))))
+        } else {
+            XCTFail("Expected image data URL")
+        }
+    }
+
+    func testAttachmentPreparerRejectsFilesOverTwentyMegabytes() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("oversize-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: file) }
+        FileManager.default.createFile(atPath: file.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: UInt64(AttachmentPreparer.maximumBytes + 1))
+        try handle.close()
+
+        XCTAssertThrowsError(try AttachmentPreparer().prepare(url: file))
     }
 }
 
@@ -94,6 +171,7 @@ private actor SequencedChatService: AIChatServicing {
 
     func reply(
         messages: [ChatMessage],
+        attachments: [PreparedChatAttachment],
         configuration: AIChatConfiguration,
         petMode: PetMode
     ) async throws -> String {
@@ -102,4 +180,12 @@ private actor SequencedChatService: AIChatServicing {
     }
 
     func receivedContents() -> [[String]] { received }
+}
+
+private final class MemoryChatHistoryStore: ChatHistoryStoring {
+    var sessions: [ChatSession] = []
+    func loadSessions() throws -> [ChatSession] { sessions }
+    func saveSessions(_ sessions: [ChatSession]) throws { self.sessions = sessions }
+    func deleteSession(id: UUID) throws { sessions.removeAll { $0.id == id } }
+    func clear() throws { sessions = [] }
 }

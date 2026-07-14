@@ -4,6 +4,12 @@ import Foundation
 
 @MainActor
 final class PetStore: ObservableObject {
+    enum TaskState: Equatable {
+        case idle
+        case maintenance
+        case maintenanceSuccess
+        case recycling(Int)
+    }
     @Published private(set) var mode: PetMode
     @Published var actionIndex = 0
     @Published private(set) var showsSystemStatus: Bool
@@ -17,11 +23,14 @@ final class PetStore: ObservableObject {
     @Published private var isSmartActionSuppressed = false
     @Published var isDropTargeted = false
     @Published private(set) var toast: String?
+    @Published private(set) var taskState: TaskState = .idle
+    @Published private(set) var taskMessage: String?
 
     let monitor: SystemMonitor
     let weather: WeatherService
     private let trashHandler: TrashHandling
     private let defaults: UserDefaults
+    private let taskAnimationsEnabled: Bool
     private var idleTimer: AnyCancellable?
     private var clockTimer: AnyCancellable?
     private var smartRotationTimer: AnyCancellable?
@@ -29,6 +38,12 @@ final class PetStore: ObservableObject {
     private var toastToken = UUID()
 
     var currentAction: PetAction {
+        switch taskState {
+        case .maintenance: return PetAction(file: "18-maintenance-scan", label: "正在扫描")
+        case .maintenanceSuccess: return PetAction(file: "19-maintenance-success", label: "清理完成")
+        case .recycling(let frame): return PetAction(file: "15-eat-trash-\(min(max(frame, 1), 3))", label: "把文件吃掉啦")
+        case .idle: break
+        }
         if isChatting { return mode.chatAction }
         if smartReactionsEnabled,
            !isSmartActionSuppressed,
@@ -64,6 +79,7 @@ final class PetStore: ObservableObject {
         self.weather = weather ?? WeatherService()
         self.trashHandler = trashHandler
         self.defaults = defaults
+        self.taskAnimationsEnabled = startServices
         if defaults.object(forKey: "petMode") != nil {
             self.mode = PetMode(rawValue: defaults.integer(forKey: "petMode")) ?? .duo
         } else {
@@ -169,6 +185,27 @@ final class PetStore: ObservableObject {
         NotificationCenter.default.post(name: .showYuanGUISettings, object: nil)
     }
 
+    func showMaintenance() {
+        NotificationCenter.default.post(name: .showYuanGUIMaintenance, object: nil)
+    }
+
+    func beginMaintenance(message: String) {
+        taskMessage = message
+        taskState = .maintenance
+        showToast(message)
+    }
+
+    func endMaintenance(message: String, success: Bool) {
+        taskMessage = message
+        taskState = success ? .maintenanceSuccess : .idle
+        showToast(message)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            guard let self, self.taskMessage == message else { return }
+            self.taskState = .idle
+            self.taskMessage = nil
+        }
+    }
+
     func hideSystemStatus() {
         setSystemStatusVisible(false)
     }
@@ -179,15 +216,27 @@ final class PetStore: ObservableObject {
     }
 
     func recycleItems(_ urls: [URL]) async {
+        taskState = .recycling(1)
+        taskMessage = "啊呜——VCC 和元圭接住啦！"
         do {
             let count = try await trashHandler.recycle(urls)
             guard count > 0 else {
+                taskState = .idle
+                taskMessage = nil
                 showToast("没有可移入废纸篓的项目")
                 return
             }
-            actionIndex = min(3, mode.actions.count - 1)
+            taskState = .recycling(2)
+            if taskAnimationsEnabled { try? await Task.sleep(nanoseconds: 380_000_000) }
+            taskState = .recycling(3)
+            if taskAnimationsEnabled { try? await Task.sleep(nanoseconds: 650_000_000) }
+            taskState = .idle
+            taskMessage = nil
             showToast(count == 1 ? "已移入废纸篓" : "已将 \(count) 个项目移入废纸篓")
         } catch {
+            taskState = .idle
+            taskMessage = nil
+            actionIndex = min(2, mode.actions.count - 1)
             NSSound.beep()
             showToast("失败：\(error.localizedDescription)")
         }
@@ -236,7 +285,7 @@ final class PetStore: ObservableObject {
     }
 
     private func chooseIdleAction() {
-        guard idleAnimationEnabled, !isDropTargeted, !isChatting, activeSmartStates.isEmpty else { return }
+        guard idleAnimationEnabled, taskState == .idle, !isDropTargeted, !isChatting, activeSmartStates.isEmpty else { return }
         let count = mode.actions.count
         guard count > 1 else { return }
         actionIndex = (actionIndex + 1) % count

@@ -75,7 +75,8 @@ struct PetStatusBubble: View {
     }
 
     private var message: String {
-        PetStatusMessageResolver.message(
+        if let taskMessage = store.taskMessage { return taskMessage }
+        return PetStatusMessageResolver.message(
             snapshot: monitor.snapshot,
             smartState: store.smartState
         )

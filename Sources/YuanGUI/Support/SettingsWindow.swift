@@ -5,9 +5,9 @@ import SwiftUI
 final class SettingsWindowController {
     private let window: NSWindow
 
-    init(petStore: PetStore, aiSettings: AISettingsStore, showPet: @escaping () -> Void) {
+    init(petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, showPet: @escaping () -> Void) {
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 430),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 500),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -15,11 +15,12 @@ final class SettingsWindowController {
         window.title = "元圭与 VCC 设置"
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentMinSize = NSSize(width: 520, height: 430)
-        window.contentMaxSize = NSSize(width: 520, height: 430)
+        window.contentMinSize = NSSize(width: 540, height: 500)
+        window.contentMaxSize = NSSize(width: 540, height: 500)
         window.contentView = NSHostingView(rootView: SettingsView(
             pet: petStore,
             ai: aiSettings,
+            loginItem: loginItem,
             showPet: showPet
         ))
     }

@@ -44,6 +44,8 @@ struct MenuBarDashboardView: View {
                 }
                 .help("设置")
                 Menu {
+                    Button("元圭与 VCC 清理屋…") { store.showMaintenance() }
+                    Divider()
                     Button("打开废纸篓") { store.openTrash() }
                     Button("清空废纸篓…") { store.confirmAndEmptyTrash() }
                     Divider()

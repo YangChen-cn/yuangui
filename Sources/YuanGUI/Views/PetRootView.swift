@@ -176,6 +176,7 @@ struct PetRootView: View {
     private var contextMenu: some View {
         Button(chat.isPresented ? "收起 AI 对话" : "和元圭、VCC 聊天…") { store.showChat() }
         Button("打开完整监控") { store.showFullDashboard() }
+        Button("打开清理屋…") { store.showMaintenance() }
         Button(store.showsSystemStatus ? "隐藏系统状态" : "显示系统状态") {
             store.toggleSystemStatus()
         }

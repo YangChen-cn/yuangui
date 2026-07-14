@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var pet: PetStore
     @ObservedObject var ai: AISettingsStore
+    @ObservedObject var loginItem: LoginItemStore
     let showPet: () -> Void
     @State private var selectedTab = 0
 
@@ -19,12 +20,16 @@ struct SettingsView: View {
             Divider()
 
             Group {
-                if selectedTab == 0 { petSettings } else { aiSettings }
+                if selectedTab == 0 {
+                    ScrollView { petSettings.padding(.bottom, 8) }
+                } else {
+                    aiSettings
+                }
             }
-            .padding(18)
+            .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: 520, height: 430)
+        .frame(width: 540, height: 500)
         .background(.regularMaterial)
     }
 
@@ -63,6 +68,23 @@ struct SettingsView: View {
             }
 
             Section("行为") {
+                Toggle("登录时自动启动", isOn: Binding(
+                    get: { loginItem.isEnabled },
+                    set: loginItem.setEnabled
+                ))
+                if loginItem.status == .requiresApproval {
+                    HStack {
+                        Text("需要在系统设置中批准登录项").font(.caption).foregroundStyle(.orange)
+                        Spacer()
+                        Button("打开系统设置") { loginItem.openSystemSettings() }
+                    }
+                } else if let message = loginItem.message {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                if !loginItem.isInApplicationsFolder {
+                    Text("建议先把 YuanGUI.app 放入“应用程序”文件夹，再开启自启，避免重新构建后路径失效。")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 Toggle("根据系统、天气和时间智能改变动作", isOn: Binding(
                     get: { pet.smartReactionsEnabled },
                     set: pet.setSmartReactionsEnabled
@@ -85,6 +107,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { loginItem.refresh() }
     }
 
     private var aiSettings: some View {

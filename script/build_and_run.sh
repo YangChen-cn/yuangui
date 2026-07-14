@@ -71,6 +71,9 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+# Keep a stable local code requirement for ServiceManagement login-item registration.
+/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
