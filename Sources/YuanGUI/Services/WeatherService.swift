@@ -1,5 +1,6 @@
 @preconcurrency import CoreLocation
 import Foundation
+import MapKit
 
 @MainActor
 final class WeatherService: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
@@ -10,6 +11,7 @@ final class WeatherService: NSObject, ObservableObject, @preconcurrency CLLocati
 
     @Published private(set) var snapshot: WeatherSnapshot?
     @Published private(set) var status: WeatherStatus = .idle
+    @Published private(set) var locationName: String?
 
     private let locationManager: CLLocationManager
     private let loadData: DataLoader
@@ -18,6 +20,8 @@ final class WeatherService: NSObject, ObservableObject, @preconcurrency CLLocati
     private var isStarted = false
     private var fetchTask: Task<Void, Never>?
     private var scheduledRefreshTask: Task<Void, Never>?
+    private var locationNameTask: Task<Void, Never>?
+    private var lastNamedLocation: CLLocation?
 
     init(
         session: URLSession = .shared,
@@ -46,6 +50,7 @@ final class WeatherService: NSObject, ObservableObject, @preconcurrency CLLocati
 
     func refresh() {
         if let lastLocation {
+            resolveLocationNameIfNeeded(at: lastLocation)
             fetchWeather(at: lastLocation, forceReload: true)
         } else {
             start()
@@ -61,6 +66,7 @@ final class WeatherService: NSObject, ObservableObject, @preconcurrency CLLocati
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         lastLocation = location
+        resolveLocationNameIfNeeded(at: location)
         fetchWeather(at: location)
     }
 
@@ -165,6 +171,42 @@ final class WeatherService: NSObject, ObservableObject, @preconcurrency CLLocati
             }
             guard !Task.isCancelled, let self else { return }
             self.requestLocationIfAuthorized()
+        }
+    }
+
+    private func resolveLocationNameIfNeeded(at location: CLLocation) {
+        if let lastNamedLocation,
+           locationName != nil,
+           location.distance(from: lastNamedLocation) < 10_000 {
+            return
+        }
+        locationNameTask?.cancel()
+        locationNameTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let resolvedName: String?
+            do {
+                if #available(macOS 26.0, *) {
+                    guard let request = MKReverseGeocodingRequest(location: location) else { return }
+                    let items = try await request.mapItems
+                    resolvedName = items.first?.addressRepresentations?.cityName
+                } else {
+                    let placemarks = try await CLGeocoder().reverseGeocodeLocation(
+                        location,
+                        preferredLocale: Locale(identifier: "zh_CN")
+                    )
+                    let placemark = placemarks.first
+                    resolvedName = placemark?.locality
+                        ?? placemark?.subAdministrativeArea
+                        ?? placemark?.administrativeArea
+                }
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            let value = resolvedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let value, !value.isEmpty else { return }
+            self.locationName = value
+            self.lastNamedLocation = location
         }
     }
 }

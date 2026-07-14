@@ -65,7 +65,9 @@ struct WeatherStatusCard: View {
     }
 
     private var title: String {
-        if let snapshot = weather.snapshot { return "当前位置 · \(snapshot.condition.title)" }
+        if let snapshot = weather.snapshot {
+            return "\(weather.locationName ?? "当前位置") · \(snapshot.condition.title)"
+        }
         switch weather.status {
         case .idle: return "当前位置天气"
         case .requestingLocation: return "正在获取位置"

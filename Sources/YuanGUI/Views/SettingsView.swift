@@ -124,6 +124,33 @@ struct SettingsView: View {
                     get: { pet.idleAnimationEnabled },
                     set: pet.setIdleAnimationEnabled
                 ))
+                Toggle("桌宠主动和你说话", isOn: Binding(
+                    get: { pet.ambientChatterEnabled },
+                    set: pet.setAmbientChatterEnabled
+                ))
+                if pet.ambientChatterEnabled {
+                    HStack {
+                        Text("日常对白间隔")
+                        Slider(
+                            value: Binding(
+                                get: { Double(pet.ambientChatterIntervalMinutes) },
+                                set: { pet.setAmbientChatterIntervalMinutes(Int($0.rounded())) }
+                            ),
+                            in: 5...120,
+                            step: 5
+                        )
+                        Text("\(pet.ambientChatterIntervalMinutes) 分钟")
+                            .monospacedDigit()
+                            .frame(width: 66, alignment: .trailing)
+                    }
+                    Toggle("天气刷新完成后主动播报", isOn: Binding(
+                        get: { pet.weatherAnnouncementsEnabled },
+                        set: pet.setWeatherAnnouncementsEnabled
+                    ))
+                    Text("天气约每 15 分钟后台更新；城市名由系统定位结果转换，无法识别时只说“当前位置”。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Toggle("在桌宠上方显示迷你状态气泡", isOn: Binding(
                     get: { pet.showsSystemStatus },
                     set: pet.setSystemStatusVisible

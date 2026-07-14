@@ -22,6 +22,9 @@ final class PetStore: ObservableObject {
     @Published private(set) var bedtimeReminderEnabled: Bool
     @Published private(set) var bedtimeStartMinutes: Int
     @Published private(set) var bedtimeEndMinutes: Int
+    @Published private(set) var ambientChatterEnabled: Bool
+    @Published private(set) var ambientChatterIntervalMinutes: Int
+    @Published private(set) var weatherAnnouncementsEnabled: Bool
     @Published private(set) var smartState: SmartPetState = .normal
     @Published private(set) var activeSmartStates: [SmartPetState] = []
     @Published private(set) var isChatting = false
@@ -115,6 +118,12 @@ final class PetStore: ObservableObject {
             ? true : defaults.bool(forKey: "bedtimeReminderEnabled")
         self.bedtimeStartMinutes = defaults.object(forKey: "bedtimeStartMinutes") as? Int ?? 23 * 60
         self.bedtimeEndMinutes = defaults.object(forKey: "bedtimeEndMinutes") as? Int ?? 5 * 60
+        self.ambientChatterEnabled = defaults.object(forKey: "ambientChatterEnabled") == nil
+            ? true : defaults.bool(forKey: "ambientChatterEnabled")
+        let savedChatterInterval = defaults.object(forKey: "ambientChatterIntervalMinutes") as? Int ?? 15
+        self.ambientChatterIntervalMinutes = min(max(savedChatterInterval, 5), 120)
+        self.weatherAnnouncementsEnabled = defaults.object(forKey: "weatherAnnouncementsEnabled") == nil
+            ? true : defaults.bool(forKey: "weatherAnnouncementsEnabled")
         self.lockedControlsVisible = initiallyLocked
 
         Publishers.CombineLatest(monitor.$snapshot, self.weather.$snapshot)
@@ -130,6 +139,11 @@ final class PetStore: ObservableObject {
             .sink { [weak self] states in self?.applySmartStates(states) }
             .store(in: &cancellables)
 
+        self.weather.$snapshot
+            .compactMap { $0 }
+            .sink { [weak self] snapshot in self?.presentWeatherRefreshAnnouncement(snapshot) }
+            .store(in: &cancellables)
+
         if startServices {
             monitor.start()
             syncMiniMonitoringDemand()
@@ -140,7 +154,7 @@ final class PetStore: ObservableObject {
                     self?.chooseIdleAction()
                     self?.evaluateSmartState(at: date)
                 }
-            scheduleNextAmbientChatter(initial: true)
+            if ambientChatterEnabled { scheduleNextAmbientChatter(initial: true) }
         }
         if interactionLocked {
             scheduleLockedControlsHide(after: 3)
@@ -183,6 +197,25 @@ final class PetStore: ObservableObject {
     func setIdleAnimationEnabled(_ enabled: Bool) {
         idleAnimationEnabled = enabled
         defaults.set(enabled, forKey: "idleAnimationEnabled")
+    }
+
+    func setAmbientChatterEnabled(_ enabled: Bool) {
+        ambientChatterEnabled = enabled
+        defaults.set(enabled, forKey: "ambientChatterEnabled")
+        ambientChatterTask?.cancel()
+        ambientChatterTask = nil
+        if enabled { scheduleNextAmbientChatter(initial: true) }
+    }
+
+    func setAmbientChatterIntervalMinutes(_ minutes: Int) {
+        ambientChatterIntervalMinutes = min(max(minutes, 5), 120)
+        defaults.set(ambientChatterIntervalMinutes, forKey: "ambientChatterIntervalMinutes")
+        if ambientChatterEnabled { scheduleNextAmbientChatter() }
+    }
+
+    func setWeatherAnnouncementsEnabled(_ enabled: Bool) {
+        weatherAnnouncementsEnabled = enabled
+        defaults.set(enabled, forKey: "weatherAnnouncementsEnabled")
     }
 
     func setSmartReactionsEnabled(_ enabled: Bool) {
@@ -438,7 +471,16 @@ final class PetStore: ObservableObject {
                 showAmbientMessage("充电中，元圭和 VCC 正在陪 Mac 补充能量～")
             }
         case .rainy:
-            showAmbientMessage("外面下雨啦，master 出门记得带伞，VCC 不可以踩水坑哦～")
+            if let snapshot = weather.snapshot,
+               let message = PetAmbientChatter.weatherAnnouncements(
+                   mode: mode,
+                   weather: snapshot,
+                   locationName: weather.locationName
+               ).randomElement() {
+                showAmbientMessage(message, duration: 10)
+            } else {
+                showAmbientMessage("外面下雨啦，master 出门记得带伞，VCC 不可以踩水坑哦～")
+            }
         case .bedtime:
             showAmbientMessage("夜深了，master 该休息啦，元圭和 VCC 陪你说晚安～")
         case .normal:
@@ -472,11 +514,10 @@ final class PetStore: ObservableObject {
     }
 
     private func scheduleNextAmbientChatter(initial: Bool = false) {
-        guard taskAnimationsEnabled else { return }
+        guard taskAnimationsEnabled, ambientChatterEnabled else { return }
         ambientChatterTask?.cancel()
-        let delay = initial
-            ? TimeInterval.random(in: 120...240)
-            : TimeInterval.random(in: 720...1_200)
+        let configuredDelay = TimeInterval(ambientChatterIntervalMinutes * 60)
+        let delay = initial ? min(configuredDelay, 180) : configuredDelay
         ambientChatterTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             catch { return }
@@ -495,10 +536,29 @@ final class PetStore: ObservableObject {
         let candidates = PetAmbientChatter.candidates(
             mode: mode,
             system: monitor.snapshot,
-            weather: weather.snapshot
+            weather: weather.snapshot,
+            locationName: weather.locationName
         ).filter { $0 != lastAmbientMessage }
         guard let message = candidates.randomElement() else { return }
         showAmbientMessage(message)
+    }
+
+    private func presentWeatherRefreshAnnouncement(_ snapshot: WeatherSnapshot) {
+        guard taskAnimationsEnabled,
+              ambientChatterEnabled,
+              weatherAnnouncementsEnabled,
+              taskState == .idle,
+              !isDropTargeted,
+              !isChatting,
+              toast == nil,
+              ambientMessage == nil else { return }
+        let messages = PetAmbientChatter.weatherAnnouncements(
+            mode: mode,
+            weather: snapshot,
+            locationName: weather.locationName
+        ).filter { $0 != lastAmbientMessage }
+        guard let message = messages.randomElement() else { return }
+        showAmbientMessage(message, duration: 10)
     }
 
     private func ambientDurationText(_ totalMinutes: Int) -> String {

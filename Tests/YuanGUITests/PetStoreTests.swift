@@ -35,6 +35,34 @@ final class PetStoreTests: XCTestCase {
 
         XCTAssertEqual(store.mode, .duo)
         XCTAssertEqual(store.petScale, PetLayout.defaultScale)
+        XCTAssertTrue(store.ambientChatterEnabled)
+        XCTAssertEqual(store.ambientChatterIntervalMinutes, 15)
+        XCTAssertTrue(store.weatherAnnouncementsEnabled)
+    }
+
+    func testAmbientChatterPreferencesClampAndPersist() {
+        let suite = "PetStoreChatterTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+
+        store.setAmbientChatterEnabled(false)
+        store.setAmbientChatterIntervalMinutes(2)
+        store.setWeatherAnnouncementsEnabled(false)
+        XCTAssertFalse(store.ambientChatterEnabled)
+        XCTAssertEqual(store.ambientChatterIntervalMinutes, 5)
+        XCTAssertFalse(store.weatherAnnouncementsEnabled)
+
+        store.setAmbientChatterIntervalMinutes(200)
+        XCTAssertEqual(store.ambientChatterIntervalMinutes, 120)
+        XCTAssertFalse(defaults.bool(forKey: "ambientChatterEnabled"))
+        XCTAssertEqual(defaults.integer(forKey: "ambientChatterIntervalMinutes"), 120)
+        XCTAssertFalse(defaults.bool(forKey: "weatherAnnouncementsEnabled"))
     }
 
     func testRecycleUsesInjectedHandlerWithoutTouchingFilesystem() async {
@@ -397,6 +425,70 @@ final class PetStoreTests: XCTestCase {
         XCTAssertTrue(messages.contains { $0.contains("32°") && $0.contains("阴天") && $0.contains("14 km/h") })
         XCTAssertTrue(messages.contains { $0.contains("1小时30分钟") && $0.contains("充电") })
         XCTAssertTrue(messages.contains { $0.contains("元圭") && $0.contains("VCC") })
+    }
+
+    func testAmbientChatterUsesCityAndBatteryRuntimeForEveryVoice() {
+        var snapshot = SystemSnapshot.empty
+        snapshot.battery = BatteryMetrics(
+            isPresent: true,
+            chargeFraction: 0.72,
+            isCharging: false,
+            powerSource: .battery,
+            timeRemainingMinutes: 192
+        )
+
+        for mode in PetMode.allCases {
+            let messages = PetAmbientChatter.candidates(
+                mode: mode,
+                system: snapshot,
+                weather: nil,
+                locationName: "上海市"
+            )
+            XCTAssertTrue(messages.contains { $0.contains("上海市") })
+            XCTAssertTrue(messages.contains { $0.contains("3小时12分钟") })
+        }
+        let vcc = PetAmbientChatter.candidates(
+            mode: .vcc,
+            system: snapshot,
+            weather: nil,
+            locationName: "上海市"
+        )
+        XCTAssertTrue(vcc.contains { $0.contains("罐头") })
+        XCTAssertTrue(vcc.contains { $0.contains("喵喵喵") && $0.contains("预计还能使用") })
+    }
+
+    func testWeatherAnnouncementsCoverRainHeatColdAndVoice() {
+        func weather(temperature: Double, apparent: Double, code: Int) -> WeatherSnapshot {
+            WeatherSnapshot(
+                temperature: temperature,
+                apparentTemperature: apparent,
+                relativeHumidity: 70,
+                windSpeed: 6,
+                weatherCode: code,
+                isDay: true,
+                updatedAt: Date()
+            )
+        }
+
+        let rain = PetAmbientChatter.weatherAnnouncements(
+            mode: .duo,
+            weather: weather(temperature: 24, apparent: 26, code: 61),
+            locationName: "杭州市"
+        )
+        XCTAssertTrue(rain.allSatisfy { $0.contains("雨") })
+        XCTAssertTrue(rain.contains { $0.contains("杭州市") && $0.contains("喵喵喵") })
+
+        let hot = PetAmbientChatter.weatherAnnouncements(
+            mode: .vcc,
+            weather: weather(temperature: 32, apparent: 36, code: 1)
+        )
+        XCTAssertTrue(hot.contains { $0.contains("热") && $0.contains("VCC") })
+
+        let cold = PetAmbientChatter.weatherAnnouncements(
+            mode: .yuanGui,
+            weather: weather(temperature: 6, apparent: 4, code: 2)
+        )
+        XCTAssertTrue(cold.contains { $0.contains("冷") && $0.contains("元圭") })
     }
 
     func testAmbientMessageReservesBubbleSpaceWithoutChangingMonitorPreference() {
