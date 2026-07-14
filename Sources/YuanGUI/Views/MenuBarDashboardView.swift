@@ -34,18 +34,30 @@ struct MenuBarDashboardView: View {
 
             HStack(spacing: 8) {
                 Button("显示/隐藏桌宠", action: togglePet)
-                Button(store.showsSystemStatus ? "隐藏迷你状态" : "显示迷你状态") {
+                Button(store.shouldShowPetBubble ? "隐藏迷你状态" : "显示迷你状态") {
                     store.toggleSystemStatus()
                     showPet()
                 }
                 Spacer()
+                Button {
+                    store.toggleInteractionLock()
+                    showPet()
+                } label: {
+                    Image(systemName: store.interactionLocked ? "lock.fill" : "lock.open.fill")
+                }
+                .help(store.interactionLocked ? "解锁桌宠点击" : "锁定桌宠并允许点击穿透")
+                Button {
+                    dismiss()
+                    store.showMaintenance()
+                } label: {
+                    Image(systemName: "house.fill")
+                }
+                .help("打开元圭与 VCC 清理屋")
                 Button(action: openSettings) {
                     Image(systemName: "gearshape.fill")
                 }
                 .help("设置")
                 Menu {
-                    Button("元圭与 VCC 清理屋…") { store.showMaintenance() }
-                    Divider()
                     Button("打开废纸篓") { store.openTrash() }
                     Button("清空废纸篓…") { store.confirmAndEmptyTrash() }
                     Divider()

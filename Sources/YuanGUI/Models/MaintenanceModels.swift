@@ -21,8 +21,8 @@ enum CleanupCategory: String, Codable, CaseIterable {
 
     var selectedByDefault: Bool {
         switch self {
-        case .appCache, .oldLog, .temporary: return true
-        case .browserCache, .developerCache, .orphanedAppData: return false
+        case .appCache, .oldLog: return true
+        case .temporary, .browserCache, .developerCache, .orphanedAppData: return false
         }
     }
 }

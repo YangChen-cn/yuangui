@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        panelController = PetPanelController(store: store, chat: chatStore)
+        panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore)
         panelController?.show()
         settingsController = SettingsWindowController(
             petStore: store,
@@ -105,8 +105,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .showYuanGUIMaintenance)
-            .sink { [weak self] _ in
-                Task { @MainActor in self?.maintenanceController?.show() }
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    self?.maintenanceStore.selectTab(notification.userInfo?["tab"] as? Int ?? 0)
+                    self?.maintenanceController?.show()
+                }
             }
             .store(in: &cancellables)
         self.statusItem = statusItem

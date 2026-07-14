@@ -48,6 +48,8 @@ final class WeatherTests: XCTestCase {
         )
         let noon = calendar.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 12))!
         let lateNight = calendar.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 2))!
+        let elevenPM = calendar.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 23))!
+        let fiveAM = calendar.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 5))!
 
         XCTAssertEqual(
             SmartPetState.resolve(system: .empty, weather: rainy, date: noon, calendar: calendar),
@@ -57,6 +59,8 @@ final class WeatherTests: XCTestCase {
             SmartPetState.resolve(system: .empty, weather: nil, date: lateNight, calendar: calendar),
             .bedtime
         )
+        XCTAssertEqual(SmartPetState.resolve(system: .empty, weather: nil, date: elevenPM, calendar: calendar), .bedtime)
+        XCTAssertEqual(SmartPetState.resolve(system: .empty, weather: nil, date: fiveAM, calendar: calendar), .normal)
     }
 
     func testMultipleSmartStatesAreKeptForRotation() {
@@ -83,5 +87,25 @@ final class WeatherTests: XCTestCase {
             SmartPetState.resolveAll(system: snapshot, weather: rainy, date: noon),
             [.rainy, .charging]
         )
+    }
+
+    func testBedtimeScheduleCanBeCustomizedOrDisabled() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let atEleven = calendar.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 23, minute: 30))!
+        let atTwo = calendar.date(from: DateComponents(year: 2026, month: 7, day: 15, hour: 2))!
+
+        XCTAssertTrue(SmartPetState.resolveAll(
+            system: .empty, weather: nil, date: atEleven, calendar: calendar,
+            bedtimeEnabled: true, bedtimeStartMinutes: 22 * 60, bedtimeEndMinutes: 60
+        ).contains(.bedtime))
+        XCTAssertFalse(SmartPetState.resolveAll(
+            system: .empty, weather: nil, date: atTwo, calendar: calendar,
+            bedtimeEnabled: true, bedtimeStartMinutes: 22 * 60, bedtimeEndMinutes: 60
+        ).contains(.bedtime))
+        XCTAssertFalse(SmartPetState.resolveAll(
+            system: .empty, weather: nil, date: atEleven, calendar: calendar,
+            bedtimeEnabled: false, bedtimeStartMinutes: 22 * 60, bedtimeEndMinutes: 60
+        ).contains(.bedtime))
     }
 }

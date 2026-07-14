@@ -89,13 +89,48 @@ struct SettingsView: View {
                     get: { pet.smartReactionsEnabled },
                     set: pet.setSmartReactionsEnabled
                 ))
+                Toggle("夜深了提醒", isOn: Binding(
+                    get: { pet.bedtimeReminderEnabled },
+                    set: pet.setBedtimeReminderEnabled
+                ))
+                if pet.bedtimeReminderEnabled {
+                    HStack {
+                        Text("提醒时段")
+                        Spacer()
+                        Picker("开始", selection: Binding(
+                            get: { pet.bedtimeStartMinutes },
+                            set: pet.setBedtimeStartMinutes
+                        )) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text(String(format: "%02d:00", hour)).tag(hour * 60)
+                            }
+                        }
+                        .labelsHidden().frame(width: 92)
+                        Text("至")
+                        Picker("结束", selection: Binding(
+                            get: { pet.bedtimeEndMinutes },
+                            set: pet.setBedtimeEndMinutes
+                        )) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text(String(format: "%02d:00", hour)).tag(hour * 60)
+                            }
+                        }
+                        .labelsHidden().frame(width: 92)
+                    }
+                    Text("支持跨午夜时段；默认 23:00–05:00。关闭后不再出现睡觉动作和提醒气泡。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle("空闲时自动轮播普通动作（每分钟）", isOn: Binding(
                     get: { pet.idleAnimationEnabled },
                     set: pet.setIdleAnimationEnabled
                 ))
                 Toggle("在桌宠上方显示迷你状态气泡", isOn: Binding(
                     get: { pet.showsSystemStatus },
-                    set: { value in if value != pet.showsSystemStatus { pet.toggleSystemStatus() } }
+                    set: pet.setSystemStatusVisible
+                ))
+                Toggle("锁定桌宠并允许鼠标点击穿透", isOn: Binding(
+                    get: { pet.interactionLocked },
+                    set: pet.setInteractionLocked
                 ))
             }
 

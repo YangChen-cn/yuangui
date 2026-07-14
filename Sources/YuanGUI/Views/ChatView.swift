@@ -120,6 +120,9 @@ struct PetChatComposer: View {
                     .textFieldStyle(.plain)
                     .focused($inputFocused)
                     .onSubmit(send)
+                    .onPasteCommand(of: [.image]) { providers in
+                        pasteImages(providers)
+                    }
 
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 22))
@@ -199,6 +202,27 @@ struct PetChatComposer: View {
             }
         }
         return true
+    }
+
+    private func pasteImages(_ providers: [NSItemProvider]) {
+        for provider in providers.prefix(max(0, 6 - attachments.count)) {
+            guard let type = provider.registeredTypeIdentifiers.first(where: {
+                guard let value = UTType($0) else { return false }
+                return value.conforms(to: .image)
+            }) else { continue }
+            provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
+                DispatchQueue.main.async {
+                    do {
+                        if let error { throw error }
+                        guard let data else { throw ChatServiceError.unreadableAttachment("粘贴的图片") }
+                        let name = "粘贴图片-\(attachments.count + 1).png"
+                        attachments.append(try preparer.prepare(imageData: data, name: name))
+                    } catch {
+                        attachmentError = error.localizedDescription
+                    }
+                }
+            }
+        }
     }
 }
 

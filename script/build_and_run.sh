@@ -11,6 +11,7 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
@@ -23,7 +24,7 @@ BIN_DIR="$(swift build --show-bin-path)"
 BUILD_BINARY="$BIN_DIR/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_MACOS"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 
@@ -32,7 +33,8 @@ if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
   echo "missing SwiftPM resource bundle: $RESOURCE_BUNDLE" >&2
   exit 1
 fi
-cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/"
+cp -R "$RESOURCE_BUNDLE" "$APP_RESOURCES/"
+cp "$ROOT_DIR/Sources/YuanGUI/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,6 +49,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>元圭与 VCC</string>
   <key>CFBundleDisplayName</key>
   <string>元圭与 VCC</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

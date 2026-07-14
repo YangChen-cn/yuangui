@@ -3,20 +3,18 @@ import SwiftUI
 
 struct MaintenanceView: View {
     @ObservedObject var store: MaintenanceStore
-    @State private var tab = 0
-
     var body: some View {
         VStack(spacing: 12) {
             maintenanceBubble
-            Picker("清理分类", selection: $tab) {
+            Picker("清理分类", selection: $store.selectedTab) {
                 Label("空间清理", systemImage: "sparkles").tag(0)
                 Label("软件卸载", systemImage: "shippingbox").tag(1)
                 Label("操作记录", systemImage: "clock.arrow.circlepath").tag(2)
             }
             .pickerStyle(.segmented).labelsHidden()
             Group {
-                if tab == 0 { cleanupPage }
-                else if tab == 1 { uninstallPage }
+                if store.selectedTab == 0 { cleanupPage }
+                else if store.selectedTab == 1 { uninstallPage }
                 else { operationsPage }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

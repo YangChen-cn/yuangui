@@ -25,7 +25,7 @@ struct CleanupScanner: CleanupScanning {
         var candidates: [CleanupCandidate] = []
         candidates += scanChildren(
             of: library.appendingPathComponent("Caches"),
-            category: .appCache, disposition: .permanent, olderThanDays: nil, excluding: paths
+            category: .appCache, disposition: .recycle, olderThanDays: nil, excluding: paths
         )
         candidates += scanChildren(
             of: library.appendingPathComponent("Logs"),
@@ -84,6 +84,7 @@ struct CleanupScanner: CleanupScanning {
         let cutoff = olderThanDays.flatMap { calendar.date(byAdding: .day, value: -$0, to: Date()) }
         return children.compactMap { url in
             guard !paths.contains(url.path), !url.path.localizedCaseInsensitiveContains("com.yang.yuangui") else { return nil }
+            if root.lastPathComponent == "Caches", isProtectedCache(url) { return nil }
             let values = try? url.resourceValues(forKeys: keys)
             guard values?.isSymbolicLink != true else { return nil }
             if let cutoff, let modified = values?.contentModificationDate, modified > cutoff { return nil }
@@ -160,9 +161,21 @@ struct CleanupScanner: CleanupScanning {
         return candidate
     }
 
-    private func isBrowserCache(_ url: URL) -> Bool {
+    func isBrowserCache(_ url: URL) -> Bool {
         let value = url.lastPathComponent.lowercased()
-        return ["safari", "chrome", "chromium", "firefox", "edge", "arc", "brave", "opera"].contains { value.contains($0) }
+        return [
+            "safari", "google", "chrome", "chromium", "mozilla", "firefox",
+            "microsoft edge", "microsoft.edge", "thebrowser", "arc", "brave", "opera"
+        ].contains { value.contains($0) }
+    }
+
+    func isProtectedCache(_ url: URL) -> Bool {
+        let value = url.lastPathComponent.lowercased()
+        if value.hasPrefix("com.apple.") { return true }
+        return [
+            "security", "keychain", "keyring", "safe storage", "trustd",
+            "1password", "bitwarden", "keepass", "vscode", "visual studio code", "electron"
+        ].contains { value.contains($0) }
     }
 
     private func allocatedSize(of url: URL) -> Int64 {

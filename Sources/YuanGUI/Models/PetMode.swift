@@ -103,7 +103,10 @@ enum SmartPetState: String, Equatable {
         system snapshot: SystemSnapshot,
         weather: WeatherSnapshot?,
         date: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        bedtimeEnabled: Bool = true,
+        bedtimeStartMinutes: Int = 23 * 60,
+        bedtimeEndMinutes: Int = 5 * 60
     ) -> [SmartPetState] {
         var states: [SmartPetState] = []
         if let memory = snapshot.memory,
@@ -124,8 +127,14 @@ enum SmartPetState: String, Equatable {
         if weather?.isRainy == true {
             states.append(.rainy)
         }
-        let hour = calendar.component(.hour, from: date)
-        if (0..<8).contains(hour) {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        let currentMinutes = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+        let start = min(max(bedtimeStartMinutes, 0), 1_439)
+        let end = min(max(bedtimeEndMinutes, 0), 1_439)
+        let isBedtime = start < end
+            ? (start..<end).contains(currentMinutes)
+            : (start > end && (currentMinutes >= start || currentMinutes < end))
+        if bedtimeEnabled && isBedtime {
             states.append(.bedtime)
         }
         if snapshot.battery?.isCharging == true {

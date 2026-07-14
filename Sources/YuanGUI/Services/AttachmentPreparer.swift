@@ -4,6 +4,7 @@ import PDFKit
 
 protocol AttachmentPreparing {
     func prepare(url: URL) throws -> PreparedChatAttachment
+    func prepare(imageData: Data, name: String) throws -> PreparedChatAttachment
 }
 
 struct AttachmentPreparer: AttachmentPreparing {
@@ -27,10 +28,20 @@ struct AttachmentPreparer: AttachmentPreparing {
         throw ChatServiceError.unsupportedAttachment(url.lastPathComponent)
     }
 
+    func prepare(imageData: Data, name: String = "粘贴的图片.png") throws -> PreparedChatAttachment {
+        guard Int64(imageData.count) <= Self.maximumBytes else { throw ChatServiceError.attachmentTooLarge(name) }
+        return try prepareImage(data: imageData, name: name, byteCount: Int64(imageData.count))
+    }
+
     private func prepareImage(url: URL, byteCount: Int64) throws -> PreparedChatAttachment {
-        guard let image = NSImage(contentsOf: url),
+        let data = try Data(contentsOf: url)
+        return try prepareImage(data: data, name: url.lastPathComponent, byteCount: byteCount)
+    }
+
+    private func prepareImage(data: Data, name: String, byteCount: Int64) throws -> PreparedChatAttachment {
+        guard let image = NSImage(data: data),
               let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            throw ChatServiceError.unreadableAttachment(url.lastPathComponent)
+            throw ChatServiceError.unreadableAttachment(name)
         }
         let maximum: CGFloat = 2_048
         let scale = min(1, maximum / CGFloat(max(source.width, source.height)))
@@ -40,15 +51,15 @@ struct AttachmentPreparer: AttachmentPreparing {
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { throw ChatServiceError.unreadableAttachment(url.lastPathComponent) }
+        ) else { throw ChatServiceError.unreadableAttachment(name) }
         context.interpolationQuality = .high
         context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let resized = context.makeImage() else { throw ChatServiceError.unreadableAttachment(url.lastPathComponent) }
+        guard let resized = context.makeImage() else { throw ChatServiceError.unreadableAttachment(name) }
         let representation = NSBitmapImageRep(cgImage: resized)
         guard let data = representation.representation(using: .jpeg, properties: [.compressionFactor: 0.82]) else {
-            throw ChatServiceError.unreadableAttachment(url.lastPathComponent)
+            throw ChatServiceError.unreadableAttachment(name)
         }
-        let metadata = ChatAttachmentMetadata(name: url.lastPathComponent, kind: .image, byteCount: byteCount)
+        let metadata = ChatAttachmentMetadata(name: name, kind: .image, byteCount: byteCount)
         return PreparedChatAttachment(metadata: metadata, payload: .imageDataURL("data:image/jpeg;base64,\(data.base64EncodedString())"))
     }
 

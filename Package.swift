@@ -11,7 +11,11 @@ let package = Package(
         .executableTarget(
             name: "YuanGUI",
             path: "Sources/YuanGUI",
-            resources: [.copy("Resources/Sprites")]
+            resources: [
+                .copy("Resources/Sprites"),
+                .copy("Resources/AppIcon.png"),
+                .copy("Resources/AppIcon.icns")
+            ]
         ),
         .testTarget(
             name: "YuanGUITests",

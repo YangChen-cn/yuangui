@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 final class MaintenanceStore: ObservableObject {
+    enum QuickMode: Equatable { case cleanup, uninstall }
+
     @Published private(set) var cleanupCandidates: [CleanupCandidate] = []
     @Published private(set) var applications: [ApplicationCandidate] = []
     @Published private(set) var operations: [MaintenanceOperation]
@@ -11,6 +13,9 @@ final class MaintenanceStore: ObservableObject {
     @Published private(set) var isWorking = false
     @Published private(set) var message = "VCC 准备好扫描啦，master 随时叫我们～"
     @Published private(set) var whitelistedPaths: [String]
+    @Published var selectedTab = 0
+    @Published private(set) var quickMode: QuickMode?
+    @Published private(set) var quickCompleted = false
 
     private let scanner: CleanupScanning
     private let handler: MaintenanceHandling
@@ -37,6 +42,23 @@ final class MaintenanceStore: ObservableObject {
     var selectedCleanup: [CleanupCandidate] { cleanupCandidates.filter { selectedCleanupIDs.contains($0.id) } }
     var selectedApplications: [ApplicationCandidate] { applications.filter { selectedApplicationIDs.contains($0.id) } }
     var selectedCleanupBytes: Int64 { selectedCleanup.reduce(0) { $0 + $1.byteCount } }
+
+    func startQuickCleanup() async {
+        quickMode = .cleanup
+        quickCompleted = false
+        await scanCleanup()
+    }
+
+    func startQuickUninstall() async {
+        quickMode = .uninstall
+        quickCompleted = false
+        await scanApplications()
+    }
+
+    func dismissQuick() {
+        quickMode = nil
+        quickCompleted = false
+    }
 
     func scanCleanup() async {
         guard !isScanning else { return }
@@ -110,10 +132,13 @@ final class MaintenanceStore: ObservableObject {
 
     func openTrash() { pet.openTrash() }
 
+    func selectTab(_ tab: Int) { selectedTab = min(max(tab, 0), 2) }
+
     func refreshOperations() { operations = logger.load() }
 
     private func finish(_ result: MaintenanceOperation) {
         isWorking = false
+        quickCompleted = quickMode != nil
         operations = logger.load()
         let size = ByteCountFormatter.string(fromByteCount: result.reclaimedBytes, countStyle: .file)
         if result.itemCount > 0 {

@@ -4,13 +4,13 @@
   "defaultFrameDurationSeconds": 0.14,
   "sets": {
     "yuangui": [
-      "idle", "wave", "curious", "hop", "read", "system-meter", "yawn", "finger-heart", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting"
+      "idle", "wave", "curious", "hop", "read", "system-meter", "yawn", "finger-heart", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting", "eat-trash-1", "eat-trash-2", "eat-trash-3", "maintenance-scan", "maintenance-success"
     ],
     "vcc": [
-      "loaf-idle", "paw-wave", "curious", "pounce", "belly-roll", "groom", "sleep", "alert", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting"
+      "loaf-idle", "paw-wave", "curious", "pounce", "belly-roll", "groom", "sleep", "alert", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting", "eat-trash-1", "eat-trash-2", "eat-trash-3", "maintenance-scan", "maintenance-success"
     ],
     "duo": [
-      "idle", "pet", "cuddle", "wave", "read", "play", "alert", "hug", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting"
+      "idle", "pet", "cuddle", "wave", "read", "play", "alert", "hug", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting", "eat-trash-1", "eat-trash-2", "eat-trash-3", "maintenance-scan", "maintenance-success"
     ]
   }
 }

@@ -44,6 +44,16 @@ final class MaintenanceTests: XCTestCase {
         XCTAssertEqual(logger.operations.count, 1)
     }
 
+    func testSensitiveAndBrowserCachesAreNotDefaultCleanup() {
+        let scanner = CleanupScanner()
+        XCTAssertTrue(scanner.isBrowserCache(URL(fileURLWithPath: "/tmp/Google")))
+        XCTAssertTrue(scanner.isBrowserCache(URL(fileURLWithPath: "/tmp/com.microsoft.Edge")))
+        XCTAssertTrue(scanner.isProtectedCache(URL(fileURLWithPath: "/tmp/com.apple.securityd")))
+        XCTAssertTrue(scanner.isProtectedCache(URL(fileURLWithPath: "/tmp/com.microsoft.VSCode")))
+        XCTAssertFalse(CleanupCategory.browserCache.selectedByDefault)
+        XCTAssertFalse(CleanupCategory.temporary.selectedByDefault)
+    }
+
     @MainActor
     func testLoginItemStoreMapsRequiresApprovalAndFailure() {
         let service = FakeLoginItemService(status: .requiresApproval)

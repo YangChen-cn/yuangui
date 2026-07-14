@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct PetRootView: View {
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
+    @ObservedObject var maintenance: MaintenanceStore
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
     @State private var dragStartMouseLocation: NSPoint?
@@ -14,13 +15,20 @@ struct PetRootView: View {
         PetLayout.panelSize(
             scale: store.petScale,
             showsBubble: store.shouldShowPetBubble,
-            showsChat: chat.isPresented
+            showsChat: chat.isPresented,
+            showsMaintenance: maintenance.quickMode != nil
         )
     }
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if chat.isPresented {
+            if maintenance.quickMode != nil {
+                PetMaintenanceBubble(store: maintenance)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 291 * scale + 4)
+                    .zIndex(6)
+            } else if chat.isPresented {
                 if chat.latestReply != nil || chat.isSending || chat.errorMessage != nil {
                     PetReplyBubble(chat: chat, pet: store)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -62,9 +70,10 @@ struct PetRootView: View {
                     }
             }
             .frame(maxWidth: .infinity)
+            .offset(x: 35 * scale)
             .padding(.bottom, chat.isPresented ? 58 : 0)
 
-            if chat.isPresented {
+            if chat.isPresented && maintenance.quickMode == nil {
                 PetChatComposer(chat: chat, pet: store)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 3)
@@ -77,10 +86,20 @@ struct PetRootView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
-            if isHovering && !store.isDropTargeted {
-                controls
-                    .padding(.bottom, chat.isPresented ? 64 : 5)
+            if !store.isDropTargeted {
+                if isHovering && !store.interactionLocked {
+                    roleControls
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        .padding(.leading, max(8, 142 * scale - 74))
+                        .padding(.bottom, chat.isPresented ? 150 : 120)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+                if isHovering || store.interactionLocked {
+                bottomControls
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, chat.isPresented ? 70 : 6)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .frame(width: panelSize.width, height: panelSize.height)
@@ -112,48 +131,86 @@ struct PetRootView: View {
         }
     }
 
-    private var controls: some View {
-        HStack(spacing: 5) {
+    private var roleControls: some View {
+        VStack(spacing: 5) {
             ForEach(PetMode.allCases) { mode in
                 Button { store.setMode(mode) } label: {
                     Text(mode.title)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .frame(width: 42)
                 }
                 .buttonStyle(.bordered)
                 .tint(store.mode == mode ? .pink : .secondary)
                 .controlSize(.small)
             }
-            Divider().frame(height: 18)
+        }
+        .controlPanel()
+    }
+
+    private var bottomControls: some View {
+        HStack(spacing: 5) {
             Button { store.toggleSystemStatus() } label: {
-                Image(systemName: store.showsSystemStatus
-                      ? "gauge.with.dots.needle.67percent"
-                      : "gauge.with.dots.needle.33percent")
+                toolIcon(
+                    store.shouldShowPetBubble
+                        ? "gauge.with.dots.needle.67percent"
+                        : "gauge.with.dots.needle.33percent",
+                    tint: .pink,
+                    selected: store.shouldShowPetBubble
+                )
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .buttonStyle(.plain)
             .help("显示系统状态")
             Button { store.showChat() } label: {
-                Image(systemName: "bubble.left.and.bubble.right")
+                toolIcon("bubble.left.and.bubble.right", tint: .pink, selected: chat.isPresented)
             }
-            .buttonStyle(.bordered)
-            .tint(chat.isPresented ? .pink : .secondary)
-            .controlSize(.small)
+            .buttonStyle(.plain)
             .help(chat.isPresented ? "收起对话" : "和元圭、VCC 聊天")
+            Button {
+                chat.dismiss()
+                Task { await maintenance.startQuickCleanup() }
+            } label: {
+                toolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup)
+            }
+            .buttonStyle(.plain)
+            .help("空间清理")
+            Button {
+                chat.dismiss()
+                Task { await maintenance.startQuickUninstall() }
+            } label: {
+                toolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall)
+            }
+            .buttonStyle(.plain)
+            .help("软件卸载")
+            Button { store.toggleInteractionLock() } label: {
+                toolIcon(
+                    store.interactionLocked ? "lock.fill" : "lock.open.fill",
+                    tint: .orange,
+                    selected: store.interactionLocked
+                )
+            }
+            .buttonStyle(.plain)
+            .help(store.interactionLocked ? "解锁桌宠点击" : "锁定后桌宠主体点击穿透")
             Menu {
                 Button("缩小") { store.adjustPetScale(by: -0.1) }
                 Button("恢复默认大小") { store.setPetScale(1) }
                 Button("放大") { store.adjustPetScale(by: 0.1) }
             } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                toolIcon("arrow.up.left.and.arrow.down.right")
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 24)
+            .frame(width: PetLayout.bottomToolbarButtonWidth)
             .help("调整桌宠大小")
         }
-        .padding(6)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.6))
-        .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
+        .controlPanel(capsule: true)
+    }
+
+    private func toolIcon(_ systemName: String, tint: Color = .secondary, selected: Bool = false) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(selected ? tint : Color.primary.opacity(0.78))
+            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 28)
+            .background(selected ? tint.opacity(0.16) : Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
     }
 
     private var dropOverlay: some View {
@@ -177,7 +234,7 @@ struct PetRootView: View {
         Button(chat.isPresented ? "收起 AI 对话" : "和元圭、VCC 聊天…") { store.showChat() }
         Button("打开完整监控") { store.showFullDashboard() }
         Button("打开清理屋…") { store.showMaintenance() }
-        Button(store.showsSystemStatus ? "隐藏系统状态" : "显示系统状态") {
+        Button(store.shouldShowPetBubble ? "隐藏系统状态" : "显示系统状态") {
             store.toggleSystemStatus()
         }
         Menu("切换角色") {
@@ -195,6 +252,9 @@ struct PetRootView: View {
             get: { store.smartReactionsEnabled },
             set: { store.setSmartReactionsEnabled($0) }
         ))
+        Button(store.interactionLocked ? "解锁桌宠点击" : "锁定并允许点击穿透") {
+            store.toggleInteractionLock()
+        }
         Button("设置…") { store.showSettings() }
         Divider()
         Button("打开废纸篓") { store.openTrash() }
@@ -254,5 +314,22 @@ struct PetRootView: View {
         }
         group.notify(queue: .main) { store.recycle(urls) }
         return true
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func controlPanel(capsule: Bool = false) -> some View {
+        if capsule {
+            self.padding(6)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.6))
+                .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
+        } else {
+            self.padding(6)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.3), lineWidth: 0.6))
+                .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
+        }
     }
 }

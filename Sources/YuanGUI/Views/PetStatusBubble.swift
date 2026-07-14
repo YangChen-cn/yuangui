@@ -45,14 +45,14 @@ struct PetStatusBubble: View {
         .frame(width: min(max(PetLayout.baseWidth * store.petScale - 28, 332), 390))
         .background(
             LinearGradient(
-                colors: [Color.pink.opacity(0.16), Color.purple.opacity(0.12)],
+                colors: [Color.white.opacity(0.92), Color(red: 0.94, green: 0.97, blue: 1).opacity(0.92), Color.pink.opacity(0.10)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
             in: RoundedRectangle(cornerRadius: 20, style: .continuous)
         )
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.45), lineWidth: 0.8))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.82), lineWidth: 0.9))
         .shadow(color: stateColor.opacity(0.18), radius: 14, y: 6)
         .overlay(alignment: .bottom) {
             BubbleTail()
@@ -67,11 +67,12 @@ struct PetStatusBubble: View {
             Image(systemName: icon)
             Text("\(title) \(value)")
         }
-        .font(.system(size: 9, weight: .semibold, design: .rounded))
+        .font(.system(size: 11.5, weight: .bold, design: .rounded))
         .foregroundStyle(tint)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .background(tint.opacity(0.10), in: Capsule())
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.68), in: Capsule())
+        .overlay(Capsule().stroke(tint.opacity(0.16), lineWidth: 0.7))
     }
 
     private var message: String {

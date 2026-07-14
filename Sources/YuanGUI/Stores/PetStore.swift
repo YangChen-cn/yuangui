@@ -17,10 +17,15 @@ final class PetStore: ObservableObject {
     @Published private(set) var dashboardStyle: DashboardStyle
     @Published private(set) var idleAnimationEnabled: Bool
     @Published private(set) var smartReactionsEnabled: Bool
+    @Published private(set) var interactionLocked: Bool
+    @Published private(set) var bedtimeReminderEnabled: Bool
+    @Published private(set) var bedtimeStartMinutes: Int
+    @Published private(set) var bedtimeEndMinutes: Int
     @Published private(set) var smartState: SmartPetState = .normal
     @Published private(set) var activeSmartStates: [SmartPetState] = []
     @Published private(set) var isChatting = false
     @Published private var isSmartActionSuppressed = false
+    @Published private(set) var automaticBubbleSuppressed = false
     @Published var isDropTargeted = false
     @Published private(set) var toast: String?
     @Published private(set) var taskState: TaskState = .idle
@@ -55,7 +60,7 @@ final class PetStore: ObservableObject {
     }
 
     var shouldShowPetBubble: Bool {
-        showsSystemStatus || (smartReactionsEnabled && activeSmartStates.contains(where: \.showsAutomaticBubble))
+        showsSystemStatus || (!automaticBubbleSuppressed && smartReactionsEnabled && activeSmartStates.contains(where: \.showsAutomaticBubble))
     }
 
     convenience init() {
@@ -95,10 +100,20 @@ final class PetStore: ObservableObject {
         self.smartReactionsEnabled = defaults.object(forKey: "smartReactionsEnabled") == nil
             ? true
             : defaults.bool(forKey: "smartReactionsEnabled")
+        self.interactionLocked = defaults.bool(forKey: "interactionLocked")
+        self.bedtimeReminderEnabled = defaults.object(forKey: "bedtimeReminderEnabled") == nil
+            ? true : defaults.bool(forKey: "bedtimeReminderEnabled")
+        self.bedtimeStartMinutes = defaults.object(forKey: "bedtimeStartMinutes") as? Int ?? 23 * 60
+        self.bedtimeEndMinutes = defaults.object(forKey: "bedtimeEndMinutes") as? Int ?? 5 * 60
 
         Publishers.CombineLatest(monitor.$snapshot, self.weather.$snapshot)
-            .map { snapshot, weather in
-                SmartPetState.resolveAll(system: snapshot, weather: weather, date: Date())
+            .map { [weak self] snapshot, weather in
+                SmartPetState.resolveAll(
+                    system: snapshot, weather: weather, date: Date(),
+                    bedtimeEnabled: self?.bedtimeReminderEnabled ?? true,
+                    bedtimeStartMinutes: self?.bedtimeStartMinutes ?? 23 * 60,
+                    bedtimeEndMinutes: self?.bedtimeEndMinutes ?? 5 * 60
+                )
             }
             .removeDuplicates()
             .sink { [weak self] states in self?.applySmartStates(states) }
@@ -126,6 +141,7 @@ final class PetStore: ObservableObject {
     }
 
     func interact() {
+        guard !interactionLocked else { return }
         actionIndex = (actionIndex + 1) % mode.actions.count
         if smartState != .normal {
             isSmartActionSuppressed = true
@@ -165,8 +181,22 @@ final class PetStore: ObservableObject {
         if enabled { evaluateSmartState() }
     }
 
+    func setInteractionLocked(_ locked: Bool) {
+        interactionLocked = locked
+        defaults.set(locked, forKey: "interactionLocked")
+        showToast(locked ? "已锁定，点击会穿透桌宠" : "已解锁桌宠")
+    }
+
+    func toggleInteractionLock() { setInteractionLocked(!interactionLocked) }
+
     func toggleSystemStatus() {
-        setSystemStatusVisible(!showsSystemStatus)
+        if shouldShowPetBubble {
+            automaticBubbleSuppressed = true
+            setSystemStatusVisible(false)
+        } else {
+            automaticBubbleSuppressed = false
+            setSystemStatusVisible(true)
+        }
     }
 
     func showFullDashboard() {
@@ -185,8 +215,8 @@ final class PetStore: ObservableObject {
         NotificationCenter.default.post(name: .showYuanGUISettings, object: nil)
     }
 
-    func showMaintenance() {
-        NotificationCenter.default.post(name: .showYuanGUIMaintenance, object: nil)
+    func showMaintenance(tab: Int = 0) {
+        NotificationCenter.default.post(name: .showYuanGUIMaintenance, object: nil, userInfo: ["tab": tab])
     }
 
     func beginMaintenance(message: String) {
@@ -207,7 +237,26 @@ final class PetStore: ObservableObject {
     }
 
     func hideSystemStatus() {
+        automaticBubbleSuppressed = true
         setSystemStatusVisible(false)
+    }
+
+    func setBedtimeReminderEnabled(_ enabled: Bool) {
+        bedtimeReminderEnabled = enabled
+        defaults.set(enabled, forKey: "bedtimeReminderEnabled")
+        evaluateSmartState()
+    }
+
+    func setBedtimeStartMinutes(_ minutes: Int) {
+        bedtimeStartMinutes = min(max(minutes, 0), 1_439)
+        defaults.set(bedtimeStartMinutes, forKey: "bedtimeStartMinutes")
+        evaluateSmartState()
+    }
+
+    func setBedtimeEndMinutes(_ minutes: Int) {
+        bedtimeEndMinutes = min(max(minutes, 0), 1_439)
+        defaults.set(bedtimeEndMinutes, forKey: "bedtimeEndMinutes")
+        evaluateSmartState()
     }
 
     func recycle(_ urls: [URL]) {
@@ -274,7 +323,8 @@ final class PetStore: ObservableObject {
         }
     }
 
-    private func setSystemStatusVisible(_ visible: Bool) {
+    func setSystemStatusVisible(_ visible: Bool) {
+        if visible { automaticBubbleSuppressed = false }
         showsSystemStatus = visible
         defaults.set(visible, forKey: "showsSystemStatus")
         if visible {
@@ -295,6 +345,7 @@ final class PetStore: ObservableObject {
         guard smartReactionsEnabled else { return }
         let previousStates = activeSmartStates
         activeSmartStates = states
+        if states != previousStates { automaticBubbleSuppressed = false }
         if let currentIndex = states.firstIndex(of: smartState) {
             smartState = states[currentIndex]
         } else {
@@ -332,7 +383,10 @@ final class PetStore: ObservableObject {
         applySmartStates(SmartPetState.resolveAll(
             system: monitor.snapshot,
             weather: weather.snapshot,
-            date: date
+            date: date,
+            bedtimeEnabled: bedtimeReminderEnabled,
+            bedtimeStartMinutes: bedtimeStartMinutes,
+            bedtimeEndMinutes: bedtimeEndMinutes
         ))
     }
 }

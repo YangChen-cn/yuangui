@@ -69,7 +69,7 @@ final class PetStoreTests: XCTestCase {
         )
 
         store.setMode(.vcc)
-        store.toggleSystemStatus()
+        store.setSystemStatusVisible(true)
         store.setDashboardStyle(.midnight)
         store.setIdleAnimationEnabled(false)
 
@@ -91,10 +91,57 @@ final class PetStoreTests: XCTestCase {
             startServices: false
         )
 
-        store.toggleSystemStatus()
+        store.setSystemStatusVisible(true)
         store.interact()
 
         XCTAssertTrue(store.showsSystemStatus)
+    }
+
+    func testInteractionLockPersistsAndPreventsActionChange() {
+        let fake = FakeTrashHandler()
+        let suite = "PetStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: fake,
+            defaults: defaults,
+            startServices: false
+        )
+
+        store.setInteractionLocked(true)
+        let action = store.actionIndex
+        store.interact()
+
+        XCTAssertTrue(store.interactionLocked)
+        XCTAssertTrue(defaults.bool(forKey: "interactionLocked"))
+        XCTAssertEqual(store.actionIndex, action)
+    }
+
+    func testAutomaticBedtimeBubbleCanBeClosedAndSettingsPersist() {
+        let fake = FakeTrashHandler()
+        let suite = "PetStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: fake,
+            defaults: defaults,
+            startServices: false
+        )
+        let hour = Calendar.current.component(.hour, from: Date())
+        store.setBedtimeStartMinutes(hour * 60)
+        store.setBedtimeEndMinutes(((hour + 1) % 24) * 60)
+        store.setBedtimeReminderEnabled(true)
+
+        XCTAssertTrue(store.shouldShowPetBubble)
+        store.toggleSystemStatus()
+        XCTAssertFalse(store.shouldShowPetBubble)
+        XCTAssertTrue(store.automaticBubbleSuppressed)
+        XCTAssertEqual(defaults.integer(forKey: "bedtimeStartMinutes"), hour * 60)
+
+        store.setBedtimeReminderEnabled(false)
+        XCTAssertFalse(store.activeSmartStates.contains(.bedtime))
     }
 
     func testPetScaleClampsAndPersists() {
@@ -114,6 +161,31 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(defaults.double(forKey: "petScale"), 1.4)
         store.setPetScale(0.2)
         XCTAssertEqual(store.petScale, 0.7)
+    }
+
+    func testCompactPetCanUseTransparentTopInsetButBubblesStayVisible() {
+        XCTAssertEqual(
+            PetLayout.allowedTopOverflow(scale: 1, showsBubble: false, showsChat: false, showsMaintenance: false),
+            PetLayout.compactTopTransparentInset
+        )
+        XCTAssertEqual(
+            PetLayout.allowedTopOverflow(scale: 1, showsBubble: true, showsChat: false, showsMaintenance: false),
+            0
+        )
+        XCTAssertEqual(
+            PetLayout.allowedTopOverflow(scale: 1, showsBubble: false, showsChat: true, showsMaintenance: false),
+            0
+        )
+    }
+
+    func testBottomLockHitTargetTracksVisibleToolbarButton() {
+        let normal = PetLayout.bottomLockCenter(panelWidth: 540, showsChat: false)
+        let chatting = PetLayout.bottomLockCenter(panelWidth: 540, showsChat: true)
+
+        XCTAssertGreaterThan(normal.x, 270)
+        XCTAssertLessThan(normal.x, 540)
+        XCTAssertEqual(chatting.x, normal.x)
+        XCTAssertEqual(chatting.y - normal.y, 64)
     }
 
     func testSmartStatePrioritizesPressureAndLowBattery() {
