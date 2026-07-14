@@ -109,6 +109,11 @@ final class MaintenanceStore: ObservableObject {
         quickCompleted = false
     }
 
+    func openFullMaintenance(tab: Int) {
+        dismissQuick()
+        pet.showMaintenance(tab: tab)
+    }
+
     func scanCleanup() async {
         guard !isScanning else { return }
         isScanning = true

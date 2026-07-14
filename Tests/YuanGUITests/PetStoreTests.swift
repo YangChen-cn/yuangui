@@ -213,6 +213,18 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 70)
     }
 
+    func testMaintenanceBubbleHasSpaceForGroupedResults() {
+        let normal = PetLayout.panelSize(scale: PetLayout.defaultScale, showsBubble: false)
+        let maintenance = PetLayout.panelSize(
+            scale: PetLayout.defaultScale,
+            showsBubble: false,
+            showsMaintenance: true
+        )
+        XCTAssertGreaterThanOrEqual(maintenance.width, 450)
+        XCTAssertEqual(maintenance.height - normal.height, PetLayout.maintenanceHeight)
+        XCTAssertGreaterThanOrEqual(PetLayout.maintenanceHeight, 340)
+    }
+
     func testEdgeDockingDetectsEveryScreenSideAndIgnoresCenter() {
         let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
         let size = CGSize(width: 326, height: 326)
