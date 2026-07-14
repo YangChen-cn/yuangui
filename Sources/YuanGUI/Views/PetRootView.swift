@@ -9,6 +9,7 @@ struct PetRootView: View {
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
     @State private var dragStartMouseLocation: NSPoint?
+    @State private var sideControlsOnRight = false
 
     private var scale: CGFloat { store.petScale }
     private var panelSize: CGSize {
@@ -89,16 +90,21 @@ struct PetRootView: View {
             if !store.isDropTargeted {
                 if isHovering && !store.interactionLocked {
                     roleControls
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                        .padding(.leading, max(8, 142 * scale - 74))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding)
                         .padding(.bottom, chat.isPresented ? 150 : 120)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
+                    maintenanceSideControls
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 28)
+                        .padding(.bottom, chat.isPresented ? 88 : 46)
+                        .transition(.scale(scale: 0.82).combined(with: .opacity))
                 }
-                if isHovering || store.interactionLocked {
-                bottomControls
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, chat.isPresented ? 70 : 6)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                if !store.interactionLocked && isHovering {
+                    PetBottomControlsView(store: store, chat: chat)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, chat.isPresented ? 70 : 6)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
@@ -107,6 +113,10 @@ struct PetRootView: View {
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.18)) { isHovering = hovering }
         }
+        .onChange(of: store.interactionLocked) { _, locked in
+            if locked { isHovering = false }
+        }
+        .onAppear { updateAdaptiveControlSide() }
         .animation(.spring(response: 0.36, dampingFraction: 0.82), value: store.currentAction.id)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: store.showsSystemStatus)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: chat.isPresented)
@@ -142,75 +152,52 @@ struct PetRootView: View {
                 .buttonStyle(.bordered)
                 .tint(store.mode == mode ? .pink : .secondary)
                 .controlSize(.small)
+                .help("切换到(mode.title)桌宠")
             }
         }
         .controlPanel()
     }
 
-    private var bottomControls: some View {
-        HStack(spacing: 5) {
-            Button { store.toggleSystemStatus() } label: {
-                toolIcon(
-                    store.shouldShowPetBubble
-                        ? "gauge.with.dots.needle.67percent"
-                        : "gauge.with.dots.needle.33percent",
-                    tint: .pink,
-                    selected: store.shouldShowPetBubble
-                )
-            }
-            .buttonStyle(.plain)
-            .help("显示系统状态")
-            Button { store.showChat() } label: {
-                toolIcon("bubble.left.and.bubble.right", tint: .pink, selected: chat.isPresented)
-            }
-            .buttonStyle(.plain)
-            .help(chat.isPresented ? "收起对话" : "和元圭、VCC 聊天")
+    private var sideControlsPadding: CGFloat {
+        if sideControlsOnRight {
+            return max(8, 72 * scale - 74)
+        }
+        return max(8, 142 * scale - 74)
+    }
+
+    private var maintenanceSideControls: some View {
+        VStack(spacing: 3) {
             Button {
                 chat.dismiss()
                 Task { await maintenance.startQuickCleanup() }
             } label: {
-                toolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup)
+                sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup)
             }
             .buttonStyle(.plain)
-            .help("空间清理")
+            .help("空间清理：扫描可安全清理的缓存、日志和临时文件")
+            .offset(x: sideControlsOnRight ? 9 : -9)
+
             Button {
                 chat.dismiss()
                 Task { await maintenance.startQuickUninstall() }
             } label: {
-                toolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall)
+                sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall)
             }
             .buttonStyle(.plain)
-            .help("软件卸载")
-            Button { store.toggleInteractionLock() } label: {
-                toolIcon(
-                    store.interactionLocked ? "lock.fill" : "lock.open.fill",
-                    tint: .orange,
-                    selected: store.interactionLocked
-                )
-            }
-            .buttonStyle(.plain)
-            .help(store.interactionLocked ? "解锁桌宠点击" : "锁定后桌宠主体点击穿透")
-            Menu {
-                Button("缩小") { store.adjustPetScale(by: -0.1) }
-                Button("恢复默认大小") { store.setPetScale(1) }
-                Button("放大") { store.adjustPetScale(by: 0.1) }
-            } label: {
-                toolIcon("arrow.up.left.and.arrow.down.right")
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: PetLayout.bottomToolbarButtonWidth)
-            .help("调整桌宠大小")
+            .help("软件卸载：查找应用及其可确认的用户级残留")
+            .offset(x: sideControlsOnRight ? -9 : 9)
         }
-        .controlPanel(capsule: true)
     }
 
-    private func toolIcon(_ systemName: String, tint: Color = .secondary, selected: Bool = false) -> some View {
+    private func sideToolIcon(_ systemName: String, tint: Color, selected: Bool) -> some View {
         Image(systemName: systemName)
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(selected ? tint : Color.primary.opacity(0.78))
-            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 28)
-            .background(selected ? tint.opacity(0.16) : Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .contentShape(Rectangle())
+            .foregroundStyle(selected ? Color.white : tint)
+            .frame(width: 34, height: 34)
+            .background(selected ? tint : Color.white.opacity(0.76), in: Circle())
+            .overlay(Circle().stroke(.white.opacity(0.58), lineWidth: 0.8))
+            .shadow(color: .black.opacity(0.15), radius: 7, y: 3)
+            .contentShape(Circle())
     }
 
     private var dropOverlay: some View {
@@ -244,7 +231,7 @@ struct PetRootView: View {
         }
         Menu("桌宠大小") {
             Button("小巧（70%）") { store.setPetScale(0.70) }
-            Button("默认（100%）") { store.setPetScale(1) }
+            Button("默认（85%）") { store.setPetScale(PetLayout.defaultScale) }
             Button("大只（125%）") { store.setPetScale(1.25) }
             Button("超大（140%）") { store.setPetScale(1.40) }
         }
@@ -266,8 +253,9 @@ struct PetRootView: View {
     private var windowDragGesture: some Gesture {
         DragGesture(minimumDistance: 7)
             .onChanged { _ in
-                guard let window = NSApp.windows.first(where: { $0 is PetPanel }) else { return }
+                guard let window = NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel else { return }
                 if dragStartOrigin == nil {
+                    window.isUserDragging = true
                     dragStartOrigin = window.frame.origin
                     dragStartMouseLocation = NSEvent.mouseLocation
                 }
@@ -278,11 +266,32 @@ struct PetRootView: View {
                     x: origin.x + mouse.x - mouseOrigin.x,
                     y: origin.y + mouse.y - mouseOrigin.y
                 ))
+                updateAdaptiveControlSide(for: window)
             }
             .onEnded { _ in
+                if let window = NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel {
+                    window.isUserDragging = false
+                    updateAdaptiveControlSide(for: window)
+                    window.dragEndedAction?()
+                }
                 dragStartOrigin = nil
                 dragStartMouseLocation = nil
             }
+    }
+
+    private func updateAdaptiveControlSide(for providedWindow: PetPanel? = nil) {
+        guard let window = providedWindow ?? NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel else { return }
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
+            ?? window.screen
+            ?? NSScreen.main
+        guard let screen else { return }
+        let petVisualCenterX = window.frame.midX + 35 * scale
+        let shouldUseRight = petVisualCenterX < screen.visibleFrame.midX
+        if sideControlsOnRight != shouldUseRight {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                sideControlsOnRight = shouldUseRight
+            }
+        }
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -318,18 +327,10 @@ struct PetRootView: View {
 }
 
 private extension View {
-    @ViewBuilder
-    func controlPanel(capsule: Bool = false) -> some View {
-        if capsule {
-            self.padding(6)
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.6))
-                .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
-        } else {
-            self.padding(6)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.3), lineWidth: 0.6))
-                .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
-        }
+    func controlPanel() -> some View {
+        self.padding(6)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.3), lineWidth: 0.6))
+            .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
     }
 }

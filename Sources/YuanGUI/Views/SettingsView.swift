@@ -135,7 +135,7 @@ struct SettingsView: View {
             }
 
             HStack {
-                Button("恢复默认大小") { pet.setPetScale(1) }
+                Button("恢复默认大小（85%）") { pet.setPetScale(PetLayout.defaultScale) }
                 Spacer()
                 Button("显示桌宠") { showPet() }
                     .buttonStyle(.borderedProminent)

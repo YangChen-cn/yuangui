@@ -18,6 +18,7 @@ final class PetStore: ObservableObject {
     @Published private(set) var idleAnimationEnabled: Bool
     @Published private(set) var smartReactionsEnabled: Bool
     @Published private(set) var interactionLocked: Bool
+    @Published private(set) var lockedControlsVisible = false
     @Published private(set) var bedtimeReminderEnabled: Bool
     @Published private(set) var bedtimeStartMinutes: Int
     @Published private(set) var bedtimeEndMinutes: Int
@@ -39,6 +40,7 @@ final class PetStore: ObservableObject {
     private var idleTimer: AnyCancellable?
     private var clockTimer: AnyCancellable?
     private var smartRotationTimer: AnyCancellable?
+    private var lockedControlsHideTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
 
@@ -91,7 +93,7 @@ final class PetStore: ObservableObject {
             self.mode = .duo
         }
         self.showsSystemStatus = defaults.bool(forKey: "showsSystemStatus")
-        let savedScale = defaults.object(forKey: "petScale") as? Double ?? 1
+        let savedScale = defaults.object(forKey: "petScale") as? Double ?? PetLayout.defaultScale
         self.petScale = min(max(savedScale, 0.70), 1.40)
         self.dashboardStyle = DashboardStyle(rawValue: defaults.integer(forKey: "dashboardStyle")) ?? .softGlass
         self.idleAnimationEnabled = defaults.object(forKey: "idleAnimationEnabled") == nil
@@ -100,11 +102,13 @@ final class PetStore: ObservableObject {
         self.smartReactionsEnabled = defaults.object(forKey: "smartReactionsEnabled") == nil
             ? true
             : defaults.bool(forKey: "smartReactionsEnabled")
-        self.interactionLocked = defaults.bool(forKey: "interactionLocked")
+        let initiallyLocked = defaults.bool(forKey: "interactionLocked")
+        self.interactionLocked = initiallyLocked
         self.bedtimeReminderEnabled = defaults.object(forKey: "bedtimeReminderEnabled") == nil
             ? true : defaults.bool(forKey: "bedtimeReminderEnabled")
         self.bedtimeStartMinutes = defaults.object(forKey: "bedtimeStartMinutes") as? Int ?? 23 * 60
         self.bedtimeEndMinutes = defaults.object(forKey: "bedtimeEndMinutes") as? Int ?? 5 * 60
+        self.lockedControlsVisible = initiallyLocked
 
         Publishers.CombineLatest(monitor.$snapshot, self.weather.$snapshot)
             .map { [weak self] snapshot, weather in
@@ -130,6 +134,9 @@ final class PetStore: ObservableObject {
             smartRotationTimer = Timer.publish(every: 10, tolerance: 1, on: .main, in: .common)
                 .autoconnect()
                 .sink { [weak self] _ in self?.rotateSmartState() }
+        }
+        if interactionLocked {
+            scheduleLockedControlsHide(after: 3)
         }
     }
 
@@ -182,12 +189,38 @@ final class PetStore: ObservableObject {
     }
 
     func setInteractionLocked(_ locked: Bool) {
+        lockedControlsHideTask?.cancel()
         interactionLocked = locked
+        lockedControlsVisible = locked
         defaults.set(locked, forKey: "interactionLocked")
         showToast(locked ? "已锁定，点击会穿透桌宠" : "已解锁桌宠")
+        if locked {
+            scheduleLockedControlsHide(after: 3)
+        }
     }
 
     func toggleInteractionLock() { setInteractionLocked(!interactionLocked) }
+
+    func revealLockedControls() {
+        guard interactionLocked else { return }
+        lockedControlsHideTask?.cancel()
+        lockedControlsHideTask = nil
+        if !lockedControlsVisible {
+            lockedControlsVisible = true
+        }
+    }
+
+    func scheduleLockedControlsHide(after seconds: Double = 0.8) {
+        guard interactionLocked else { return }
+        lockedControlsHideTask?.cancel()
+        let delay = UInt64(max(seconds, 0) * 1_000_000_000)
+        lockedControlsHideTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self, self.interactionLocked else { return }
+            self.lockedControlsHideTask = nil
+            self.lockedControlsVisible = false
+        }
+    }
 
     func toggleSystemStatus() {
         if shouldShowPetBubble {

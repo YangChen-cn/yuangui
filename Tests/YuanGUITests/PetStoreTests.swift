@@ -34,6 +34,7 @@ final class PetStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(store.mode, .duo)
+        XCTAssertEqual(store.petScale, PetLayout.defaultScale)
     }
 
     func testRecycleUsesInjectedHandlerWithoutTouchingFilesystem() async {
@@ -114,8 +115,33 @@ final class PetStoreTests: XCTestCase {
         store.interact()
 
         XCTAssertTrue(store.interactionLocked)
+        XCTAssertTrue(store.lockedControlsVisible)
         XCTAssertTrue(defaults.bool(forKey: "interactionLocked"))
         XCTAssertEqual(store.actionIndex, action)
+
+        store.setInteractionLocked(false)
+        XCTAssertFalse(store.lockedControlsVisible)
+    }
+
+    func testLockedControlsCanAutoHideAndBeRevealed() async throws {
+        let fake = FakeTrashHandler()
+        let suite = "PetStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: fake,
+            defaults: defaults,
+            startServices: false
+        )
+
+        store.setInteractionLocked(true)
+        store.scheduleLockedControlsHide(after: 0)
+        try await Task.sleep(nanoseconds: 2_000_000)
+        XCTAssertFalse(store.lockedControlsVisible)
+
+        store.revealLockedControls()
+        XCTAssertTrue(store.lockedControlsVisible)
     }
 
     func testAutomaticBedtimeBubbleCanBeClosedAndSettingsPersist() {
@@ -178,14 +204,53 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testBottomLockHitTargetTracksVisibleToolbarButton() {
-        let normal = PetLayout.bottomLockCenter(panelWidth: 540, showsChat: false)
-        let chatting = PetLayout.bottomLockCenter(panelWidth: 540, showsChat: true)
+    func testBottomToolbarPanelSizeMatchesItsFourButtons() {
+        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 155)
+        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 40)
+    }
 
-        XCTAssertGreaterThan(normal.x, 270)
-        XCTAssertLessThan(normal.x, 540)
-        XCTAssertEqual(chatting.x, normal.x)
-        XCTAssertEqual(chatting.y - normal.y, 64)
+    func testEdgeDockingDetectsEveryScreenSideAndIgnoresCenter() {
+        let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        let size = CGSize(width: 326, height: 326)
+
+        XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: -170, y: 200), size: size), in: visible), .left)
+        XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 1_280, y: 200), size: size), in: visible), .right)
+        XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 400, y: 740), size: size), in: visible), .top)
+        XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 400, y: -170), size: size), in: visible), .bottom)
+        XCTAssertNil(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 400, y: 250), size: size), in: visible))
+        XCTAssertNil(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: -150, y: 250), size: size), in: visible))
+    }
+
+    func testPetVisualFrameMatchesRenderedImageArea() {
+        let panel = CGRect(x: 100, y: 200, width: 540, height: 390)
+        let pet = PetLayout.petVisualFrame(panelFrame: panel, scale: 1, showsChat: false)
+        XCTAssertEqual(pet.size, CGSize(width: 326, height: 326))
+        XCTAssertEqual(pet.midX, panel.midX + 35)
+        XCTAssertEqual(pet.minY, panel.minY)
+    }
+
+    func testEdgePeekAndExpandedOriginsStayVisible() {
+        let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        let panelSize = CGSize(width: 540, height: 390)
+        let anchor = CGRect(origin: CGPoint(x: -20, y: 700), size: panelSize)
+
+        for edge in PetDockEdge.allCases {
+            let peek = PetLayout.edgePeekOrigin(edge: edge, anchorFrame: anchor, visibleFrame: visible)
+            let peekFrame = CGRect(origin: peek, size: PetLayout.edgePeekSize)
+            XCTAssertTrue(visible.contains(peekFrame))
+
+            let expanded = PetLayout.expandedOrigin(
+                edge: edge,
+                previousOrigin: anchor.origin,
+                panelSize: panelSize,
+                visibleFrame: visible,
+                allowedTopOverflow: 58
+            )
+            XCTAssertGreaterThanOrEqual(expanded.x, visible.minX)
+            XCTAssertGreaterThanOrEqual(expanded.y, visible.minY)
+            XCTAssertLessThanOrEqual(expanded.x + panelSize.width, visible.maxX)
+            XCTAssertLessThanOrEqual(expanded.y + panelSize.height, visible.maxY + 58)
+        }
     }
 
     func testSmartStatePrioritizesPressureAndLowBattery() {
