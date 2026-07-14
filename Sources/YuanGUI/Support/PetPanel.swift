@@ -332,9 +332,10 @@ final class PetPanelController {
             Task { @MainActor [weak self] in self?.lockedMouseEventReceived() }
             return event
         }
-        // A global monitor may return a token even when macOS never delivers
-        // events to this process. Keep a 2 Hz fallback until the first real
-        // event proves that either monitor is working.
+        // A global monitor may return a token and deliver an initial event, but
+        // later stop reporting movement across a click-through panel. Keep this
+        // low-frequency fallback for the whole locked session; event monitors
+        // still provide immediate response when macOS delivers them.
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollLockedPointer() }
         }
@@ -344,8 +345,6 @@ final class PetPanelController {
     }
 
     private func lockedMouseEventReceived() {
-        lockedHoverFallbackTimer?.invalidate()
-        lockedHoverFallbackTimer = nil
         pollLockedPointer()
     }
 
