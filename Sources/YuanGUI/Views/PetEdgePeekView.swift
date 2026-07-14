@@ -125,8 +125,8 @@ struct PetEdgePeekView: View {
         Menu("桌宠大小") {
             Button("迷你（50%）") { store.setPetScale(0.50) }
             Button("轻巧（60%）") { store.setPetScale(0.60) }
-            Button("小巧（70%）") { store.setPetScale(0.70) }
-            Button("默认（85%）") { store.setPetScale(PetLayout.defaultScale) }
+            Button("默认（75%）") { store.setPetScale(PetLayout.defaultScale) }
+            Button("舒展（90%）") { store.setPetScale(0.90) }
             Button("大只（125%）") { store.setPetScale(1.25) }
         }
         Toggle("智能状态动作", isOn: Binding(

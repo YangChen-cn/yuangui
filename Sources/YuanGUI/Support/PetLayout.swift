@@ -10,7 +10,7 @@ enum PetDockEdge: String, CaseIterable {
 enum PetLayout {
     static let minimumScale = 0.50
     static let maximumScale = 1.40
-    static let defaultScale = 0.85
+    static let defaultScale = 0.75
     static let baseWidth: CGFloat = 540
     static let basePetHeight: CGFloat = 390
     static let baseBubbleHeight: CGFloat = 116
@@ -27,6 +27,8 @@ enum PetLayout {
     static let bottomToolbarPanelPadding: CGFloat = 6
     static let bottomToolbarNormalBottomPadding: CGFloat = 6
     static let bottomToolbarChatBottomPadding: CGFloat = 70
+    static let compactSideControlsWidth: CGFloat = 48
+    static let compactSideControlsInset: CGFloat = 8
     static var bottomToolbarPanelSize: CGSize {
         CGSize(
             width: bottomToolbarButtonWidth * CGFloat(bottomToolbarButtonCount)
@@ -38,6 +40,16 @@ enum PetLayout {
     static let edgePeekSize = CGSize(width: 76, height: 76)
     static let edgePeekStatusSize = CGSize(width: 194, height: 76)
     static let edgePeekInset: CGFloat = 3
+
+    static func usesCompactControls(scale: Double) -> Bool {
+        scale < 0.70
+    }
+
+    static func compactControlsGapFromToolbar(panelWidth: CGFloat) -> CGFloat {
+        (panelWidth - bottomToolbarPanelSize.width) / 2
+            - compactSideControlsInset
+            - compactSideControlsWidth
+    }
 
     static func panelSize(scale: Double, showsBubble: Bool, showsChat: Bool = false, showsMaintenance: Bool = false) -> CGSize {
         let scaledWidth = baseWidth * scale

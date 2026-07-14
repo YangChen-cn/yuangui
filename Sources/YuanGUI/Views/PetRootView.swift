@@ -101,16 +101,24 @@ struct PetRootView: View {
 
             if !store.isDropTargeted {
                 if isHovering && !store.interactionLocked {
-                    roleControls
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 12)
-                        .padding(.bottom, chat.isPresented ? 150 : 120)
-                        .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
-                    maintenanceSideControls
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 42)
-                        .padding(.bottom, chat.isPresented ? 64 : 22)
-                        .transition(.scale(scale: 0.82).combined(with: .opacity))
+                    if PetLayout.usesCompactControls(scale: store.petScale), !chat.isPresented {
+                        compactSideControls
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                            .padding(sideControlsOnRight ? .trailing : .leading, PetLayout.compactSideControlsInset)
+                            .padding(.bottom, 8)
+                            .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
+                    } else {
+                        roleControls
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                            .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 12)
+                            .padding(.bottom, chat.isPresented ? 150 : 120)
+                            .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
+                        maintenanceSideControls
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                            .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 42)
+                            .padding(.bottom, chat.isPresented ? 64 : 22)
+                            .transition(.scale(scale: 0.82).combined(with: .opacity))
+                    }
                 }
                 if !store.interactionLocked && isHovering {
                     PetBottomControlsView(store: store, chat: chat)
@@ -171,6 +179,48 @@ struct PetRootView: View {
         .controlPanel()
     }
 
+    private var compactSideControls: some View {
+        VStack(spacing: 4) {
+            Menu {
+                ForEach(PetMode.allCases) { mode in
+                    Button {
+                        store.setMode(mode)
+                    } label: {
+                        if store.mode == mode {
+                            Label(mode.title, systemImage: "checkmark")
+                        } else {
+                            Text(mode.title)
+                        }
+                    }
+                }
+            } label: {
+                Text(store.mode.title)
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .frame(width: 42, height: 24)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 0.7))
+                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: PetLayout.compactSideControlsWidth, height: 26)
+            .help("切换桌宠角色")
+
+            Button { startQuickCleanup() } label: {
+                sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup, size: 30)
+            }
+            .buttonStyle(.plain)
+            .help("空间清理")
+
+            Button { startQuickUninstall() } label: {
+                sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall, size: 30)
+            }
+            .buttonStyle(.plain)
+            .help("软件卸载")
+        }
+        .frame(width: PetLayout.compactSideControlsWidth)
+    }
+
     private var sideControlsPadding: CGFloat {
         if sideControlsOnRight {
             return max(8, 72 * scale - 74)
@@ -186,8 +236,7 @@ struct PetRootView: View {
 
             VStack(spacing: 3) {
                 Button {
-                    chat.dismiss()
-                    Task { await maintenance.startQuickCleanup() }
+                    startQuickCleanup()
                 } label: {
                     sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup)
                 }
@@ -197,8 +246,7 @@ struct PetRootView: View {
                 .offset(x: sideControlsOnRight ? 7 : -7)
 
                 Button {
-                    chat.dismiss()
-                    Task { await maintenance.startQuickUninstall() }
+                    startQuickUninstall()
                 } label: {
                     sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall)
                 }
@@ -223,11 +271,21 @@ struct PetRootView: View {
         }
     }
 
-    private func sideToolIcon(_ systemName: String, tint: Color, selected: Bool) -> some View {
+    private func startQuickCleanup() {
+        chat.dismiss()
+        Task { await maintenance.startQuickCleanup() }
+    }
+
+    private func startQuickUninstall() {
+        chat.dismiss()
+        Task { await maintenance.startQuickUninstall() }
+    }
+
+    private func sideToolIcon(_ systemName: String, tint: Color, selected: Bool, size: CGFloat = 34) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: size * 0.44, weight: .semibold))
             .foregroundStyle(selected ? Color.white : tint)
-            .frame(width: 34, height: 34)
+            .frame(width: size, height: size)
             .background(selected ? tint : Color.white.opacity(0.76), in: Circle())
             .overlay(Circle().stroke(.white.opacity(0.58), lineWidth: 0.8))
             .shadow(color: .black.opacity(0.15), radius: 7, y: 3)
@@ -266,8 +324,8 @@ struct PetRootView: View {
         Menu("桌宠大小") {
             Button("迷你（50%）") { store.setPetScale(0.50) }
             Button("轻巧（60%）") { store.setPetScale(0.60) }
-            Button("小巧（70%）") { store.setPetScale(0.70) }
-            Button("默认（85%）") { store.setPetScale(PetLayout.defaultScale) }
+            Button("默认（75%）") { store.setPetScale(PetLayout.defaultScale) }
+            Button("舒展（90%）") { store.setPetScale(0.90) }
             Button("大只（125%）") { store.setPetScale(1.25) }
             Button("超大（140%）") { store.setPetScale(1.40) }
         }

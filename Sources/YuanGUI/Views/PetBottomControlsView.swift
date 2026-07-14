@@ -66,11 +66,11 @@ struct PetBottomControlsView: View {
             .help(store.interactionLocked ? "解锁桌宠，恢复点击和拖动" : "锁定桌宠：主体允许点击穿透，悬停仍可唤出工具栏")
 
             Menu {
-                Button("迷你（50%）") { store.setPetScale(0.50) }
                 Button("轻巧（60%）") { store.setPetScale(0.60) }
+                Button("默认（75%）") { store.setPetScale(PetLayout.defaultScale) }
+                Button("舒展（90%）") { store.setPetScale(0.90) }
                 Divider()
                 Button("缩小") { store.adjustPetScale(by: -0.1) }
-                Button("恢复默认大小（85%）") { store.setPetScale(PetLayout.defaultScale) }
                 Button("放大") { store.adjustPetScale(by: 0.1) }
             } label: {
                 toolIcon("arrow.up.left.and.arrow.down.right")

@@ -227,6 +227,25 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 70)
     }
 
+    func testDefaultAndCompactControlScales() {
+        XCTAssertEqual(PetLayout.defaultScale, 0.75)
+        XCTAssertTrue(PetLayout.usesCompactControls(scale: 0.50))
+        XCTAssertTrue(PetLayout.usesCompactControls(scale: 0.60))
+        XCTAssertFalse(PetLayout.usesCompactControls(scale: 0.70))
+        XCTAssertFalse(PetLayout.usesCompactControls(scale: PetLayout.defaultScale))
+    }
+
+    func testCompactSideControlsDoNotOverlapBottomToolbar() {
+        for scale in [0.50, 0.60] {
+            let panel = PetLayout.panelSize(scale: scale, showsBubble: true)
+            XCTAssertGreaterThanOrEqual(
+                PetLayout.compactControlsGapFromToolbar(panelWidth: panel.width),
+                8,
+                "Compact controls overlap at \(scale) scale"
+            )
+        }
+    }
+
     func testMaintenanceBubbleHasSpaceForGroupedResults() {
         let normal = PetLayout.panelSize(scale: PetLayout.defaultScale, showsBubble: false)
         let maintenance = PetLayout.panelSize(
