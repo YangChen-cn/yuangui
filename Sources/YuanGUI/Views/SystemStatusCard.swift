@@ -171,11 +171,13 @@ private struct BatteryStatusRow: View {
             Text(detail)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .layoutPriority(1)
             Spacer()
             if let fraction = metrics?.chargeFraction {
                 ProgressView(value: fraction)
                     .tint(fraction < 0.2 ? .red : .mint)
-                    .frame(width: 88)
+                    .frame(width: 58)
             }
         }
     }

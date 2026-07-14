@@ -96,35 +96,50 @@ enum SmartPetState: String, Equatable {
         date: Date,
         calendar: Calendar = .current
     ) -> SmartPetState {
+        resolveAll(system: snapshot, weather: weather, date: date, calendar: calendar).first ?? .normal
+    }
+
+    static func resolveAll(
+        system snapshot: SystemSnapshot,
+        weather: WeatherSnapshot?,
+        date: Date,
+        calendar: Calendar = .current
+    ) -> [SmartPetState] {
+        var states: [SmartPetState] = []
         if let memory = snapshot.memory,
            memory.pressure == .critical || memory.fractionUsed >= 0.90 {
-            return .memoryPressure
+            states.append(.memoryPressure)
         }
         if let battery = snapshot.battery,
            battery.isPresent,
            !battery.isCharging,
            (battery.chargeFraction ?? 1) <= 0.20 {
-            return .lowBattery
+            states.append(.lowBattery)
         }
         if let memory = snapshot.memory,
-           memory.pressure == .warning || memory.fractionUsed >= 0.82 {
-            return .memoryPressure
+           (memory.pressure == .warning || memory.fractionUsed >= 0.82),
+           !states.contains(.memoryPressure) {
+            states.append(.memoryPressure)
         }
         if weather?.isRainy == true {
-            return .rainy
+            states.append(.rainy)
         }
         let hour = calendar.component(.hour, from: date)
         if (0..<8).contains(hour) {
-            return .bedtime
+            states.append(.bedtime)
         }
         if snapshot.battery?.isCharging == true {
-            return .charging
+            states.append(.charging)
         }
-        return .normal
+        return states
     }
 }
 
 extension PetMode {
+    var chatAction: PetAction {
+        PetAction(file: "14-chatting", label: "正在和你聊天")
+    }
+
     func smartAction(for state: SmartPetState) -> PetAction? {
         switch state {
         case .normal: return nil

@@ -50,12 +50,26 @@ struct SettingsView: View {
                         .monospacedDigit()
                         .frame(width: 44, alignment: .trailing)
                 }
+
+                Picker("状态面板风格", selection: Binding(
+                    get: { pet.dashboardStyle },
+                    set: pet.setDashboardStyle
+                )) {
+                    ForEach(DashboardStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
 
             Section("行为") {
                 Toggle("根据系统、天气和时间智能改变动作", isOn: Binding(
                     get: { pet.smartReactionsEnabled },
                     set: pet.setSmartReactionsEnabled
+                ))
+                Toggle("空闲时自动轮播普通动作（每分钟）", isOn: Binding(
+                    get: { pet.idleAnimationEnabled },
+                    set: pet.setIdleAnimationEnabled
                 ))
                 Toggle("在桌宠上方显示迷你状态气泡", isOn: Binding(
                     get: { pet.showsSystemStatus },

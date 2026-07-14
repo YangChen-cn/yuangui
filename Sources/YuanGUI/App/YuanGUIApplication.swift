@@ -23,25 +23,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardController: StatusDashboardPanelController?
-    private var chatController: ChatPanelController?
     private var settingsController: SettingsWindowController?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        panelController = PetPanelController(store: store)
+        panelController = PetPanelController(store: store, chat: chatStore)
         panelController?.show()
         settingsController = SettingsWindowController(
             petStore: store,
             aiSettings: aiSettings,
             showPet: { [weak self] in self?.panelController?.show() }
         )
-        chatController = ChatPanelController(
-            petStore: store,
-            chatStore: chatStore,
-            openSettings: { [weak self] in self?.settingsController?.show() }
-        )
         installMenuBarItem()
+        chatStore.$isPresented
+            .removeDuplicates()
+            .sink { [weak self] presented in self?.store.setChatting(presented) }
+            .store(in: &cancellables)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -81,7 +79,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.publisher(for: .showYuanGUIChat)
             .sink { [weak self] _ in
                 Task { @MainActor in
-                    self?.chatController?.show(relativeTo: self?.panelController?.panel)
+                    guard let self else { return }
+                    self.chatStore.togglePresented()
+                    if self.chatStore.isPresented {
+                        self.panelController?.focusForChatInput()
+                    }
                 }
             }
             .store(in: &cancellables)

@@ -8,8 +8,12 @@ final class PetStore: ObservableObject {
     @Published var actionIndex = 0
     @Published private(set) var showsSystemStatus: Bool
     @Published private(set) var petScale: Double
+    @Published private(set) var dashboardStyle: DashboardStyle
+    @Published private(set) var idleAnimationEnabled: Bool
     @Published private(set) var smartReactionsEnabled: Bool
     @Published private(set) var smartState: SmartPetState = .normal
+    @Published private(set) var activeSmartStates: [SmartPetState] = []
+    @Published private(set) var isChatting = false
     @Published private var isSmartActionSuppressed = false
     @Published var isDropTargeted = false
     @Published private(set) var toast: String?
@@ -20,10 +24,12 @@ final class PetStore: ObservableObject {
     private let defaults: UserDefaults
     private var idleTimer: AnyCancellable?
     private var clockTimer: AnyCancellable?
+    private var smartRotationTimer: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
 
     var currentAction: PetAction {
+        if isChatting { return mode.chatAction }
         if smartReactionsEnabled,
            !isSmartActionSuppressed,
            let action = mode.smartAction(for: smartState) {
@@ -34,7 +40,7 @@ final class PetStore: ObservableObject {
     }
 
     var shouldShowPetBubble: Bool {
-        showsSystemStatus || (smartReactionsEnabled && smartState.showsAutomaticBubble)
+        showsSystemStatus || (smartReactionsEnabled && activeSmartStates.contains(where: \.showsAutomaticBubble))
     }
 
     convenience init() {
@@ -66,26 +72,33 @@ final class PetStore: ObservableObject {
         self.showsSystemStatus = defaults.bool(forKey: "showsSystemStatus")
         let savedScale = defaults.object(forKey: "petScale") as? Double ?? 1
         self.petScale = min(max(savedScale, 0.70), 1.40)
+        self.dashboardStyle = DashboardStyle(rawValue: defaults.integer(forKey: "dashboardStyle")) ?? .softGlass
+        self.idleAnimationEnabled = defaults.object(forKey: "idleAnimationEnabled") == nil
+            ? true
+            : defaults.bool(forKey: "idleAnimationEnabled")
         self.smartReactionsEnabled = defaults.object(forKey: "smartReactionsEnabled") == nil
             ? true
             : defaults.bool(forKey: "smartReactionsEnabled")
 
         Publishers.CombineLatest(monitor.$snapshot, self.weather.$snapshot)
             .map { snapshot, weather in
-                SmartPetState.resolve(system: snapshot, weather: weather, date: Date())
+                SmartPetState.resolveAll(system: snapshot, weather: weather, date: Date())
             }
             .removeDuplicates()
-            .sink { [weak self] state in self?.applySmartState(state) }
+            .sink { [weak self] states in self?.applySmartStates(states) }
             .store(in: &cancellables)
 
         if startServices {
             monitor.start()
-            idleTimer = Timer.publish(every: 12, tolerance: 2, on: .main, in: .common)
+            idleTimer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common)
                 .autoconnect()
                 .sink { [weak self] _ in self?.chooseIdleAction() }
             clockTimer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common)
                 .autoconnect()
                 .sink { [weak self] date in self?.evaluateSmartState(at: date) }
+            smartRotationTimer = Timer.publish(every: 10, tolerance: 1, on: .main, in: .common)
+                .autoconnect()
+                .sink { [weak self] _ in self?.rotateSmartState() }
         }
     }
 
@@ -116,10 +129,23 @@ final class PetStore: ObservableObject {
         setPetScale(petScale + delta)
     }
 
+    func setDashboardStyle(_ style: DashboardStyle) {
+        dashboardStyle = style
+        defaults.set(style.rawValue, forKey: "dashboardStyle")
+    }
+
+    func setIdleAnimationEnabled(_ enabled: Bool) {
+        idleAnimationEnabled = enabled
+        defaults.set(enabled, forKey: "idleAnimationEnabled")
+    }
+
     func setSmartReactionsEnabled(_ enabled: Bool) {
         smartReactionsEnabled = enabled
         defaults.set(enabled, forKey: "smartReactionsEnabled")
-        if !enabled { smartState = .normal }
+        if !enabled {
+            activeSmartStates = []
+            smartState = .normal
+        }
         if enabled { evaluateSmartState() }
     }
 
@@ -133,6 +159,10 @@ final class PetStore: ObservableObject {
 
     func showChat() {
         NotificationCenter.default.post(name: .showYuanGUIChat, object: nil)
+    }
+
+    func setChatting(_ chatting: Bool) {
+        isChatting = chatting
     }
 
     func showSettings() {
@@ -206,19 +236,32 @@ final class PetStore: ObservableObject {
     }
 
     private func chooseIdleAction() {
-        guard !isDropTargeted, smartState == .normal else { return }
+        guard idleAnimationEnabled, !isDropTargeted, !isChatting, activeSmartStates.isEmpty else { return }
         let count = mode.actions.count
         guard count > 1 else { return }
-        var next = Int.random(in: 0..<count)
-        if next == actionIndex { next = (next + 1) % count }
-        actionIndex = next
+        actionIndex = (actionIndex + 1) % count
     }
 
-    private func applySmartState(_ state: SmartPetState) {
+    private func applySmartStates(_ states: [SmartPetState]) {
         guard smartReactionsEnabled else { return }
-        let previous = smartState
-        smartState = state
-        guard state != previous else { return }
+        let previousStates = activeSmartStates
+        activeSmartStates = states
+        if let currentIndex = states.firstIndex(of: smartState) {
+            smartState = states[currentIndex]
+        } else {
+            smartState = states.first ?? .normal
+        }
+        guard states != previousStates, let first = states.first else { return }
+        showSmartToast(first)
+    }
+
+    private func rotateSmartState() {
+        guard smartReactionsEnabled, activeSmartStates.count > 1, !isChatting else { return }
+        let index = activeSmartStates.firstIndex(of: smartState) ?? -1
+        smartState = activeSmartStates[(index + 1) % activeSmartStates.count]
+    }
+
+    private func showSmartToast(_ state: SmartPetState) {
         switch state {
         case .lowBattery:
             let percent = monitor.snapshot.battery?.chargeFraction.map(MetricFormatting.percent) ?? "低电量"
@@ -237,7 +280,7 @@ final class PetStore: ObservableObject {
     }
 
     private func evaluateSmartState(at date: Date = Date()) {
-        applySmartState(SmartPetState.resolve(
+        applySmartStates(SmartPetState.resolveAll(
             system: monitor.snapshot,
             weather: weather.snapshot,
             date: date

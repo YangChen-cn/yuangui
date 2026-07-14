@@ -2,9 +2,10 @@ import Foundation
 
 @MainActor
 final class ChatStore: ObservableObject {
-    @Published private(set) var messages: [ChatMessage] = []
+    @Published private(set) var latestReply: String?
     @Published private(set) var isSending = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var isPresented = false
 
     let settings: AISettingsStore
     private let service: AIChatServicing
@@ -17,13 +18,13 @@ final class ChatStore: ObservableObject {
     func send(_ text: String, petMode: PetMode) async {
         let content = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty, !isSending else { return }
-        messages.append(ChatMessage(role: .user, content: content))
+        latestReply = nil
         errorMessage = nil
         isSending = true
         defer { isSending = false }
         do {
             let reply = try await service.reply(
-                messages: messages,
+                messages: [ChatMessage(role: .user, content: content)],
                 configuration: AIChatConfiguration(
                     baseURL: settings.baseURL,
                     model: settings.model,
@@ -32,14 +33,21 @@ final class ChatStore: ObservableObject {
                 ),
                 petMode: petMode
             )
-            messages.append(ChatMessage(role: .assistant, content: reply))
+            latestReply = reply
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func clear() {
-        messages.removeAll()
+        latestReply = nil
         errorMessage = nil
     }
+
+    func togglePresented() {
+        isPresented.toggle()
+    }
+
+    func present() { isPresented = true }
+    func dismiss() { isPresented = false }
 }

@@ -58,4 +58,30 @@ final class WeatherTests: XCTestCase {
             .bedtime
         )
     }
+
+    func testMultipleSmartStatesAreKeptForRotation() {
+        var snapshot = SystemSnapshot.empty
+        snapshot.battery = BatteryMetrics(
+            isPresent: true,
+            chargeFraction: 0.8,
+            isCharging: true,
+            powerSource: .ac,
+            timeRemainingMinutes: 20
+        )
+        let rainy = WeatherSnapshot(
+            temperature: 18,
+            apparentTemperature: 17,
+            relativeHumidity: 90,
+            windSpeed: 8,
+            weatherCode: 61,
+            isDay: true,
+            updatedAt: Date()
+        )
+        let noon = Calendar.current.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 12))!
+
+        XCTAssertEqual(
+            SmartPetState.resolveAll(system: snapshot, weather: rainy, date: noon),
+            [.rainy, .charging]
+        )
+    }
 }

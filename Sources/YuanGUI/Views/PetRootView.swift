@@ -4,17 +4,30 @@ import UniformTypeIdentifiers
 
 struct PetRootView: View {
     @ObservedObject var store: PetStore
+    @ObservedObject var chat: ChatStore
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
 
     private var scale: CGFloat { store.petScale }
     private var panelSize: CGSize {
-        PetLayout.panelSize(scale: store.petScale, showsBubble: store.shouldShowPetBubble)
+        PetLayout.panelSize(
+            scale: store.petScale,
+            showsBubble: store.shouldShowPetBubble,
+            showsChat: chat.isPresented
+        )
     }
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if store.shouldShowPetBubble {
+            if chat.isPresented {
+                if chat.latestReply != nil || chat.isSending || chat.errorMessage != nil {
+                    PetReplyBubble(chat: chat, pet: store)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 291 * scale + 62)
+                        .zIndex(4)
+                }
+            } else if store.shouldShowPetBubble {
                 PetStatusBubble(store: store)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .frame(maxHeight: .infinity, alignment: .bottom)
@@ -49,6 +62,15 @@ struct PetRootView: View {
                     }
             }
             .frame(maxWidth: .infinity)
+            .padding(.bottom, chat.isPresented ? 58 : 0)
+
+            if chat.isPresented {
+                PetChatComposer(chat: chat, pet: store)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 3)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(5)
+            }
 
             if store.isDropTargeted {
                 dropOverlay
@@ -57,7 +79,7 @@ struct PetRootView: View {
 
             if isHovering && !store.isDropTargeted {
                 controls
-                    .padding(.bottom, 5)
+                    .padding(.bottom, chat.isPresented ? 64 : 5)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -68,6 +90,7 @@ struct PetRootView: View {
         }
         .animation(.spring(response: 0.36, dampingFraction: 0.82), value: store.currentAction.id)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: store.showsSystemStatus)
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: chat.isPresented)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.petScale)
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: store.smartState)
         .animation(.easeOut(duration: 0.18), value: store.toast)
@@ -110,7 +133,7 @@ struct PetRootView: View {
             .controlSize(.small)
             .help("显示系统状态")
             Button { store.showChat() } label: {
-                Image(systemName: "bubble.left.and.bubble.right.fill")
+                Image(systemName: chat.isPresented ? "bubble.left.and.bubble.right" : "bubble.left.and.bubble.right.fill")
             }
             .buttonStyle(.borderedProminent)
             .tint(.pink)
@@ -151,7 +174,7 @@ struct PetRootView: View {
 
     @ViewBuilder
     private var contextMenu: some View {
-        Button("和元圭、VCC 聊天…") { store.showChat() }
+        Button(chat.isPresented ? "收起 AI 对话" : "和元圭、VCC 聊天…") { store.showChat() }
         Button("打开完整监控") { store.showFullDashboard() }
         Button(store.showsSystemStatus ? "隐藏系统状态" : "显示系统状态") {
             store.toggleSystemStatus()

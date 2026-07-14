@@ -4,13 +4,13 @@
   "defaultFrameDurationSeconds": 0.14,
   "sets": {
     "yuangui": [
-      "idle", "wave", "curious", "hop", "read", "system-meter", "yawn", "finger-heart", "low-battery", "memory-pressure", "charging", "rainy", "bedtime"
+      "idle", "wave", "curious", "hop", "read", "system-meter", "yawn", "finger-heart", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting"
     ],
     "vcc": [
-      "loaf-idle", "paw-wave", "curious", "pounce", "belly-roll", "groom", "sleep", "alert", "low-battery", "memory-pressure", "charging", "rainy", "bedtime"
+      "loaf-idle", "paw-wave", "curious", "pounce", "belly-roll", "groom", "sleep", "alert", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting"
     ],
     "duo": [
-      "idle", "pet", "cuddle", "wave", "read", "play", "alert", "hug", "low-battery", "memory-pressure", "charging", "rainy", "bedtime"
+      "idle", "pet", "cuddle", "wave", "read", "play", "alert", "hug", "low-battery", "memory-pressure", "charging", "rainy", "bedtime", "chatting"
     ]
   }
 }

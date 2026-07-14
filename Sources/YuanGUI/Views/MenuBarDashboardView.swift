@@ -59,7 +59,9 @@ struct MenuBarDashboardView: View {
         .padding(12)
         .frame(width: 360, height: dashboardHeight)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(themeGradient, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.35), lineWidth: 0.8))
+        .preferredColorScheme(store.dashboardStyle == .midnight ? .dark : nil)
         .onAppear {
             store.monitor.refresh()
         }
@@ -97,5 +99,20 @@ struct MenuBarDashboardView: View {
         case .rainy: return .blue
         case .bedtime: return .indigo
         }
+    }
+
+    private var themeGradient: LinearGradient {
+        let colors: [Color]
+        switch store.dashboardStyle {
+        case .softGlass:
+            colors = [.white.opacity(0.08), .gray.opacity(0.04)]
+        case .sakura:
+            colors = [.pink.opacity(0.22), .orange.opacity(0.10), .purple.opacity(0.08)]
+        case .mint:
+            colors = [.mint.opacity(0.22), .cyan.opacity(0.12), .blue.opacity(0.08)]
+        case .midnight:
+            colors = [.indigo.opacity(0.62), .purple.opacity(0.40), .black.opacity(0.38)]
+        }
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }

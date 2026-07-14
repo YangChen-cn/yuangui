@@ -20,7 +20,9 @@ struct PetStatusBubble: View {
                     .symbolEffect(.bounce, value: store.smartState)
                 Text(message)
                     .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Spacer(minLength: 0)
                 if let value = weather.snapshot {
                     Label("\(Int(value.temperature.rounded()))°", systemImage: value.condition.symbol)
@@ -40,7 +42,7 @@ struct PetStatusBubble: View {
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
-        .frame(width: min(max(PetLayout.baseWidth * store.petScale - 28, 245), 352))
+        .frame(width: min(max(PetLayout.baseWidth * store.petScale - 28, 332), 390))
         .background(
             LinearGradient(
                 colors: [Color.pink.opacity(0.16), Color.purple.opacity(0.12)],

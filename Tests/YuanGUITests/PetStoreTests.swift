@@ -70,9 +70,13 @@ final class PetStoreTests: XCTestCase {
 
         store.setMode(.vcc)
         store.toggleSystemStatus()
+        store.setDashboardStyle(.midnight)
+        store.setIdleAnimationEnabled(false)
 
         XCTAssertEqual(defaults.integer(forKey: "petMode"), PetMode.vcc.rawValue)
         XCTAssertTrue(defaults.bool(forKey: "showsSystemStatus"))
+        XCTAssertEqual(defaults.integer(forKey: "dashboardStyle"), DashboardStyle.midnight.rawValue)
+        XCTAssertFalse(defaults.bool(forKey: "idleAnimationEnabled"))
     }
 
     func testPetScaleClampsAndPersists() {

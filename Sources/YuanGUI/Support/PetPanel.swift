@@ -11,12 +11,18 @@ final class PetPanel: NSPanel {
 final class PetPanelController {
     let panel: PetPanel
     private let store: PetStore
+    private let chat: ChatStore
     private var observers: [NSObjectProtocol] = []
     private var cancellables = Set<AnyCancellable>()
 
-    init(store: PetStore) {
+    init(store: PetStore, chat: ChatStore) {
         self.store = store
-        let size = PetLayout.panelSize(scale: store.petScale, showsBubble: store.shouldShowPetBubble)
+        self.chat = chat
+        let size = PetLayout.panelSize(
+            scale: store.petScale,
+            showsBubble: store.shouldShowPetBubble,
+            showsChat: chat.isPresented
+        )
         panel = PetPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -32,13 +38,13 @@ final class PetPanelController {
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: PetRootView(store: store))
+        panel.contentView = NSHostingView(rootView: PetRootView(store: store, chat: chat))
 
         restoreOrPlaceWindow()
         installObservers()
-        Publishers.CombineLatest3(store.$showsSystemStatus, store.$smartState, store.$petScale)
+        Publishers.CombineLatest4(store.$showsSystemStatus, store.$smartState, store.$petScale, chat.$isPresented)
             .dropFirst()
-            .sink { [weak self] _, _, _ in self?.resizeToCurrentLayout() }
+            .sink { [weak self] _, _, _, _ in self?.resizeToCurrentLayout() }
             .store(in: &cancellables)
     }
 
@@ -59,6 +65,12 @@ final class PetPanelController {
 
     func toggle() {
         panel.isVisible ? hide() : show()
+    }
+
+    func focusForChatInput() {
+        show()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     private func installObservers() {
@@ -84,7 +96,8 @@ final class PetPanelController {
     private func resizeToCurrentLayout() {
         let targetSize = PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldShowPetBubble
+            showsBubble: store.shouldShowPetBubble,
+            showsChat: chat.isPresented
         )
         guard panel.frame.size != targetSize else { return }
         var frame = panel.frame

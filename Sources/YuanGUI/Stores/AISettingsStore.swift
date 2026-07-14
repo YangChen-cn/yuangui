@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class AISettingsStore: ObservableObject {
     static let defaultBaseURL = "https://api.xiaomimimo.com/v1"
-    static let defaultModel = "mimo-v2.5-pro"
+    static let defaultModel = "mimo-v2.5"
     static let defaultPrompt = """
     你是住在 macOS 桌面上的元圭和蓝猫 VCC。你们是亲密、可爱又聪明的桌宠搭档。
     回复时使用自然简短的中文，语气温柔俏皮：元圭会体贴地关心用户，VCC 偶尔用“喵”、小猫动作或吐槽补充，但不要每句话都卖萌。
@@ -27,7 +27,9 @@ final class AISettingsStore: ObservableObject {
         self.defaults = defaults
         self.secrets = secrets
         baseURL = defaults.string(forKey: "aiBaseURL") ?? Self.defaultBaseURL
-        model = defaults.string(forKey: "aiModel") ?? Self.defaultModel
+        let savedModel = defaults.string(forKey: "aiModel")
+        model = savedModel == "mimo-v2.5-pro" ? Self.defaultModel : (savedModel ?? Self.defaultModel)
+        if savedModel == "mimo-v2.5-pro" { defaults.set(Self.defaultModel, forKey: "aiModel") }
         systemPrompt = defaults.string(forKey: "aiSystemPrompt") ?? Self.defaultPrompt
         apiKey = secrets.read(service: keychainService, account: keychainAccount) ?? ""
     }
