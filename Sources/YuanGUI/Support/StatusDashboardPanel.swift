@@ -8,23 +8,30 @@ private final class StatusDashboardPanel: NSPanel {
 
 @MainActor
 final class StatusDashboardPanelController {
-    private static let preferredWidth: CGFloat = 388
-    private static let preferredHeight: CGFloat = 610
+    private static let preferredWidth: CGFloat = 360
+    private static let preferredHeight: CGFloat = 480
     private static let screenInset: CGFloat = 8
 
     private let store: PetStore
     private let togglePet: () -> Void
     private let showPet: () -> Void
+    private let openSettings: () -> Void
     private let panel: StatusDashboardPanel
     private var hostingView: NSHostingView<MenuBarDashboardView>!
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var anchorRect = NSRect.zero
 
-    init(store: PetStore, togglePet: @escaping () -> Void, showPet: @escaping () -> Void) {
+    init(
+        store: PetStore,
+        togglePet: @escaping () -> Void,
+        showPet: @escaping () -> Void,
+        openSettings: @escaping () -> Void
+    ) {
         self.store = store
         self.togglePet = togglePet
         self.showPet = showPet
+        self.openSettings = openSettings
         panel = StatusDashboardPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.preferredWidth, height: Self.preferredHeight),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -90,6 +97,7 @@ final class StatusDashboardPanelController {
             dashboardHeight: height,
             togglePet: togglePet,
             showPet: showPet,
+            openSettings: openSettings,
             dismiss: { [weak self] in self?.hide() }
         )
         if hostingView == nil {

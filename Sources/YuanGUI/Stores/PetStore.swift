@@ -131,6 +131,14 @@ final class PetStore: ObservableObject {
         NotificationCenter.default.post(name: .showYuanGUIDashboard, object: nil)
     }
 
+    func showChat() {
+        NotificationCenter.default.post(name: .showYuanGUIChat, object: nil)
+    }
+
+    func showSettings() {
+        NotificationCenter.default.post(name: .showYuanGUISettings, object: nil)
+    }
+
     func hideSystemStatus() {
         setSystemStatusVisible(false)
     }

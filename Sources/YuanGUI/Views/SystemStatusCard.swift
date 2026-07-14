@@ -47,7 +47,7 @@ struct SystemStatusCard: View {
             BatteryStatusRow(metrics: snapshot.battery, available: snapshot.isAvailable(.battery))
         }
         .padding(15)
-        .frame(width: 354)
+        .frame(maxWidth: .infinity)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)

@@ -6,6 +6,7 @@ struct MenuBarDashboardView: View {
     let dashboardHeight: CGFloat
     let togglePet: () -> Void
     let showPet: () -> Void
+    let openSettings: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
@@ -28,51 +29,8 @@ struct MenuBarDashboardView: View {
             }
             .padding(.horizontal, 4)
 
-            ScrollView {
-                VStack(spacing: 10) {
-                    WeatherStatusCard(weather: store.weather)
-                    SystemStatusCard(monitor: store.monitor)
-
-                    VStack(spacing: 10) {
-                        Picker("角色", selection: Binding(
-                            get: { store.mode },
-                            set: { store.setMode($0); showPet() }
-                        )) {
-                            ForEach(PetMode.allCases) { mode in Text(mode.title).tag(mode) }
-                        }
-                        .pickerStyle(.segmented)
-
-                        HStack(spacing: 9) {
-                            Label("大小", systemImage: "arrow.up.left.and.arrow.down.right")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            Button { store.adjustPetScale(by: -0.05) } label: { Image(systemName: "minus") }
-                                .buttonStyle(.borderless)
-                            Slider(
-                                value: Binding(get: { store.petScale }, set: store.setPetScale),
-                                in: PetLayout.minimumScale...PetLayout.maximumScale,
-                                step: 0.05
-                            )
-                            Button { store.adjustPetScale(by: 0.05) } label: { Image(systemName: "plus") }
-                                .buttonStyle(.borderless)
-                            Text("\(Int((store.petScale * 100).rounded()))%")
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .frame(width: 38, alignment: .trailing)
-                        }
-
-                        Toggle(isOn: Binding(
-                            get: { store.smartReactionsEnabled },
-                            set: store.setSmartReactionsEnabled
-                        )) {
-                            Label("根据系统、天气和时间智能改变动作", systemImage: "sparkles")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        }
-                    }
-                    .padding(12)
-                    .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
-                }
-                .padding(.vertical, 2)
-            }
-            .scrollIndicators(.visible)
+            WeatherStatusCard(weather: store.weather)
+            SystemStatusCard(monitor: store.monitor)
 
             HStack(spacing: 8) {
                 Button("显示/隐藏桌宠", action: togglePet)
@@ -81,6 +39,10 @@ struct MenuBarDashboardView: View {
                     showPet()
                 }
                 Spacer()
+                Button(action: openSettings) {
+                    Image(systemName: "gearshape.fill")
+                }
+                .help("设置")
                 Menu {
                     Button("打开废纸篓") { store.openTrash() }
                     Button("清空废纸篓…") { store.confirmAndEmptyTrash() }
@@ -94,8 +56,8 @@ struct MenuBarDashboardView: View {
             }
             .controlSize(.small)
         }
-        .padding(14)
-        .frame(width: 388, height: dashboardHeight)
+        .padding(12)
+        .frame(width: 360, height: dashboardHeight)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.35), lineWidth: 0.8))
         .onAppear {

@@ -18,15 +18,29 @@ enum YuanGUIApplication {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = PetStore()
+    private let aiSettings = AISettingsStore()
+    private lazy var chatStore = ChatStore(settings: aiSettings)
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardController: StatusDashboardPanelController?
+    private var chatController: ChatPanelController?
+    private var settingsController: SettingsWindowController?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         panelController = PetPanelController(store: store)
         panelController?.show()
+        settingsController = SettingsWindowController(
+            petStore: store,
+            aiSettings: aiSettings,
+            showPet: { [weak self] in self?.panelController?.show() }
+        )
+        chatController = ChatPanelController(
+            petStore: store,
+            chatStore: chatStore,
+            openSettings: { [weak self] in self?.settingsController?.show() }
+        )
         installMenuBarItem()
     }
 
@@ -48,7 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboardController = StatusDashboardPanelController(
             store: store,
             togglePet: { [weak self] in self?.panelController?.toggle() },
-            showPet: { [weak self] in self?.panelController?.show() }
+            showPet: { [weak self] in self?.panelController?.show() },
+            openSettings: { [weak self] in self?.settingsController?.show() }
         )
 
         store.$smartState
@@ -61,6 +76,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self, let button = self.statusItem?.button else { return }
                     self.dashboardController?.show(relativeTo: button)
                 }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .showYuanGUIChat)
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.chatController?.show(relativeTo: self?.panelController?.panel)
+                }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .showYuanGUISettings)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.settingsController?.show() }
             }
             .store(in: &cancellables)
         self.statusItem = statusItem

@@ -109,6 +109,13 @@ struct PetRootView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .help("显示系统状态")
+            Button { store.showChat() } label: {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.pink)
+            .controlSize(.small)
+            .help("和元圭、VCC 聊天")
             Menu {
                 Button("缩小") { store.adjustPetScale(by: -0.1) }
                 Button("恢复默认大小") { store.setPetScale(1) }
@@ -144,6 +151,7 @@ struct PetRootView: View {
 
     @ViewBuilder
     private var contextMenu: some View {
+        Button("和元圭、VCC 聊天…") { store.showChat() }
         Button("打开完整监控") { store.showFullDashboard() }
         Button(store.showsSystemStatus ? "隐藏系统状态" : "显示系统状态") {
             store.toggleSystemStatus()
@@ -163,6 +171,7 @@ struct PetRootView: View {
             get: { store.smartReactionsEnabled },
             set: { store.setSmartReactionsEnabled($0) }
         ))
+        Button("设置…") { store.showSettings() }
         Divider()
         Button("打开废纸篓") { store.openTrash() }
         Button("清空废纸篓…") { store.confirmAndEmptyTrash() }

@@ -37,7 +37,7 @@ struct WeatherStatusCard: View {
             .help("刷新天气")
         }
         .padding(14)
-        .frame(width: 354)
+        .frame(maxWidth: .infinity)
         .background(
             LinearGradient(
                 colors: [.blue.opacity(0.13), .cyan.opacity(0.08)],
