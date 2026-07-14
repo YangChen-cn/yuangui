@@ -53,7 +53,7 @@ final class PetPanelController {
     private var isDockTransitioning = false
     private var lockedGlobalMouseMonitor: Any?
     private var lockedLocalMouseMonitor: Any?
-    private var lockedHoverFallbackTimer: Timer?
+    private var lockedHoverFallbackTimer: DispatchSourceTimer?
     private var lastLockedPointerInside = false
 
     init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore) {
@@ -130,7 +130,16 @@ final class PetPanelController {
             .store(in: &cancellables)
         store.$interactionLocked
             .removeDuplicates()
-            .sink { [weak self] locked in self?.updateInteractionLock(locked) }
+            .sink { [weak self] locked in
+                // @Published emits from willSet. Defer until PetStore has
+                // committed the new value, otherwise a newly started locked
+                // hover tracker immediately sees the old `false` value and
+                // shuts itself down.
+                Task { @MainActor [weak self] in
+                    guard let self, self.store.interactionLocked == locked else { return }
+                    self.updateInteractionLock(locked)
+                }
+            }
             .store(in: &cancellables)
         store.$lockedControlsVisible
             .removeDuplicates()
@@ -159,7 +168,7 @@ final class PetPanelController {
     deinit {
         if let lockedGlobalMouseMonitor { NSEvent.removeMonitor(lockedGlobalMouseMonitor) }
         if let lockedLocalMouseMonitor { NSEvent.removeMonitor(lockedLocalMouseMonitor) }
-        lockedHoverFallbackTimer?.invalidate()
+        lockedHoverFallbackTimer?.cancel()
         observers.forEach(NotificationCenter.default.removeObserver)
     }
 
@@ -322,26 +331,39 @@ final class PetPanelController {
     }
 
     private func startLockedHoverTracking() {
-        guard lockedGlobalMouseMonitor == nil, lockedLocalMouseMonitor == nil else { return }
         lastLockedPointerInside = false
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
-        lockedGlobalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.lockedMouseEventReceived() }
+        if lockedGlobalMouseMonitor == nil {
+            lockedGlobalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.lockedMouseEventReceived() }
+            }
         }
-        lockedLocalMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            Task { @MainActor [weak self] in self?.lockedMouseEventReceived() }
-            return event
+        if lockedLocalMouseMonitor == nil {
+            lockedLocalMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+                Task { @MainActor [weak self] in self?.lockedMouseEventReceived() }
+                return event
+            }
         }
-        // A global monitor may return a token and deliver an initial event, but
-        // later stop reporting movement across a click-through panel. Keep this
-        // low-frequency fallback for the whole locked session; event monitors
-        // still provide immediate response when macOS delivers them.
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.pollLockedPointer() }
+        // Mouse movement is event-driven during normal operation, so a locked
+        // and stationary pet creates no periodic wakeups. Only fall back to a
+        // low-frequency pointer check if macOS could not create the global
+        // monitor at all.
+        if lockedGlobalMouseMonitor == nil {
+            ensureLockedHoverFallback()
+        } else {
+            lockedHoverFallbackTimer?.cancel()
+            lockedHoverFallbackTimer = nil
         }
-        RunLoop.main.add(timer, forMode: .common)
-        lockedHoverFallbackTimer = timer
         pollLockedPointer()
+    }
+
+    private func ensureLockedHoverFallback() {
+        guard lockedHoverFallbackTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .seconds(1), leeway: .milliseconds(250))
+        timer.setEventHandler { [weak self] in self?.pollLockedPointer() }
+        lockedHoverFallbackTimer = timer
+        timer.resume()
     }
 
     private func lockedMouseEventReceived() {
@@ -353,22 +375,27 @@ final class PetPanelController {
         if let lockedLocalMouseMonitor { NSEvent.removeMonitor(lockedLocalMouseMonitor) }
         lockedGlobalMouseMonitor = nil
         lockedLocalMouseMonitor = nil
-        lockedHoverFallbackTimer?.invalidate()
+        lockedHoverFallbackTimer?.cancel()
         lockedHoverFallbackTimer = nil
     }
 
     private func pollLockedPointer() {
-        guard store.interactionLocked, panel.isVisible, dockedEdge == nil else {
+        guard store.interactionLocked else {
             stopLockedHoverTracking()
             return
         }
+        guard panel.isVisible, dockedEdge == nil else { return }
         let location = NSEvent.mouseLocation
         let inside = isPointerInsideLockedRegion(at: location)
 
         if inside {
-            // The pet panel ignores mouse events while locked, so poll the global
-            // pointer and keep the original toolbar alive for the whole hover.
             store.revealLockedControls()
+            // The published flag and the auxiliary window can become out of
+            // sync after a resize or a transient visibility change. Repair the
+            // actual window as well, even when the flag was already true.
+            if !lastLockedPointerInside || !lockedToolbarPanel.isVisible {
+                updateLockedToolbarVisibility(visible: true)
+            }
         } else if !inside, lastLockedPointerInside {
             store.scheduleLockedControlsHide(after: 3)
         }
@@ -410,6 +437,7 @@ final class PetPanelController {
 
     private func dock(to edge: PetDockEdge, on screen: NSScreen) {
         guard dockedEdge == nil else { return }
+        stopLockedHoverTracking()
         let targetExpandedOrigin = PetLayout.expandedOrigin(
             edge: edge,
             previousOrigin: panel.frame.origin,
