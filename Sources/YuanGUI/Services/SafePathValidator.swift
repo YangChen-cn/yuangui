@@ -1,5 +1,17 @@
 import Foundation
 
+enum BundleIdentifierValidator {
+    static func isValid(_ value: String) -> Bool {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count >= 3 else { return false }
+        return parts.allSatisfy { part in
+            !part.isEmpty && part.allSatisfy {
+                $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
+            }
+        }
+    }
+}
+
 enum SafePathError: LocalizedError, Equatable {
     case empty
     case relative
@@ -64,6 +76,10 @@ struct SafePathValidator {
             library.appendingPathComponent("Preferences"),
             library.appendingPathComponent("Saved Application State"),
             library.appendingPathComponent("WebKit"),
+            library.appendingPathComponent("HTTPStorages"),
+            library.appendingPathComponent("Containers"),
+            library.appendingPathComponent("Application Scripts"),
+            library.appendingPathComponent("LaunchAgents"),
             library.appendingPathComponent("Developer/Xcode/DerivedData"),
             fm.temporaryDirectory
         ]

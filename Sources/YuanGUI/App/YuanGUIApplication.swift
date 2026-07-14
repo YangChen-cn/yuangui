@@ -34,14 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore)
         panelController?.show()
-        settingsController = SettingsWindowController(
-            petStore: store,
-            aiSettings: aiSettings,
-            loginItem: loginItemStore,
-            showPet: { [weak self] in self?.panelController?.show() }
-        )
-        chatHistoryController = ChatHistoryWindowController(chat: chatStore)
-        maintenanceController = MaintenanceWindowController(store: maintenanceStore)
         installMenuBarItem()
         chatStore.$isPresented
             .removeDuplicates()
@@ -67,18 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.action = #selector(toggleDashboard)
         statusItem.button?.sendAction(on: [.leftMouseUp])
 
-        dashboardController = StatusDashboardPanelController(
-            store: store,
-            togglePet: { [weak self] in self?.panelController?.toggle() },
-            showPet: { [weak self] in self?.panelController?.show() },
-            openSettings: { [weak self] in self?.settingsController?.show() }
-        )
-
         NotificationCenter.default.publisher(for: .showYuanGUIDashboard)
             .sink { [weak self] _ in
                 Task { @MainActor in
                     guard let self, let button = self.statusItem?.button else { return }
-                    self.dashboardController?.show(relativeTo: button)
+                    self.dashboard().show(relativeTo: button)
                 }
             }
             .store(in: &cancellables)
@@ -92,19 +77,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .showYuanGUISettings)
             .sink { [weak self] _ in
-                Task { @MainActor in self?.settingsController?.show() }
+                Task { @MainActor in self?.showSettings() }
             }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .showYuanGUIChatHistory)
             .sink { [weak self] _ in
-                Task { @MainActor in self?.chatHistoryController?.show() }
+                Task { @MainActor in self?.showChatHistory() }
             }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .showYuanGUIMaintenance)
             .sink { [weak self] notification in
                 Task { @MainActor in
                     self?.maintenanceStore.selectTab(notification.userInfo?["tab"] as? Int ?? 0)
-                    self?.maintenanceController?.show()
+                    self?.showMaintenance()
                 }
             }
             .store(in: &cancellables)
@@ -113,7 +98,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleDashboard() {
         guard let button = statusItem?.button else { return }
-        dashboardController?.toggle(relativeTo: button)
+        dashboard().toggle(relativeTo: button)
+    }
+
+    private func dashboard() -> StatusDashboardPanelController {
+        if let dashboardController { return dashboardController }
+        let controller = StatusDashboardPanelController(
+            store: store,
+            togglePet: { [weak self] in self?.panelController?.toggle() },
+            showPet: { [weak self] in self?.panelController?.show() },
+            openSettings: { [weak self] in self?.showSettings() }
+        )
+        dashboardController = controller
+        return controller
+    }
+
+    private func showSettings() {
+        if settingsController == nil {
+            settingsController = SettingsWindowController(
+                petStore: store,
+                aiSettings: aiSettings,
+                loginItem: loginItemStore,
+                showPet: { [weak self] in self?.panelController?.show() }
+            )
+        }
+        settingsController?.show()
+    }
+
+    private func showChatHistory() {
+        if chatHistoryController == nil {
+            chatHistoryController = ChatHistoryWindowController(chat: chatStore)
+        }
+        chatHistoryController?.show()
+    }
+
+    private func showMaintenance() {
+        if maintenanceController == nil {
+            maintenanceController = MaintenanceWindowController(store: maintenanceStore)
+        }
+        maintenanceController?.show()
     }
 
 }

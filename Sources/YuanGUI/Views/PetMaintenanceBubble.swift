@@ -95,27 +95,28 @@ struct PetMaintenanceBubble: View {
             } else {
                 ScrollView {
                     VStack(spacing: 5) {
-                        ForEach(Array(store.applications.prefix(5))) { app in
+                        ForEach(Array(store.visibleApplications.prefix(5))) { app in
                             Toggle(isOn: Binding(
                                 get: { store.selectedApplicationIDs.contains(app.id) },
-                                set: { value in
-                                    if value { store.selectedApplicationIDs.insert(app.id) }
-                                    else { store.selectedApplicationIDs.remove(app.id) }
-                                }
+                                set: { store.setApplicationSelected(app, selected: $0) }
                             )) {
                                 HStack {
                                     Text(app.name).lineLimit(1)
+                                    if app.removalBlocked {
+                                        Image(systemName: "lock.fill").foregroundStyle(.orange)
+                                    }
                                     Spacer()
-                                    Text(size(app.byteCount)).foregroundStyle(.secondary)
+                                    Text(size(app.reclaimableByteCount)).foregroundStyle(.secondary)
                                 }
                                 .font(.system(size: 10.5, weight: .medium, design: .rounded))
                             }
                             .toggleStyle(.checkbox)
+                            .disabled(app.removalBlocked)
                         }
                     }
                 }
                 .frame(maxHeight: 92)
-                Text("选中的应用和可确认残留会移入废纸篓，可恢复。")
+                Text("已选约 \(size(store.selectedUninstallBytes))；应用和所选用户数据会移入废纸篓，可恢复。")
                     .font(.system(size: 10, design: .rounded)).foregroundStyle(.secondary)
                 HStack {
                     Button("取消", action: store.dismissQuick)

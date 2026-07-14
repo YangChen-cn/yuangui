@@ -61,6 +61,7 @@ final class StatusDashboardPanelController {
     func hide() {
         panel.orderOut(nil)
         removeClickMonitors()
+        store.monitor.setDashboardVisible(false)
     }
 
     func show(relativeTo button: NSStatusBarButton) {
@@ -85,6 +86,7 @@ final class StatusDashboardPanelController {
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
 
         store.monitor.refresh()
+        store.monitor.setDashboardVisible(true)
         store.weather.start()
         panel.orderFrontRegardless()
         panel.makeKey()

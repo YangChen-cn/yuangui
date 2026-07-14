@@ -51,7 +51,9 @@ final class PetPanelController {
     private var dockedEdge: PetDockEdge?
     private var lastExpandedOrigin = CGPoint.zero
     private var isDockTransitioning = false
-    private var lockedHoverTimer: Timer?
+    private var lockedGlobalMouseMonitor: Any?
+    private var lockedLocalMouseMonitor: Any?
+    private var lockedHoverFallbackTimer: Timer?
     private var lastLockedPointerInside = false
 
     init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore) {
@@ -155,7 +157,9 @@ final class PetPanelController {
     }
 
     deinit {
-        lockedHoverTimer?.invalidate()
+        if let lockedGlobalMouseMonitor { NSEvent.removeMonitor(lockedGlobalMouseMonitor) }
+        if let lockedLocalMouseMonitor { NSEvent.removeMonitor(lockedLocalMouseMonitor) }
+        lockedHoverFallbackTimer?.invalidate()
         observers.forEach(NotificationCenter.default.removeObserver)
     }
 
@@ -318,18 +322,40 @@ final class PetPanelController {
     }
 
     private func startLockedHoverTracking() {
-        guard lockedHoverTimer == nil else { return }
+        guard lockedGlobalMouseMonitor == nil, lockedLocalMouseMonitor == nil else { return }
         lastLockedPointerInside = false
-        let timer = Timer(timeInterval: 0.10, repeats: true) { [weak self] _ in
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
+        lockedGlobalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.lockedMouseEventReceived() }
+        }
+        lockedLocalMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            Task { @MainActor [weak self] in self?.lockedMouseEventReceived() }
+            return event
+        }
+        // A global monitor may return a token even when macOS never delivers
+        // events to this process. Keep a 2 Hz fallback until the first real
+        // event proves that either monitor is working.
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollLockedPointer() }
         }
         RunLoop.main.add(timer, forMode: .common)
-        lockedHoverTimer = timer
+        lockedHoverFallbackTimer = timer
+        pollLockedPointer()
+    }
+
+    private func lockedMouseEventReceived() {
+        lockedHoverFallbackTimer?.invalidate()
+        lockedHoverFallbackTimer = nil
+        pollLockedPointer()
     }
 
     private func stopLockedHoverTracking() {
-        lockedHoverTimer?.invalidate()
-        lockedHoverTimer = nil
+        if let lockedGlobalMouseMonitor { NSEvent.removeMonitor(lockedGlobalMouseMonitor) }
+        if let lockedLocalMouseMonitor { NSEvent.removeMonitor(lockedLocalMouseMonitor) }
+        lockedGlobalMouseMonitor = nil
+        lockedLocalMouseMonitor = nil
+        lockedHoverFallbackTimer?.invalidate()
+        lockedHoverFallbackTimer = nil
     }
 
     private func pollLockedPointer() {

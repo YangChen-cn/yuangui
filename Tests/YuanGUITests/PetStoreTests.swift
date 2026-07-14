@@ -149,8 +149,9 @@ final class PetStoreTests: XCTestCase {
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
+        let monitor = SystemMonitor(coordinator: MetricsCoordinator(readers: []))
         let store = PetStore(
-            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            monitor: monitor,
             trashHandler: fake,
             defaults: defaults,
             startServices: false
@@ -161,8 +162,11 @@ final class PetStoreTests: XCTestCase {
         store.setBedtimeReminderEnabled(true)
 
         XCTAssertTrue(store.shouldShowPetBubble)
+        monitor.setPetVisible(true)
+        XCTAssertEqual(monitor.profile, .live, "自动出现的监控栏也必须声明实时 CPU 采样需求")
         store.toggleSystemStatus()
         XCTAssertFalse(store.shouldShowPetBubble)
+        XCTAssertEqual(monitor.profile, .companion)
         XCTAssertTrue(store.automaticBubbleSuppressed)
         XCTAssertEqual(defaults.integer(forKey: "bedtimeStartMinutes"), hour * 60)
 

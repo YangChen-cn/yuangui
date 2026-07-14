@@ -38,8 +38,7 @@ final class PetStore: ObservableObject {
     private let trashHandler: TrashHandling
     private let defaults: UserDefaults
     private let taskAnimationsEnabled: Bool
-    private var idleTimer: AnyCancellable?
-    private var clockTimer: AnyCancellable?
+    private var minuteTimer: AnyCancellable?
     private var smartRotationTimer: AnyCancellable?
     private var lockedControlsHideTask: Task<Void, Never>?
     private var ambientChatterTask: Task<Void, Never>?
@@ -133,16 +132,14 @@ final class PetStore: ObservableObject {
 
         if startServices {
             monitor.start()
+            syncMiniMonitoringDemand()
             self.weather.start()
-            idleTimer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common)
+            minuteTimer = Timer.publish(every: 60, tolerance: 8, on: .main, in: .common)
                 .autoconnect()
-                .sink { [weak self] _ in self?.chooseIdleAction() }
-            clockTimer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common)
-                .autoconnect()
-                .sink { [weak self] date in self?.evaluateSmartState(at: date) }
-            smartRotationTimer = Timer.publish(every: 10, tolerance: 1, on: .main, in: .common)
-                .autoconnect()
-                .sink { [weak self] _ in self?.rotateSmartState() }
+                .sink { [weak self] date in
+                    self?.chooseIdleAction()
+                    self?.evaluateSmartState(at: date)
+                }
             scheduleNextAmbientChatter(initial: true)
         }
         if interactionLocked {
@@ -194,6 +191,8 @@ final class PetStore: ObservableObject {
         if !enabled {
             activeSmartStates = []
             smartState = .normal
+            smartRotationTimer = nil
+            syncMiniMonitoringDemand()
         }
         if enabled { evaluateSmartState() }
     }
@@ -372,6 +371,7 @@ final class PetStore: ObservableObject {
     func setSystemStatusVisible(_ visible: Bool) {
         if visible { automaticBubbleSuppressed = false }
         showsSystemStatus = visible
+        syncMiniMonitoringDemand()
         defaults.set(visible, forKey: "showsSystemStatus")
         if visible {
             monitor.refresh()
@@ -397,6 +397,8 @@ final class PetStore: ObservableObject {
         } else {
             smartState = states.first ?? .normal
         }
+        syncMiniMonitoringDemand()
+        updateSmartRotationTimer()
         guard states != previousStates, let first = states.first else { return }
         showSmartMessage(first)
     }
@@ -405,6 +407,21 @@ final class PetStore: ObservableObject {
         guard smartReactionsEnabled, activeSmartStates.count > 1, !isChatting else { return }
         let index = activeSmartStates.firstIndex(of: smartState) ?? -1
         smartState = activeSmartStates[(index + 1) % activeSmartStates.count]
+    }
+
+    private func updateSmartRotationTimer() {
+        let shouldRun = smartReactionsEnabled && activeSmartStates.count > 1
+        if shouldRun, smartRotationTimer == nil {
+            smartRotationTimer = Timer.publish(every: 30, tolerance: 5, on: .main, in: .common)
+                .autoconnect()
+                .sink { [weak self] _ in self?.rotateSmartState() }
+        } else if !shouldRun {
+            smartRotationTimer = nil
+        }
+    }
+
+    private func syncMiniMonitoringDemand() {
+        monitor.setMiniStatusVisible(shouldShowPetBubble)
     }
 
     private func showSmartMessage(_ state: SmartPetState) {

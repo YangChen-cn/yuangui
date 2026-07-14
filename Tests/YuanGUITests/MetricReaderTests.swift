@@ -2,6 +2,57 @@ import XCTest
 @testable import YuanGUI
 
 final class MetricReaderTests: XCTestCase {
+    func testMonitoringProfilesOnlyScheduleNeededMetrics() {
+        for identifier in MetricIdentifier.allCases {
+            XCTAssertNil(MonitoringProfile.hidden.interval(for: identifier))
+        }
+        XCTAssertEqual(MonitoringProfile.companion.interval(for: .memory), 20)
+        XCTAssertEqual(MonitoringProfile.companion.interval(for: .battery), 300)
+        XCTAssertNil(MonitoringProfile.companion.interval(for: .cpu))
+        XCTAssertNil(MonitoringProfile.companion.interval(for: .network))
+        XCTAssertNil(MonitoringProfile.companion.interval(for: .disk))
+        XCTAssertEqual(MonitoringProfile.live.interval(for: .cpu), 2)
+        XCTAssertEqual(MonitoringProfile.live.interval(for: .memory), 2)
+        XCTAssertEqual(MonitoringProfile.live.interval(for: .network), 2)
+    }
+
+    @MainActor
+    func testSystemMonitorCombinesPetMiniAndDashboardDemand() {
+        let monitor = SystemMonitor(coordinator: MetricsCoordinator(readers: []))
+        XCTAssertEqual(monitor.profile, .hidden)
+        monitor.setPetVisible(true)
+        XCTAssertEqual(monitor.profile, .companion)
+        monitor.setMiniStatusVisible(true)
+        XCTAssertEqual(monitor.profile, .live)
+        monitor.setPetVisible(false)
+        XCTAssertEqual(monitor.profile, .hidden)
+        monitor.setDashboardVisible(true)
+        XCTAssertEqual(monitor.profile, .live)
+        monitor.setDashboardVisible(false)
+        XCTAssertEqual(monitor.profile, .hidden)
+    }
+
+    func testCoordinatorPausesHiddenAndRefreshesOnProfileChange() async throws {
+        let memory = CountingMetricReader(identifier: .memory)
+        let cpu = CountingMetricReader(identifier: .cpu)
+        let coordinator = MetricsCoordinator(readers: [memory, cpu])
+        coordinator.start { _ in }
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(memory.readCount, 0)
+        XCTAssertEqual(cpu.readCount, 0)
+
+        coordinator.setProfile(.companion)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(memory.readCount, 1)
+        XCTAssertEqual(cpu.readCount, 0)
+
+        coordinator.setProfile(.live)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(memory.readCount, 2)
+        XCTAssertEqual(cpu.readCount, 1)
+        coordinator.stop()
+    }
+
     func testCPUUsesTickDeltas() {
         let previous = CPUTickSample(user: 100, system: 40, idle: 300, nice: 10)
         let current = CPUTickSample(user: 150, system: 60, idle: 330, nice: 10)
@@ -78,5 +129,39 @@ final class MetricReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.history.cpu.count, MetricHistory.limit)
         XCTAssertEqual(snapshot.history.memory.count, MetricHistory.limit)
         XCTAssertEqual(snapshot.history.cpu.last ?? -1, 0.74, accuracy: 0.0001)
+    }
+}
+
+private final class CountingMetricReader: MetricReader {
+    let identifier: MetricIdentifier
+    let interval: TimeInterval = 1
+    private let lock = NSLock()
+    private var count = 0
+
+    init(identifier: MetricIdentifier) {
+        self.identifier = identifier
+    }
+
+    var readCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func read(previous: SystemSnapshot) throws -> MetricUpdate {
+        lock.lock()
+        count += 1
+        lock.unlock()
+        switch identifier {
+        case .cpu:
+            return .cpu(CPUMetrics(total: 0, user: 0, system: 0))
+        case .memory:
+            return .memory(MemoryMetrics(
+                total: 1, used: 0, free: 1, active: 0, inactive: 0, wired: 0,
+                compressed: 0, cached: 0, swapUsed: 0, swapTotal: 0, pressure: .normal
+            ))
+        default:
+            throw MetricReaderError.unavailable("测试未实现")
+        }
     }
 }
