@@ -60,7 +60,7 @@ final class PetPanelController {
         self.maintenance = maintenance
         let size = PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldShowPetBubble,
+            showsBubble: store.shouldReservePetBubbleSpace,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -122,7 +122,9 @@ final class PetPanelController {
         installObservers()
         Publishers.CombineLatest4(store.$showsSystemStatus, store.$smartState, store.$petScale, chat.$isPresented)
             .dropFirst()
-            .sink { [weak self] _, _, _, _ in self?.resizeToCurrentLayout() }
+            .sink { [weak self] _, _, _, _ in
+                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+            }
             .store(in: &cancellables)
         store.$interactionLocked
             .removeDuplicates()
@@ -134,11 +136,21 @@ final class PetPanelController {
             .store(in: &cancellables)
         maintenance.$quickMode
             .removeDuplicates()
-            .sink { [weak self] _ in self?.resizeToCurrentLayout() }
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+            }
             .store(in: &cancellables)
         store.$automaticBubbleSuppressed
             .removeDuplicates()
-            .sink { [weak self] _ in self?.resizeToCurrentLayout() }
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+            }
+            .store(in: &cancellables)
+        store.$ambientMessage
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+            }
             .store(in: &cancellables)
     }
 
@@ -213,7 +225,7 @@ final class PetPanelController {
     private func resizeToCurrentLayout() {
         let targetSize = PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldShowPetBubble,
+            showsBubble: store.shouldReservePetBubbleSpace,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -347,7 +359,7 @@ final class PetPanelController {
     private func updateAllowedTopOverflow() {
         panel.allowedTopOverflow = PetLayout.allowedTopOverflow(
             scale: store.petScale,
-            showsBubble: store.shouldShowPetBubble,
+            showsBubble: store.shouldReservePetBubbleSpace,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )

@@ -55,7 +55,7 @@ struct PetStatusBubble: View {
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.82), lineWidth: 0.9))
         .shadow(color: stateColor.opacity(0.18), radius: 14, y: 6)
         .overlay(alignment: .bottom) {
-            BubbleTail()
+            PetBubbleTail()
                 .fill(.regularMaterial)
                 .frame(width: 20, height: 10)
                 .offset(y: 8)
@@ -77,6 +77,7 @@ struct PetStatusBubble: View {
 
     private var message: String {
         if let taskMessage = store.taskMessage { return taskMessage }
+        if let ambientMessage = store.ambientMessage { return ambientMessage }
         return PetStatusMessageResolver.message(
             snapshot: monitor.snapshot,
             smartState: store.smartState
@@ -118,7 +119,7 @@ struct PetStatusBubble: View {
     }
 }
 
-private struct BubbleTail: Shape {
+struct PetBubbleTail: Shape {
     func path(in rect: CGRect) -> Path {
         Path { path in
             path.move(to: CGPoint(x: rect.minX, y: rect.minY))

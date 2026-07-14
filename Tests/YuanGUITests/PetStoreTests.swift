@@ -206,7 +206,7 @@ final class PetStoreTests: XCTestCase {
 
     func testBottomToolbarPanelSizeMatchesItsFourButtons() {
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 155)
-        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 40)
+        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 70)
     }
 
     func testEdgeDockingDetectsEveryScreenSideAndIgnoresCenter() {
@@ -314,5 +314,55 @@ final class PetStoreTests: XCTestCase {
         let cpuMessage = PetStatusMessageResolver.message(snapshot: snapshot, smartState: .normal)
         XCTAssertTrue(cpuMessage.contains("CPU 现在有点忙"))
         XCTAssertTrue(cpuMessage.contains("91%"))
+    }
+
+    func testAmbientChatterUsesWeatherAndChargingEstimate() {
+        var snapshot = SystemSnapshot.empty
+        snapshot.battery = BatteryMetrics(
+            isPresent: true,
+            chargeFraction: 0.54,
+            isCharging: true,
+            powerSource: .ac,
+            timeRemainingMinutes: 90
+        )
+        let weather = WeatherSnapshot(
+            temperature: 32,
+            apparentTemperature: 36,
+            relativeHumidity: 68,
+            windSpeed: 14,
+            weatherCode: 3,
+            isDay: true,
+            updatedAt: Date()
+        )
+
+        let messages = PetAmbientChatter.candidates(mode: .duo, system: snapshot, weather: weather)
+
+        XCTAssertTrue(messages.contains { $0.contains("32°") && $0.contains("阴天") && $0.contains("14 km/h") })
+        XCTAssertTrue(messages.contains { $0.contains("1小时30分钟") && $0.contains("充电") })
+        XCTAssertTrue(messages.contains { $0.contains("元圭") && $0.contains("VCC") })
+    }
+
+    func testAmbientMessageReservesBubbleSpaceWithoutChangingMonitorPreference() {
+        let suite = "PetStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+        store.setBedtimeReminderEnabled(false)
+        store.setSmartReactionsEnabled(false)
+
+        XCTAssertFalse(store.shouldShowPetBubble)
+        store.showAmbientMessage("元圭和 VCC 来陪你啦～", duration: 60)
+        XCTAssertEqual(store.ambientMessage, "元圭和 VCC 来陪你啦～")
+        XCTAssertTrue(store.shouldReservePetBubbleSpace)
+        XCTAssertFalse(store.showsSystemStatus)
+
+        store.dismissAmbientMessage()
+        XCTAssertNil(store.ambientMessage)
+        XCTAssertFalse(store.shouldReservePetBubbleSpace)
     }
 }

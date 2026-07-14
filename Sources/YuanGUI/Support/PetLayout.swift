@@ -30,7 +30,7 @@ enum PetLayout {
             width: bottomToolbarButtonWidth * CGFloat(bottomToolbarButtonCount)
                 + bottomToolbarSpacing * CGFloat(bottomToolbarButtonCount - 1)
                 + bottomToolbarPanelPadding * 2,
-            height: 28 + bottomToolbarPanelPadding * 2
+            height: 70
         )
     }
     static let edgePeekSize = CGSize(width: 76, height: 76)

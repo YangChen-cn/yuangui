@@ -74,10 +74,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings: { [weak self] in self?.settingsController?.show() }
         )
 
-        store.$smartState
-            .removeDuplicates()
-            .sink { [weak self] state in self?.updateStatusIcon(for: state) }
-            .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .showYuanGUIDashboard)
             .sink { [weak self] _ in
                 Task { @MainActor in
@@ -120,19 +116,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboardController?.toggle(relativeTo: button)
     }
 
-    private func updateStatusIcon(for state: SmartPetState) {
-        let symbol: String
-        switch state {
-        case .normal: symbol = "pawprint.fill"
-        case .lowBattery: symbol = "battery.25percent"
-        case .memoryPressure: symbol = "memorychip.fill"
-        case .charging: symbol = "bolt.heart.fill"
-        case .rainy: symbol = "umbrella.fill"
-        case .bedtime: symbol = "moon.zzz.fill"
-        }
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: "元圭与 VCC：\(state.rawValue)"
-        )
-    }
 }

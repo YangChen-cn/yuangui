@@ -29,6 +29,7 @@ final class PetStore: ObservableObject {
     @Published private(set) var automaticBubbleSuppressed = false
     @Published var isDropTargeted = false
     @Published private(set) var toast: String?
+    @Published private(set) var ambientMessage: String?
     @Published private(set) var taskState: TaskState = .idle
     @Published private(set) var taskMessage: String?
 
@@ -41,8 +42,11 @@ final class PetStore: ObservableObject {
     private var clockTimer: AnyCancellable?
     private var smartRotationTimer: AnyCancellable?
     private var lockedControlsHideTask: Task<Void, Never>?
+    private var ambientChatterTask: Task<Void, Never>?
+    private var ambientMessageHideTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
+    private var lastAmbientMessage: String?
 
     var currentAction: PetAction {
         switch taskState {
@@ -63,6 +67,10 @@ final class PetStore: ObservableObject {
 
     var shouldShowPetBubble: Bool {
         showsSystemStatus || (!automaticBubbleSuppressed && smartReactionsEnabled && activeSmartStates.contains(where: \.showsAutomaticBubble))
+    }
+
+    var shouldReservePetBubbleSpace: Bool {
+        shouldShowPetBubble || ambientMessage != nil
     }
 
     convenience init() {
@@ -125,6 +133,7 @@ final class PetStore: ObservableObject {
 
         if startServices {
             monitor.start()
+            self.weather.start()
             idleTimer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common)
                 .autoconnect()
                 .sink { [weak self] _ in self?.chooseIdleAction() }
@@ -134,6 +143,7 @@ final class PetStore: ObservableObject {
             smartRotationTimer = Timer.publish(every: 10, tolerance: 1, on: .main, in: .common)
                 .autoconnect()
                 .sink { [weak self] _ in self?.rotateSmartState() }
+            scheduleNextAmbientChatter(initial: true)
         }
         if interactionLocked {
             scheduleLockedControlsHide(after: 3)
@@ -242,6 +252,7 @@ final class PetStore: ObservableObject {
 
     func setChatting(_ chatting: Bool) {
         isChatting = chatting
+        if chatting { dismissAmbientMessage() }
     }
 
     func showSettings() {
@@ -298,6 +309,7 @@ final class PetStore: ObservableObject {
     }
 
     func recycleItems(_ urls: [URL]) async {
+        dismissAmbientMessage()
         taskState = .recycling(1)
         taskMessage = "啊呜——VCC 和元圭接住啦！"
         do {
@@ -347,6 +359,7 @@ final class PetStore: ObservableObject {
     }
 
     func showToast(_ message: String) {
+        dismissAmbientMessage()
         let token = UUID()
         toastToken = token
         toast = message
@@ -385,7 +398,7 @@ final class PetStore: ObservableObject {
             smartState = states.first ?? .normal
         }
         guard states != previousStates, let first = states.first else { return }
-        showSmartToast(first)
+        showSmartMessage(first)
     }
 
     private func rotateSmartState() {
@@ -394,22 +407,89 @@ final class PetStore: ObservableObject {
         smartState = activeSmartStates[(index + 1) % activeSmartStates.count]
     }
 
-    private func showSmartToast(_ state: SmartPetState) {
+    private func showSmartMessage(_ state: SmartPetState) {
         switch state {
         case .lowBattery:
             let percent = monitor.snapshot.battery?.chargeFraction.map(MetricFormatting.percent) ?? "低电量"
-            showToast("只剩 \(percent)，快接上电源吧！")
+            showAmbientMessage("master，Mac 只剩 \(percent) 电量啦，VCC 正叼着充电线跑来～")
         case .memoryPressure:
-            showToast("内存有点挤，我来提醒你啦")
+            showAmbientMessage("master，现在内存有点挤，元圭陪你看看要不要休息一下应用吧～")
         case .charging:
-            showToast("充电中，正在补充能量～")
+            if let minutes = monitor.snapshot.battery?.timeRemainingMinutes, minutes > 0 {
+                showAmbientMessage("正在充电，再过约 \(ambientDurationText(minutes))就满啦～")
+            } else {
+                showAmbientMessage("充电中，元圭和 VCC 正在陪 Mac 补充能量～")
+            }
         case .rainy:
-            showToast("外面下雨啦，出门记得带伞～")
+            showAmbientMessage("外面下雨啦，master 出门记得带伞，VCC 不可以踩水坑哦～")
         case .bedtime:
-            showToast("夜深了，该休息啦，晚安～")
+            showAmbientMessage("夜深了，master 该休息啦，元圭和 VCC 陪你说晚安～")
         case .normal:
             break
         }
+    }
+
+    func dismissAmbientMessage() {
+        ambientMessageHideTask?.cancel()
+        ambientMessageHideTask = nil
+        ambientMessage = nil
+    }
+
+    func showAmbientMessage(_ message: String, duration: TimeInterval = 8) {
+        guard taskState == .idle, !isDropTargeted, !isChatting else { return }
+        let value = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        toastToken = UUID()
+        toast = nil
+        ambientMessageHideTask?.cancel()
+        ambientMessage = value
+        lastAmbientMessage = value
+        let nanoseconds = UInt64(max(duration, 0) * 1_000_000_000)
+        ambientMessageHideTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: nanoseconds) }
+            catch { return }
+            guard !Task.isCancelled, let self, self.ambientMessage == value else { return }
+            self.ambientMessageHideTask = nil
+            self.ambientMessage = nil
+        }
+    }
+
+    private func scheduleNextAmbientChatter(initial: Bool = false) {
+        guard taskAnimationsEnabled else { return }
+        ambientChatterTask?.cancel()
+        let delay = initial
+            ? TimeInterval.random(in: 120...240)
+            : TimeInterval.random(in: 720...1_200)
+        ambientChatterTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            catch { return }
+            guard !Task.isCancelled, let self else { return }
+            self.presentScheduledAmbientChatter()
+            self.scheduleNextAmbientChatter()
+        }
+    }
+
+    private func presentScheduledAmbientChatter() {
+        guard taskState == .idle,
+              !isDropTargeted,
+              !isChatting,
+              toast == nil,
+              ambientMessage == nil else { return }
+        let candidates = PetAmbientChatter.candidates(
+            mode: mode,
+            system: monitor.snapshot,
+            weather: weather.snapshot
+        ).filter { $0 != lastAmbientMessage }
+        guard let message = candidates.randomElement() else { return }
+        showAmbientMessage(message)
+    }
+
+    private func ambientDurationText(_ totalMinutes: Int) -> String {
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours > 0, minutes > 0 { return "\(hours)小时\(minutes)分钟" }
+        if hours > 0 { return "\(hours)小时" }
+        return "\(minutes)分钟"
     }
 
     private func evaluateSmartState(at date: Date = Date()) {

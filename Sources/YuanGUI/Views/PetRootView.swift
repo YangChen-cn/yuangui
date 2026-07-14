@@ -10,12 +10,18 @@ struct PetRootView: View {
     @State private var dragStartOrigin: NSPoint?
     @State private var dragStartMouseLocation: NSPoint?
     @State private var sideControlsOnRight = false
+    @State private var hoveredSideTool: SideTool?
+
+    private enum SideTool: String {
+        case cleanup = "空间清理"
+        case uninstall = "软件卸载"
+    }
 
     private var scale: CGFloat { store.petScale }
     private var panelSize: CGSize {
         PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldShowPetBubble,
+            showsBubble: store.shouldReservePetBubbleSpace,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -39,6 +45,12 @@ struct PetRootView: View {
                 }
             } else if store.shouldShowPetBubble {
                 PetStatusBubble(store: store)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 291 * scale + 4)
+                    .zIndex(2)
+            } else if store.ambientMessage != nil {
+                PetAmbientBubble(store: store)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 291 * scale + 4)
@@ -91,13 +103,13 @@ struct PetRootView: View {
                 if isHovering && !store.interactionLocked {
                     roleControls
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding)
+                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 12)
                         .padding(.bottom, chat.isPresented ? 150 : 120)
                         .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
                     maintenanceSideControls
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 28)
-                        .padding(.bottom, chat.isPresented ? 88 : 46)
+                        .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 42)
+                        .padding(.bottom, chat.isPresented ? 64 : 22)
                         .transition(.scale(scale: 0.82).combined(with: .opacity))
                 }
                 if !store.interactionLocked && isHovering {
@@ -119,6 +131,7 @@ struct PetRootView: View {
         .onAppear { updateAdaptiveControlSide() }
         .animation(.spring(response: 0.36, dampingFraction: 0.82), value: store.currentAction.id)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: store.showsSystemStatus)
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: store.ambientMessage)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: chat.isPresented)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.petScale)
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: store.smartState)
@@ -152,7 +165,7 @@ struct PetRootView: View {
                 .buttonStyle(.bordered)
                 .tint(store.mode == mode ? .pink : .secondary)
                 .controlSize(.small)
-                .help("切换到(mode.title)桌宠")
+                .help("切换到\(mode.title)桌宠")
             }
         }
         .controlPanel()
@@ -166,26 +179,47 @@ struct PetRootView: View {
     }
 
     private var maintenanceSideControls: some View {
-        VStack(spacing: 3) {
-            Button {
-                chat.dismiss()
-                Task { await maintenance.startQuickCleanup() }
-            } label: {
-                sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup)
+        HStack(spacing: 7) {
+            if sideControlsOnRight, let hoveredSideTool {
+                PetHoverLabel(text: hoveredSideTool.rawValue)
             }
-            .buttonStyle(.plain)
-            .help("空间清理：扫描可安全清理的缓存、日志和临时文件")
-            .offset(x: sideControlsOnRight ? 9 : -9)
 
-            Button {
-                chat.dismiss()
-                Task { await maintenance.startQuickUninstall() }
-            } label: {
-                sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall)
+            VStack(spacing: 3) {
+                Button {
+                    chat.dismiss()
+                    Task { await maintenance.startQuickCleanup() }
+                } label: {
+                    sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup)
+                }
+                .buttonStyle(.plain)
+                .onHover { setSideToolHover(.cleanup, hovering: $0) }
+                .help("空间清理：扫描可安全清理的缓存、日志和临时文件")
+                .offset(x: sideControlsOnRight ? 7 : -7)
+
+                Button {
+                    chat.dismiss()
+                    Task { await maintenance.startQuickUninstall() }
+                } label: {
+                    sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall)
+                }
+                .buttonStyle(.plain)
+                .onHover { setSideToolHover(.uninstall, hovering: $0) }
+                .help("软件卸载：查找应用及其可确认的用户级残留")
+                .offset(x: sideControlsOnRight ? -7 : 7)
             }
-            .buttonStyle(.plain)
-            .help("软件卸载：查找应用及其可确认的用户级残留")
-            .offset(x: sideControlsOnRight ? -9 : 9)
+
+            if !sideControlsOnRight, let hoveredSideTool {
+                PetHoverLabel(text: hoveredSideTool.rawValue)
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: hoveredSideTool)
+    }
+
+    private func setSideToolHover(_ tool: SideTool, hovering: Bool) {
+        if hovering {
+            hoveredSideTool = tool
+        } else if hoveredSideTool == tool {
+            hoveredSideTool = nil
         }
     }
 
