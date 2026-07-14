@@ -12,67 +12,71 @@ struct PetStatusBubble: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(spacing: 8 * visualScale) {
+            HStack(spacing: 8 * visualScale) {
                 Image(systemName: stateIcon)
-                    .font(.system(size: 19, weight: .bold))
+                    .font(.system(size: 19 * visualScale, weight: .bold))
                     .foregroundStyle(stateColor)
                     .symbolEffect(.bounce, value: store.smartState)
                 Text(message)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: max(10, 12 * visualScale), weight: .bold, design: .rounded))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
                 Spacer(minLength: 0)
                 if let value = weather.snapshot {
                     Label("\(Int(value.temperature.rounded()))°", systemImage: value.condition.symbol)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.system(size: max(9, 10 * visualScale), weight: .bold, design: .rounded))
                         .foregroundStyle(.blue)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 7 * visualScale)
+                        .padding(.vertical, 4 * visualScale)
                         .background(.blue.opacity(0.10), in: Capsule())
                 }
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: 6 * visualScale) {
                 metric("CPU", value: cpuText, icon: "cpu", tint: .pink)
                 metric("内存", value: memoryText, icon: "memorychip", tint: .purple)
                 metric("电量", value: batteryText, icon: batteryIcon, tint: batteryTint)
             }
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 11)
-        .frame(width: min(max(PetLayout.baseWidth * store.petScale - 28, 332), 390))
+        .padding(.horizontal, 13 * visualScale)
+        .padding(.vertical, 11 * visualScale)
+        .frame(width: PetLayout.statusBubbleWidth(scale: store.petScale))
         .background(
             LinearGradient(
                 colors: [Color.white.opacity(0.92), Color(red: 0.94, green: 0.97, blue: 1).opacity(0.92), Color.pink.opacity(0.10)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 20 * visualScale, style: .continuous)
         )
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.82), lineWidth: 0.9))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20 * visualScale, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20 * visualScale).stroke(.white.opacity(0.82), lineWidth: 0.9))
         .shadow(color: stateColor.opacity(0.18), radius: 14, y: 6)
         .overlay(alignment: .bottom) {
             PetBubbleTail()
                 .fill(.regularMaterial)
-                .frame(width: 20, height: 10)
-                .offset(y: 8)
+                .frame(width: 20 * visualScale, height: 10 * visualScale)
+                .offset(y: 8 * visualScale)
         }
     }
 
     private func metric(_ title: String, value: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 4 * visualScale) {
             Image(systemName: icon)
-            Text("\(title) \(value)")
+            Text(store.petScale < 0.70 ? value : "\(title) \(value)")
         }
-        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+        .font(.system(size: max(9.5, 11.5 * visualScale), weight: .bold, design: .rounded))
         .foregroundStyle(tint)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 9 * visualScale)
+        .padding(.vertical, 6 * visualScale)
         .background(Color.white.opacity(0.68), in: Capsule())
         .overlay(Capsule().stroke(tint.opacity(0.16), lineWidth: 0.7))
+    }
+
+    private var visualScale: CGFloat {
+        PetLayout.compactBubbleScale(scale: store.petScale)
     }
 
     private var message: String {

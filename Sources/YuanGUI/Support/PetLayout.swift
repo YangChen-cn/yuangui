@@ -8,15 +8,17 @@ enum PetDockEdge: String, CaseIterable {
 }
 
 enum PetLayout {
-    static let minimumScale = 0.70
+    static let minimumScale = 0.50
     static let maximumScale = 1.40
     static let defaultScale = 0.85
     static let baseWidth: CGFloat = 540
     static let basePetHeight: CGFloat = 390
-    static let bubbleHeight: CGFloat = 116
+    static let baseBubbleHeight: CGFloat = 116
     static let chatHeight: CGFloat = 214
     static let maintenanceHeight: CGFloat = 350
-    static let minimumBubbleWidth: CGFloat = 360
+    static let minimumBubbleWidth: CGFloat = 288
+    static let minimumStatusBubbleWidth: CGFloat = 260
+    static let minimumAmbientBubbleWidth: CGFloat = 240
     static let minimumChatWidth: CGFloat = 450
     static let compactTopTransparentInset: CGFloat = 58
     static let bottomToolbarButtonWidth: CGFloat = 32
@@ -39,12 +41,31 @@ enum PetLayout {
 
     static func panelSize(scale: Double, showsBubble: Bool, showsChat: Bool = false, showsMaintenance: Bool = false) -> CGSize {
         let scaledWidth = baseWidth * scale
-        let auxiliaryHeight = showsMaintenance ? maintenanceHeight : (showsChat ? chatHeight : (showsBubble ? bubbleHeight : 0))
+        let auxiliaryHeight = showsMaintenance
+            ? maintenanceHeight
+            : (showsChat ? chatHeight : (showsBubble ? bubbleHeight(scale: scale) : 0))
         return CGSize(
             width: (showsChat || showsMaintenance) ? max(scaledWidth, minimumChatWidth) :
                 (showsBubble ? max(scaledWidth, minimumBubbleWidth) : scaledWidth),
             height: basePetHeight * scale + auxiliaryHeight
         )
+    }
+
+    static func compactBubbleScale(scale: Double) -> CGFloat {
+        let progress = (scale - minimumScale) / (0.70 - minimumScale)
+        return min(1, max(0.82, 0.82 + CGFloat(progress) * 0.18))
+    }
+
+    static func bubbleHeight(scale: Double) -> CGFloat {
+        baseBubbleHeight * compactBubbleScale(scale: scale)
+    }
+
+    static func statusBubbleWidth(scale: Double) -> CGFloat {
+        min(max(baseWidth * scale - 28, minimumStatusBubbleWidth), 390)
+    }
+
+    static func ambientBubbleWidth(scale: Double) -> CGFloat {
+        min(max(baseWidth * scale - 54, minimumAmbientBubbleWidth), 370)
     }
 
     static func allowedTopOverflow(scale: Double, showsBubble: Bool, showsChat: Bool, showsMaintenance: Bool) -> CGFloat {

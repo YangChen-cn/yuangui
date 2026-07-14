@@ -101,7 +101,7 @@ final class PetStore: ObservableObject {
         }
         self.showsSystemStatus = defaults.bool(forKey: "showsSystemStatus")
         let savedScale = defaults.object(forKey: "petScale") as? Double ?? PetLayout.defaultScale
-        self.petScale = min(max(savedScale, 0.70), 1.40)
+        self.petScale = min(max(savedScale, PetLayout.minimumScale), PetLayout.maximumScale)
         self.dashboardStyle = DashboardStyle(rawValue: defaults.integer(forKey: "dashboardStyle")) ?? .softGlass
         self.idleAnimationEnabled = defaults.object(forKey: "idleAnimationEnabled") == nil
             ? true
@@ -167,7 +167,7 @@ final class PetStore: ObservableObject {
     }
 
     func setPetScale(_ scale: Double) {
-        petScale = min(max(scale, 0.70), 1.40)
+        petScale = min(max(scale, PetLayout.minimumScale), PetLayout.maximumScale)
         defaults.set(petScale, forKey: "petScale")
     }
 

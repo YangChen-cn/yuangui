@@ -264,6 +264,8 @@ struct PetRootView: View {
             }
         }
         Menu("桌宠大小") {
+            Button("迷你（50%）") { store.setPetScale(0.50) }
+            Button("轻巧（60%）") { store.setPetScale(0.60) }
             Button("小巧（70%）") { store.setPetScale(0.70) }
             Button("默认（85%）") { store.setPetScale(PetLayout.defaultScale) }
             Button("大只（125%）") { store.setPetScale(1.25) }

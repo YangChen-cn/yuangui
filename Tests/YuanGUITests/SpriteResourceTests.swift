@@ -20,4 +20,22 @@ final class SpriteResourceTests: XCTestCase {
             }
         }
     }
+
+    func testVCCCuriousSpriteHasNoDetachedRightEdgePixels() throws {
+        let image = try XCTUnwrap(SpriteLoader.image(
+            mode: .vcc,
+            action: PetAction(file: "03-curious", label: "test")
+        ))
+        let representation = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
+        for x in 450..<representation.pixelsWide {
+            for y in 0..<representation.pixelsHigh {
+                XCTAssertEqual(
+                    representation.colorAt(x: x, y: y)?.alphaComponent ?? 0,
+                    0,
+                    accuracy: 0.001,
+                    "Unexpected detached pixel at (\(x), \(y))"
+                )
+            }
+        }
+    }
 }

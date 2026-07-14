@@ -190,7 +190,21 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.petScale, 1.4)
         XCTAssertEqual(defaults.double(forKey: "petScale"), 1.4)
         store.setPetScale(0.2)
-        XCTAssertEqual(store.petScale, 0.7)
+        XCTAssertEqual(store.petScale, 0.5)
+    }
+
+    func testMiniPetScalesItsStatusBubbleAndPanel() {
+        XCTAssertEqual(PetLayout.compactBubbleScale(scale: 0.50), 0.82, accuracy: 0.001)
+        XCTAssertEqual(PetLayout.compactBubbleScale(scale: 0.60), 0.91, accuracy: 0.001)
+        XCTAssertEqual(PetLayout.compactBubbleScale(scale: 0.70), 1.00, accuracy: 0.001)
+        XCTAssertEqual(PetLayout.statusBubbleWidth(scale: 0.50), 260, accuracy: 0.001)
+        XCTAssertEqual(PetLayout.statusBubbleWidth(scale: 0.60), 296, accuracy: 0.001)
+        XCTAssertEqual(PetLayout.ambientBubbleWidth(scale: 0.50), 240, accuracy: 0.001)
+
+        let mini = PetLayout.panelSize(scale: 0.50, showsBubble: true)
+        let small = PetLayout.panelSize(scale: 0.70, showsBubble: true)
+        XCTAssertEqual(mini.width, PetLayout.minimumBubbleWidth, accuracy: 0.001)
+        XCTAssertLessThan(mini.height, small.height)
     }
 
     func testCompactPetCanUseTransparentTopInsetButBubblesStayVisible() {
