@@ -40,6 +40,8 @@ enum PetLayout {
     static let edgePeekSize = CGSize(width: 76, height: 76)
     static let edgePeekStatusSize = CGSize(width: 194, height: 76)
     static let edgePeekInset: CGFloat = 3
+    static let edgePeekButtonDiameter: CGFloat = 70
+    static let edgePeekSpriteSize: CGFloat = 64
 
     static func usesCompactControls(scale: Double) -> Bool {
         scale < 0.70

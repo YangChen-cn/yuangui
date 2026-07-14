@@ -49,15 +49,14 @@ struct PetEdgePeekView: View {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 142, height: 142)
-                        .offset(y: 23)
+                        .frame(width: PetLayout.edgePeekSpriteSize, height: PetLayout.edgePeekSpriteSize)
                 } else {
                     Image(systemName: "pawprint.fill")
                         .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(.pink)
                 }
             }
-            .frame(width: 70, height: 70)
+            .frame(width: PetLayout.edgePeekButtonDiameter, height: PetLayout.edgePeekButtonDiameter)
             .clipShape(Circle())
             .overlay(Circle().stroke(.white.opacity(0.72), lineWidth: 1.5))
             .shadow(color: .black.opacity(0.22), radius: hovering ? 13 : 8, y: 4)

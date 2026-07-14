@@ -302,6 +302,14 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
+    func testEdgePeekSpriteFitsInsideItsCircle() {
+        XCTAssertLessThan(PetLayout.edgePeekSpriteSize, PetLayout.edgePeekButtonDiameter)
+        XCTAssertLessThanOrEqual(
+            PetLayout.edgePeekSpriteSize,
+            PetLayout.edgePeekButtonDiameter - 4
+        )
+    }
+
     func testSmartStatePrioritizesPressureAndLowBattery() {
         var snapshot = SystemSnapshot.empty
         snapshot.battery = BatteryMetrics(
