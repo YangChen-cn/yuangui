@@ -152,6 +152,53 @@ final class AIChatTests: XCTestCase {
 
         XCTAssertThrowsError(try AttachmentPreparer().prepare(url: file))
     }
+
+    func testPasteboardReaderReturnsImageDataAndIgnoresPlainText() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("ChatPasteboardTests-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+
+        let image = NSImage(size: NSSize(width: 12, height: 6))
+        image.lockFocus()
+        NSColor.systemPurple.setFill()
+        NSRect(x: 0, y: 0, width: 12, height: 6).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            return XCTFail("Unable to create pasteboard fixture")
+        }
+        let imageItem = NSPasteboardItem()
+        imageItem.setData(png, forType: .png)
+        XCTAssertTrue(pasteboard.writeObjects([imageItem]))
+
+        let pastedImages = ChatPasteboardReader.images(from: pasteboard)
+        XCTAssertEqual(pastedImages.count, 1)
+        XCTAssertEqual(pastedImages.first?.suggestedName, "粘贴图片-1.png")
+        if case .data(let data) = pastedImages.first?.source {
+            XCTAssertEqual(data, png)
+        } else {
+            XCTFail("Expected pasted image data")
+        }
+
+        let imageFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pasted-\(UUID().uuidString).png")
+        try png.write(to: imageFile)
+        defer { try? FileManager.default.removeItem(at: imageFile) }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects([imageFile as NSURL]))
+        let pastedFiles = ChatPasteboardReader.images(from: pasteboard)
+        XCTAssertEqual(pastedFiles.count, 1)
+        if case .fileURL(let url) = pastedFiles.first?.source {
+            XCTAssertEqual(url.standardizedFileURL, imageFile.standardizedFileURL)
+        } else {
+            XCTFail("Expected pasted image file URL")
+        }
+
+        pasteboard.clearContents()
+        pasteboard.setString("普通文字", forType: .string)
+        XCTAssertTrue(ChatPasteboardReader.images(from: pasteboard).isEmpty)
+    }
 }
 
 private final class MemorySecretStore: SecretStoring {

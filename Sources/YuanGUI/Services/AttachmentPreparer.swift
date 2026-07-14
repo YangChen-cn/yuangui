@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import PDFKit
+import UniformTypeIdentifiers
 
 protocol AttachmentPreparing {
     func prepare(url: URL) throws -> PreparedChatAttachment
@@ -14,15 +15,17 @@ struct AttachmentPreparer: AttachmentPreparing {
         "txt", "md", "markdown", "json", "csv", "tsv", "log", "xml", "yaml", "yml",
         "swift", "m", "mm", "h", "c", "cpp", "js", "ts", "jsx", "tsx", "py", "rb", "go", "rs", "java", "kt", "sh", "zsh", "html", "css", "sql"
     ]
-    private let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
+    private let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "tif", "tiff"]
 
     func prepare(url: URL) throws -> PreparedChatAttachment {
-        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .contentTypeKey])
         guard values.isRegularFile == true else { throw ChatServiceError.unreadableAttachment(url.lastPathComponent) }
         let byteCount = Int64(values.fileSize ?? 0)
         guard byteCount <= Self.maximumBytes else { throw ChatServiceError.attachmentTooLarge(url.lastPathComponent) }
         let ext = url.pathExtension.lowercased()
-        if imageExtensions.contains(ext) { return try prepareImage(url: url, byteCount: byteCount) }
+        if values.contentType?.conforms(to: .image) == true || imageExtensions.contains(ext) {
+            return try prepareImage(url: url, byteCount: byteCount)
+        }
         if ext == "pdf" { return try preparePDF(url: url, byteCount: byteCount) }
         if textExtensions.contains(ext) { return try prepareText(url: url, byteCount: byteCount) }
         throw ChatServiceError.unsupportedAttachment(url.lastPathComponent)

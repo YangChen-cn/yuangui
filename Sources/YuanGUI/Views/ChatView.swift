@@ -123,6 +123,12 @@ struct PetChatComposer: View {
                     .onPasteCommand(of: [.image]) { providers in
                         pasteImages(providers)
                     }
+                    .background {
+                        ChatImagePasteMonitor(isEnabled: inputFocused) { images in
+                            addPastedImages(images)
+                        }
+                        .allowsHitTesting(false)
+                    }
 
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 22))
@@ -222,6 +228,85 @@ struct PetChatComposer: View {
                     }
                 }
             }
+        }
+    }
+
+    private func addPastedImages(_ images: [PastedChatImage]) {
+        for image in images.prefix(max(0, 6 - attachments.count)) {
+            do {
+                let attachment: PreparedChatAttachment
+                switch image.source {
+                case .data(let data):
+                    attachment = try preparer.prepare(imageData: data, name: image.suggestedName)
+                case .fileURL(let url):
+                    attachment = try preparer.prepare(url: url)
+                }
+                attachments.append(attachment)
+            } catch {
+                attachmentError = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct ChatImagePasteMonitor: NSViewRepresentable {
+    let isEnabled: Bool
+    let onPasteImages: ([PastedChatImage]) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isEnabled: isEnabled, onPasteImages: onPasteImages)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.install()
+        return NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.isEnabled = isEnabled
+        context.coordinator.onPasteImages = onPasteImages
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    final class Coordinator {
+        var isEnabled: Bool
+        var onPasteImages: ([PastedChatImage]) -> Void
+        private var eventMonitor: Any?
+
+        init(isEnabled: Bool, onPasteImages: @escaping ([PastedChatImage]) -> Void) {
+            self.isEnabled = isEnabled
+            self.onPasteImages = onPasteImages
+        }
+
+        func install() {
+            guard eventMonitor == nil else { return }
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self,
+                      isEnabled,
+                      !event.isARepeat,
+                      event.charactersIgnoringModifiers?.lowercased() == "v" else {
+                    return event
+                }
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                guard modifiers.contains(.command),
+                      !modifiers.contains(.control),
+                      !modifiers.contains(.option) else {
+                    return event
+                }
+                let images = ChatPasteboardReader.images()
+                guard !images.isEmpty else { return event }
+                onPasteImages(images)
+                return nil
+            }
+        }
+
+        func uninstall() {
+            guard let eventMonitor else { return }
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
         }
     }
 }
