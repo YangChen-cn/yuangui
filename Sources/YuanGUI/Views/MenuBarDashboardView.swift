@@ -33,42 +33,45 @@ struct MenuBarDashboardView: View {
             SystemStatusCard(monitor: store.monitor)
 
             HStack(spacing: 8) {
-                Button("显示/隐藏桌宠", action: togglePet)
-                Button(store.shouldShowPetBubble ? "隐藏迷你状态" : "显示迷你状态") {
+                dashboardTextButton("显示/隐藏桌宠", action: togglePet)
+                dashboardTextButton(store.shouldShowPetBubble ? "隐藏迷你状态" : "显示迷你状态") {
                     store.toggleSystemStatus()
                     showPet()
                 }
-                Spacer()
-                Button {
-                    store.toggleInteractionLock()
-                    showPet()
-                } label: {
-                    Image(systemName: store.interactionLocked ? "lock.fill" : "lock.open.fill")
+                Spacer(minLength: 0)
+                HStack(spacing: 3) {
+                    Button {
+                        store.toggleInteractionLock()
+                        showPet()
+                    } label: {
+                        Image(systemName: store.interactionLocked ? "lock.fill" : "lock.open.fill")
+                    }
+                    .help(store.interactionLocked ? "解锁桌宠点击" : "锁定桌宠并允许点击穿透")
+                    Button {
+                        dismiss()
+                        store.showMaintenance()
+                    } label: {
+                        Image(systemName: "house.fill")
+                    }
+                    .help("打开元圭与 VCC 清理屋")
+                    Button(action: openSettings) {
+                        Image(systemName: "gearshape.fill")
+                    }
+                    .help("设置")
+                    Menu {
+                        Button("打开废纸篓") { store.openTrash() }
+                        Button("清空废纸篓…") { store.confirmAndEmptyTrash() }
+                        Divider()
+                        Button("退出") { NSApp.terminate(nil) }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 22)
                 }
-                .help(store.interactionLocked ? "解锁桌宠点击" : "锁定桌宠并允许点击穿透")
-                Button {
-                    dismiss()
-                    store.showMaintenance()
-                } label: {
-                    Image(systemName: "house.fill")
-                }
-                .help("打开元圭与 VCC 清理屋")
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape.fill")
-                }
-                .help("设置")
-                Menu {
-                    Button("打开废纸篓") { store.openTrash() }
-                    Button("清空废纸篓…") { store.confirmAndEmptyTrash() }
-                    Divider()
-                    Button("退出") { NSApp.terminate(nil) }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .menuStyle(.borderlessButton)
-                .frame(width: 24)
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .controlSize(.small)
+            .controlSize(.mini)
         }
         .padding(12)
         .frame(width: 360, height: dashboardHeight)
@@ -80,6 +83,16 @@ struct MenuBarDashboardView: View {
             store.monitor.refresh()
         }
         .onExitCommand(perform: dismiss)
+    }
+
+    private func dashboardTextButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
     }
 
     private var smartStateTitle: String {

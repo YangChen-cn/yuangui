@@ -31,9 +31,15 @@ struct WeatherStatusCard: View {
             Button {
                 weather.refresh()
             } label: {
-                Image(systemName: "arrow.clockwise")
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
             }
             .buttonStyle(.borderless)
+            .disabled(isRefreshing)
             .help("刷新天气")
         }
         .padding(14)
@@ -72,7 +78,10 @@ struct WeatherStatusCard: View {
 
     private var detail: String {
         if let snapshot = weather.snapshot {
-            return "体感 \(Int(snapshot.apparentTemperature.rounded()))° · 湿度 \(snapshot.relativeHumidity)% · 风速 \(Int(snapshot.windSpeed.rounded())) km/h · Open‑Meteo"
+            if isRefreshing {
+                return "正在刷新天气 · 上次 \(updatedTime(snapshot.updatedAt))"
+            }
+            return "体感 \(Int(snapshot.apparentTemperature.rounded()))° · 湿度 \(snapshot.relativeHumidity)% · 风速 \(Int(snapshot.windSpeed.rounded())) km/h · \(updatedTime(snapshot.updatedAt)) 更新"
         }
         switch weather.status {
         case .idle: return "打开监控后可获取，无需 API Key"
@@ -82,5 +91,13 @@ struct WeatherStatusCard: View {
         case .unavailable(let message): return message
         case .available: return "等待天气数据"
         }
+    }
+
+    private var isRefreshing: Bool {
+        weather.status == .loading || weather.status == .requestingLocation
+    }
+
+    private func updatedTime(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
     }
 }
