@@ -75,22 +75,10 @@ struct PetStatusBubble: View {
     }
 
     private var message: String {
-        let snapshot = monitor.snapshot
-        switch store.smartState {
-        case .lowBattery:
-            let value = snapshot.battery?.chargeFraction.map(MetricFormatting.percent) ?? "很低"
-            return "电量只剩 \(value)，快救救我～"
-        case .memoryPressure:
-            return "内存有点挤，要不要休息一下？"
-        case .charging:
-            return "抱紧充电器，能量恢复中！"
-        case .rainy:
-            return "下雨啦，出门要记得带伞哦～"
-        case .bedtime:
-            return "夜深了，快和我们一起睡觉吧～"
-        case .normal:
-            return "Mac 状态不错，我会帮你看着～"
-        }
+        PetStatusMessageResolver.message(
+            snapshot: monitor.snapshot,
+            smartState: store.smartState
+        )
     }
 
     private var stateIcon: String {

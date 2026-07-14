@@ -79,6 +79,24 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(defaults.bool(forKey: "idleAnimationEnabled"))
     }
 
+    func testInteractionKeepsSystemStatusVisible() {
+        let fake = FakeTrashHandler()
+        let suite = "PetStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: fake,
+            defaults: defaults,
+            startServices: false
+        )
+
+        store.toggleSystemStatus()
+        store.interact()
+
+        XCTAssertTrue(store.showsSystemStatus)
+    }
+
     func testPetScaleClampsAndPersists() {
         let fake = FakeTrashHandler()
         let suite = "PetStoreTests-\(UUID().uuidString)"
@@ -132,5 +150,32 @@ final class PetStoreTests: XCTestCase {
             pressure: .critical
         )
         XCTAssertEqual(SmartPetState.resolve(from: snapshot), .memoryPressure)
+    }
+
+    func testStatusMessageReflectsLiveSystemPressureEvenInNormalActionState() {
+        var snapshot = SystemSnapshot.empty
+        snapshot.memory = MemoryMetrics(
+            total: 100,
+            used: 86,
+            free: 14,
+            active: 50,
+            inactive: 10,
+            wired: 20,
+            compressed: 6,
+            cached: 0,
+            swapUsed: 0,
+            swapTotal: 0,
+            pressure: .warning
+        )
+
+        let memoryMessage = PetStatusMessageResolver.message(snapshot: snapshot, smartState: .normal)
+        XCTAssertTrue(memoryMessage.contains("内存占用有些高"))
+        XCTAssertTrue(memoryMessage.contains("86%"))
+
+        snapshot.memory = nil
+        snapshot.cpu = CPUMetrics(total: 0.91, user: 0.65, system: 0.26)
+        let cpuMessage = PetStatusMessageResolver.message(snapshot: snapshot, smartState: .normal)
+        XCTAssertTrue(cpuMessage.contains("CPU 现在有点忙"))
+        XCTAssertTrue(cpuMessage.contains("91%"))
     }
 }

@@ -102,7 +102,7 @@ final class PetPanelController {
         guard panel.frame.size != targetSize else { return }
         var frame = panel.frame
         frame.size = targetSize
-        panel.setFrame(frame, display: true, animate: true)
+        panel.setFrame(frame, display: true, animate: false)
         constrainToVisibleScreens()
     }
 

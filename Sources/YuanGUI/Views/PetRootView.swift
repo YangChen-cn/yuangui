@@ -7,6 +7,7 @@ struct PetRootView: View {
     @ObservedObject var chat: ChatStore
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
+    @State private var dragStartMouseLocation: NSPoint?
 
     private var scale: CGFloat { store.petScale }
     private var panelSize: CGSize {
@@ -54,7 +55,6 @@ struct PetRootView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         store.interact()
-                        if store.showsSystemStatus && !store.smartState.isUrgent { store.hideSystemStatus() }
                     }
                     .simultaneousGesture(windowDragGesture)
                     .onDrop(of: [UTType.fileURL.identifier], isTargeted: $store.isDropTargeted) { providers in
@@ -133,12 +133,12 @@ struct PetRootView: View {
             .controlSize(.small)
             .help("显示系统状态")
             Button { store.showChat() } label: {
-                Image(systemName: chat.isPresented ? "bubble.left.and.bubble.right" : "bubble.left.and.bubble.right.fill")
+                Image(systemName: "bubble.left.and.bubble.right")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.pink)
+            .buttonStyle(.bordered)
+            .tint(chat.isPresented ? .pink : .secondary)
             .controlSize(.small)
-            .help("和元圭、VCC 聊天")
+            .help(chat.isPresented ? "收起对话" : "和元圭、VCC 聊天")
             Menu {
                 Button("缩小") { store.adjustPetScale(by: -0.1) }
                 Button("恢复默认大小") { store.setPetScale(1) }
@@ -203,17 +203,25 @@ struct PetRootView: View {
     }
 
     private var windowDragGesture: some Gesture {
-        DragGesture(minimumDistance: 7, coordinateSpace: .global)
-            .onChanged { value in
+        DragGesture(minimumDistance: 7)
+            .onChanged { _ in
                 guard let window = NSApp.windows.first(where: { $0 is PetPanel }) else { return }
-                if dragStartOrigin == nil { dragStartOrigin = window.frame.origin }
-                guard let origin = dragStartOrigin else { return }
+                if dragStartOrigin == nil {
+                    dragStartOrigin = window.frame.origin
+                    dragStartMouseLocation = NSEvent.mouseLocation
+                }
+                guard let origin = dragStartOrigin,
+                      let mouseOrigin = dragStartMouseLocation else { return }
+                let mouse = NSEvent.mouseLocation
                 window.setFrameOrigin(NSPoint(
-                    x: origin.x + value.translation.width,
-                    y: origin.y - value.translation.height
+                    x: origin.x + mouse.x - mouseOrigin.x,
+                    y: origin.y + mouse.y - mouseOrigin.y
                 ))
             }
-            .onEnded { _ in dragStartOrigin = nil }
+            .onEnded { _ in
+                dragStartOrigin = nil
+                dragStartMouseLocation = nil
+            }
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
