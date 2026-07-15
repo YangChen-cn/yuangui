@@ -2,6 +2,19 @@ import AppKit
 import Foundation
 
 enum SpriteLoader {
+    private static let resourceRoots: [URL] = {
+        let bundleName = "YuanGUI_YuanGUI.bundle"
+        let roots = [
+            Bundle.main.resourceURL?.appendingPathComponent(bundleName, isDirectory: true),
+            Bundle.main.bundleURL.appendingPathComponent(bundleName, isDirectory: true),
+            Bundle.main.bundleURL.deletingLastPathComponent()
+                .appendingPathComponent(bundleName, isDirectory: true),
+            Bundle.main.executableURL?.deletingLastPathComponent()
+                .appendingPathComponent(bundleName, isDirectory: true)
+        ]
+        return roots.compactMap { $0 }
+    }()
+
     enum SequenceKind {
         case idle
         case chatting
@@ -44,9 +57,8 @@ enum SpriteLoader {
     static func image(mode: PetMode, action: PetAction) -> NSImage? {
         let key = "\(mode.resourceFolder)/\(action.file)"
         if let cached = box.cache.object(forKey: key as NSString) { return cached }
-        guard let url = Bundle.module.url(
-            forResource: action.file,
-            withExtension: "png",
+        guard let url = resourceURL(
+            file: action.file,
             subdirectory: "Sprites/\(mode.resourceFolder)"
         ), let image = NSImage(contentsOf: url) else { return nil }
         let cost = max(Int(image.size.width * image.size.height * 4), 1)
@@ -121,13 +133,42 @@ enum SpriteLoader {
     private static func loadImage(mode: PetMode, file: String) -> NSImage? {
         let key = "\(mode.resourceFolder)/\(file)"
         if let cached = box.cache.object(forKey: key as NSString) { return cached }
-        guard let url = Bundle.module.url(
-            forResource: file,
-            withExtension: "png",
+        guard let url = resourceURL(
+            file: file,
             subdirectory: "Sprites/\(mode.resourceFolder)"
         ), let image = NSImage(contentsOf: url) else { return nil }
         let cost = max(Int(image.size.width * image.size.height * 4), 1)
         box.cache.setObject(image, forKey: key as NSString, cost: cost)
         return image
+    }
+
+    static func resourceURL(
+        file: String,
+        subdirectory: String,
+        roots: [URL]? = nil,
+        mainBundleURL: URL = Bundle.main.bundleURL
+    ) -> URL? {
+        for root in roots ?? resourceRoots {
+            let url = root
+                .appendingPathComponent(subdirectory, isDirectory: true)
+                .appendingPathComponent(file)
+                .appendingPathExtension("png")
+            if FileManager.default.isReadableFile(atPath: url.path) {
+                return url
+            }
+        }
+
+        // XCTest and raw SwiftPM executables do not use an .app as their main
+        // bundle, so the generated accessor is safe and useful there. Never
+        // invoke it from a distributed app because its missing-bundle path is
+        // a fatal assertion containing a developer-machine build path.
+        if mainBundleURL.pathExtension != "app" {
+            return Bundle.module.url(
+                forResource: file,
+                withExtension: "png",
+                subdirectory: subdirectory
+            )
+        }
+        return nil
     }
 }

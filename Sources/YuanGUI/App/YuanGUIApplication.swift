@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsController: SettingsWindowController?
     private var chatHistoryController: ChatHistoryWindowController?
     private var maintenanceController: MaintenanceWindowController?
+    private var weatherStartupTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -36,6 +37,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore, focusTimer: focusTimer)
         panelController?.show()
         installMenuBarItem()
+        weatherStartupTask = Task { [weak self] in
+            // Give the pet panel and menu bar item a chance to render before
+            // Core Location presents its first-run permission dialog.
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else { return }
+            self?.store.weather.start()
+        }
         chatStore.$isPresented
             .removeDuplicates()
             .sink { [weak self] presented in
@@ -46,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        weatherStartupTask?.cancel()
         store.monitor.stop()
     }
 

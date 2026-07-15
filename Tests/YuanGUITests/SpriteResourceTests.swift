@@ -3,6 +3,29 @@ import XCTest
 @testable import YuanGUI
 
 final class SpriteResourceTests: XCTestCase {
+    func testDistributedAppFindsPackagedSpriteWithoutSwiftPMBuildDirectory() throws {
+        let temporaryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let spriteDirectory = temporaryRoot
+            .appendingPathComponent("Sprites/Test", isDirectory: true)
+        let spriteURL = spriteDirectory.appendingPathComponent("idle.png")
+        try FileManager.default.createDirectory(
+            at: spriteDirectory,
+            withIntermediateDirectories: true
+        )
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: spriteURL)
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+
+        let resolvedURL = SpriteLoader.resourceURL(
+            file: "idle",
+            subdirectory: "Sprites/Test",
+            roots: [temporaryRoot],
+            mainBundleURL: URL(fileURLWithPath: "/Applications/YuanGUI.app")
+        )
+
+        XCTAssertEqual(resolvedURL, spriteURL)
+    }
+
     func testTaskSpritesLoadForEveryCharacterAtExpectedSize() throws {
         let files = [
             "15-eat-trash-1", "15-eat-trash-2", "15-eat-trash-3",

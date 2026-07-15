@@ -177,7 +177,6 @@ final class PetStore: ObservableObject {
         if startServices {
             monitor.start()
             syncMiniMonitoringDemand()
-            self.weather.start()
             minuteTimer = Timer.publish(every: 60, tolerance: 8, on: .main, in: .common)
                 .autoconnect()
                 .sink { [weak self] date in
