@@ -6,11 +6,13 @@ struct PetRootView: View {
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
     @ObservedObject var maintenance: MaintenanceStore
+    @ObservedObject var focusTimer: FocusTimerStore
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
     @State private var dragStartMouseLocation: NSPoint?
     @State private var sideControlsOnRight = false
     @State private var hoveredSideTool: SideTool?
+    @State private var showsFocusPopover = false
 
     private enum SideTool: String {
         case cleanup = "空间清理"
@@ -43,14 +45,14 @@ struct PetRootView: View {
                         .padding(.bottom, 291 * scale + 62)
                         .zIndex(4)
                 }
-            } else if store.shouldShowPetBubble {
-                PetStatusBubble(store: store)
+            } else if store.ambientMessage != nil {
+                PetAmbientBubble(store: store)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 291 * scale + 4)
                     .zIndex(2)
-            } else if store.ambientMessage != nil {
-                PetAmbientBubble(store: store)
+            } else if store.shouldShowPetBubble {
+                PetStatusBubble(store: store)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 291 * scale + 4)
@@ -73,7 +75,9 @@ struct PetRootView: View {
                 AnimatedPetSprite(
                     mode: store.mode,
                     action: store.currentAction,
-                    motionEnabled: store.petMotionEnabled && store.isPetPresented
+                    motionEnabled: store.isPetPresented,
+                    sequencePlaybackEnabled: store.petMotionEnabled
+                        && (!store.currentAction.file.contains("chatting") || store.ambientMessage != nil)
                 )
                     .frame(width: 326 * scale, height: 326 * scale)
                     .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
@@ -104,24 +108,35 @@ struct PetRootView: View {
             }
 
             if !store.isDropTargeted {
-                if isHovering && !store.interactionLocked {
+                if showsInteractiveSideControls || hasActiveFocusCountdown {
                     if PetLayout.usesCompactControls(scale: store.petScale), !chat.isPresented {
                         compactSideControls
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
                             .padding(sideControlsOnRight ? .trailing : .leading, PetLayout.compactSideControlsInset)
                             .padding(.bottom, 8)
                             .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
+                            .zIndex(8)
                     } else {
-                        roleControls
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                            .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 12)
-                            .padding(.bottom, chat.isPresented ? 150 : 120)
-                            .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
-                        maintenanceSideControls
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                            .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 42)
-                            .padding(.bottom, chat.isPresented ? 64 : 22)
-                            .transition(.scale(scale: 0.82).combined(with: .opacity))
+                        if showsInteractiveSideControls {
+                            roleControls
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 12)
+                                .padding(.bottom, chat.isPresented ? 173 : 143)
+                                .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
+                            maintenanceSideControls
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 42)
+                                .padding(.bottom, chat.isPresented ? 64 : 22)
+                                .transition(.scale(scale: 0.82).combined(with: .opacity))
+                        }
+                        if showsInteractiveSideControls || hasActiveFocusCountdown {
+                            focusSideButton(size: 40)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
+                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 47)
+                                .padding(.bottom, chat.isPresented ? 128 : 98)
+                                .transition(.scale(scale: 0.82).combined(with: .opacity))
+                                .zIndex(8)
+                        }
                     }
                 }
                 if !store.interactionLocked && isHovering {
@@ -191,20 +206,85 @@ struct PetRootView: View {
             .menuStyle(.borderlessButton)
             .frame(width: PetLayout.compactSideControlsWidth, height: 26)
             .help("切换桌宠角色")
+            .opacity(showsInteractiveSideControls ? 1 : 0)
+            .allowsHitTesting(showsInteractiveSideControls)
+
+            focusSideButton(size: 34)
+                .offset(x: sideControlsOnRight ? -7 : 7)
 
             Button { startQuickCleanup() } label: {
                 sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup, size: 30)
             }
             .buttonStyle(.plain)
             .help("空间清理")
+            .opacity(showsInteractiveSideControls ? 1 : 0)
+            .allowsHitTesting(showsInteractiveSideControls)
 
             Button { startQuickUninstall() } label: {
                 sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall, size: 30)
             }
             .buttonStyle(.plain)
             .help("软件卸载")
+            .opacity(showsInteractiveSideControls ? 1 : 0)
+            .allowsHitTesting(showsInteractiveSideControls)
         }
         .frame(width: PetLayout.compactSideControlsWidth)
+    }
+
+    private func focusSideButton(size: CGFloat) -> some View {
+        Button { showsFocusPopover.toggle() } label: {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: hasActiveFocusCountdown
+                                ? (focusTimer.state == .paused ? [.red.opacity(0.76), .orange.opacity(0.78)] : [.red, .orange])
+                                : [.white.opacity(0.92), .red.opacity(0.16)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                if hasActiveFocusCountdown {
+                    Text(focusTimer.timeText)
+                        .font(.system(size: max(8, size * 0.22), weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .minimumScaleFactor(0.72)
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                    Circle()
+                        .trim(from: 0, to: max(focusTimer.progress, 0.03))
+                        .stroke(.white, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .padding(2)
+                } else {
+                    Text("🍅")
+                        .font(.system(size: size * 0.52))
+                }
+            }
+            .frame(width: size, height: size)
+            .overlay(Circle().stroke(.white.opacity(0.72), lineWidth: 0.9))
+            .shadow(color: .red.opacity(0.24), radius: 8, y: 3)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(!store.interactionLocked)
+        .help(hasActiveFocusCountdown ? "专注中：\(focusTimer.timeText)" : "打开番茄钟")
+        .popover(isPresented: $showsFocusPopover, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
+            FocusTimerControlView(timer: focusTimer) { }
+        }
+    }
+
+    private var showsTransientSideControls: Bool {
+        isHovering || showsFocusPopover
+    }
+
+    private var showsInteractiveSideControls: Bool {
+        showsTransientSideControls && !store.interactionLocked
+    }
+
+    private var hasActiveFocusCountdown: Bool {
+        focusTimer.state == .running || focusTimer.state == .paused
     }
 
     private var sideControlsPadding: CGFloat {
@@ -304,6 +384,23 @@ struct PetRootView: View {
         }
         Button(store.desktopIconsVisible ? "隐藏桌面图标" : "显示桌面图标") {
             store.toggleDesktopIcons()
+        }
+        Menu("番茄钟") {
+            switch focusTimer.state {
+            case .idle, .completed:
+                Button("开始 \(focusTimer.durationMinutes) 分钟专注") { focusTimer.start() }
+                Divider()
+                Button("15 分钟") { focusTimer.start(minutes: 15) }
+                Button("25 分钟") { focusTimer.start(minutes: 25) }
+                Button("45 分钟") { focusTimer.start(minutes: 45) }
+                Button("60 分钟") { focusTimer.start(minutes: 60) }
+            case .running:
+                Button("暂停（剩余 \(focusTimer.timeText)）") { focusTimer.pause() }
+                Button("提前结束") { focusTimer.stop() }
+            case .paused:
+                Button("继续（剩余 \(focusTimer.timeText)）") { focusTimer.resume() }
+                Button("提前结束") { focusTimer.stop() }
+            }
         }
         Menu("切换角色") {
             ForEach(PetMode.allCases) { mode in

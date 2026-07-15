@@ -58,6 +58,112 @@ final class PetStoreTests: XCTestCase {
         XCTAssertTrue(store.weatherAnnouncementsEnabled)
     }
 
+    func testDynamicIdleStaysOnBreathingSequenceWhileStaticModeRotatesArtwork() {
+        let suite = "PetStoreDynamicIdleTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+        store.setBedtimeReminderEnabled(false)
+        store.setPetPresented(true)
+        store.interact()
+        XCTAssertNotEqual(store.actionIndex, 0)
+
+        store.chooseIdleAction()
+        XCTAssertEqual(store.actionIndex, 0)
+
+        store.setPetMotionEnabled(false)
+        store.chooseIdleAction()
+        XCTAssertEqual(store.actionIndex, 1)
+    }
+
+    func testFocusModeSuppressesNonUrgentBubblesButKeepsUrgentWarnings() {
+        let suite = "PetStoreFocusTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+        store.setBedtimeReminderEnabled(false)
+        store.setPetPresented(true)
+        store.setSystemStatusVisible(true)
+        store.applySmartStates([.rainy])
+        store.beginFocus()
+
+        XCTAssertTrue(store.isFocusActive)
+        XCTAssertFalse(store.shouldShowPetBubble)
+        store.showAmbientMessage("不应该出现")
+        XCTAssertNil(store.ambientMessage)
+
+        store.applySmartStates([.memoryPressure])
+        XCTAssertTrue(store.shouldShowPetBubble)
+        store.endFocus(completed: true)
+        XCTAssertTrue(store.isFocusCelebrating)
+        XCTAssertEqual(store.currentAction.file, "19-maintenance-success")
+    }
+
+    func testAutomaticChatterUsesChatActionWhileAIChatKeepsItsStaticChatPose() {
+        let suite = "PetStoreSpeakingActionTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+        store.setPetPresented(true)
+
+        store.showAmbientMessage("天气播报")
+        XCTAssertEqual(store.currentAction.file, "14-chatting")
+        XCTAssertNotNil(store.ambientMessage)
+
+        store.dismissAmbientMessage()
+        store.interact()
+        let staticAction = store.currentAction
+        let staticScale = store.petScale
+        store.setPetMotionEnabled(false)
+        store.showAmbientMessage("关闭动画后的天气播报")
+        XCTAssertEqual(store.currentAction, staticAction)
+        XCTAssertEqual(store.petScale, staticScale)
+
+        store.dismissAmbientMessage()
+        store.setChatting(true)
+        XCTAssertEqual(store.currentAction.file, "14-chatting")
+        XCTAssertNil(store.ambientMessage)
+    }
+
+    func testMotionToggleSelectsAnimatedIdleWithoutChangingPetScale() {
+        let suite = "PetStoreMotionToggleTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+        store.setBedtimeReminderEnabled(false)
+        store.setPetPresented(true)
+        store.setPetScale(1.1)
+        store.setPetMotionEnabled(false)
+        store.interact()
+        let actionIndex = store.actionIndex
+
+        store.setPetMotionEnabled(true)
+
+        XCTAssertNotEqual(actionIndex, 0)
+        XCTAssertEqual(store.actionIndex, 0)
+        XCTAssertEqual(store.petScale, 1.1)
+    }
+
     func testDesktopIconStateIsReadAndToggledThroughFinderManager() {
         let suite = "PetStoreDesktopIconTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -455,6 +561,7 @@ final class PetStoreTests: XCTestCase {
             defaults: defaults,
             startServices: false
         )
+        store.setBedtimeReminderEnabled(false)
 
         XCTAssertTrue(store.currentAction.file.contains("idle"))
 

@@ -69,14 +69,18 @@ struct AnimatedPetSprite: View {
     let mode: PetMode
     let action: PetAction
     let motionEnabled: Bool
+    let sequencePlaybackEnabled: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pose = PetMotionPose.rest
     @State private var motionTask: Task<Void, Never>?
+    @State private var frameTask: Task<Void, Never>?
+    @State private var frames: [NSImage] = []
+    @State private var frameIndex = 0
 
     var body: some View {
         Group {
-            if let image = SpriteLoader.image(mode: mode, action: action) {
+            if let image = frames.indices.contains(frameIndex) ? frames[frameIndex] : SpriteLoader.image(mode: mode, action: action) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
@@ -91,13 +95,12 @@ struct AnimatedPetSprite: View {
         .offset(x: pose.x, y: pose.y)
         .rotationEffect(.degrees(pose.rotationDegrees))
         .opacity(pose.opacity)
-        .onAppear { playMotion() }
-        .onChange(of: action.id) { _, _ in playMotion() }
-        .onChange(of: mode) { _, _ in playMotion() }
-        .onChange(of: motionEnabled) { _, enabled in
-            enabled ? playMotion() : stopMotion()
-        }
-        .onDisappear { stopMotion() }
+        .onAppear { restartAnimation() }
+        .onChange(of: action.id) { _, _ in restartAnimation() }
+        .onChange(of: mode) { _, _ in restartAnimation() }
+        .onChange(of: motionEnabled) { _, _ in restartAnimation() }
+        .onChange(of: sequencePlaybackEnabled) { _, _ in restartAnimation() }
+        .onDisappear { stopAnimation() }
     }
 
     private var shouldAnimate: Bool {
@@ -120,9 +123,44 @@ struct AnimatedPetSprite: View {
         }
     }
 
+    private func restartAnimation() {
+        stopAnimation()
+        frames = SpriteLoader.displayFrames(
+            mode: mode,
+            action: action,
+            playsSequence: shouldAnimate && sequencePlaybackEnabled
+        )
+        frameIndex = 0
+        playMotion()
+        guard shouldAnimate,
+              sequencePlaybackEnabled,
+              frames.count > 1,
+              let kind = SpriteLoader.sequenceKind(for: action) else { return }
+        frameTask = Task { @MainActor in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(kind.frameInterval)) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                frameIndex = (frameIndex + 1) % frames.count
+                if frameIndex == 0, kind.pauseAfterCycle > 0 {
+                    do { try await Task.sleep(for: .seconds(kind.pauseAfterCycle)) }
+                    catch { return }
+                }
+            }
+        }
+    }
+
     private func stopMotion() {
         motionTask?.cancel()
         motionTask = nil
         pose = .rest
+    }
+
+
+    private func stopAnimation() {
+        frameTask?.cancel()
+        frameTask = nil
+        stopMotion()
+        frameIndex = 0
     }
 }

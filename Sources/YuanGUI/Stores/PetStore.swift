@@ -38,6 +38,8 @@ final class PetStore: ObservableObject {
     @Published private(set) var taskState: TaskState = .idle
     @Published private(set) var taskMessage: String?
     @Published private(set) var isPetPresented = false
+    @Published private(set) var isFocusActive = false
+    @Published private(set) var isFocusCelebrating = false
 
     let monitor: SystemMonitor
     let weather: WeatherService
@@ -48,14 +50,19 @@ final class PetStore: ObservableObject {
     private var minuteTimer: AnyCancellable?
     private var smartRotationTimer: AnyCancellable?
     private var smartActionSuppressionTask: Task<Void, Never>?
+    private var idleActionResetTask: Task<Void, Never>?
     private var lockedControlsHideTask: Task<Void, Never>?
     private var ambientChatterTask: Task<Void, Never>?
     private var ambientMessageHideTask: Task<Void, Never>?
+    private var focusCelebrationTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
     private var lastAmbientMessage: String?
 
     var currentAction: PetAction {
+        if isFocusCelebrating {
+            return PetAction(file: "19-maintenance-success", label: "专注完成，好耶！")
+        }
         switch taskState {
         case .maintenance: return PetAction(file: "18-maintenance-scan", label: "正在扫描")
         case .maintenanceSuccess: return PetAction(file: "19-maintenance-success", label: "清理完成")
@@ -65,15 +72,26 @@ final class PetStore: ObservableObject {
         if isChatting { return mode.chatAction }
         if smartReactionsEnabled,
            !isSmartActionSuppressed,
+           [.lowBattery, .memoryPressure, .charging].contains(smartState),
+           let action = mode.smartAction(for: smartState) {
+            return action
+        }
+        if ambientMessage != nil, petMotionEnabled { return mode.chatAction }
+        if smartReactionsEnabled,
+           !isSmartActionSuppressed,
            let action = mode.smartAction(for: smartState) {
             return action
         }
         let actions = mode.actions
+        if isFocusActive { return actions[0] }
         return actions[min(actionIndex, actions.count - 1)]
     }
 
     var shouldShowPetBubble: Bool {
-        showsSystemStatus || (!automaticBubbleSuppressed && smartReactionsEnabled && activeSmartStates.contains(where: \.showsAutomaticBubble))
+        if isFocusActive {
+            return smartReactionsEnabled && activeSmartStates.contains(where: \.isUrgent)
+        }
+        return showsSystemStatus || (!automaticBubbleSuppressed && smartReactionsEnabled && activeSmartStates.contains(where: \.showsAutomaticBubble))
     }
 
     var shouldReservePetBubbleSpace: Bool {
@@ -193,6 +211,16 @@ final class PetStore: ObservableObject {
                 self?.smartActionSuppressionTask = nil
             }
         }
+        idleActionResetTask?.cancel()
+        if petMotionEnabled, activeSmartStates.isEmpty {
+            idleActionResetTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(2)) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                self?.actionIndex = 0
+                self?.idleActionResetTask = nil
+            }
+        }
         showToast(currentAction.label)
     }
 
@@ -217,6 +245,9 @@ final class PetStore: ObservableObject {
 
     func setPetMotionEnabled(_ enabled: Bool) {
         petMotionEnabled = enabled
+        if enabled, taskState == .idle, activeSmartStates.isEmpty, !isChatting {
+            actionIndex = 0
+        }
         defaults.set(enabled, forKey: "petMotionEnabled")
     }
 
@@ -318,6 +349,37 @@ final class PetStore: ObservableObject {
     func setChatting(_ chatting: Bool) {
         isChatting = chatting
         if chatting { dismissAmbientMessage() }
+    }
+
+    func beginFocus() {
+        focusCelebrationTask?.cancel()
+        isFocusCelebrating = false
+        isFocusActive = true
+        automaticBubbleSuppressed = true
+        dismissAmbientMessage()
+        syncMiniMonitoringDemand()
+        showToast("专注开始，元圭和 VCC 安静陪你")
+    }
+
+    func endFocus(completed: Bool) {
+        isFocusActive = false
+        automaticBubbleSuppressed = false
+        syncMiniMonitoringDemand()
+        guard completed else {
+            showToast("本次专注已结束")
+            return
+        }
+        isFocusCelebrating = true
+        showToast("专注完成！元圭和 VCC 为你庆祝～")
+        NSSound(named: "Glass")?.play()
+        focusCelebrationTask?.cancel()
+        focusCelebrationTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            self?.isFocusCelebrating = false
+            self?.focusCelebrationTask = nil
+        }
     }
 
     func showSettings() {
@@ -463,9 +525,13 @@ final class PetStore: ObservableObject {
         }
     }
 
-    private func chooseIdleAction() {
+    func chooseIdleAction() {
         guard isPetPresented, idleAnimationEnabled, taskState == .idle,
               !isDropTargeted, !isChatting, activeSmartStates.isEmpty else { return }
+        if petMotionEnabled {
+            actionIndex = 0
+            return
+        }
         let count = mode.actions.count
         guard count > 1 else { return }
         actionIndex = (actionIndex + 1) % count
@@ -519,6 +585,7 @@ final class PetStore: ObservableObject {
     }
 
     private func showSmartMessage(_ state: SmartPetState) {
+        if isFocusActive, !state.isUrgent { return }
         switch state {
         case .lowBattery:
             let percent = monitor.snapshot.battery?.chargeFraction.map(MetricFormatting.percent) ?? "低电量"
@@ -556,7 +623,7 @@ final class PetStore: ObservableObject {
     }
 
     func showAmbientMessage(_ message: String, duration: TimeInterval = 8) {
-        guard isPetPresented, taskState == .idle, !isDropTargeted, !isChatting else { return }
+        guard isPetPresented, !isFocusActive, taskState == .idle, !isDropTargeted, !isChatting else { return }
         let value = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         toastToken = UUID()
@@ -589,7 +656,8 @@ final class PetStore: ObservableObject {
     }
 
     private func presentScheduledAmbientChatter() {
-        guard taskState == .idle,
+        guard !isFocusActive,
+              taskState == .idle,
               !isDropTargeted,
               !isChatting,
               toast == nil,
@@ -606,6 +674,7 @@ final class PetStore: ObservableObject {
 
     private func presentWeatherRefreshAnnouncement(_ snapshot: WeatherSnapshot) {
         guard taskAnimationsEnabled,
+              !isFocusActive,
               ambientChatterEnabled,
               weatherAnnouncementsEnabled,
               taskState == .idle,
@@ -613,11 +682,13 @@ final class PetStore: ObservableObject {
               !isChatting,
               toast == nil,
               ambientMessage == nil else { return }
-        let messages = PetAmbientChatter.weatherAnnouncements(
+        let allMessages = PetAmbientChatter.weatherAnnouncements(
             mode: mode,
             weather: snapshot,
             locationName: weather.locationName
-        ).filter { $0 != lastAmbientMessage }
+        )
+        let freshMessages = allMessages.filter { $0 != lastAmbientMessage }
+        let messages = freshMessages.isEmpty ? allMessages : freshMessages
         guard let message = messages.randomElement() else { return }
         showAmbientMessage(message, duration: 10)
     }

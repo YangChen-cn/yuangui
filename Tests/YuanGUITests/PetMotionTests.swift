@@ -35,6 +35,34 @@ final class PetMotionTests: XCTestCase {
         XCTAssertEqual(PetMotionProfile.style(for: action("15-eat-trash-2")), .chomp)
     }
 
+    @MainActor
+    func testKeyActionsUseAuthoredSixFrameSequencesAndChargingFallback() {
+        for mode in PetMode.allCases {
+            let idle = mode.actions[0]
+            XCTAssertEqual(SpriteLoader.frames(mode: mode, action: idle).count, 6)
+            XCTAssertEqual(SpriteLoader.frames(mode: mode, action: mode.chatAction).count, 6)
+            XCTAssertEqual(
+                SpriteLoader.frames(mode: mode, action: PetAction(file: "11-charging", label: "test")).count,
+                5
+            )
+        }
+    }
+
+    @MainActor
+    func testDisabledMotionUsesOriginalStaticArtworkInsteadOfSequenceFrame() {
+        for mode in PetMode.allCases {
+            let idle = mode.actions[0]
+            XCTAssertEqual(
+                SpriteLoader.displayFrames(mode: mode, action: idle, playsSequence: false).count,
+                1
+            )
+            XCTAssertEqual(
+                SpriteLoader.displayFrames(mode: mode, action: idle, playsSequence: true).count,
+                6
+            )
+        }
+    }
+
     private func action(_ file: String) -> PetAction {
         PetAction(file: file, label: "test")
     }

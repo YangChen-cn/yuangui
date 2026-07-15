@@ -44,7 +44,7 @@ struct ChatHistoryView: View {
                     HStack {
                         VStack(alignment: .leading) {
                             Text(session.title).font(.title2.bold())
-                            Text("\(session.messages.count) 条消息")
+                            Text("\(chat.messageCount(for: session.id)) 条消息")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -53,6 +53,10 @@ struct ChatHistoryView: View {
                     }
                     .padding()
                     Divider()
+                    if chat.isLoadingSession {
+                        ProgressView("正在读取这段对话…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(session.messages) { message in
@@ -60,6 +64,7 @@ struct ChatHistoryView: View {
                             }
                         }
                         .padding()
+                    }
                     }
                 }
             } else {

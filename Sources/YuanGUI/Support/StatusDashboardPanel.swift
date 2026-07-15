@@ -13,6 +13,7 @@ final class StatusDashboardPanelController {
     private static let screenInset: CGFloat = 8
 
     private let store: PetStore
+    private let focusTimer: FocusTimerStore
     private let togglePet: () -> Void
     private let showPet: () -> Void
     private let openSettings: () -> Void
@@ -24,11 +25,13 @@ final class StatusDashboardPanelController {
 
     init(
         store: PetStore,
+        focusTimer: FocusTimerStore,
         togglePet: @escaping () -> Void,
         showPet: @escaping () -> Void,
         openSettings: @escaping () -> Void
     ) {
         self.store = store
+        self.focusTimer = focusTimer
         self.togglePet = togglePet
         self.showPet = showPet
         self.openSettings = openSettings
@@ -96,6 +99,7 @@ final class StatusDashboardPanelController {
     private func installContent(width: CGFloat, height: CGFloat) {
         let rootView = MenuBarDashboardView(
             store: store,
+            focusTimer: focusTimer,
             dashboardWidth: width,
             dashboardHeight: height,
             togglePet: togglePet,

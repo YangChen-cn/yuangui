@@ -147,19 +147,19 @@ final class AIChatTests: XCTestCase {
         let store = ChatHistoryFileStore(directoryURL: directory)
         let session = ChatSession(title: "测试", messages: [ChatMessage(role: .user, content: "你好")])
 
-        try store.saveSessions([session])
+        try store.save(session: session, metadata: [ChatSessionMetadata(session: session)])
 
-        let loaded = try store.loadSessions()
+        let loaded = try store.loadMetadata().compactMap { try store.loadSession(id: $0.id) }
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded.first?.id, session.id)
         XCTAssertEqual(loaded.first?.title, session.title)
         XCTAssertEqual(loaded.first?.messages.map(\.content), ["你好"])
         XCTAssertEqual(loaded.first?.createdAt.timeIntervalSince1970 ?? 0, session.createdAt.timeIntervalSince1970, accuracy: 1)
-        let file = directory.appendingPathComponent("sessions.json")
+        let file = directory.appendingPathComponent("Sessions/\(session.id.uuidString).json")
         let fileAttributes = try FileManager.default.attributesOfItem(atPath: file.path)
         XCTAssertEqual((fileAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
-        try store.deleteSession(id: session.id)
-        XCTAssertEqual(try store.loadSessions(), [])
+        try store.deleteSession(id: session.id, metadata: [])
+        XCTAssertEqual(try store.loadMetadata(), [])
     }
 
     func testAttachmentPreparerExtractsAndTruncatesText() throws {
@@ -318,8 +318,12 @@ private actor SequencedChatService: AIChatServicing {
 
 private final class MemoryChatHistoryStore: ChatHistoryStoring {
     var sessions: [ChatSession] = []
-    func loadSessions() throws -> [ChatSession] { sessions }
-    func saveSessions(_ sessions: [ChatSession]) throws { self.sessions = sessions }
-    func deleteSession(id: UUID) throws { sessions.removeAll { $0.id == id } }
+    func loadMetadata() throws -> [ChatSessionMetadata] { sessions.map(ChatSessionMetadata.init) }
+    func loadSession(id: UUID) throws -> ChatSession? { sessions.first { $0.id == id } }
+    func save(session: ChatSession, metadata: [ChatSessionMetadata]) throws {
+        sessions.removeAll { $0.id == session.id }
+        sessions.append(session)
+    }
+    func deleteSession(id: UUID, metadata: [ChatSessionMetadata]) throws { sessions.removeAll { $0.id == id } }
     func clear() throws { sessions = [] }
 }

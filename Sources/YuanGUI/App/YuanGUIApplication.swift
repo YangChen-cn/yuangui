@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = PetStore()
     private let aiSettings = AISettingsStore()
     private let loginItemStore = LoginItemStore()
+    private lazy var focusTimer = FocusTimerStore(pet: store)
     private lazy var chatStore = ChatStore(settings: aiSettings)
     private lazy var maintenanceStore = MaintenanceStore(pet: store)
     private var panelController: PetPanelController?
@@ -32,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore)
+        panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore, focusTimer: focusTimer)
         panelController?.show()
         installMenuBarItem()
         chatStore.$isPresented
@@ -105,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let dashboardController { return dashboardController }
         let controller = StatusDashboardPanelController(
             store: store,
+            focusTimer: focusTimer,
             togglePet: { [weak self] in self?.panelController?.toggle() },
             showPet: { [weak self] in self?.panelController?.show() },
             openSettings: { [weak self] in self?.showSettings() }
@@ -119,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 petStore: store,
                 aiSettings: aiSettings,
                 loginItem: loginItemStore,
+                focusTimer: focusTimer,
                 showPet: { [weak self] in self?.panelController?.show() }
             )
         }

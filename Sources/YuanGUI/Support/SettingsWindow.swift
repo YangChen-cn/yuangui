@@ -5,7 +5,7 @@ import SwiftUI
 final class SettingsWindowController {
     private let window: NSWindow
 
-    init(petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, showPet: @escaping () -> Void) {
+    init(petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, showPet: @escaping () -> Void) {
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 540, height: 500),
             styleMask: [.titled, .closable],
@@ -21,6 +21,7 @@ final class SettingsWindowController {
             pet: petStore,
             ai: aiSettings,
             loginItem: loginItem,
+            focusTimer: focusTimer,
             showPet: showPet
         ))
     }

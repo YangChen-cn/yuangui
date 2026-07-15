@@ -44,6 +44,7 @@ final class PetPanelController {
     private let store: PetStore
     private let chat: ChatStore
     private let maintenance: MaintenanceStore
+    private let focusTimer: FocusTimerStore
     private let lockedToolbarPanel: PetLockedToolbarPanel
     private let edgePeekPanel: PetEdgePeekPanel
     private var observers: [NSObjectProtocol] = []
@@ -57,10 +58,11 @@ final class PetPanelController {
     private var lastLockedPointerInside = false
     private var layoutUpdateScheduled = false
 
-    init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore) {
+    init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore) {
         self.store = store
         self.chat = chat
         self.maintenance = maintenance
+        self.focusTimer = focusTimer
         let size = PetLayout.panelSize(
             scale: store.petScale,
             showsBubble: store.shouldReservePetBubbleSpace,
@@ -95,7 +97,7 @@ final class PetPanelController {
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: PetRootView(store: store, chat: chat, maintenance: maintenance))
+        panel.contentView = NSHostingView(rootView: PetRootView(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer))
         panel.ignoresMouseEvents = store.interactionLocked
         updateAllowedTopOverflow()
         lockedToolbarPanel.isOpaque = false

@@ -4,6 +4,7 @@ struct SettingsView: View {
     @ObservedObject var pet: PetStore
     @ObservedObject var ai: AISettingsStore
     @ObservedObject var loginItem: LoginItemStore
+    @ObservedObject var focusTimer: FocusTimerStore
     let showPet: () -> Void
     @State private var selectedTab = 0
     @State private var promptEditorState: PromptEditorState?
@@ -13,6 +14,7 @@ struct SettingsView: View {
             Picker("设置分类", selection: $selectedTab) {
                 Label("桌宠", systemImage: "pawprint.fill").tag(0)
                 Label("AI 对话", systemImage: "bubble.left.and.sparkles.fill").tag(1)
+                Label("专注", systemImage: "timer").tag(2)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -23,8 +25,10 @@ struct SettingsView: View {
             Group {
                 if selectedTab == 0 {
                     ScrollView { petSettings.padding(.bottom, 8) }
-                } else {
+                } else if selectedTab == 1 {
                     aiSettings
+                } else {
+                    focusSettings
                 }
             }
             .padding(16)
@@ -32,6 +36,31 @@ struct SettingsView: View {
         }
         .frame(width: 540, height: 500)
         .background(.regularMaterial)
+    }
+
+    private var focusSettings: some View {
+        Form {
+            Section("陪伴式专注") {
+                Stepper("专注时长：\(focusTimer.durationMinutes) 分钟", value: $focusTimer.durationMinutes, in: 1...180, step: 5)
+                Text("专注期间桌宠保持安静，隐藏日常对白、天气播报和非紧急系统气泡；低电量与内存紧张仍会提醒。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if focusTimer.state == .running || focusTimer.state == .paused {
+                    Text(focusTimer.timeText).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit()
+                    HStack {
+                        if focusTimer.state == .running {
+                            Button("暂停") { focusTimer.pause() }
+                        } else {
+                            Button("继续") { focusTimer.resume() }
+                        }
+                        Button("提前结束") { focusTimer.stop() }
+                    }
+                } else {
+                    Button("开始专注") { focusTimer.start(); showPet() }
+                        .buttonStyle(.borderedProminent).tint(.orange)
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 
     private var petSettings: some View {
@@ -125,11 +154,13 @@ struct SettingsView: View {
                     get: { pet.idleAnimationEnabled },
                     set: pet.setIdleAnimationEnabled
                 ))
-                Toggle("动作切换时播放轻动画", isOn: Binding(
+                Toggle(pet.petMotionEnabled ? "帧动画已开启" : "帧动画已关闭", isOn: Binding(
                     get: { pet.petMotionEnabled },
                     set: pet.setPetMotionEnabled
                 ))
-                Text("使用短暂的位移、缩放和摆动；系统低电量模式或“减少动态效果”开启时自动静止。")
+                Text(pet.petMotionEnabled
+                     ? "待机和自动对白会播放序列帧；动作切换时仍保留轻量位移、缩放与摆动。"
+                     : "序列帧已关闭，空闲时使用静态动作轮播；动作切换的轻量动画仍会保留。低电量模式或“减少动态效果”开启时才会完全静止。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("桌宠主动和你说话", isOn: Binding(

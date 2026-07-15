@@ -5,12 +5,14 @@ struct MenuBarDashboardView: View {
     static let preferredWidth: CGFloat = 400
 
     @ObservedObject var store: PetStore
+    @ObservedObject var focusTimer: FocusTimerStore
     let dashboardWidth: CGFloat
     let dashboardHeight: CGFloat
     let togglePet: () -> Void
     let showPet: () -> Void
     let openSettings: () -> Void
     let dismiss: () -> Void
+    @State private var showsFocusPopover = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -23,6 +25,18 @@ struct MenuBarDashboardView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button { showsFocusPopover.toggle() } label: {
+                    ZStack {
+                        Circle().fill(.red.opacity(focusTimer.state == .running ? 0.18 : 0.10))
+                        Text("🍅").font(.system(size: 14))
+                    }
+                    .frame(width: 27, height: 27)
+                }
+                .buttonStyle(.plain)
+                .help(focusTimer.state == .running ? "专注中：\(focusTimer.timeText)" : "打开番茄钟")
+                .popover(isPresented: $showsFocusPopover, arrowEdge: .top) {
+                    FocusTimerControlView(timer: focusTimer, showPet: showPet)
+                }
                 Label(smartStateTitle, systemImage: smartStateIcon)
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(smartStateColor)

@@ -61,6 +61,26 @@ struct ChatSession: Identifiable, Codable, Equatable {
     }
 }
 
+struct ChatSessionMetadata: Identifiable, Codable, Equatable {
+    let id: UUID
+    var title: String
+    let createdAt: Date
+    var updatedAt: Date
+    var messageCount: Int
+
+    init(session: ChatSession) {
+        id = session.id
+        title = session.title
+        createdAt = session.createdAt
+        updatedAt = session.updatedAt
+        messageCount = session.messages.count
+    }
+
+    var placeholder: ChatSession {
+        ChatSession(id: id, title: title, createdAt: createdAt, updatedAt: updatedAt, messages: [])
+    }
+}
+
 struct PreparedChatAttachment: Identifiable {
     enum Payload {
         case imageDataURL(String)
