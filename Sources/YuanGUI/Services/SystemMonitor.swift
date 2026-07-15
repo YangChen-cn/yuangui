@@ -142,9 +142,15 @@ final class SystemMonitor: ObservableObject {
     private var miniStatusVisible = false
     private var dashboardVisible = false
     private var powerNotificationSource: CFRunLoopSource?
+    private var powerRefreshTask: Task<Void, Never>?
+    private let powerRefreshRetryIntervalsNanoseconds: [UInt64]
 
-    init(coordinator: MetricsCoordinator = MetricsCoordinator()) {
+    init(
+        coordinator: MetricsCoordinator = MetricsCoordinator(),
+        powerRefreshRetryIntervalsNanoseconds: [UInt64] = [0, 350_000_000, 850_000_000, 1_800_000_000]
+    ) {
         self.coordinator = coordinator
+        self.powerRefreshRetryIntervalsNanoseconds = powerRefreshRetryIntervalsNanoseconds
     }
 
     func start() {
@@ -160,6 +166,8 @@ final class SystemMonitor: ObservableObject {
     func stop() {
         guard isStarted else { return }
         isStarted = false
+        powerRefreshTask?.cancel()
+        powerRefreshTask = nil
         if let powerNotificationSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), powerNotificationSource, .commonModes)
             self.powerNotificationSource = nil
@@ -186,6 +194,22 @@ final class SystemMonitor: ObservableObject {
         coordinator.refresh()
     }
 
+    func handlePowerSourceChange() {
+        powerRefreshTask?.cancel()
+        powerRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            for interval in powerRefreshRetryIntervalsNanoseconds {
+                if interval > 0 {
+                    do { try await Task.sleep(nanoseconds: interval) }
+                    catch { return }
+                }
+                guard !Task.isCancelled else { return }
+                coordinator.refresh(.battery)
+            }
+            powerRefreshTask = nil
+        }
+    }
+
     private func updateProfile() {
         let newProfile: MonitoringProfile
         if dashboardVisible || (petVisible && miniStatusVisible) {
@@ -207,7 +231,7 @@ final class SystemMonitor: ObservableObject {
             guard let context else { return }
             let monitor = Unmanaged<SystemMonitor>.fromOpaque(context).takeUnretainedValue()
             DispatchQueue.main.async {
-                monitor.coordinator.refresh(.battery)
+                monitor.handlePowerSourceChange()
             }
         }, context)?.takeRetainedValue() else { return }
         powerNotificationSource = source

@@ -53,6 +53,26 @@ final class MetricReaderTests: XCTestCase {
         coordinator.stop()
     }
 
+    @MainActor
+    func testPowerChangeRetriesBatteryRefreshWhileSystemValueSettles() async throws {
+        let battery = CountingMetricReader(identifier: .battery)
+        let coordinator = MetricsCoordinator(readers: [battery])
+        let monitor = SystemMonitor(
+            coordinator: coordinator,
+            powerRefreshRetryIntervalsNanoseconds: [0, 2_000_000, 4_000_000]
+        )
+        monitor.start()
+        monitor.setPetVisible(true)
+        try await Task.sleep(nanoseconds: 40_000_000)
+        let readsBeforeEvent = battery.readCount
+
+        monitor.handlePowerSourceChange()
+        try await Task.sleep(nanoseconds: 60_000_000)
+
+        XCTAssertGreaterThanOrEqual(battery.readCount, readsBeforeEvent + 3)
+        monitor.stop()
+    }
+
     func testCPUUsesTickDeltas() {
         let previous = CPUTickSample(user: 100, system: 40, idle: 300, nice: 10)
         let current = CPUTickSample(user: 150, system: 60, idle: 330, nice: 10)

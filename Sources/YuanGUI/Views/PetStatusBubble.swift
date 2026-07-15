@@ -25,12 +25,18 @@ struct PetStatusBubble: View {
                     .layoutPriority(1)
                 Spacer(minLength: 0)
                 if let value = weather.snapshot {
-                    Label("\(Int(value.temperature.rounded()))°", systemImage: value.condition.symbol)
+                    HStack(spacing: 4 * visualScale) {
+                        Image(systemName: value.condition.symbol)
+                        Text("\(Int(value.temperature.rounded()))°")
+                            .lineLimit(1)
+                    }
                         .font(.system(size: max(9, 10 * visualScale), weight: .bold, design: .rounded))
                         .foregroundStyle(.blue)
                         .padding(.horizontal, 7 * visualScale)
                         .padding(.vertical, 4 * visualScale)
                         .background(.blue.opacity(0.10), in: Capsule())
+                        .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(2)
                 }
             }
 
