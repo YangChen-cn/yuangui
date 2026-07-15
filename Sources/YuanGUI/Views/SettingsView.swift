@@ -6,8 +6,7 @@ struct SettingsView: View {
     @ObservedObject var loginItem: LoginItemStore
     let showPet: () -> Void
     @State private var selectedTab = 0
-    @State private var isPromptEditorPresented = false
-    @State private var promptDraft = ""
+    @State private var promptEditorState: PromptEditorState?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -229,8 +228,7 @@ struct SettingsView: View {
                 }
 
                 Button("查看或编辑角色提示词…") {
-                    promptDraft = ai.systemPrompt
-                    isPromptEditorPresented = true
+                    promptEditorState = PromptEditorState(prompt: ai.systemPrompt)
                 }
             }
             .formStyle(.grouped)
@@ -246,12 +244,30 @@ struct SettingsView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
-        .sheet(isPresented: $isPromptEditorPresented) {
-            promptEditor
+        .sheet(item: $promptEditorState) { state in
+            PromptEditorSheet(initialPrompt: state.prompt) { updatedPrompt in
+                ai.systemPrompt = updatedPrompt
+            }
         }
     }
+}
 
-    private var promptEditor: some View {
+private struct PromptEditorState: Identifiable {
+    let id = UUID()
+    let prompt: String
+}
+
+private struct PromptEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: String
+    let apply: (String) -> Void
+
+    init(initialPrompt: String, apply: @escaping (String) -> Void) {
+        _draft = State(initialValue: initialPrompt)
+        self.apply = apply
+    }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("角色提示词", systemImage: "text.quote")
                 .font(.title3.bold())
@@ -259,19 +275,19 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            TextEditor(text: $promptDraft)
+            TextEditor(text: $draft)
                 .font(.system(size: 12, design: .rounded))
                 .padding(8)
                 .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator.opacity(0.5)))
 
             HStack {
-                Button("恢复默认提示词") { promptDraft = AISettingsStore.defaultPrompt }
+                Button("恢复默认提示词") { draft = AISettingsStore.defaultPrompt }
                 Spacer()
-                Button("取消", role: .cancel) { isPromptEditorPresented = false }
+                Button("取消", role: .cancel) { dismiss() }
                 Button("应用") {
-                    ai.systemPrompt = promptDraft
-                    isPromptEditorPresented = false
+                    apply(draft)
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
