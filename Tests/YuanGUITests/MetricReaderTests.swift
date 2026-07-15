@@ -6,13 +6,13 @@ final class MetricReaderTests: XCTestCase {
         for identifier in MetricIdentifier.allCases {
             XCTAssertNil(MonitoringProfile.hidden.interval(for: identifier))
         }
-        XCTAssertEqual(MonitoringProfile.companion.interval(for: .memory), 20)
+        XCTAssertEqual(MonitoringProfile.companion.interval(for: .memory), 30)
         XCTAssertEqual(MonitoringProfile.companion.interval(for: .battery), 300)
         XCTAssertNil(MonitoringProfile.companion.interval(for: .cpu))
         XCTAssertNil(MonitoringProfile.companion.interval(for: .network))
         XCTAssertNil(MonitoringProfile.companion.interval(for: .disk))
         XCTAssertEqual(MonitoringProfile.live.interval(for: .cpu), 2)
-        XCTAssertEqual(MonitoringProfile.live.interval(for: .memory), 2)
+        XCTAssertEqual(MonitoringProfile.live.interval(for: .memory), 5)
         XCTAssertEqual(MonitoringProfile.live.interval(for: .network), 2)
     }
 

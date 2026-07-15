@@ -16,6 +16,7 @@ final class PetStore: ObservableObject {
     @Published private(set) var petScale: Double
     @Published private(set) var dashboardStyle: DashboardStyle
     @Published private(set) var idleAnimationEnabled: Bool
+    @Published private(set) var petMotionEnabled: Bool
     @Published private(set) var smartReactionsEnabled: Bool
     @Published private(set) var interactionLocked: Bool
     @Published private(set) var lockedControlsVisible = false
@@ -35,6 +36,7 @@ final class PetStore: ObservableObject {
     @Published private(set) var ambientMessage: String?
     @Published private(set) var taskState: TaskState = .idle
     @Published private(set) var taskMessage: String?
+    @Published private(set) var isPetPresented = false
 
     let monitor: SystemMonitor
     let weather: WeatherService
@@ -109,6 +111,9 @@ final class PetStore: ObservableObject {
         self.idleAnimationEnabled = defaults.object(forKey: "idleAnimationEnabled") == nil
             ? true
             : defaults.bool(forKey: "idleAnimationEnabled")
+        self.petMotionEnabled = defaults.object(forKey: "petMotionEnabled") == nil
+            ? true
+            : defaults.bool(forKey: "petMotionEnabled")
         self.smartReactionsEnabled = defaults.object(forKey: "smartReactionsEnabled") == nil
             ? true
             : defaults.bool(forKey: "smartReactionsEnabled")
@@ -154,7 +159,6 @@ final class PetStore: ObservableObject {
                     self?.chooseIdleAction()
                     self?.evaluateSmartState(at: date)
                 }
-            if ambientChatterEnabled { scheduleNextAmbientChatter(initial: true) }
         }
         if interactionLocked {
             scheduleLockedControlsHide(after: 3)
@@ -199,18 +203,35 @@ final class PetStore: ObservableObject {
         defaults.set(enabled, forKey: "idleAnimationEnabled")
     }
 
+    func setPetMotionEnabled(_ enabled: Bool) {
+        petMotionEnabled = enabled
+        defaults.set(enabled, forKey: "petMotionEnabled")
+    }
+
+    func setPetPresented(_ presented: Bool) {
+        guard isPetPresented != presented else { return }
+        isPetPresented = presented
+        ambientChatterTask?.cancel()
+        ambientChatterTask = nil
+        if presented {
+            if ambientChatterEnabled { scheduleNextAmbientChatter(initial: true) }
+        } else {
+            dismissAmbientMessage()
+        }
+    }
+
     func setAmbientChatterEnabled(_ enabled: Bool) {
         ambientChatterEnabled = enabled
         defaults.set(enabled, forKey: "ambientChatterEnabled")
         ambientChatterTask?.cancel()
         ambientChatterTask = nil
-        if enabled { scheduleNextAmbientChatter(initial: true) }
+        if enabled, isPetPresented { scheduleNextAmbientChatter(initial: true) }
     }
 
     func setAmbientChatterIntervalMinutes(_ minutes: Int) {
         ambientChatterIntervalMinutes = min(max(minutes, 1), 120)
         defaults.set(ambientChatterIntervalMinutes, forKey: "ambientChatterIntervalMinutes")
-        if ambientChatterEnabled { scheduleNextAmbientChatter() }
+        if ambientChatterEnabled, isPetPresented { scheduleNextAmbientChatter() }
     }
 
     func setWeatherAnnouncementsEnabled(_ enabled: Bool) {
@@ -414,7 +435,8 @@ final class PetStore: ObservableObject {
     }
 
     private func chooseIdleAction() {
-        guard idleAnimationEnabled, taskState == .idle, !isDropTargeted, !isChatting, activeSmartStates.isEmpty else { return }
+        guard isPetPresented, idleAnimationEnabled, taskState == .idle,
+              !isDropTargeted, !isChatting, activeSmartStates.isEmpty else { return }
         let count = mode.actions.count
         guard count > 1 else { return }
         actionIndex = (actionIndex + 1) % count
@@ -495,7 +517,7 @@ final class PetStore: ObservableObject {
     }
 
     func showAmbientMessage(_ message: String, duration: TimeInterval = 8) {
-        guard taskState == .idle, !isDropTargeted, !isChatting else { return }
+        guard isPetPresented, taskState == .idle, !isDropTargeted, !isChatting else { return }
         let value = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         toastToken = UUID()
@@ -514,7 +536,7 @@ final class PetStore: ObservableObject {
     }
 
     private func scheduleNextAmbientChatter(initial: Bool = false) {
-        guard taskAnimationsEnabled, ambientChatterEnabled else { return }
+        guard taskAnimationsEnabled, ambientChatterEnabled, isPetPresented else { return }
         ambientChatterTask?.cancel()
         let configuredDelay = TimeInterval(ambientChatterIntervalMinutes * 60)
         let delay = initial ? min(configuredDelay, 180) : configuredDelay

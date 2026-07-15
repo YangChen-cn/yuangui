@@ -35,6 +35,7 @@ final class PetStoreTests: XCTestCase {
 
         XCTAssertEqual(store.mode, .duo)
         XCTAssertEqual(store.petScale, PetLayout.defaultScale)
+        XCTAssertTrue(store.petMotionEnabled)
         XCTAssertTrue(store.ambientChatterEnabled)
         XCTAssertEqual(store.ambientChatterIntervalMinutes, 15)
         XCTAssertTrue(store.weatherAnnouncementsEnabled)
@@ -108,11 +109,35 @@ final class PetStoreTests: XCTestCase {
         store.setSystemStatusVisible(true)
         store.setDashboardStyle(.midnight)
         store.setIdleAnimationEnabled(false)
+        store.setPetMotionEnabled(false)
 
         XCTAssertEqual(defaults.integer(forKey: "petMode"), PetMode.vcc.rawValue)
         XCTAssertTrue(defaults.bool(forKey: "showsSystemStatus"))
         XCTAssertEqual(defaults.integer(forKey: "dashboardStyle"), DashboardStyle.midnight.rawValue)
         XCTAssertFalse(defaults.bool(forKey: "idleAnimationEnabled"))
+        XCTAssertFalse(defaults.bool(forKey: "petMotionEnabled"))
+    }
+
+    func testHiddenPetSuppressesAmbientMessagesAndClearsVisibleMessage() {
+        let suite = "PetStorePresentationTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+
+        store.showAmbientMessage("隐藏时不显示")
+        XCTAssertNil(store.ambientMessage)
+
+        store.setPetPresented(true)
+        store.showAmbientMessage("显示时出现")
+        XCTAssertEqual(store.ambientMessage, "显示时出现")
+
+        store.setPetPresented(false)
+        XCTAssertNil(store.ambientMessage)
     }
 
     func testInteractionKeepsSystemStatusVisible() {
@@ -510,6 +535,7 @@ final class PetStoreTests: XCTestCase {
         )
         store.setBedtimeReminderEnabled(false)
         store.setSmartReactionsEnabled(false)
+        store.setPetPresented(true)
 
         XCTAssertFalse(store.shouldShowPetBubble)
         store.showAmbientMessage("元圭和 VCC 来陪你啦～", duration: 60)

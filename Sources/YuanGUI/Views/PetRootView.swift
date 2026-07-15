@@ -70,9 +70,13 @@ struct PetRootView: View {
                         .zIndex(3)
                 }
 
-                petImage
+                AnimatedPetSprite(
+                    mode: store.mode,
+                    action: store.currentAction,
+                    motionEnabled: store.petMotionEnabled && store.isPetPresented
+                )
                     .frame(width: 326 * scale, height: 326 * scale)
-                    .shadow(color: .black.opacity(0.20), radius: 14, y: 8)
+                    .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         store.interact()
@@ -137,29 +141,11 @@ struct PetRootView: View {
             if locked { isHovering = false }
         }
         .onAppear { updateAdaptiveControlSide() }
-        .animation(.spring(response: 0.36, dampingFraction: 0.82), value: store.currentAction.id)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: store.showsSystemStatus)
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: store.ambientMessage)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: chat.isPresented)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.petScale)
-        .animation(.spring(response: 0.34, dampingFraction: 0.84), value: store.smartState)
         .animation(.easeOut(duration: 0.18), value: store.toast)
         .contextMenu { contextMenu }
-    }
-
-    @ViewBuilder
-    private var petImage: some View {
-        if let image = SpriteLoader.image(mode: store.mode, action: store.currentAction) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .id("\(store.mode.rawValue)-\(store.currentAction.id)")
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-        } else {
-            Image(systemName: "pawprint.fill")
-                .font(.system(size: 100))
-                .foregroundStyle(.secondary)
-        }
     }
 
     private var roleControls: some View {

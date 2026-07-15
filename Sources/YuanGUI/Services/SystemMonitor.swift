@@ -17,13 +17,14 @@ enum MonitoringProfile: Int, Comparable, Equatable {
             return nil
         case .companion:
             switch identifier {
-            case .memory: return 20
+            case .memory: return 30
             case .battery: return 300
             case .cpu, .disk, .network: return nil
             }
         case .live:
             switch identifier {
-            case .cpu, .memory, .network: return 2
+            case .cpu, .network: return 2
+            case .memory: return 5
             case .disk, .battery: return 60
             }
         }

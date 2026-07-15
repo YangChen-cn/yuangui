@@ -55,6 +55,7 @@ final class PetPanelController {
     private var lockedLocalMouseMonitor: Any?
     private var lockedHoverFallbackTimer: DispatchSourceTimer?
     private var lastLockedPointerInside = false
+    private var layoutUpdateScheduled = false
 
     init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore) {
         self.store = store
@@ -125,7 +126,7 @@ final class PetPanelController {
         Publishers.CombineLatest4(store.$showsSystemStatus, store.$smartState, store.$petScale, chat.$isPresented)
             .dropFirst()
             .sink { [weak self] _, _, _, _ in
-                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
             }
             .store(in: &cancellables)
         store.$interactionLocked
@@ -148,19 +149,19 @@ final class PetPanelController {
         maintenance.$quickMode
             .removeDuplicates()
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
             }
             .store(in: &cancellables)
         store.$automaticBubbleSuppressed
             .removeDuplicates()
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
             }
             .store(in: &cancellables)
         store.$ambientMessage
             .removeDuplicates()
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.resizeToCurrentLayout() }
+                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
             }
             .store(in: &cancellables)
     }
@@ -174,6 +175,7 @@ final class PetPanelController {
 
     func show() {
         if dockedEdge != nil {
+            store.setPetPresented(false)
             panel.orderOut(nil)
             lockedToolbarPanel.orderOut(nil)
             refreshEdgePeekContent()
@@ -186,6 +188,7 @@ final class PetPanelController {
         constrainToVisibleScreens()
         panel.orderFrontRegardless()
         updateInteractionLock(store.interactionLocked)
+        store.setPetPresented(true)
         store.monitor.setPetVisible(true)
     }
 
@@ -194,6 +197,7 @@ final class PetPanelController {
         lockedToolbarPanel.orderOut(nil)
         edgePeekPanel.orderOut(nil)
         stopLockedHoverTracking()
+        store.setPetPresented(false)
         store.monitor.setPetVisible(false)
     }
 
@@ -233,6 +237,17 @@ final class PetPanelController {
         ) { [weak self] _ in
             Task { @MainActor in self?.constrainToVisibleScreens() }
         })
+    }
+
+    private func scheduleLayoutUpdate() {
+        guard !layoutUpdateScheduled else { return }
+        layoutUpdateScheduled = true
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self else { return }
+            self.layoutUpdateScheduled = false
+            self.resizeToCurrentLayout()
+        }
     }
 
     private func resizeToCurrentLayout() {
@@ -472,6 +487,7 @@ final class PetPanelController {
                 self.panel.orderOut(nil)
                 self.panel.bypassScreenConstraint = false
                 self.isDockTransitioning = false
+                self.store.setPetPresented(false)
                 self.positionEdgePeek()
                 self.edgePeekPanel.orderFrontRegardless()
             }
@@ -510,6 +526,7 @@ final class PetPanelController {
             self.isDockTransitioning = false
             self.lastExpandedOrigin = target
             self.persistExpandedOrigin()
+            self.store.setPetPresented(true)
             self.updateInteractionLock(self.store.interactionLocked)
         }
 

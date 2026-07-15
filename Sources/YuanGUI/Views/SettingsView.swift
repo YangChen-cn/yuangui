@@ -6,6 +6,8 @@ struct SettingsView: View {
     @ObservedObject var loginItem: LoginItemStore
     let showPet: () -> Void
     @State private var selectedTab = 0
+    @State private var isPromptEditorPresented = false
+    @State private var promptDraft = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -124,6 +126,13 @@ struct SettingsView: View {
                     get: { pet.idleAnimationEnabled },
                     set: pet.setIdleAnimationEnabled
                 ))
+                Toggle("动作切换时播放轻动画", isOn: Binding(
+                    get: { pet.petMotionEnabled },
+                    set: pet.setPetMotionEnabled
+                ))
+                Text("使用短暂的位移、缩放和摆动；系统低电量模式或“减少动态效果”开启时自动静止。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("桌宠主动和你说话", isOn: Binding(
                     get: { pet.ambientChatterEnabled },
                     set: pet.setAmbientChatterEnabled
@@ -147,9 +156,6 @@ struct SettingsView: View {
                         get: { pet.weatherAnnouncementsEnabled },
                         set: pet.setWeatherAnnouncementsEnabled
                     ))
-                    Text("天气约每 15 分钟后台更新；识别到的城市名也会随机出现在日常对白中，无法识别时只说“当前位置”。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 Toggle("在桌宠上方显示迷你状态气泡", isOn: Binding(
                     get: { pet.showsSystemStatus },
@@ -175,22 +181,59 @@ struct SettingsView: View {
     private var aiSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
             Form {
-                TextField("API 基础地址", text: $ai.baseURL)
-                TextField("模型", text: $ai.model)
+                TextField("API 基础地址", text: Binding(
+                    get: { ai.baseURL },
+                    set: ai.updateBaseURL
+                ))
                 SecureField("API Key（保存在本机，仅当前用户可读）", text: Binding(
                     get: { ai.apiKey },
                     set: ai.updateAPIKey
                 ))
+
+                HStack {
+                    if ai.isConnecting {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("正在读取模型…")
+                            .foregroundStyle(.secondary)
+                    } else if let message = ai.connectionMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(ai.availableModels.isEmpty ? .orange : .green)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    Button("连接并读取模型") {
+                        Task { await ai.connectAndLoadModels() }
+                    }
+                    .disabled(
+                        ai.isConnecting
+                            || ai.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || ai.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
+
+                if !ai.availableModels.isEmpty {
+                    Picker("可用模型（\(ai.availableModels.count)）", selection: $ai.model) {
+                        if !ai.model.isEmpty, !ai.availableModels.contains(ai.model) {
+                            Text("手动：\(ai.model)").tag(ai.model)
+                        }
+                        ForEach(ai.availableModels, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    TextField("手动模型名", text: $ai.model)
+                } else {
+                    TextField("模型（可手动填写）", text: $ai.model)
+                }
+
+                Button("查看或编辑角色提示词…") {
+                    promptDraft = ai.systemPrompt
+                    isPromptEditorPresented = true
+                }
             }
             .formStyle(.grouped)
-
-            Text("角色提示词")
-                .font(.headline)
-            TextEditor(text: $ai.systemPrompt)
-                .font(.system(size: 11, design: .rounded))
-                .padding(6)
-                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator.opacity(0.5)))
 
             HStack {
                 Button("恢复 MiMo 默认值") { ai.resetDefaults() }
@@ -203,5 +246,39 @@ struct SettingsView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
+        .sheet(isPresented: $isPromptEditorPresented) {
+            promptEditor
+        }
+    }
+
+    private var promptEditor: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("角色提示词", systemImage: "text.quote")
+                .font(.title3.bold())
+            Text("修改会先应用到当前设置，点击主设置页的“保存”后才会持久保存。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextEditor(text: $promptDraft)
+                .font(.system(size: 12, design: .rounded))
+                .padding(8)
+                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator.opacity(0.5)))
+
+            HStack {
+                Button("恢复默认提示词") { promptDraft = AISettingsStore.defaultPrompt }
+                Spacer()
+                Button("取消", role: .cancel) { isPromptEditorPresented = false }
+                Button("应用") {
+                    ai.systemPrompt = promptDraft
+                    isPromptEditorPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 560, height: 410)
+        .background(.regularMaterial)
     }
 }

@@ -20,6 +20,45 @@ final class AIChatTests: XCTestCase {
         XCTAssertNil(AIChatService.chatEndpoint(from: "ftp://example.com/v1"))
     }
 
+    func testModelsEndpointUsesSameCompatibleBasePath() {
+        XCTAssertEqual(
+            AIModelService.modelsEndpoint(from: "https://example.com/v1")?.absoluteString,
+            "https://example.com/v1/models"
+        )
+        XCTAssertEqual(
+            AIModelService.modelsEndpoint(from: "https://example.com/v1/chat/completions")?.absoluteString,
+            "https://example.com/v1/models"
+        )
+        XCTAssertEqual(
+            AIModelService.modelsEndpoint(from: "https://example.com/v1/models")?.absoluteString,
+            "https://example.com/v1/models"
+        )
+        XCTAssertNil(AIModelService.modelsEndpoint(from: "ftp://example.com/v1"))
+    }
+
+    func testModelServiceReadsSortsAndDeduplicatesModels() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ModelListURLProtocol.self]
+        ModelListURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://example.com/v1/models")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "api-key"), "test-key")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (response, Data(#"{"data":[{"id":"model-z"},{"id":"model-a"},{"id":"model-a"}]}"#.utf8))
+        }
+        defer { ModelListURLProtocol.handler = nil }
+
+        let service = AIModelService(session: URLSession(configuration: configuration))
+        let models = try await service.models(baseURL: "https://example.com/v1", apiKey: "test-key")
+
+        XCTAssertEqual(models, ["model-a", "model-z"])
+    }
+
     func testLocalSecretStorePersistsWithOwnerOnlyPermissions() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("LocalSecretStoreTests-\(UUID().uuidString)", isDirectory: true)
@@ -55,6 +94,28 @@ final class AIChatTests: XCTestCase {
 
         XCTAssertEqual(secrets.value, "test-key")
         XCTAssertEqual(defaults.string(forKey: "aiModel"), "custom-model")
+    }
+
+    @MainActor
+    func testSettingsConnectsAndKeepsManualModelChoice() async {
+        let suite = "AIModelSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AISettingsStore(
+            defaults: defaults,
+            secrets: MemorySecretStore(),
+            modelService: StubModelService(models: ["model-a", "model-b"])
+        )
+        settings.updateBaseURL("https://example.com/v1")
+        settings.updateAPIKey("test-key")
+        settings.model = "manual-model"
+
+        await settings.connectAndLoadModels()
+
+        XCTAssertEqual(settings.availableModels, ["model-a", "model-b"])
+        XCTAssertEqual(settings.model, "manual-model")
+        XCTAssertEqual(settings.connectionMessage, "连接成功，读取到 2 个模型")
+        XCTAssertFalse(settings.isConnecting)
     }
 
     @MainActor
@@ -206,6 +267,32 @@ private final class MemorySecretStore: SecretStoring {
     func read(service: String, account: String) -> String? { value }
     func save(_ value: String, service: String, account: String) throws { self.value = value }
     func delete(service: String, account: String) throws { value = nil }
+}
+
+private struct StubModelService: AIModelListing {
+    let models: [String]
+    func models(baseURL: String, apiKey: String) async throws -> [String] { models }
+}
+
+private final class ModelListURLProtocol: URLProtocol {
+    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            let handler = try XCTUnwrap(Self.handler)
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }
 
 private actor SequencedChatService: AIChatServicing {

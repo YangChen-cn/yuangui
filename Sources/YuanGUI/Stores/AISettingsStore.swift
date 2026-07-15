@@ -17,15 +17,24 @@ final class AISettingsStore: ObservableObject {
     @Published var systemPrompt: String
     @Published private(set) var apiKey: String
     @Published private(set) var saveMessage: String?
+    @Published private(set) var availableModels: [String] = []
+    @Published private(set) var isConnecting = false
+    @Published private(set) var connectionMessage: String?
 
     private let defaults: UserDefaults
     private let secrets: SecretStoring
+    private let modelService: AIModelListing
     private let keychainService = "com.yang.yuangui.mimo-api-key"
     private let keychainAccount = "default"
 
-    init(defaults: UserDefaults = .standard, secrets: SecretStoring = LocalSecretStore()) {
+    init(
+        defaults: UserDefaults = .standard,
+        secrets: SecretStoring = LocalSecretStore(),
+        modelService: AIModelListing = AIModelService()
+    ) {
         self.defaults = defaults
         self.secrets = secrets
+        self.modelService = modelService
         baseURL = defaults.string(forKey: "aiBaseURL") ?? Self.defaultBaseURL
         let savedModel = defaults.string(forKey: "aiModel")
         model = savedModel == "mimo-v2.5-pro" ? Self.defaultModel : (savedModel ?? Self.defaultModel)
@@ -36,6 +45,31 @@ final class AISettingsStore: ObservableObject {
 
     func updateAPIKey(_ value: String) {
         apiKey = value
+        connectionMessage = nil
+        availableModels = []
+    }
+
+    func updateBaseURL(_ value: String) {
+        baseURL = value
+        connectionMessage = nil
+        availableModels = []
+    }
+
+    func connectAndLoadModels() async {
+        guard !isConnecting else { return }
+        isConnecting = true
+        connectionMessage = nil
+        defer { isConnecting = false }
+        do {
+            let models = try await modelService.models(baseURL: baseURL, apiKey: apiKey)
+            availableModels = models
+            let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedModel.isEmpty { model = models[0] }
+            connectionMessage = "连接成功，读取到 \(models.count) 个模型"
+        } catch {
+            availableModels = []
+            connectionMessage = error.localizedDescription
+        }
     }
 
     func save() {
@@ -62,5 +96,7 @@ final class AISettingsStore: ObservableObject {
         model = Self.defaultModel
         systemPrompt = Self.defaultPrompt
         saveMessage = nil
+        connectionMessage = nil
+        availableModels = []
     }
 }

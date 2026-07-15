@@ -2,13 +2,13 @@ import SwiftUI
 
 struct PetAmbientBubble: View {
     @ObservedObject var store: PetStore
+    @State private var appeared = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10 * visualScale) {
             Image(systemName: icon)
                 .font(.system(size: 18 * visualScale, weight: .bold))
                 .foregroundStyle(.pink)
-                .symbolEffect(.bounce, value: store.ambientMessage)
                 .frame(width: 28 * visualScale, height: 28 * visualScale)
                 .background(.pink.opacity(0.13), in: Circle())
 
@@ -34,20 +34,24 @@ struct PetAmbientBubble: View {
         .frame(width: PetLayout.ambientBubbleWidth(scale: store.petScale))
         .background(
             LinearGradient(
-                colors: [.white.opacity(0.94), .pink.opacity(0.16), .blue.opacity(0.10)],
+                colors: [.white.opacity(0.96), .pink.opacity(0.18), .blue.opacity(0.12)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
             in: RoundedRectangle(cornerRadius: 22 * visualScale, style: .continuous)
         )
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22 * visualScale, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22 * visualScale).stroke(.white.opacity(0.82), lineWidth: 0.9))
-        .shadow(color: .pink.opacity(0.18), radius: 14, y: 6)
+        .shadow(color: .black.opacity(0.12), radius: 7, y: 3)
         .overlay(alignment: .bottom) {
             PetBubbleTail()
-                .fill(.regularMaterial)
+                .fill(.white.opacity(0.92))
                 .frame(width: 20 * visualScale, height: 10 * visualScale)
                 .offset(y: 8 * visualScale)
+        }
+        .opacity(appeared ? 1 : 0.9)
+        .offset(y: appeared ? 0 : -4)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.14)) { appeared = true }
         }
     }
 
