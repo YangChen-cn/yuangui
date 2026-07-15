@@ -86,6 +86,7 @@ struct AnimatedPetSprite: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .id("\(mode.id)-\(action.id)")
         .scaleEffect(pose.scale)
         .offset(x: pose.x, y: pose.y)
         .rotationEffect(.degrees(pose.rotationDegrees))

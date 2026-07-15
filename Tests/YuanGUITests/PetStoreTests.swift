@@ -406,6 +406,46 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(SmartPetState.resolve(from: snapshot), .memoryPressure)
     }
 
+    func testNewChargingStateImmediatelyInterruptsIdleAction() {
+        let suite = "PetStoreChargingTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+
+        XCTAssertTrue(store.currentAction.file.contains("idle"))
+
+        store.applySmartStates([.charging])
+
+        XCTAssertEqual(store.smartState, .charging)
+        XCTAssertEqual(store.currentAction.file, "11-charging")
+    }
+
+    func testNewSmartStateCancelsManualActionSuppression() {
+        let suite = "PetStoreSmartTransitionTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+
+        store.applySmartStates([.rainy])
+        store.interact()
+        XCTAssertNotEqual(store.currentAction.file, "12-rainy")
+
+        store.applySmartStates([.rainy, .charging])
+
+        XCTAssertEqual(store.smartState, .charging)
+        XCTAssertEqual(store.currentAction.file, "11-charging")
+    }
+
     func testStatusMessageReflectsLiveSystemPressureEvenInNormalActionState() {
         var snapshot = SystemSnapshot.empty
         snapshot.memory = MemoryMetrics(

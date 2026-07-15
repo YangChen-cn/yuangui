@@ -45,6 +45,7 @@ final class PetStore: ObservableObject {
     private let taskAnimationsEnabled: Bool
     private var minuteTimer: AnyCancellable?
     private var smartRotationTimer: AnyCancellable?
+    private var smartActionSuppressionTask: Task<Void, Never>?
     private var lockedControlsHideTask: Task<Void, Never>?
     private var ambientChatterTask: Task<Void, Never>?
     private var ambientMessageHideTask: Task<Void, Never>?
@@ -176,9 +177,14 @@ final class PetStore: ObservableObject {
         guard !interactionLocked else { return }
         actionIndex = (actionIndex + 1) % mode.actions.count
         if smartState != .normal {
+            smartActionSuppressionTask?.cancel()
             isSmartActionSuppressed = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            smartActionSuppressionTask = Task { [weak self] in
+                do { try await Task.sleep(nanoseconds: 6_000_000_000) }
+                catch { return }
+                guard !Task.isCancelled else { return }
                 self?.isSmartActionSuppressed = false
+                self?.smartActionSuppressionTask = nil
             }
         }
         showToast(currentAction.label)
@@ -442,20 +448,30 @@ final class PetStore: ObservableObject {
         actionIndex = (actionIndex + 1) % count
     }
 
-    private func applySmartStates(_ states: [SmartPetState]) {
+    func applySmartStates(_ states: [SmartPetState]) {
         guard smartReactionsEnabled else { return }
         let previousStates = activeSmartStates
+        let newlyActivatedStates = states.filter { !previousStates.contains($0) }
         activeSmartStates = states
-        if states != previousStates { automaticBubbleSuppressed = false }
-        if let currentIndex = states.firstIndex(of: smartState) {
+        if states != previousStates {
+            automaticBubbleSuppressed = false
+            smartActionSuppressionTask?.cancel()
+            smartActionSuppressionTask = nil
+            isSmartActionSuppressed = false
+        }
+        if let urgentState = newlyActivatedStates.first(where: \.isUrgent) {
+            smartState = urgentState
+        } else if let newlyActivatedState = newlyActivatedStates.first {
+            smartState = newlyActivatedState
+        } else if let currentIndex = states.firstIndex(of: smartState) {
             smartState = states[currentIndex]
         } else {
             smartState = states.first ?? .normal
         }
         syncMiniMonitoringDemand()
         updateSmartRotationTimer()
-        guard states != previousStates, let first = states.first else { return }
-        showSmartMessage(first)
+        guard states != previousStates, smartState != .normal else { return }
+        showSmartMessage(smartState)
     }
 
     private func rotateSmartState() {
