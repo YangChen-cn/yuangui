@@ -302,6 +302,9 @@ struct PetRootView: View {
         Button(store.shouldShowPetBubble ? "隐藏系统状态" : "显示系统状态") {
             store.toggleSystemStatus()
         }
+        Button(store.desktopIconsVisible ? "隐藏桌面图标" : "显示桌面图标") {
+            store.toggleDesktopIcons()
+        }
         Menu("切换角色") {
             ForEach(PetMode.allCases) { mode in
                 Button(mode.title) { store.setMode(mode) }

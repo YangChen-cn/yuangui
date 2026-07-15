@@ -26,6 +26,7 @@ final class PetStore: ObservableObject {
     @Published private(set) var ambientChatterEnabled: Bool
     @Published private(set) var ambientChatterIntervalMinutes: Int
     @Published private(set) var weatherAnnouncementsEnabled: Bool
+    @Published private(set) var desktopIconsVisible: Bool
     @Published private(set) var smartState: SmartPetState = .normal
     @Published private(set) var activeSmartStates: [SmartPetState] = []
     @Published private(set) var isChatting = false
@@ -41,6 +42,7 @@ final class PetStore: ObservableObject {
     let monitor: SystemMonitor
     let weather: WeatherService
     private let trashHandler: TrashHandling
+    private let desktopIconManager: DesktopIconManaging
     private let defaults: UserDefaults
     private let taskAnimationsEnabled: Bool
     private var minuteTimer: AnyCancellable?
@@ -92,12 +94,16 @@ final class PetStore: ObservableObject {
         monitor: SystemMonitor,
         weather: WeatherService? = nil,
         trashHandler: TrashHandling,
+        desktopIconManager: DesktopIconManaging? = nil,
         defaults: UserDefaults = .standard,
         startServices: Bool = true
     ) {
         self.monitor = monitor
         self.weather = weather ?? WeatherService()
         self.trashHandler = trashHandler
+        let desktopIconManager = desktopIconManager ?? DesktopIconService()
+        self.desktopIconManager = desktopIconManager
+        self.desktopIconsVisible = desktopIconManager.areDesktopIconsVisible()
         self.defaults = defaults
         self.taskAnimationsEnabled = startServices
         if defaults.object(forKey: "petMode") != nil {
@@ -397,6 +403,23 @@ final class PetStore: ObservableObject {
 
     func openTrash() {
         trashHandler.openTrash()
+    }
+
+    func refreshDesktopIconVisibility() {
+        desktopIconsVisible = desktopIconManager.areDesktopIconsVisible()
+    }
+
+    func toggleDesktopIcons() {
+        let visible = !desktopIconsVisible
+        do {
+            try desktopIconManager.setDesktopIconsVisible(visible)
+            desktopIconsVisible = visible
+            showToast(visible ? "已显示桌面图标" : "已隐藏桌面图标")
+        } catch {
+            desktopIconsVisible = desktopIconManager.areDesktopIconsVisible()
+            NSSound.beep()
+            showToast("切换桌面图标失败：\(error.localizedDescription)")
+        }
     }
 
     func confirmAndEmptyTrash() {

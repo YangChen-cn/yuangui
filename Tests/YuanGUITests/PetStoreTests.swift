@@ -19,6 +19,23 @@ final class FakeTrashHandler: TrashHandling {
 }
 
 @MainActor
+final class FakeDesktopIconManager: DesktopIconManaging {
+    var visible: Bool
+    private(set) var requestedVisibility: Bool?
+
+    init(visible: Bool) {
+        self.visible = visible
+    }
+
+    func areDesktopIconsVisible() -> Bool { visible }
+
+    func setDesktopIconsVisible(_ visible: Bool) throws {
+        requestedVisibility = visible
+        self.visible = visible
+    }
+}
+
+@MainActor
 final class PetStoreTests: XCTestCase {
     func testFreshStoreDefaultsToDuo() {
         let fake = FakeTrashHandler()
@@ -39,6 +56,28 @@ final class PetStoreTests: XCTestCase {
         XCTAssertTrue(store.ambientChatterEnabled)
         XCTAssertEqual(store.ambientChatterIntervalMinutes, 15)
         XCTAssertTrue(store.weatherAnnouncementsEnabled)
+    }
+
+    func testDesktopIconStateIsReadAndToggledThroughFinderManager() {
+        let suite = "PetStoreDesktopIconTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let desktopIcons = FakeDesktopIconManager(visible: false)
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            desktopIconManager: desktopIcons,
+            defaults: defaults,
+            startServices: false
+        )
+
+        XCTAssertFalse(store.desktopIconsVisible)
+
+        store.toggleDesktopIcons()
+
+        XCTAssertEqual(desktopIcons.requestedVisibility, true)
+        XCTAssertTrue(store.desktopIconsVisible)
+        XCTAssertEqual(store.toast, "已显示桌面图标")
     }
 
     func testAmbientChatterPreferencesClampAndPersist() {

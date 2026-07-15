@@ -44,6 +44,12 @@ struct MenuBarDashboardView: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 5) {
                     Button {
+                        store.toggleDesktopIcons()
+                    } label: {
+                        Image(systemName: store.desktopIconsVisible ? "rectangle.grid.2x2.fill" : "rectangle.grid.2x2")
+                    }
+                    .help(store.desktopIconsVisible ? "隐藏桌面图标" : "显示桌面图标")
+                    Button {
                         store.toggleInteractionLock()
                         showPet()
                     } label: {
@@ -84,6 +90,7 @@ struct MenuBarDashboardView: View {
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.35), lineWidth: 0.8))
         .preferredColorScheme(store.dashboardStyle == .midnight ? .dark : nil)
         .onAppear {
+            store.refreshDesktopIconVisibility()
             store.monitor.refresh()
         }
         .onExitCommand(perform: dismiss)

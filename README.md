@@ -12,6 +12,7 @@
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -32,7 +33,7 @@
 - **附件对话与历史记录**：支持图片和文本类附件，保留本地聊天历史。
 - **清理屋**：提供保守的空间清理、软件卸载、白名单、操作记录和路径安全检查。
 - **废纸篓互动**：把文件拖到桌宠上即可移入废纸篓，也可以打开或确认清空废纸篓。
-- **桌面交互**：支持拖动、四边贴靠、迷你露头、尺寸调节、交互锁定与鼠标穿透。
+- **桌面交互**：支持拖动、四边贴靠、迷你露头、尺寸调节、交互锁定与鼠标穿透，也可一键隐藏或显示 Finder 桌面图标。
 - **菜单栏入口与登录启动**：桌宠隐藏后仍可通过菜单栏恢复，并可选择登录时自动启动。
 
 ## 系统要求
@@ -45,6 +46,8 @@
 ## 安装
 
 ### 使用 DMG
+
+[一键下载最新版 `YuanGUI-1.0.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.0.dmg)
 
 1. 打开 `YuanGUI-1.0.0.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
@@ -106,7 +109,7 @@ swift test
 swift test
 ```
 
-当前项目包含 72 项测试，覆盖：
+当前项目包含 73 项测试，覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -164,4 +167,3 @@ YuanGUI/
 ## 许可证
 
 当前仓库尚未提供开源许可证。除非版权所有者另行授权，否则保留所有权利；公开源码不代表允许复制、修改、分发或商用。
-
