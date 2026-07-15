@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import YuanGUI
 
@@ -61,6 +62,49 @@ final class PetMotionTests: XCTestCase {
                 6
             )
         }
+    }
+
+    @MainActor
+    func testChatSequencesMatchIdleVisualSize() throws {
+        for mode in PetMode.allCases {
+            let idleFrames = SpriteLoader.frames(mode: mode, action: mode.actions[0])
+            let chatFrames = SpriteLoader.frames(mode: mode, action: mode.chatAction)
+            let idleMass = median(try idleFrames.map(alphaMass))
+            let chatMass = median(try chatFrames.map(alphaMass))
+
+            XCTAssertEqual(
+                chatMass / idleMass,
+                1,
+                accuracy: 0.04,
+                "\(mode.title) chatting frames should not zoom relative to idle"
+            )
+        }
+    }
+
+    private func alphaMass(_ image: NSImage) throws -> Double {
+        let representation = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
+        let data = try XCTUnwrap(representation.bitmapData)
+        XCTAssertEqual(representation.bitsPerSample, 8)
+        XCTAssertFalse(representation.isPlanar)
+        let samples = representation.samplesPerPixel
+        let alphaOffset = representation.bitmapFormat.contains(.alphaFirst) ? 0 : samples - 1
+        var total = 0
+        for y in 0..<representation.pixelsHigh {
+            let row = data.advanced(by: y * representation.bytesPerRow)
+            for x in 0..<representation.pixelsWide {
+                total += Int(row[x * samples + alphaOffset])
+            }
+        }
+        return Double(total) / 255
+    }
+
+    private func median(_ values: [Double]) -> Double {
+        let sorted = values.sorted()
+        let midpoint = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[midpoint - 1] + sorted[midpoint]) / 2
+        }
+        return sorted[midpoint]
     }
 
     private func action(_ file: String) -> PetAction {
