@@ -2,10 +2,10 @@
 .build/
 dist/
 .swiftpm/
+.codex/
 DerivedData/
 *.xcuserstate
 .env
 .env.*
 !.env.example
 Secrets.plist
-
