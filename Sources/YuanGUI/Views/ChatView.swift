@@ -25,26 +25,31 @@ struct PetReplyBubble: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(width: 410)
+        .foregroundStyle(.primary)
+        .background(
+            Color(nsColor: .windowBackgroundColor).opacity(0.96),
+            in: RoundedRectangle(cornerRadius: 23, style: .continuous)
+        )
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
         .background(
             LinearGradient(
-                colors: [.pink.opacity(0.19), .purple.opacity(0.13), .blue.opacity(0.08)],
+                colors: [.pink.opacity(0.12), .purple.opacity(0.07), .blue.opacity(0.04)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
             in: RoundedRectangle(cornerRadius: 23, style: .continuous)
         )
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 23, style: .continuous)
                 .stroke(
-                    LinearGradient(colors: [.white.opacity(0.75), .pink.opacity(0.28)], startPoint: .top, endPoint: .bottom),
+                    LinearGradient(colors: [.white.opacity(0.55), .pink.opacity(0.32)], startPoint: .top, endPoint: .bottom),
                     lineWidth: 0.9
                 )
         }
         .shadow(color: .pink.opacity(0.20), radius: 17, y: 7)
         .overlay(alignment: .bottom) {
             ReplyBubbleTail()
-                .fill(.regularMaterial)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
                 .frame(width: 25, height: 13)
                 .offset(x: 92, y: 9)
         }

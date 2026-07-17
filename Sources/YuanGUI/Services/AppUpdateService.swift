@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "1.0.3"
-    static let fallbackBuild = "5"
+    static let fallbackVersion = "1.0.4"
+    static let fallbackBuild = "6"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,11 +14,11 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
-        "新增哔哩哔哩账号收藏夹读取，可选择自己创建或收藏的视频收藏夹一键导入。",
-        "导入收藏夹时自动去重，并创建或更新同名本地歌单。",
-        "修复从迷你播放器打开完整播放器时窗口偶尔无法激活、输入框无法使用 Command-V 的问题。",
-        "修复账号自己创建的收藏夹因类型字段差异而无法显示的问题。",
-        "修复一键更新准备安装后无法自动退出、替换并重启应用的问题。"
+        "修复 Bilibili 接口偶发返回其他视频字幕轨的问题，AI 字幕按 aid/cid 校验，人工字幕使用轨道一致性确认。",
+        "Apple Music 的 LRCLIB 歌词改用稳定缓存键，重启后可继续使用已匹配歌词。",
+        "Bilibili 登录信息完整显示昵称和 UID，并支持仅修改歌曲名或歌手而不重新匹配歌词。",
+        "歌词偏移新增手动输入与 0.1 秒微调，状态栏、完整播放器和歌词设置操作保持一致。",
+        "提高桌宠聊天气泡的不透明度及深色模式对比度，深色桌面上更易阅读。"
     ]
 }
 

@@ -33,18 +33,23 @@ struct PetAmbientBubble: View {
         .padding(.vertical, 11 * visualScale)
         .frame(width: PetLayout.ambientBubbleWidth(scale: store.petScale))
         .background(
+            Color(nsColor: .windowBackgroundColor).opacity(0.96),
+            in: RoundedRectangle(cornerRadius: 22 * visualScale, style: .continuous)
+        )
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 22 * visualScale, style: .continuous))
+        .background(
             LinearGradient(
-                colors: [.white.opacity(0.96), .pink.opacity(0.18), .blue.opacity(0.12)],
+                colors: [.pink.opacity(0.12), .blue.opacity(0.07), .clear],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
             in: RoundedRectangle(cornerRadius: 22 * visualScale, style: .continuous)
         )
-        .overlay(RoundedRectangle(cornerRadius: 22 * visualScale).stroke(.white.opacity(0.82), lineWidth: 0.9))
+        .overlay(RoundedRectangle(cornerRadius: 22 * visualScale).stroke(.white.opacity(0.58), lineWidth: 0.9))
         .shadow(color: .black.opacity(0.12), radius: 7, y: 3)
         .overlay(alignment: .bottom) {
             PetBubbleTail()
-                .fill(.white.opacity(0.92))
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
                 .frame(width: 20 * visualScale, height: 10 * visualScale)
                 .offset(y: 8 * visualScale)
         }

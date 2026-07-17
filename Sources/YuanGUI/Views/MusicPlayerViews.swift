@@ -201,15 +201,7 @@ struct MusicStatusCard: View {
             .pickerStyle(.segmented)
             HStack {
                 Text("歌词偏移").font(.caption)
-                Slider(
-                    value: Binding(get: { music.currentLyricOffset }, set: music.setLyricOffset),
-                    in: -30...30,
-                    step: 0.1
-                )
-                .disabled(music.currentTrack == nil)
-                Text(String(format: "%+.1fs", music.currentLyricOffset))
-                    .font(.system(size: 9, design: .monospaced))
-                    .frame(width: 45, alignment: .trailing)
+                LyricOffsetControl(music: music, compact: true)
             }
             if music.source == .bilibili, music.currentTrack != nil {
                 VStack(alignment: .leading, spacing: 5) {
@@ -220,6 +212,13 @@ struct MusicStatusCard: View {
                         TextField("歌手", text: $searchArtist)
                     }
                     HStack {
+                        Button {
+                            music.updateCurrentTrackMetadata(title: searchTitle, artist: searchArtist)
+                        } label: {
+                            Label("仅保存歌曲信息", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(searchTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            && searchArtist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Button {
                             music.searchLyrics(title: searchTitle, artist: searchArtist)
                         } label: {
@@ -233,7 +232,7 @@ struct MusicStatusCard: View {
                     if let message = music.lyricsSearchMessage {
                         Text(message)
                             .font(.system(size: 9))
-                            .foregroundStyle(message.hasPrefix("已匹配") ? Color.green : Color.orange)
+                            .foregroundStyle(message.hasPrefix("已") ? Color.green : Color.orange)
                     }
                 }
             }
@@ -590,10 +589,18 @@ struct MusicPlayerView: View {
                     .frame(width: 28, height: 28)
                     .clipShape(Circle())
 
-                    Text(account.name)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-                        .frame(maxWidth: 78)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(account.name)
+                            .font(.callout.weight(.semibold))
+                            .lineLimit(2)
+                        Text("UID \(account.mid)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: 180, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Image(systemName: "person.crop.circle.badge.plus")
                         .font(.system(size: 17, weight: .semibold))
@@ -615,25 +622,14 @@ struct MusicPlayerView: View {
     private var lyricsActionButtons: some View {
         Button(music.lyricsVisible ? "隐藏桌面歌词" : "显示桌面歌词") { music.toggleLyricsVisible() }
         Button("导入 LRC 文件") { chooseLRC() }
-        Button("重设歌曲信息并匹配歌词") { prepareLyricsSearch() }
+        Button("修改歌曲信息或匹配歌词") { prepareLyricsSearch() }
     }
 
     private var lyricsAdjustments: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
                 Text("歌词偏移")
-                Slider(
-                    value: Binding(get: { music.currentLyricOffset }, set: music.setLyricOffset),
-                    in: -30...30,
-                    step: 0.1
-                )
-                .frame(width: 210)
-                .disabled(music.currentTrack == nil)
-                Text(String(format: "%+.1f 秒", music.currentLyricOffset))
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(width: 68, alignment: .trailing)
-                Button("归零") { music.setLyricOffset(0) }
-                    .disabled(abs(music.currentLyricOffset) < 0.001)
+                LyricOffsetControl(music: music)
             }
             Text("正数会让歌词延后出现，负数会让歌词提前出现。偏移按歌曲保存。")
                 .font(.caption)
@@ -870,7 +866,11 @@ struct BilibiliLoginSheet: View {
                     }
                     .frame(width: 72, height: 72)
                     .clipShape(Circle())
-                    Text(account.name).font(.headline)
+                    Text(account.name).font(.headline).textSelection(.enabled)
+                    Text("UID \(account.mid)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                     Text("已登录，可读取账号有权访问的播放器字幕。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -969,6 +969,51 @@ struct BilibiliLoginSheet: View {
     }
 }
 
+struct LyricOffsetControl: View {
+    @ObservedObject var music: MusicStore
+    var compact = false
+
+    private var offset: Binding<Double> {
+        Binding(get: { music.currentLyricOffset }, set: music.setLyricOffset)
+    }
+
+    var body: some View {
+        HStack(spacing: compact ? 5 : 7) {
+            Slider(value: offset, in: -30...30, step: 0.1)
+                .frame(minWidth: compact ? 90 : 150, maxWidth: compact ? .infinity : 210)
+
+            HStack(spacing: 3) {
+                TextField(
+                    "0.0",
+                    value: offset,
+                    format: .number.precision(.fractionLength(1...2))
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: compact ? 9 : 11, design: .monospaced))
+                .multilineTextAlignment(.trailing)
+                .frame(width: compact ? 48 : 56)
+                .help("直接输入 -30 到 30 秒，按回车确认")
+
+                Text("秒")
+                    .font(compact ? .system(size: 9) : .caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Stepper("微调歌词偏移", value: offset, in: -30...30, step: 0.1)
+                .labelsHidden()
+                .controlSize(.mini)
+                .help("每次微调 0.1 秒")
+
+            if !compact {
+                Button("归零") { music.setLyricOffset(0) }
+                    .controlSize(.small)
+                    .disabled(abs(music.currentLyricOffset) < 0.001)
+            }
+        }
+        .disabled(music.currentTrack == nil)
+    }
+}
+
 private struct LyricsSearchSheet: View {
     @ObservedObject var music: MusicStore
     @Binding var title: String
@@ -977,9 +1022,9 @@ private struct LyricsSearchSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("重设歌曲信息并搜索歌词")
+            Text("修改歌曲信息或搜索歌词")
                 .font(.title2.bold())
-            Text("可以把 B 站视频标题和 UP 主改成真实歌曲名、歌手，再从 LRCLIB 匹配同步歌词。")
+            Text("可以只保存歌曲名和歌手，不影响现有歌词；也可以保存信息后从 LRCLIB 匹配同步歌词。")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Form {
@@ -990,12 +1035,19 @@ private struct LyricsSearchSheet: View {
             if let message = music.lyricsSearchMessage {
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(message.hasPrefix("已匹配") ? .green : .orange)
+                    .foregroundStyle(message.hasPrefix("已") ? .green : .orange)
             }
             HStack {
                 Spacer()
                 Button("取消") { isPresented = false }
                     .keyboardShortcut(.cancelAction)
+                Button("仅保存歌曲信息") {
+                    if music.updateCurrentTrackMetadata(title: title, artist: artist) {
+                        isPresented = false
+                    }
+                }
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button {
                     music.searchLyrics(title: title, artist: artist)
                 } label: {

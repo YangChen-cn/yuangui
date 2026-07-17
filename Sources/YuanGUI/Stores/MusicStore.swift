@@ -607,6 +607,22 @@ final class MusicStore: ObservableObject {
         }
     }
 
+    @discardableResult
+    func updateCurrentTrackMetadata(title rawTitle: String, artist rawArtist: String) -> Bool {
+        guard let track = currentTrack else { return false }
+        let enteredTitle = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let enteredArtist = rawArtist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = enteredTitle.isEmpty ? track.title : enteredTitle
+        let artist = enteredArtist.isEmpty ? track.artist : enteredArtist
+        guard !title.isEmpty, !artist.isEmpty else {
+            lyricsSearchMessage = "歌曲名和歌手不能同时留空"
+            return false
+        }
+        updateMetadata(for: track.id, title: title, artist: artist)
+        lyricsSearchMessage = "已保存歌曲信息：“\(title) — \(artist)”；原有歌词保持不变"
+        return true
+    }
+
     private func updateMetadata(for trackID: String, title: String, artist: String) {
         let resolvedArtist = artist.isEmpty ? (currentTrack?.artist ?? "未知歌手") : artist
         if let index = playlist.firstIndex(where: { $0.id == trackID }) {

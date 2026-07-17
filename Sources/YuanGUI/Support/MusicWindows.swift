@@ -221,33 +221,35 @@ private struct DesktopLyricsSettingsView: View {
                 .font(.subheadline.weight(.semibold))
             TextField("歌曲名", text: $title)
             TextField("歌手", text: $artist)
-            Button {
-                music.searchLyrics(title: title, artist: artist)
-            } label: {
-                if music.isSearchingLyrics {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("匹配歌词并更新信息", systemImage: "magnifyingglass")
+            HStack {
+                Button {
+                    music.updateCurrentTrackMetadata(title: title, artist: artist)
+                } label: {
+                    Label("仅保存歌曲信息", systemImage: "square.and.arrow.down")
                 }
+                Button {
+                    music.searchLyrics(title: title, artist: artist)
+                } label: {
+                    if music.isSearchingLyrics {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("匹配歌词并更新信息", systemImage: "magnifyingglass")
+                    }
+                }
+                .disabled(music.isSearchingLyrics || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .disabled(music.isSearchingLyrics || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             if let message = music.lyricsSearchMessage {
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(message.hasPrefix("已匹配") ? Color.green : Color.orange)
+                    .foregroundStyle(message.hasPrefix("已") ? Color.green : Color.orange)
             }
             Divider()
             HStack {
                 Text("歌词偏移")
-                Slider(
-                    value: Binding(get: { music.currentLyricOffset }, set: music.setLyricOffset),
-                    in: -30...30,
-                    step: 0.1
-                )
-                Text(String(format: "%+.1fs", music.currentLyricOffset))
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(width: 54, alignment: .trailing)
+                LyricOffsetControl(music: music, compact: true)
                 Button("归零") { music.setLyricOffset(0) }
+                    .controlSize(.small)
+                    .disabled(abs(music.currentLyricOffset) < 0.001)
             }
             Text("正数延后，负数提前；按歌曲保存。")
                 .font(.caption)
