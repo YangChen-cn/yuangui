@@ -69,7 +69,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>LSUIElement</key>
   <true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>用于在你确认后让 Finder 清空废纸篓。</string>
+  <string>用于在你确认后控制 Music App 播放，并让 Finder 执行废纸篓操作。</string>
   <key>NSLocationUsageDescription</key>
   <string>用于获取你所在区域的当前天气，只请求公里级位置且不保存轨迹。</string>
   <key>NSLocationWhenInUseUsageDescription</key>

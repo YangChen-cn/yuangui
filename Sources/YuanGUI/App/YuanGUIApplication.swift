@@ -23,19 +23,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var focusTimer = FocusTimerStore(pet: store)
     private lazy var chatStore = ChatStore(settings: aiSettings)
     private lazy var maintenanceStore = MaintenanceStore(pet: store)
+    private lazy var musicStore = MusicStore()
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardController: StatusDashboardPanelController?
     private var settingsController: SettingsWindowController?
     private var chatHistoryController: ChatHistoryWindowController?
     private var maintenanceController: MaintenanceWindowController?
+    private var musicController: MusicWindowController?
+    private var lyricsController: LyricsPanelController?
     private var weatherStartupTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore, focusTimer: focusTimer)
+        installMainMenu()
+        panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore, focusTimer: focusTimer, music: musicStore)
         panelController?.show()
+        lyrics().updateVisibility()
         installMenuBarItem()
         weatherStartupTask = Task { [weak self] in
             // Give the pet panel and menu bar item a chance to render before
@@ -53,9 +58,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
     }
 
+    private func installMainMenu() {
+        let mainMenu = NSMenu(title: "主菜单")
+
+        let applicationItem = NSMenuItem(title: "YuanGUI", action: nil, keyEquivalent: "")
+        let applicationMenu = NSMenu(title: "YuanGUI")
+        applicationMenu.addItem(withTitle: "退出 YuanGUI", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationItem.submenu = applicationMenu
+        mainMenu.addItem(applicationItem)
+
+        let editItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: #selector(UndoManager.undo), keyEquivalent: "z")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+
+        NSApp.mainMenu = mainMenu
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         weatherStartupTask?.cancel()
         store.monitor.stop()
+        musicStore.shutdown()
     }
 
     private func installMenuBarItem() {
@@ -103,6 +132,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .showYuanGUIMusic)
+            .sink { [weak self] _ in Task { @MainActor in self?.showMusic() } }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .musicLyricsVisibilityChanged)
+            .sink { [weak self] _ in Task { @MainActor in self?.lyrics().updateVisibility() } }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .musicLyricsLockChanged)
+            .sink { [weak self] _ in Task { @MainActor in self?.lyrics().updateLock() } }
+            .store(in: &cancellables)
         self.statusItem = statusItem
     }
 
@@ -116,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = StatusDashboardPanelController(
             store: store,
             focusTimer: focusTimer,
+            music: musicStore,
             togglePet: { [weak self] in self?.panelController?.toggle() },
             showPet: { [weak self] in self?.panelController?.show() },
             openSettings: { [weak self] in self?.showSettings() }
@@ -131,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 aiSettings: aiSettings,
                 loginItem: loginItemStore,
                 focusTimer: focusTimer,
+                music: musicStore,
                 showPet: { [weak self] in self?.panelController?.show() }
             )
         }
@@ -149,6 +189,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             maintenanceController = MaintenanceWindowController(store: maintenanceStore)
         }
         maintenanceController?.show()
+    }
+
+    private func showMusic() {
+        if musicController == nil { musicController = MusicWindowController(music: musicStore) }
+        musicController?.show()
+    }
+
+    private func lyrics() -> LyricsPanelController {
+        if let lyricsController { return lyricsController }
+        let controller = LyricsPanelController(music: musicStore)
+        lyricsController = controller
+        return controller
     }
 
 }

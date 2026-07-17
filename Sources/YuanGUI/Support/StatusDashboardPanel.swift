@@ -14,6 +14,7 @@ final class StatusDashboardPanelController {
 
     private let store: PetStore
     private let focusTimer: FocusTimerStore
+    private let music: MusicStore
     private let togglePet: () -> Void
     private let showPet: () -> Void
     private let openSettings: () -> Void
@@ -26,12 +27,14 @@ final class StatusDashboardPanelController {
     init(
         store: PetStore,
         focusTimer: FocusTimerStore,
+        music: MusicStore,
         togglePet: @escaping () -> Void,
         showPet: @escaping () -> Void,
         openSettings: @escaping () -> Void
     ) {
         self.store = store
         self.focusTimer = focusTimer
+        self.music = music
         self.togglePet = togglePet
         self.showPet = showPet
         self.openSettings = openSettings
@@ -100,6 +103,7 @@ final class StatusDashboardPanelController {
         let rootView = MenuBarDashboardView(
             store: store,
             focusTimer: focusTimer,
+            music: music,
             dashboardWidth: width,
             dashboardHeight: height,
             togglePet: togglePet,

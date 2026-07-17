@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -5,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var ai: AISettingsStore
     @ObservedObject var loginItem: LoginItemStore
     @ObservedObject var focusTimer: FocusTimerStore
+    @ObservedObject var music: MusicStore
     let showPet: () -> Void
     @State private var selectedTab = 0
     @State private var promptEditorState: PromptEditorState?
@@ -15,6 +17,7 @@ struct SettingsView: View {
                 Label("桌宠", systemImage: "pawprint.fill").tag(0)
                 Label("AI 对话", systemImage: "bubble.left.and.sparkles.fill").tag(1)
                 Label("专注", systemImage: "timer").tag(2)
+                Label("音乐", systemImage: "music.note").tag(3)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -27,8 +30,10 @@ struct SettingsView: View {
                     ScrollView { petSettings.padding(.bottom, 8) }
                 } else if selectedTab == 1 {
                     aiSettings
-                } else {
+                } else if selectedTab == 2 {
                     focusSettings
+                } else {
+                    musicSettings
                 }
             }
             .padding(16)
@@ -36,6 +41,71 @@ struct SettingsView: View {
         }
         .frame(width: 540, height: 500)
         .background(.regularMaterial)
+    }
+
+    private var musicSettings: some View {
+        Form {
+            Section("播放器") {
+                Picker("默认播放来源", selection: Binding(get: { music.source }, set: music.setSource)) {
+                    ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
+                }
+                Toggle("显示桌面悬浮歌词", isOn: Binding(get: { music.lyricsVisible }, set: { _ in music.toggleLyricsVisible() }))
+                Toggle("轻量跟唱（歌词气泡与轻微律动）", isOn: Binding(get: { music.lightSingAlongEnabled }, set: music.setLightSingAlongEnabled))
+                Toggle("锁定悬浮歌词并允许点击穿透", isOn: Binding(get: { music.lyricsPanelLocked }, set: music.setLyricsPanelLocked))
+                Toggle("显示桌面歌词文字阴影", isOn: Binding(
+                    get: { music.lyricsShadowEnabled },
+                    set: music.setLyricsShadowEnabled
+                ))
+                Toggle("显示桌面歌词半透明背景长条", isOn: Binding(
+                    get: { music.lyricsBackgroundVisible },
+                    set: music.setLyricsBackgroundVisible
+                ))
+                HStack {
+                    Text("桌面歌词字号")
+                    Slider(
+                        value: Binding(get: { music.lyricsFontSize }, set: music.setLyricsFontSize),
+                        in: 14...42,
+                        step: 1
+                    )
+                    Text("\(Int(music.lyricsFontSize))")
+                        .font(.system(.body, design: .monospaced))
+                        .frame(width: 28, alignment: .trailing)
+                }
+                Picker("桌面歌词字体", selection: Binding(
+                    get: { music.lyricsFontStyle },
+                    set: music.setLyricsFontStyle
+                )) {
+                    ForEach(LyricsFontStyle.allCases) { style in Text(style.title).tag(style) }
+                }
+                ColorPicker(
+                    "桌面歌词颜色",
+                    selection: Binding(
+                        get: { Color(nsColor: music.lyricsColor) },
+                        set: { music.setLyricsColor(NSColor($0)) }
+                    ),
+                    supportsOpacity: true
+                )
+                Text("关闭轻量跟唱后，播放期间只显示轻量音乐状态；番茄钟专注时会自动隐藏桌宠歌词气泡。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Apple Music") {
+                HStack {
+                    Text(music.appleMusicRunning ? "Music App 正在运行" : "Music App 尚未运行")
+                    Spacer()
+                    Button("连接") { music.connectAppleMusic() }
+                    Button("权限设置") { music.openAutomationSettings() }
+                }
+                Text("YuanGUI 只控制系统 Music App，不提取或重新播放 Apple Music 音频。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("哔哩哔哩") {
+                Text("当前支持无需登录的公开视频兼容音频线路，不支持会员、付费内容或下载。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Button("打开完整音乐播放器") { music.showFullPlayer() }
+                .buttonStyle(.borderedProminent)
+        }
+        .formStyle(.grouped)
     }
 
     private var focusSettings: some View {
@@ -119,6 +189,36 @@ struct SettingsView: View {
                     get: { pet.smartReactionsEnabled },
                     set: pet.setSmartReactionsEnabled
                 ))
+                Toggle("低电量提醒", isOn: Binding(
+                    get: { pet.lowBatteryAlertsEnabled },
+                    set: pet.setLowBatteryAlertsEnabled
+                ))
+                Toggle("内存紧张提醒", isOn: Binding(
+                    get: { pet.memoryPressureAlertsEnabled },
+                    set: pet.setMemoryPressureAlertsEnabled
+                ))
+                if pet.lowBatteryAlertsEnabled || pet.memoryPressureAlertsEnabled {
+                    Picker("紧急状态提醒方式", selection: Binding(
+                        get: { pet.urgentReminderMode },
+                        set: pet.setUrgentReminderMode
+                    )) {
+                        ForEach(UrgentReminderMode.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    if pet.urgentReminderMode == .interval {
+                        Stepper(
+                            "提醒间隔：\(pet.urgentReminderIntervalMinutes) 分钟",
+                            value: Binding(
+                                get: { pet.urgentReminderIntervalMinutes },
+                                set: pet.setUrgentReminderIntervalMinutes
+                            ),
+                            in: 5...120,
+                            step: 5
+                        )
+                        Text("每次显示约 10 秒；播放音乐时会缩成歌词气泡内的告警标记。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Toggle("夜深了提醒", isOn: Binding(
                     get: { pet.bedtimeReminderEnabled },
                     set: pet.setBedtimeReminderEnabled

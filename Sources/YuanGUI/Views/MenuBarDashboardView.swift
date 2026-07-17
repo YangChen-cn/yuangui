@@ -6,6 +6,7 @@ struct MenuBarDashboardView: View {
 
     @ObservedObject var store: PetStore
     @ObservedObject var focusTimer: FocusTimerStore
+    @ObservedObject var music: MusicStore
     let dashboardWidth: CGFloat
     let dashboardHeight: CGFloat
     let togglePet: () -> Void
@@ -13,6 +14,13 @@ struct MenuBarDashboardView: View {
     let openSettings: () -> Void
     let dismiss: () -> Void
     @State private var showsFocusPopover = false
+    @State private var selectedSection: DashboardSection = .mac
+
+    private enum DashboardSection: String, CaseIterable, Identifiable {
+        case mac = "Mac 状态"
+        case music = "音乐"
+        var id: String { rawValue }
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -46,8 +54,19 @@ struct MenuBarDashboardView: View {
             }
             .padding(.horizontal, 4)
 
-            WeatherStatusCard(weather: store.weather)
-            SystemStatusCard(monitor: store.monitor)
+            Picker("面板内容", selection: $selectedSection) {
+                ForEach(DashboardSection.allCases) { section in Text(section.rawValue).tag(section) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if selectedSection == .mac {
+                WeatherStatusCard(weather: store.weather)
+                SystemStatusCard(monitor: store.monitor)
+            } else {
+                MusicStatusCard(music: music)
+                    .frame(maxHeight: .infinity)
+            }
 
             HStack(spacing: 8) {
                 dashboardTextButton("显示/隐藏桌宠", action: togglePet)

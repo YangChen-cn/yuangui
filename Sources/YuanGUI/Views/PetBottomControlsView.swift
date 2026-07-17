@@ -3,6 +3,7 @@ import SwiftUI
 struct PetBottomControlsView: View {
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
+    @ObservedObject var music: MusicStore
     @State private var hoveredTip: String?
 
     var body: some View {
@@ -54,6 +55,18 @@ struct PetBottomControlsView: View {
             .disabled(store.interactionLocked)
             .opacity(store.interactionLocked ? 0.38 : 1)
 
+            Button { music.isMiniPlayerPresented.toggle() } label: {
+                toolIcon("music.note", tint: .purple, selected: music.isPlaying)
+            }
+            .buttonStyle(.plain)
+            .onHover { setTip($0 ? (music.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
+            .help("YuanGUI 音乐播放器")
+            .popover(isPresented: $music.isMiniPlayerPresented, arrowEdge: .bottom) {
+                MiniMusicPlayerView(music: music)
+            }
+            .disabled(store.interactionLocked)
+            .opacity(store.interactionLocked ? 0.38 : 1)
+
             Button { store.toggleInteractionLock() } label: {
                 toolIcon(
                     store.interactionLocked ? "lock.fill" : "lock.open.fill",
@@ -65,22 +78,6 @@ struct PetBottomControlsView: View {
             .onHover { setTip($0 ? (store.interactionLocked ? "解锁桌宠" : "锁定并允许穿透") : nil) }
             .help(store.interactionLocked ? "解锁桌宠，恢复点击和拖动" : "锁定桌宠：主体允许点击穿透，悬停仍可唤出工具栏")
 
-            Menu {
-                Button("轻巧（60%）") { store.setPetScale(0.60) }
-                Button("默认（75%）") { store.setPetScale(PetLayout.defaultScale) }
-                Button("舒展（90%）") { store.setPetScale(0.90) }
-                Divider()
-                Button("缩小") { store.adjustPetScale(by: -0.1) }
-                Button("放大") { store.adjustPetScale(by: 0.1) }
-            } label: {
-                toolIcon("arrow.up.left.and.arrow.down.right")
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: PetLayout.bottomToolbarButtonWidth)
-            .onHover { setTip($0 ? "调整桌宠大小" : nil) }
-            .help("调整桌宠显示大小")
-            .disabled(store.interactionLocked)
-            .opacity(store.interactionLocked ? 0.38 : 1)
         }
         .padding(PetLayout.bottomToolbarPanelPadding)
         .background(.regularMaterial, in: Capsule())

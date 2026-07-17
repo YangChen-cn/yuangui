@@ -29,7 +29,7 @@ final class SpriteResourceTests: XCTestCase {
     func testTaskSpritesLoadForEveryCharacterAtExpectedSize() throws {
         let files = [
             "15-eat-trash-1", "15-eat-trash-2", "15-eat-trash-3",
-            "18-maintenance-scan", "19-maintenance-success"
+            "18-maintenance-scan", "19-maintenance-success", "20-listening"
         ]
 
         for mode in PetMode.allCases {

@@ -7,6 +7,7 @@ struct PetRootView: View {
     @ObservedObject var chat: ChatStore
     @ObservedObject var maintenance: MaintenanceStore
     @ObservedObject var focusTimer: FocusTimerStore
+    @ObservedObject var music: MusicStore
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
     @State private var dragStartMouseLocation: NSPoint?
@@ -15,6 +16,8 @@ struct PetRootView: View {
     @State private var showsFocusPopover = false
 
     private enum SideTool: String {
+        case role = "切换桌宠角色"
+        case focus = "番茄钟"
         case cleanup = "空间清理"
         case uninstall = "软件卸载"
     }
@@ -23,7 +26,7 @@ struct PetRootView: View {
     private var panelSize: CGSize {
         PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldReservePetBubbleSpace,
+            showsBubble: store.shouldReservePetBubbleSpace || showsMusicLyric,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -45,6 +48,12 @@ struct PetRootView: View {
                         .padding(.bottom, 291 * scale + 62)
                         .zIndex(4)
                 }
+            } else if showsMusicLyric, let lyric = music.currentLyric?.text {
+                PetMusicLyricBubble(text: lyric, alertText: musicAlertText)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 291 * scale + 4)
+                    .zIndex(2)
             } else if store.ambientMessage != nil {
                 PetAmbientBubble(store: store)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -74,11 +83,22 @@ struct PetRootView: View {
 
                 AnimatedPetSprite(
                     mode: store.mode,
-                    action: store.currentAction,
+                    action: displayedPetAction,
                     motionEnabled: store.isPetPresented,
                     sequencePlaybackEnabled: store.petMotionEnabled
-                        && (!store.currentAction.file.contains("chatting") || store.ambientMessage != nil)
+                        && (!displayedPetAction.file.contains("chatting") || store.ambientMessage != nil)
                 )
+                    .overlay(alignment: .topTrailing) {
+                        if music.isPlaying {
+                            Image(systemName: "music.note")
+                                .font(.system(size: max(14, 24 * scale), weight: .bold))
+                                .foregroundStyle(.pink)
+                                .padding(6)
+                                .background(.regularMaterial, in: Circle())
+                                .symbolEffect(.pulse, options: .repeating.speed(0.35), isActive: music.lightSingAlongEnabled)
+                                .accessibilityLabel("音乐播放中")
+                        }
+                    }
                     .frame(width: 326 * scale, height: 326 * scale)
                     .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
                     .contentShape(Rectangle())
@@ -112,7 +132,7 @@ struct PetRootView: View {
                     if PetLayout.usesCompactControls(scale: store.petScale), !chat.isPresented {
                         compactSideControls
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                            .padding(sideControlsOnRight ? .trailing : .leading, PetLayout.compactSideControlsInset)
+                            .padding(sideControlsOnRight ? .trailing : .leading, PetLayout.compactSideControlsInset + 8)
                             .padding(.bottom, 8)
                             .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
                             .zIndex(8)
@@ -120,27 +140,27 @@ struct PetRootView: View {
                         if showsInteractiveSideControls {
                             roleControls
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 12)
+                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 20)
                                 .padding(.bottom, chat.isPresented ? 173 : 143)
                                 .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
                             maintenanceSideControls
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 42)
+                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 50)
                                 .padding(.bottom, chat.isPresented ? 64 : 22)
                                 .transition(.scale(scale: 0.82).combined(with: .opacity))
                         }
                         if showsInteractiveSideControls || hasActiveFocusCountdown {
                             focusSideButton(size: 40)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
-                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 47)
+                                .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 55)
                                 .padding(.bottom, chat.isPresented ? 128 : 98)
                                 .transition(.scale(scale: 0.82).combined(with: .opacity))
                                 .zIndex(8)
                         }
                     }
                 }
-                if !store.interactionLocked && isHovering {
-                    PetBottomControlsView(store: store, chat: chat)
+                if !store.interactionLocked && (isHovering || music.isMiniPlayerPresented) {
+                    PetBottomControlsView(store: store, chat: chat, music: music)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .padding(.bottom, chat.isPresented ? 70 : 6)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -163,49 +183,63 @@ struct PetRootView: View {
         .contextMenu { contextMenu }
     }
 
-    private var roleControls: some View {
-        VStack(spacing: 5) {
-            ForEach(PetMode.allCases) { mode in
-                Button { store.setMode(mode) } label: {
-                    Text(mode.title)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .frame(width: 42)
-                }
-                .buttonStyle(.bordered)
-                .tint(store.mode == mode ? .pink : .secondary)
-                .controlSize(.small)
-                .help("切换到\(mode.title)桌宠")
-            }
+    private var showsMusicLyric: Bool {
+        music.isPlaying && music.lightSingAlongEnabled && music.currentLyric != nil
+            && !chat.isPresented && maintenance.quickMode == nil && !store.isFocusActive
+    }
+
+    private var displayedPetAction: PetAction {
+        guard music.isPlaying,
+              !chat.isPresented,
+              maintenance.quickMode == nil,
+              store.taskState == .idle,
+              store.ambientMessage == nil,
+              store.smartState == .normal,
+              !store.isFocusCelebrating else {
+            return store.currentAction
         }
-        .controlPanel()
+        return store.mode.musicAction
+    }
+
+    private var musicAlertText: String? {
+        guard store.urgentReminderVisible else { return nil }
+        switch store.smartState {
+        case .lowBattery: return "低电量"
+        case .memoryPressure: return "内存紧张"
+        case .charging: return "充电中"
+        default: return nil
+        }
+    }
+
+    private var roleControls: some View {
+        Menu {
+            ForEach(PetMode.allCases) { mode in
+                Button {
+                    store.setMode(mode)
+                } label: {
+                    if store.mode == mode { Label(mode.title, systemImage: "checkmark") }
+                    else { Text(mode.title) }
+                }
+            }
+        } label: {
+            Text(store.mode.title)
+                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .frame(width: 42, height: 24)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 0.7))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: PetLayout.compactSideControlsWidth, height: 26)
+        .onHover { setSideToolHover(.role, hovering: $0) }
+        .overlay { sideHoverLabel(for: .role) }
+        .help("切换桌宠角色")
     }
 
     private var compactSideControls: some View {
         VStack(spacing: 4) {
-            Menu {
-                ForEach(PetMode.allCases) { mode in
-                    Button {
-                        store.setMode(mode)
-                    } label: {
-                        if store.mode == mode {
-                            Label(mode.title, systemImage: "checkmark")
-                        } else {
-                            Text(mode.title)
-                        }
-                    }
-                }
-            } label: {
-                Text(store.mode.title)
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                    .frame(width: 42, height: 24)
-                    .background(.regularMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 0.7))
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: PetLayout.compactSideControlsWidth, height: 26)
-            .help("切换桌宠角色")
+            roleControls
             .opacity(showsInteractiveSideControls ? 1 : 0)
             .allowsHitTesting(showsInteractiveSideControls)
 
@@ -216,6 +250,8 @@ struct PetRootView: View {
                 sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup, size: 30)
             }
             .buttonStyle(.plain)
+            .onHover { setSideToolHover(.cleanup, hovering: $0) }
+            .overlay { sideHoverLabel(for: .cleanup) }
             .help("空间清理")
             .opacity(showsInteractiveSideControls ? 1 : 0)
             .allowsHitTesting(showsInteractiveSideControls)
@@ -224,6 +260,8 @@ struct PetRootView: View {
                 sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall, size: 30)
             }
             .buttonStyle(.plain)
+            .onHover { setSideToolHover(.uninstall, hovering: $0) }
+            .overlay { sideHoverLabel(for: .uninstall) }
             .help("软件卸载")
             .opacity(showsInteractiveSideControls ? 1 : 0)
             .allowsHitTesting(showsInteractiveSideControls)
@@ -269,6 +307,8 @@ struct PetRootView: View {
         }
         .buttonStyle(.plain)
         .allowsHitTesting(!store.interactionLocked)
+        .onHover { setSideToolHover(.focus, hovering: $0) }
+        .overlay { sideHoverLabel(for: .focus) }
         .help(hasActiveFocusCountdown ? "专注中：\(focusTimer.timeText)" : "打开番茄钟")
         .popover(isPresented: $showsFocusPopover, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
             FocusTimerControlView(timer: focusTimer) { }
@@ -295,12 +335,7 @@ struct PetRootView: View {
     }
 
     private var maintenanceSideControls: some View {
-        HStack(spacing: 7) {
-            if sideControlsOnRight, let hoveredSideTool {
-                PetHoverLabel(text: hoveredSideTool.rawValue)
-            }
-
-            VStack(spacing: 3) {
+        VStack(spacing: 3) {
                 Button {
                     startQuickCleanup()
                 } label: {
@@ -308,6 +343,7 @@ struct PetRootView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { setSideToolHover(.cleanup, hovering: $0) }
+                .overlay { sideHoverLabel(for: .cleanup) }
                 .help("空间清理：扫描可安全清理的缓存、日志和临时文件")
                 .offset(x: sideControlsOnRight ? 7 : -7)
 
@@ -318,15 +354,21 @@ struct PetRootView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { setSideToolHover(.uninstall, hovering: $0) }
+                .overlay { sideHoverLabel(for: .uninstall) }
                 .help("软件卸载：查找应用及其可确认的用户级残留")
                 .offset(x: sideControlsOnRight ? -7 : 7)
-            }
-
-            if !sideControlsOnRight, let hoveredSideTool {
-                PetHoverLabel(text: hoveredSideTool.rawValue)
-            }
         }
         .animation(.easeOut(duration: 0.14), value: hoveredSideTool)
+    }
+
+    @ViewBuilder
+    private func sideHoverLabel(for tool: SideTool) -> some View {
+        if hoveredSideTool == tool {
+            PetHoverLabel(text: tool.rawValue)
+                .offset(x: sideControlsOnRight ? -70 : 70)
+                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                .zIndex(12)
+        }
     }
 
     private func setSideToolHover(_ tool: SideTool, hovering: Bool) {
@@ -401,6 +443,14 @@ struct PetRootView: View {
                 Button("继续（剩余 \(focusTimer.timeText)）") { focusTimer.resume() }
                 Button("提前结束") { focusTimer.stop() }
             }
+        }
+        Menu("音乐") {
+            Button("打开完整播放器…") { music.showFullPlayer() }
+            Button(music.isPlaying ? "暂停" : "播放") { music.playPause() }
+            Button("上一首") { music.previous() }
+            Button("下一首") { music.next() }
+            Divider()
+            Button(music.lyricsVisible ? "隐藏桌面歌词" : "显示桌面歌词") { music.toggleLyricsVisible() }
         }
         Menu("切换角色") {
             ForEach(PetMode.allCases) { mode in

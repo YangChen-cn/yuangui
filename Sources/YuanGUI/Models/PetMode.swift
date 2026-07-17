@@ -144,9 +144,21 @@ enum SmartPetState: String, Equatable {
     }
 }
 
+enum UrgentReminderMode: String, CaseIterable, Identifiable {
+    case persistent
+    case interval
+
+    var id: String { rawValue }
+    var title: String { self == .persistent ? "常驻提醒" : "间隔提醒" }
+}
+
 extension PetMode {
     var chatAction: PetAction {
         PetAction(file: "14-chatting", label: "正在和你聊天")
+    }
+
+    var musicAction: PetAction {
+        PetAction(file: "20-listening", label: "正在听音乐")
     }
 
     func smartAction(for state: SmartPetState) -> PetAction? {

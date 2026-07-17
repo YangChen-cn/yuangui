@@ -45,6 +45,7 @@ final class PetPanelController {
     private let chat: ChatStore
     private let maintenance: MaintenanceStore
     private let focusTimer: FocusTimerStore
+    private let music: MusicStore
     private let lockedToolbarPanel: PetLockedToolbarPanel
     private let edgePeekPanel: PetEdgePeekPanel
     private var observers: [NSObjectProtocol] = []
@@ -58,14 +59,15 @@ final class PetPanelController {
     private var lastLockedPointerInside = false
     private var layoutUpdateScheduled = false
 
-    init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore) {
+    init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore, music: MusicStore) {
         self.store = store
         self.chat = chat
         self.maintenance = maintenance
         self.focusTimer = focusTimer
+        self.music = music
         let size = PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldReservePetBubbleSpace,
+            showsBubble: store.shouldReservePetBubbleSpace || Self.showsMusicLyric(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer, music: music),
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -97,7 +99,7 @@ final class PetPanelController {
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: PetRootView(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer))
+        panel.contentView = NSHostingView(rootView: PetRootView(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer, music: music))
         panel.ignoresMouseEvents = store.interactionLocked
         updateAllowedTopOverflow()
         lockedToolbarPanel.isOpaque = false
@@ -107,7 +109,7 @@ final class PetPanelController {
         lockedToolbarPanel.hidesOnDeactivate = false
         lockedToolbarPanel.isReleasedWhenClosed = false
         lockedToolbarPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        lockedToolbarPanel.contentView = NSHostingView(rootView: PetBottomControlsView(store: store, chat: chat))
+        lockedToolbarPanel.contentView = NSHostingView(rootView: PetBottomControlsView(store: store, chat: chat, music: music))
         edgePeekPanel.isOpaque = false
         edgePeekPanel.backgroundColor = .clear
         edgePeekPanel.hasShadow = false
@@ -165,6 +167,12 @@ final class PetPanelController {
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
             }
+            .store(in: &cancellables)
+        Publishers.CombineLatest3(music.$playbackState, music.$currentLyric, music.$lightSingAlongEnabled)
+            .sink { [weak self] _, _, _ in Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() } }
+            .store(in: &cancellables)
+        focusTimer.$state
+            .sink { [weak self] _ in Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() } }
             .store(in: &cancellables)
     }
 
@@ -255,7 +263,7 @@ final class PetPanelController {
     private func resizeToCurrentLayout() {
         let targetSize = PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldReservePetBubbleSpace,
+            showsBubble: store.shouldReservePetBubbleSpace || Self.showsMusicLyric(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer, music: music),
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -271,6 +279,12 @@ final class PetPanelController {
         }
         constrainToVisibleScreens()
         positionLockedToolbar()
+    }
+
+    private static func showsMusicLyric(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore, music: MusicStore) -> Bool {
+        music.isPlaying && music.lightSingAlongEnabled && music.currentLyric != nil
+            && !chat.isPresented && maintenance.quickMode == nil
+            && focusTimer.state != .running && focusTimer.state != .paused
     }
 
     private func restoreOrPlaceWindow() {
@@ -414,7 +428,7 @@ final class PetPanelController {
                 updateLockedToolbarVisibility(visible: true)
             }
         } else if !inside, lastLockedPointerInside {
-            store.scheduleLockedControlsHide(after: 3)
+            store.scheduleLockedControlsHide(after: 1)
         }
         lastLockedPointerInside = inside
     }

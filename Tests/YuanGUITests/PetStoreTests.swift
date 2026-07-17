@@ -733,4 +733,29 @@ final class PetStoreTests: XCTestCase {
         XCTAssertNil(store.ambientMessage)
         XCTAssertFalse(store.shouldReservePetBubbleSpace)
     }
+
+    func testUrgentAlertKindsAndReminderModePersistIndependently() {
+        let suite = "PetStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+
+        store.setLowBatteryAlertsEnabled(false)
+        store.applySmartStates([.lowBattery, .memoryPressure])
+        XCTAssertEqual(store.activeSmartStates, [.memoryPressure])
+
+        store.setMemoryPressureAlertsEnabled(false)
+        store.applySmartStates([.lowBattery, .memoryPressure])
+        XCTAssertTrue(store.activeSmartStates.isEmpty)
+
+        store.setUrgentReminderMode(.interval)
+        store.setUrgentReminderIntervalMinutes(25)
+        XCTAssertEqual(defaults.string(forKey: "urgentReminderMode"), UrgentReminderMode.interval.rawValue)
+        XCTAssertEqual(defaults.integer(forKey: "urgentReminderIntervalMinutes"), 25)
+    }
 }

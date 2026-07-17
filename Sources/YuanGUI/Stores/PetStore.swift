@@ -18,6 +18,11 @@ final class PetStore: ObservableObject {
     @Published private(set) var idleAnimationEnabled: Bool
     @Published private(set) var petMotionEnabled: Bool
     @Published private(set) var smartReactionsEnabled: Bool
+    @Published private(set) var lowBatteryAlertsEnabled: Bool
+    @Published private(set) var memoryPressureAlertsEnabled: Bool
+    @Published private(set) var urgentReminderMode: UrgentReminderMode
+    @Published private(set) var urgentReminderIntervalMinutes: Int
+    @Published private(set) var urgentReminderPulseVisible = true
     @Published private(set) var interactionLocked: Bool
     @Published private(set) var lockedControlsVisible = false
     @Published private(set) var bedtimeReminderEnabled: Bool
@@ -55,6 +60,7 @@ final class PetStore: ObservableObject {
     private var ambientChatterTask: Task<Void, Never>?
     private var ambientMessageHideTask: Task<Void, Never>?
     private var focusCelebrationTask: Task<Void, Never>?
+    private var urgentReminderTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
     private var lastAmbientMessage: String?
@@ -89,9 +95,15 @@ final class PetStore: ObservableObject {
 
     var shouldShowPetBubble: Bool {
         if isFocusActive {
-            return smartReactionsEnabled && activeSmartStates.contains(where: \.isUrgent)
+            return smartReactionsEnabled && urgentReminderVisible
         }
-        return showsSystemStatus || (!automaticBubbleSuppressed && smartReactionsEnabled && activeSmartStates.contains(where: \.showsAutomaticBubble))
+        let hasNonUrgentBubble = activeSmartStates.contains { $0.showsAutomaticBubble && !$0.isUrgent }
+        return showsSystemStatus || (!automaticBubbleSuppressed && smartReactionsEnabled && (urgentReminderVisible || hasNonUrgentBubble))
+    }
+
+    var urgentReminderVisible: Bool {
+        let hasUrgent = activeSmartStates.contains(where: \.isUrgent)
+        return hasUrgent && (urgentReminderMode == .persistent || urgentReminderPulseVisible)
     }
 
     var shouldReservePetBubbleSpace: Bool {
@@ -142,6 +154,13 @@ final class PetStore: ObservableObject {
         self.smartReactionsEnabled = defaults.object(forKey: "smartReactionsEnabled") == nil
             ? true
             : defaults.bool(forKey: "smartReactionsEnabled")
+        self.lowBatteryAlertsEnabled = defaults.object(forKey: "lowBatteryAlertsEnabled") == nil
+            ? true : defaults.bool(forKey: "lowBatteryAlertsEnabled")
+        self.memoryPressureAlertsEnabled = defaults.object(forKey: "memoryPressureAlertsEnabled") == nil
+            ? true : defaults.bool(forKey: "memoryPressureAlertsEnabled")
+        self.urgentReminderMode = UrgentReminderMode(rawValue: defaults.string(forKey: "urgentReminderMode") ?? "") ?? .persistent
+        let urgentInterval = defaults.object(forKey: "urgentReminderIntervalMinutes") as? Int ?? 15
+        self.urgentReminderIntervalMinutes = min(max(urgentInterval, 5), 120)
         let initiallyLocked = defaults.bool(forKey: "interactionLocked")
         self.interactionLocked = initiallyLocked
         self.bedtimeReminderEnabled = defaults.object(forKey: "bedtimeReminderEnabled") == nil
@@ -288,9 +307,35 @@ final class PetStore: ObservableObject {
             activeSmartStates = []
             smartState = .normal
             smartRotationTimer = nil
+            urgentReminderTask?.cancel()
+            urgentReminderTask = nil
             syncMiniMonitoringDemand()
         }
         if enabled { evaluateSmartState() }
+    }
+
+    func setLowBatteryAlertsEnabled(_ enabled: Bool) {
+        lowBatteryAlertsEnabled = enabled
+        defaults.set(enabled, forKey: "lowBatteryAlertsEnabled")
+        evaluateSmartState()
+    }
+
+    func setMemoryPressureAlertsEnabled(_ enabled: Bool) {
+        memoryPressureAlertsEnabled = enabled
+        defaults.set(enabled, forKey: "memoryPressureAlertsEnabled")
+        evaluateSmartState()
+    }
+
+    func setUrgentReminderMode(_ mode: UrgentReminderMode) {
+        urgentReminderMode = mode
+        defaults.set(mode.rawValue, forKey: "urgentReminderMode")
+        updateUrgentReminderSchedule(restart: true)
+    }
+
+    func setUrgentReminderIntervalMinutes(_ minutes: Int) {
+        urgentReminderIntervalMinutes = min(max(minutes, 5), 120)
+        defaults.set(urgentReminderIntervalMinutes, forKey: "urgentReminderIntervalMinutes")
+        if urgentReminderMode == .interval { updateUrgentReminderSchedule(restart: true) }
     }
 
     func setInteractionLocked(_ locked: Bool) {
@@ -538,6 +583,10 @@ final class PetStore: ObservableObject {
 
     func applySmartStates(_ states: [SmartPetState]) {
         guard smartReactionsEnabled else { return }
+        let states = states.filter {
+            ($0 != .lowBattery || lowBatteryAlertsEnabled)
+                && ($0 != .memoryPressure || memoryPressureAlertsEnabled)
+        }
         let previousStates = activeSmartStates
         let newlyActivatedStates = states.filter { !previousStates.contains($0) }
         activeSmartStates = states
@@ -558,8 +607,34 @@ final class PetStore: ObservableObject {
         }
         syncMiniMonitoringDemand()
         updateSmartRotationTimer()
+        updateUrgentReminderSchedule(restart: states != previousStates)
         guard states != previousStates, smartState != .normal else { return }
         showSmartMessage(smartState)
+    }
+
+    private func updateUrgentReminderSchedule(restart: Bool) {
+        let hasUrgent = activeSmartStates.contains(where: \.isUrgent)
+        if urgentReminderMode == .persistent || !hasUrgent {
+            urgentReminderTask?.cancel()
+            urgentReminderTask = nil
+            urgentReminderPulseVisible = hasUrgent
+            syncMiniMonitoringDemand()
+            return
+        }
+        guard restart || urgentReminderTask == nil else { return }
+        urgentReminderTask?.cancel()
+        urgentReminderPulseVisible = true
+        urgentReminderTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.urgentReminderPulseVisible = true
+                self?.syncMiniMonitoringDemand()
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                self?.urgentReminderPulseVisible = false
+                self?.syncMiniMonitoringDemand()
+                let interval = max((self?.urgentReminderIntervalMinutes ?? 15) * 60 - 10, 10)
+                do { try await Task.sleep(for: .seconds(interval)) } catch { return }
+            }
+        }
     }
 
     private func rotateSmartState() {
