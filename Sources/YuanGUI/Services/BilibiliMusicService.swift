@@ -39,6 +39,7 @@ enum BilibiliInputParser {
 actor BilibiliClient {
     private let session: URLSession
     private var cachedMixinKey: String?
+    private var verifiedSubtitleTrackIDs: [String: String] = [:]
     private var guestSessionPrepared = false
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15"
     init(session: URLSession = .shared) { self.session = session }
@@ -51,11 +52,10 @@ actor BilibiliClient {
         guard response.code == 0, let data = response.data else { throw BilibiliMusicError.api(response.message) }
         var tracks: [MusicTrack] = []
         for page in data.pages {
-            let subtitleURL = await subtitleURL(
-                bvid: data.bvid,
-                cid: page.cid,
-                viewSubtitles: data.subtitle?.list ?? []
-            )
+            // The top-level subtitle list returned by the view endpoint is not
+            // scoped to each page. Always resolve subtitles with the exact CID,
+            // otherwise a multi-page video can attach P1's captions to every P.
+            let subtitleURL = await subtitleURL(bvid: data.bvid, aid: data.aid, cid: page.cid)
             let title = data.pages.count > 1 ? "\(data.title) · \(page.part)" : data.title
             tracks.append(MusicTrack(
                 id: "bili:\(data.bvid):\(page.cid)",
@@ -118,7 +118,7 @@ actor BilibiliClient {
     func subtitleURL(for track: MusicTrack) async -> URL? {
         guard let reference = track.bilibili else { return nil }
         try? await prepareGuestSession()
-        return await subtitleURL(bvid: reference.bvid, cid: reference.cid, viewSubtitles: [])
+        return await subtitleURL(bvid: reference.bvid, aid: reference.aid, cid: reference.cid)
     }
 
     private func successfulPlayResponse(params: [String: String]) async throws -> PlayResponse {
@@ -130,20 +130,63 @@ actor BilibiliClient {
         throw BilibiliMusicError.api(response.message)
     }
 
-    private func subtitleURL(bvid: String, cid: Int, viewSubtitles: [ViewSubtitleItem]) async -> URL? {
-        if let direct = viewSubtitles.lazy.compactMap({ Self.normalizedURL($0.subtitleURL) }).first {
-            return direct
-        }
+    private func subtitleURL(bvid: String, aid: Int, cid: Int) async -> URL? {
         let params = ["bvid": bvid, "cid": String(cid)]
-        if let response = try? await playerInfoResponse(params: params, signed: false),
-           let url = response.data?.subtitle?.subtitles.lazy.compactMap({ Self.normalizedURL($0.bestURL) }).first {
-            return url
-        }
-        if let response = try? await playerInfoResponse(params: params, signed: true),
-           let url = response.data?.subtitle?.subtitles.lazy.compactMap({ Self.normalizedURL($0.bestURL) }).first {
-            return url
+        let trackKey = "\(bvid.lowercased()):\(cid)"
+        let previouslyVerifiedID = verifiedSubtitleTrackIDs[trackKey]
+        var sightings: [String: (count: Int, url: URL)] = [:]
+
+        // Bilibili's player endpoint can intermittently keep the requested
+        // bvid/cid at the top level while returning another video's subtitle
+        // item. Retry and require evidence tied to this CID or a repeated,
+        // stable subtitle identity before accepting it.
+        for attempt in 0..<10 {
+            let signed = attempt >= 7
+            guard let response = try? await playerInfoResponse(params: params, signed: signed) else { continue }
+            let candidates = validatedSubtitleCandidates(in: response, bvid: bvid, cid: cid)
+            guard !candidates.isEmpty else { continue }
+            let hasHumanSubtitle = candidates.contains { !$0.item.isAIGenerated }
+
+            for candidate in candidates where !hasHumanSubtitle || !candidate.item.isAIGenerated {
+                let identity = candidate.item.stableIdentity(url: candidate.url)
+                if identity == previouslyVerifiedID {
+                    verifiedSubtitleTrackIDs[trackKey] = identity
+                    return candidate.url
+                }
+                let subtitlePath = candidate.url.path
+                if candidate.item.isAIGenerated {
+                    guard subtitlePath.localizedCaseInsensitiveContains(String(aid)),
+                          subtitlePath.localizedCaseInsensitiveContains(String(cid)) else { continue }
+                    verifiedSubtitleTrackIDs[trackKey] = identity
+                    return candidate.url
+                }
+                let previous = sightings[identity]
+                let count = (previous?.count ?? 0) + 1
+                sightings[identity] = (count, candidate.url)
+                if count >= 2 {
+                    verifiedSubtitleTrackIDs[trackKey] = identity
+                    return candidate.url
+                }
+            }
         }
         return nil
+    }
+
+    private func validatedSubtitleCandidates(
+        in response: PlayerInfoResponse,
+        bvid: String,
+        cid: Int
+    ) -> [(item: PlayerSubtitleItem, url: URL)] {
+        guard response.code == 0,
+              let data = response.data,
+              data.cid == cid,
+              data.bvid.caseInsensitiveCompare(bvid) == .orderedSame else { return [] }
+        return (data.subtitle?.subtitles ?? [])
+            .compactMap { item in Self.normalizedURL(item.bestURL).map { (item, $0) } }
+            .sorted { lhs, rhs in
+                if lhs.item.isAIGenerated != rhs.item.isAIGenerated { return !lhs.item.isAIGenerated }
+                return lhs.item.languageRank < rhs.item.languageRank
+            }
     }
 
     private func playerInfoResponse(params: [String: String], signed: Bool) async throws -> PlayerInfoResponse {
@@ -371,28 +414,47 @@ private struct TicketResponse: Decodable {
 }
 private struct TicketData: Decodable { let ticket: String }
 private struct ViewData: Decodable {
-    let bvid: String; let aid: Int; let title: String; let pic: String; let owner: ViewOwner; let pages: [ViewPage]; let subtitle: ViewSubtitle?
+    let bvid: String; let aid: Int; let title: String; let pic: String; let owner: ViewOwner; let pages: [ViewPage]
 }
 private struct ViewOwner: Decodable { let name: String }
 private struct ViewPage: Decodable {
     let cid: Int; let page: Int; let part: String; let duration: Int; let firstFrame: String?
     enum CodingKeys: String, CodingKey { case cid, page, part, duration; case firstFrame = "first_frame" }
 }
-private struct ViewSubtitle: Decodable { let list: [ViewSubtitleItem] }
-private struct ViewSubtitleItem: Decodable {
-    let subtitleURL: String
-    enum CodingKeys: String, CodingKey { case subtitleURL = "subtitle_url" }
-}
 private struct PlayerInfoResponse: Decodable {
     let code: Int; let message: String; let data: PlayerInfoData?
 }
-private struct PlayerInfoData: Decodable { let subtitle: PlayerInfoSubtitle? }
+private struct PlayerInfoData: Decodable {
+    let bvid: String
+    let cid: Int
+    let subtitle: PlayerInfoSubtitle?
+}
 private struct PlayerInfoSubtitle: Decodable { let subtitles: [PlayerSubtitleItem] }
 private struct PlayerSubtitleItem: Decodable {
+    let id: Int64?
+    let idString: String?
+    let language: String?
     let subtitleURL: String?
     let subtitleURLV2: String?
     var bestURL: String { subtitleURL ?? subtitleURLV2 ?? "" }
+    var isAIGenerated: Bool { language?.lowercased().hasPrefix("ai-") == true }
+    var languageRank: Int {
+        let value = language?.lowercased() ?? ""
+        if value.contains("zh") { return 0 }
+        if value.contains("en") { return 1 }
+        return 2
+    }
+    func stableIdentity(url: URL) -> String {
+        if let idString, !idString.isEmpty { return "id:\(idString)" }
+        if let id { return "id:\(id)" }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.query = nil
+        return "url:\(components?.url?.absoluteString ?? url.absoluteString)"
+    }
     enum CodingKeys: String, CodingKey {
+        case id
+        case idString = "id_str"
+        case language = "lan"
         case subtitleURL = "subtitle_url"
         case subtitleURLV2 = "subtitle_url_v2"
     }

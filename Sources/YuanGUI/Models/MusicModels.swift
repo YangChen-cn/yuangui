@@ -76,6 +76,30 @@ struct MusicTrack: Codable, Identifiable, Hashable {
     var bilibili: BilibiliTrackReference?
     var subtitleURL: URL?
 
+    var lyricsCacheKey: String {
+        switch source {
+        case .bilibili:
+            return id
+        case .appleMusic:
+            return "lyrics:apple:\(Self.normalizedLyricsMetadata(title))\u{1F}\(Self.normalizedLyricsMetadata(artist))"
+        }
+    }
+
+    func matchesLegacyLyricsCacheKey(_ key: String) -> Bool {
+        guard source == .appleMusic,
+              let separator = id.lastIndex(of: "|") else { return false }
+        let metadataPrefix = String(id[...separator])
+        guard key.hasPrefix(metadataPrefix) else { return false }
+        return Int(key.dropFirst(metadataPrefix.count)) != nil
+    }
+
+    private static func normalizedLyricsMetadata(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+    }
+
     static func appleMusic(
         title: String,
         artist: String,

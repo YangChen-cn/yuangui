@@ -91,9 +91,11 @@ final class MusicStore: ObservableObject {
         }
         bilibiliPlayer.onFinished = { [weak self] in self?.handleTrackFinished() }
         bilibiliPlayer.onFailure = { [weak self] error in self?.handleBilibiliFailure(error) }
-        Task { [weak self] in await self?.restoreLibrary() }
         refreshBilibiliAccount()
-        syncTask = Task { [weak self] in await self?.runSyncLoop() }
+        syncTask = Task { [weak self] in
+            await self?.restoreLibrary()
+            await self?.runSyncLoop()
+        }
     }
 
     var progress: Double { duration > 0 ? min(max(position / duration, 0), 1) : 0 }
@@ -452,7 +454,7 @@ final class MusicStore: ObservableObject {
         let wasCurrent = currentTrack?.id == track.id
         playlist.removeAll { $0.id == track.id }
         favoriteTrackIDs.remove(track.id)
-        lyricsByTrackID.removeValue(forKey: track.id)
+        removeCachedLyrics(for: track)
         for index in savedPlaylists.indices { savedPlaylists[index].trackIDs.removeAll { $0 == track.id } }
         if wasCurrent {
             bilibiliPlayer.stop(); currentTrack = nil; currentTrackID = nil; playbackState = .stopped
@@ -462,7 +464,7 @@ final class MusicStore: ObservableObject {
     }
 
     func clearPlaylist() {
-        for track in playlist { lyricsByTrackID.removeValue(forKey: track.id) }
+        for track in playlist { removeCachedLyrics(for: track) }
         bilibiliPlayer.stop(); playlist.removeAll(); favoriteTrackIDs.removeAll(); savedPlaylists.removeAll()
         currentTrack = nil; currentTrackID = nil; playbackState = .stopped
         lyrics = nil; currentLyric = nil; nextLyric = nil; persistLibrary()
@@ -592,7 +594,7 @@ final class MusicStore: ObservableObject {
             guard !Task.isCancelled, currentTrack?.id == track.id else { return }
             if let found {
                 lyrics = found
-                lyricsByTrackID[track.id] = found
+                cacheLyrics(found, for: track)
                 updateMetadata(for: track.id, title: title, artist: artist)
                 updateLyric()
                 persistLibrary()
@@ -649,8 +651,8 @@ final class MusicStore: ObservableObject {
         }
         let document = LyricsParser.parseLRC(text)
         lyrics = document
-        if let trackID = currentTrack?.id {
-            lyricsByTrackID[trackID] = document
+        if let track = currentTrack {
+            cacheLyrics(document, for: track)
             persistLibrary()
         }
         updateLyric()
@@ -740,7 +742,7 @@ final class MusicStore: ObservableObject {
         lyricLoadTask = nil
         isSearchingLyrics = false
         lyricsSearchMessage = nil
-        if let cached = lyricsByTrackID[track.id] {
+        if track.source != .bilibili, let cached = cachedLyrics(for: track) {
             lyrics = cached
             updateLyric()
             return
@@ -749,16 +751,35 @@ final class MusicStore: ObservableObject {
         lyricLoadTask = Task { [weak self] in
             guard let self else { return }
             var resolvedTrack = track
-            if track.source == .bilibili, track.subtitleURL == nil,
-               let subtitleURL = await bilibili.subtitleURL(for: track) {
-                resolvedTrack.subtitleURL = subtitleURL
-                updateSubtitleURL(subtitleURL, for: track.id)
+            var cached = cachedLyrics(for: track)
+            if track.source == .bilibili {
+                let exactSubtitleURL = await bilibili.subtitleURL(for: track)
+                guard !Task.isCancelled, currentTrack?.id == track.id else { return }
+                if let exactSubtitleURL {
+                    resolvedTrack.subtitleURL = exactSubtitleURL
+                    if exactSubtitleURL != track.subtitleURL {
+                        updateSubtitleURL(exactSubtitleURL, for: track.id)
+                        if cached?.source == "Bilibili 字幕" {
+                            removeCachedLyrics(for: track)
+                            cached = nil
+                        }
+                    }
+                    if cached?.source == "LRCLIB" {
+                        removeCachedLyrics(for: track)
+                        cached = nil
+                    }
+                }
+            }
+            if let cached {
+                lyrics = cached
+                updateLyric()
+                return
             }
             let found = await lyricsService.lyrics(for: resolvedTrack)
             guard !Task.isCancelled, currentTrack?.id == track.id else { return }
             lyrics = found
             if let found {
-                lyricsByTrackID[track.id] = found
+                cacheLyrics(found, for: track)
                 persistLibrary()
             }
             updateLyric()
@@ -769,8 +790,8 @@ final class MusicStore: ObservableObject {
         guard let track = currentTrack, track.source == .bilibili,
               let subtitleURL = await bilibili.subtitleURL(for: track) else { return }
         updateSubtitleURL(subtitleURL, for: track.id)
-        if lyricsByTrackID[track.id]?.source == "LRCLIB" {
-            lyricsByTrackID.removeValue(forKey: track.id)
+        if cachedLyrics(for: track)?.source == "LRCLIB" {
+            removeCachedLyrics(for: track)
         }
         loadLyrics(for: currentTrack ?? track)
     }
@@ -783,6 +804,37 @@ final class MusicStore: ObservableObject {
             currentTrack?.subtitleURL = url
         }
         persistLibrary()
+    }
+
+    private func cachedLyrics(for track: MusicTrack) -> LyricsDocument? {
+        if let cached = lyricsByTrackID[track.lyricsCacheKey] ?? lyricsByTrackID[track.id] {
+            return cached
+        }
+        guard track.source == .appleMusic,
+              let legacy = lyricsByTrackID.first(where: { track.matchesLegacyLyricsCacheKey($0.key) }) else {
+            return nil
+        }
+        lyricsByTrackID[track.lyricsCacheKey] = legacy.value
+        lyricsByTrackID.removeValue(forKey: legacy.key)
+        persistLibrary()
+        return legacy.value
+    }
+
+    private func cacheLyrics(_ document: LyricsDocument, for track: MusicTrack) {
+        lyricsByTrackID[track.lyricsCacheKey] = document
+        if track.lyricsCacheKey != track.id {
+            lyricsByTrackID.removeValue(forKey: track.id)
+        }
+    }
+
+    private func removeCachedLyrics(for track: MusicTrack) {
+        lyricsByTrackID.removeValue(forKey: track.lyricsCacheKey)
+        lyricsByTrackID.removeValue(forKey: track.id)
+        if track.source == .appleMusic {
+            lyricsByTrackID.keys
+                .filter { track.matchesLegacyLyricsCacheKey($0) }
+                .forEach { lyricsByTrackID.removeValue(forKey: $0) }
+        }
     }
 
     private func updateLyric() {
@@ -803,6 +855,7 @@ final class MusicStore: ObservableObject {
         lyricsByTrackID = snapshot.lyricsByTrackID
         currentTrackID = snapshot.currentTrackID
         if source == .bilibili { restoreBilibiliSelection(position: snapshot.lastPosition) }
+        else if let currentTrack { loadLyrics(for: currentTrack) }
     }
 
     private func restoreBilibiliSelection(position savedPosition: TimeInterval = 0) {

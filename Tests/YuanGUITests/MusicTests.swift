@@ -29,6 +29,39 @@ final class MusicTests: XCTestCase {
         XCTAssertNil(playbackError)
     }
 
+    func testLiveBilibiliSubtitleConsensusForReportedVideosWhenEnabled() async throws {
+        guard ProcessInfo.processInfo.environment["YUANGUI_LIVE_BILI_SUBTITLES"] == "1" else {
+            throw XCTSkip("Set YUANGUI_LIVE_BILI_SUBTITLES=1 to run the subtitle integration test")
+        }
+        let accountService = BilibiliAccountService()
+        guard try await accountService.currentAccount() != nil else {
+            throw XCTSkip("A persisted Bilibili login is required")
+        }
+        let client = BilibiliClient()
+        let expectedSubtitlePathMarkers = [
+            "BV1Sy4y1m7Uk": "798237972266999608",
+            "BV1Bf4y1q78f": "287820372256861889",
+            "BV19p4y187Kk": "134b1bcefa60c47718f3a2214ecd4818fc7037bf"
+        ]
+
+        for _ in 0..<3 {
+            for (bvid, marker) in expectedSubtitlePathMarkers {
+                let tracks = try await client.resolveTracks(from: bvid)
+                let track = try XCTUnwrap(tracks.first)
+                let reference = try XCTUnwrap(track.bilibili)
+                let subtitleURL = try XCTUnwrap(track.subtitleURL)
+                XCTAssertEqual(reference.bvid, bvid)
+                XCTAssertTrue(
+                    subtitleURL.path.contains(marker),
+                    "\(bvid) returned unrelated subtitle URL: \(subtitleURL.path)"
+                )
+                let lyrics = await LyricsService().lyrics(for: track)
+                XCTAssertEqual(lyrics?.source, "Bilibili 字幕")
+                XCTAssertFalse(lyrics?.lines.isEmpty ?? true)
+            }
+        }
+    }
+
     func testBilibiliInputParserAcceptsBVAndTrustedVideoURLs() {
         XCTAssertEqual(BilibiliInputParser.extractBVID(from: "BV1xx411c7mD"), "BV1xx411c7mD")
         XCTAssertEqual(
@@ -95,6 +128,22 @@ final class MusicTests: XCTestCase {
         XCTAssertTrue(snapshot.lyricOffsets.isEmpty)
         XCTAssertTrue(snapshot.lyricsByTrackID.isEmpty)
         XCTAssertEqual(snapshot.lastPosition, 12)
+    }
+
+    func testAppleMusicLyricsCacheKeyIgnoresDurationAndMetadataFormatting() {
+        let first = MusicTrack.appleMusic(
+            title: "Café  Song", artist: "The Artist", album: nil, duration: 199.99
+        )
+        let refreshed = MusicTrack.appleMusic(
+            title: "cafe song", artist: "the  artist", album: nil, duration: 200.01
+        )
+
+        XCTAssertNotEqual(first.id, refreshed.id)
+        XCTAssertEqual(first.lyricsCacheKey, refreshed.lyricsCacheKey)
+        let durationOnlyRefresh = MusicTrack.appleMusic(
+            title: "Café  Song", artist: "The Artist", album: nil, duration: 200.01
+        )
+        XCTAssertTrue(durationOnlyRefresh.matchesLegacyLyricsCacheKey(first.id))
     }
 
     func testLyricsServiceMatchesByTitleWhenArtistIsEmptyAndSetsTimeout() async throws {
@@ -218,7 +267,7 @@ final class MusicTests: XCTestCase {
                 return (response, data)
             }
             if url.path == "/x/player/v2" {
-                let data = Data(#"{"code":0,"message":"0","data":{"subtitle":{"subtitles":[{"subtitle_url":"//aisubtitle.hdslb.com/test.json"}]}}}"#.utf8)
+                let data = Data(#"{"code":0,"message":"0","data":{"bvid":"BV1Bt4y1Y71r","cid":263250978,"subtitle":{"subtitles":[{"subtitle_url":"//aisubtitle.hdslb.com/test.json"}]}}}"#.utf8)
                 return (response, data)
             }
             throw URLError(.unsupportedURL)
@@ -231,6 +280,136 @@ final class MusicTests: XCTestCase {
         let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Bt4y1Y71r")
 
         XCTAssertEqual(tracks.first?.subtitleURL?.absoluteString, "https://aisubtitle.hdslb.com/test.json")
+    }
+
+    func testBilibiliClientUsesEachPagesExactCIDInsteadOfViewSubtitle() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LyricsURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        var requestedCIDs: [String] = []
+        LyricsURLProtocol.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path == "/x/frontend/finger/spi_v2" { throw URLError(.badServerResponse) }
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if url.path == "/x/web-interface/view" {
+                let data = Data(#"{"code":0,"message":"0","data":{"bvid":"BV1Bt4y1Y71r","aid":628037055,"title":"测试合集","pic":"https://i0.hdslb.com/cover.jpg","owner":{"name":"UP主"},"pages":[{"cid":101,"page":1,"part":"P1","duration":60,"first_frame":null},{"cid":202,"page":2,"part":"P2","duration":70,"first_frame":null}],"subtitle":{"list":[{"subtitle_url":"//aisubtitle.hdslb.com/wrong-shared.json"}]}}}"#.utf8)
+                return (response, data)
+            }
+            if url.path == "/x/player/v2" {
+                let cid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                    .first(where: { $0.name == "cid" })?.value ?? ""
+                requestedCIDs.append(cid)
+                let data = Data("{\"code\":0,\"message\":\"0\",\"data\":{\"bvid\":\"BV1Bt4y1Y71r\",\"cid\":\(cid),\"subtitle\":{\"subtitles\":[{\"id_str\":\"sub-\(cid)\",\"lan\":\"ai-zh\",\"subtitle_url\":\"//aisubtitle.hdslb.com/628037055-cid-\(cid).json\"}]}}}".utf8)
+                return (response, data)
+            }
+            throw URLError(.unsupportedURL)
+        }
+        defer {
+            LyricsURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Bt4y1Y71r")
+
+        XCTAssertEqual(requestedCIDs, ["101", "202"])
+        XCTAssertEqual(
+            tracks.map(\.subtitleURL?.lastPathComponent),
+            ["628037055-cid-101.json", "628037055-cid-202.json"]
+        )
+    }
+
+    func testBilibiliClientRejectsSubtitleResponseForAnotherCID() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LyricsURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        LyricsURLProtocol.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path == "/x/frontend/finger/spi_v2" { throw URLError(.badServerResponse) }
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if url.path == "/x/web-interface/view" {
+                let data = Data(#"{"code":0,"message":"0","data":{"bvid":"BV1Bt4y1Y71r","aid":628037055,"title":"当前视频","pic":"https://i0.hdslb.com/cover.jpg","owner":{"name":"UP主"},"pages":[{"cid":202,"page":1,"part":"P1","duration":60,"first_frame":null}]}}"#.utf8)
+                return (response, data)
+            }
+            if url.path == "/x/player/v2" {
+                let data = Data(#"{"code":0,"message":"0","data":{"bvid":"BV1OtherVideo","cid":101,"subtitle":{"subtitles":[{"subtitle_url":"//aisubtitle.hdslb.com/wrong.json"}]}}}"#.utf8)
+                return (response, data)
+            }
+            throw URLError(.unsupportedURL)
+        }
+        defer {
+            LyricsURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Bt4y1Y71r")
+
+        XCTAssertNil(tracks.first?.subtitleURL)
+    }
+
+    func testBilibiliClientRejectsRandomAISubtitleUntilURLMatchesCID() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LyricsURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        var playerRequestCount = 0
+        LyricsURLProtocol.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path == "/x/frontend/finger/spi_v2" { throw URLError(.badServerResponse) }
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if url.path == "/x/web-interface/view" {
+                let data = Data(#"{"code":0,"message":"0","data":{"bvid":"BV1Sy4y1m7Uk","aid":798237972,"title":"流沙","pic":"https://i0.hdslb.com/cover.jpg","owner":{"name":"UP主"},"pages":[{"cid":266999608,"page":1,"part":"P1","duration":240,"first_frame":null}]}}"#.utf8)
+                return (response, data)
+            }
+            if url.path == "/x/player/v2" {
+                playerRequestCount += 1
+                let subtitle = playerRequestCount == 1
+                    ? #"{"id_str":"random-track","lan":"ai-zh","subtitle_url":"//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/another-video"}"#
+                    : #"{"id_str":"correct-track","lan":"ai-zh","subtitle_url":"//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/798237972266999608-correct"}"#
+                let data = Data("{\"code\":0,\"message\":\"0\",\"data\":{\"bvid\":\"BV1Sy4y1m7Uk\",\"cid\":266999608,\"subtitle\":{\"subtitles\":[\(subtitle)]}}}".utf8)
+                return (response, data)
+            }
+            throw URLError(.unsupportedURL)
+        }
+        defer {
+            LyricsURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Sy4y1m7Uk")
+
+        XCTAssertEqual(playerRequestCount, 2)
+        XCTAssertTrue(tracks.first?.subtitleURL?.path.contains("266999608-correct") == true)
+    }
+
+    func testBilibiliClientRequiresRepeatedIdentityForHumanSubtitle() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LyricsURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        var playerRequestCount = 0
+        LyricsURLProtocol.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path == "/x/frontend/finger/spi_v2" { throw URLError(.badServerResponse) }
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if url.path == "/x/web-interface/view" {
+                let data = Data(#"{"code":0,"message":"0","data":{"bvid":"BV1HumanSub1","aid":1,"title":"人工字幕测试","pic":"https://i0.hdslb.com/cover.jpg","owner":{"name":"UP主"},"pages":[{"cid":42,"page":1,"part":"P1","duration":60,"first_frame":null}]}}"#.utf8)
+                return (response, data)
+            }
+            if url.path == "/x/player/v2" {
+                playerRequestCount += 1
+                let identity = playerRequestCount == 1 ? "wrong-human" : "correct-human"
+                let data = Data("{\"code\":0,\"message\":\"0\",\"data\":{\"bvid\":\"BV1HumanSub1\",\"cid\":42,\"subtitle\":{\"subtitles\":[{\"id_str\":\"\(identity)\",\"lan\":\"zh-CN\",\"subtitle_url\":\"//subtitle.hdslb.com/\(identity).json\"}]}}}".utf8)
+                return (response, data)
+            }
+            throw URLError(.unsupportedURL)
+        }
+        defer {
+            LyricsURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1HumanSub1")
+
+        XCTAssertEqual(playerRequestCount, 3)
+        XCTAssertEqual(tracks.first?.subtitleURL?.lastPathComponent, "correct-human.json")
     }
 
     func testBilibiliQRCodeLoginPersistsReturnedSessionCookie() async throws {
