@@ -10,6 +10,7 @@ struct SettingsView: View {
     let showPet: () -> Void
     @State private var selectedTab = 0
     @State private var promptEditorState: PromptEditorState?
+    @State private var isBilibiliLoginPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,6 +19,7 @@ struct SettingsView: View {
                 Label("AI 对话", systemImage: "bubble.left.and.sparkles.fill").tag(1)
                 Label("专注", systemImage: "timer").tag(2)
                 Label("音乐", systemImage: "music.note").tag(3)
+                Label("关于", systemImage: "info.circle.fill").tag(4)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -32,8 +34,10 @@ struct SettingsView: View {
                     aiSettings
                 } else if selectedTab == 2 {
                     focusSettings
-                } else {
+                } else if selectedTab == 3 {
                     musicSettings
+                } else {
+                    AboutUpdateView()
                 }
             }
             .padding(16)
@@ -41,6 +45,9 @@ struct SettingsView: View {
         }
         .frame(width: 540, height: 500)
         .background(.regularMaterial)
+        .sheet(isPresented: $isBilibiliLoginPresented) {
+            BilibiliLoginSheet(music: music, isPresented: $isBilibiliLoginPresented)
+        }
     }
 
     private var musicSettings: some View {
@@ -99,7 +106,17 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("哔哩哔哩") {
-                Text("当前支持无需登录的公开视频兼容音频线路，不支持会员、付费内容或下载。")
+                HStack {
+                    Label(
+                        music.bilibiliAccount.map { "已登录：\($0.name)" } ?? "未登录",
+                        systemImage: music.bilibiliAccount == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark"
+                    )
+                    Spacer()
+                    Button(music.bilibiliAccount == nil ? "扫码登录" : "账号管理") {
+                        isBilibiliLoginPresented = true
+                    }
+                }
+                Text("登录后可读取账号有权访问的播放器字幕。登录 Cookie 与刷新令牌仅保存在本机应用数据中，不会读取账号密码。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Button("打开完整音乐播放器") { music.showFullPlayer() }

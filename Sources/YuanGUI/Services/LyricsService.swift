@@ -48,7 +48,7 @@ actor LyricsService {
     private let session: URLSession
     private let requestTimeout: TimeInterval
 
-    init(session: URLSession = .shared, requestTimeout: TimeInterval = 20) {
+    init(session: URLSession = .shared, requestTimeout: TimeInterval = 30) {
         self.session = session
         self.requestTimeout = requestTimeout
     }
@@ -76,9 +76,14 @@ actor LyricsService {
     }
 
     private func loadSubtitle(_ url: URL) async throws -> LyricsDocument {
-        let (data, _) = try await session.data(from: url)
-        let response = try JSONDecoder().decode(BilibiliSubtitle.self, from: data)
-        let lines = response.body.compactMap { item -> TimedLyricLine? in
+        var request = URLRequest(url: url)
+        request.timeoutInterval = min(requestTimeout, 8)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw LyricsServiceError.invalidResponse
+        }
+        let subtitle = try JSONDecoder().decode(BilibiliSubtitle.self, from: data)
+        let lines = subtitle.body.compactMap { item -> TimedLyricLine? in
             let cleaned = item.content.trimmingCharacters(in: CharacterSet(charactersIn: " ♪♫\n\t"))
             return cleaned.isEmpty ? nil : TimedLyricLine(time: max(0, item.from), text: cleaned)
         }
@@ -92,14 +97,8 @@ actor LyricsService {
         if !artist.isEmpty {
             fieldQuery.append(URLQueryItem(name: "artist_name", value: artist))
         }
-        let firstCandidates = try await fetchCandidates(queryItems: fieldQuery)
-        if let document = bestDocument(in: firstCandidates, for: track) { return document }
-
-        guard !artist.isEmpty else { return nil }
-        let broadCandidates = try await fetchCandidates(
-            queryItems: [URLQueryItem(name: "q", value: "\(title) \(artist)")]
-        )
-        return bestDocument(in: broadCandidates, for: track)
+        let candidates = try await fetchCandidates(queryItems: fieldQuery)
+        return bestDocument(in: candidates, for: track)
     }
 
     private func fetchCandidates(queryItems: [URLQueryItem]) async throws -> [LRCLIBResult] {
@@ -137,6 +136,36 @@ actor LyricsService {
         let expectedArtist = normalize(track.artist)
         let candidateArtist = normalize(result.artistName)
         let hasArtist = !expectedArtist.isEmpty
+        let directScore = metadataScore(
+            candidateTitle: candidateTitle,
+            candidateArtist: candidateArtist,
+            expectedTitle: expectedTitle,
+            expectedArtist: expectedArtist,
+            hasArtist: hasArtist
+        )
+        let swappedScore = hasArtist ? metadataScore(
+            candidateTitle: candidateTitle,
+            candidateArtist: candidateArtist,
+            expectedTitle: expectedArtist,
+            expectedArtist: expectedTitle,
+            hasArtist: true
+        ) : 0
+        let durationScore: Double
+        if track.duration > 0, abs(result.duration - track.duration) <= 6 {
+            durationScore = hasArtist ? 0.13 : 0.22
+        } else {
+            durationScore = 0
+        }
+        return max(directScore, swappedScore) + durationScore
+    }
+
+    private func metadataScore(
+        candidateTitle: String,
+        candidateArtist: String,
+        expectedTitle: String,
+        expectedArtist: String,
+        hasArtist: Bool
+    ) -> Double {
         let titleExact = candidateTitle == expectedTitle
         let titleContains = !expectedTitle.isEmpty
             && (candidateTitle.contains(expectedTitle) || expectedTitle.contains(candidateTitle))
@@ -145,13 +174,7 @@ actor LyricsService {
             && (candidateArtist.contains(expectedArtist) || expectedArtist.contains(candidateArtist))
         let titleScore: Double = titleExact ? (hasArtist ? 0.58 : 0.78) : (titleContains ? (hasArtist ? 0.45 : 0.62) : 0)
         let artistScore: Double = artistExact ? 0.29 : (artistContains ? 0.22 : 0)
-        let durationScore: Double
-        if track.duration > 0, abs(result.duration - track.duration) <= 6 {
-            durationScore = hasArtist ? 0.13 : 0.22
-        } else {
-            durationScore = 0
-        }
-        return titleScore + artistScore + durationScore
+        return titleScore + artistScore
     }
 
     private func normalizedTitle(_ title: String) -> String {

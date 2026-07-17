@@ -49,10 +49,15 @@ actor BilibiliClient {
         let url = URL(string: "https://api.bilibili.com/x/web-interface/view?bvid=\(bvid)")!
         let response: ViewResponse = try await request(url)
         guard response.code == 0, let data = response.data else { throw BilibiliMusicError.api(response.message) }
-        let subtitleURL = data.subtitle?.list.first.flatMap { Self.normalizedURL($0.subtitleURL) }
-        return data.pages.map { page in
+        var tracks: [MusicTrack] = []
+        for page in data.pages {
+            let subtitleURL = await subtitleURL(
+                bvid: data.bvid,
+                cid: page.cid,
+                viewSubtitles: data.subtitle?.list ?? []
+            )
             let title = data.pages.count > 1 ? "\(data.title) · \(page.part)" : data.title
-            return MusicTrack(
+            tracks.append(MusicTrack(
                 id: "bili:\(data.bvid):\(page.cid)",
                 source: .bilibili,
                 title: title,
@@ -62,8 +67,9 @@ actor BilibiliClient {
                 duration: TimeInterval(page.duration),
                 bilibili: BilibiliTrackReference(bvid: data.bvid, aid: data.aid, cid: page.cid, page: page.page),
                 subtitleURL: subtitleURL
-            )
+            ))
         }
+        return tracks
     }
 
     func audioLocation(for track: MusicTrack) async throws -> BilibiliAudioLocation {
@@ -109,6 +115,12 @@ actor BilibiliClient {
         return location
     }
 
+    func subtitleURL(for track: MusicTrack) async -> URL? {
+        guard let reference = track.bilibili else { return nil }
+        try? await prepareGuestSession()
+        return await subtitleURL(bvid: reference.bvid, cid: reference.cid, viewSubtitles: [])
+    }
+
     private func successfulPlayResponse(params: [String: String]) async throws -> PlayResponse {
         let response = try await playResponse(params: params, signed: false)
         if response.code == 0 { return response }
@@ -116,6 +128,33 @@ actor BilibiliClient {
             return fallback
         }
         throw BilibiliMusicError.api(response.message)
+    }
+
+    private func subtitleURL(bvid: String, cid: Int, viewSubtitles: [ViewSubtitleItem]) async -> URL? {
+        if let direct = viewSubtitles.lazy.compactMap({ Self.normalizedURL($0.subtitleURL) }).first {
+            return direct
+        }
+        let params = ["bvid": bvid, "cid": String(cid)]
+        if let response = try? await playerInfoResponse(params: params, signed: false),
+           let url = response.data?.subtitle?.subtitles.lazy.compactMap({ Self.normalizedURL($0.bestURL) }).first {
+            return url
+        }
+        if let response = try? await playerInfoResponse(params: params, signed: true),
+           let url = response.data?.subtitle?.subtitles.lazy.compactMap({ Self.normalizedURL($0.bestURL) }).first {
+            return url
+        }
+        return nil
+    }
+
+    private func playerInfoResponse(params: [String: String], signed: Bool) async throws -> PlayerInfoResponse {
+        var components = URLComponents(string: signed
+            ? "https://api.bilibili.com/x/player/wbi/v2"
+            : "https://api.bilibili.com/x/player/v2")!
+        let values = signed ? try await signedParameters(params) : params
+        components.queryItems = values.sorted(by: { $0.key < $1.key }).map {
+            URLQueryItem(name: $0.key, value: $0.value)
+        }
+        return try await request(components.url!)
     }
 
     private func reachableLocation(from urls: [URL]) async -> BilibiliAudioLocation? {
@@ -292,7 +331,9 @@ actor BilibiliClient {
     }
 
     private static func normalizedURL(_ value: String) -> URL? {
-        guard var components = URLComponents(string: value.hasPrefix("//") ? "https:\(value)" : value) else {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty,
+              var components = URLComponents(string: value.hasPrefix("//") ? "https:\(value)" : value) else {
             return nil
         }
         if components.scheme?.lowercased() == "http" { components.scheme = "https" }
@@ -341,6 +382,20 @@ private struct ViewSubtitle: Decodable { let list: [ViewSubtitleItem] }
 private struct ViewSubtitleItem: Decodable {
     let subtitleURL: String
     enum CodingKeys: String, CodingKey { case subtitleURL = "subtitle_url" }
+}
+private struct PlayerInfoResponse: Decodable {
+    let code: Int; let message: String; let data: PlayerInfoData?
+}
+private struct PlayerInfoData: Decodable { let subtitle: PlayerInfoSubtitle? }
+private struct PlayerInfoSubtitle: Decodable { let subtitles: [PlayerSubtitleItem] }
+private struct PlayerSubtitleItem: Decodable {
+    let subtitleURL: String?
+    let subtitleURLV2: String?
+    var bestURL: String { subtitleURL ?? subtitleURLV2 ?? "" }
+    enum CodingKeys: String, CodingKey {
+        case subtitleURL = "subtitle_url"
+        case subtitleURLV2 = "subtitle_url_v2"
+    }
 }
 private struct NavResponse: Decodable { let code: Int; let message: String; let data: NavData? }
 private struct NavData: Decodable {

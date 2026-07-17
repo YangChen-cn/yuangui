@@ -32,10 +32,14 @@ final class MusicStore: ObservableObject {
     @Published private(set) var lyricOffsets: [String: TimeInterval] = [:]
     @Published private(set) var isSearchingLyrics = false
     @Published private(set) var lyricsSearchMessage: String?
+    @Published private(set) var bilibiliAccount: BilibiliAccount?
+    @Published private(set) var bilibiliLoginPhase: BilibiliLoginPhase = .loggedOut
+    @Published private(set) var bilibiliQRCodeURL: String?
     @Published var isMiniPlayerPresented = false
 
     private let appleMusic = AppleMusicController()
     private let bilibili = BilibiliClient()
+    private let bilibiliAccountService = BilibiliAccountService()
     private let bilibiliPlayer = BilibiliPlayerEngine()
     private let lyricsService = LyricsService()
     private let library = MusicLibraryActor()
@@ -44,10 +48,12 @@ final class MusicStore: ObservableObject {
     private var lyricLoadTask: Task<Void, Never>?
     private var lyricsSearchTask: Task<Void, Never>?
     private var bilibiliLoadTask: Task<Void, Never>?
+    private var bilibiliLoginTask: Task<Void, Never>?
     private var lyricsByTrackID: [String: LyricsDocument] = [:]
     private var currentTrackID: String?
     private var lastSavedSecond = -1
     private var bilibiliRefreshAttempted = false
+    private var persistenceRevision: UInt64 = 0
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -78,6 +84,7 @@ final class MusicStore: ObservableObject {
         bilibiliPlayer.onFinished = { [weak self] in self?.handleTrackFinished() }
         bilibiliPlayer.onFailure = { [weak self] error in self?.handleBilibiliFailure(error) }
         Task { [weak self] in await self?.restoreLibrary() }
+        refreshBilibiliAccount()
         syncTask = Task { [weak self] in await self?.runSyncLoop() }
     }
 
@@ -203,6 +210,82 @@ final class MusicStore: ObservableObject {
                 if let first = added.first ?? tracks.first { play(first) }
             } catch { errorMessage = error.localizedDescription }
             isImporting = false
+        }
+    }
+
+    func refreshBilibiliAccount() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                bilibiliAccount = try await bilibiliAccountService.currentAccount()
+                bilibiliLoginPhase = bilibiliAccount == nil ? .loggedOut : .loggedIn
+            } catch {
+                bilibiliLoginPhase = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    func startBilibiliLogin() {
+        bilibiliLoginTask?.cancel()
+        bilibiliLoginPhase = .requestingQRCode
+        bilibiliQRCodeURL = nil
+        bilibiliLoginTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let code = try await bilibiliAccountService.generateQRCode()
+                guard !Task.isCancelled else { return }
+                bilibiliQRCodeURL = code.url
+                bilibiliLoginPhase = .waitingForScan
+                while !Task.isCancelled {
+                    try await Task.sleep(for: .seconds(2))
+                    switch try await bilibiliAccountService.pollQRCode(key: code.key) {
+                    case .waitingForScan:
+                        bilibiliLoginPhase = .waitingForScan
+                    case .waitingForConfirmation:
+                        bilibiliLoginPhase = .waitingForConfirmation
+                    case .expired:
+                        bilibiliLoginPhase = .expired
+                        bilibiliQRCodeURL = nil
+                        bilibiliLoginTask = nil
+                        return
+                    case .succeeded:
+                        guard let account = try await bilibiliAccountService.currentAccount() else {
+                            throw BilibiliAccountError.api("登录凭据未生效")
+                        }
+                        bilibiliAccount = account
+                        bilibiliLoginPhase = .loggedIn
+                        bilibiliQRCodeURL = nil
+                        bilibiliLoginTask = nil
+                        await refreshCurrentBilibiliSubtitleAfterLogin()
+                        return
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                bilibiliLoginPhase = .failed(error.localizedDescription)
+                bilibiliQRCodeURL = nil
+                bilibiliLoginTask = nil
+            }
+        }
+    }
+
+    func cancelBilibiliLogin() {
+        bilibiliLoginTask?.cancel()
+        bilibiliLoginTask = nil
+        bilibiliQRCodeURL = nil
+        if bilibiliAccount == nil { bilibiliLoginPhase = .loggedOut }
+    }
+
+    func logoutBilibili() {
+        bilibiliLoginTask?.cancel()
+        bilibiliLoginTask = nil
+        Task { [weak self] in
+            guard let self else { return }
+            await bilibiliAccountService.logout()
+            bilibiliAccount = nil
+            bilibiliQRCodeURL = nil
+            bilibiliLoginPhase = .loggedOut
         }
     }
 
@@ -452,9 +535,10 @@ final class MusicStore: ObservableObject {
 
     func showFullPlayer() { NotificationCenter.default.post(name: .showYuanGUIMusic, object: nil) }
 
-    func shutdown() {
-        syncTask?.cancel(); lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliPlayer.stop()
-        Task { await library.flush() }
+    func shutdown() async {
+        syncTask?.cancel(); lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliPlayer.stop()
+        persistenceRevision &+= 1
+        await library.saveNow(librarySnapshot(), revision: persistenceRevision)
     }
 
     private func refreshAppleMusic() {
@@ -533,7 +617,13 @@ final class MusicStore: ObservableObject {
         lyrics = nil; currentLyric = nil; nextLyric = nil
         lyricLoadTask = Task { [weak self] in
             guard let self else { return }
-            let found = await lyricsService.lyrics(for: track)
+            var resolvedTrack = track
+            if track.source == .bilibili, track.subtitleURL == nil,
+               let subtitleURL = await bilibili.subtitleURL(for: track) {
+                resolvedTrack.subtitleURL = subtitleURL
+                updateSubtitleURL(subtitleURL, for: track.id)
+            }
+            let found = await lyricsService.lyrics(for: resolvedTrack)
             guard !Task.isCancelled, currentTrack?.id == track.id else { return }
             lyrics = found
             if let found {
@@ -544,6 +634,26 @@ final class MusicStore: ObservableObject {
         }
     }
 
+    private func refreshCurrentBilibiliSubtitleAfterLogin() async {
+        guard let track = currentTrack, track.source == .bilibili,
+              let subtitleURL = await bilibili.subtitleURL(for: track) else { return }
+        updateSubtitleURL(subtitleURL, for: track.id)
+        if lyricsByTrackID[track.id]?.source == "LRCLIB" {
+            lyricsByTrackID.removeValue(forKey: track.id)
+        }
+        loadLyrics(for: currentTrack ?? track)
+    }
+
+    private func updateSubtitleURL(_ url: URL, for trackID: String) {
+        if let index = playlist.firstIndex(where: { $0.id == trackID }) {
+            playlist[index].subtitleURL = url
+            if currentTrack?.id == trackID { currentTrack = playlist[index] }
+        } else if currentTrack?.id == trackID {
+            currentTrack?.subtitleURL = url
+        }
+        persistLibrary()
+    }
+
     private func updateLyric() {
         let adjustedPosition = max(0, position - currentLyricOffset)
         currentLyric = lyrics?.line(at: adjustedPosition)
@@ -551,7 +661,9 @@ final class MusicStore: ObservableObject {
     }
 
     private func restoreLibrary() async {
+        let revisionBeforeLoad = persistenceRevision
         guard let snapshot = try? await library.load() else { return }
+        guard persistenceRevision == revisionBeforeLoad else { return }
         playlist = snapshot.playlist
         playMode = snapshot.playMode
         favoriteTrackIDs = snapshot.favoriteTrackIDs
@@ -579,7 +691,14 @@ final class MusicStore: ObservableObject {
     }
 
     private func persistLibrary() {
-        let snapshot = MusicLibrarySnapshot(
+        persistenceRevision &+= 1
+        let revision = persistenceRevision
+        let snapshot = librarySnapshot()
+        Task { await library.scheduleSave(snapshot, revision: revision) }
+    }
+
+    private func librarySnapshot() -> MusicLibrarySnapshot {
+        MusicLibrarySnapshot(
             playlist: playlist,
             playMode: playMode,
             currentTrackID: currentTrackID,
@@ -589,6 +708,5 @@ final class MusicStore: ObservableObject {
             lyricOffsets: lyricOffsets,
             lyricsByTrackID: lyricsByTrackID
         )
-        Task { await library.scheduleSave(snapshot) }
     }
 }

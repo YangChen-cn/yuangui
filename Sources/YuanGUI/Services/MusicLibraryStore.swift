@@ -30,18 +30,30 @@ actor MusicLibraryActor {
     private let store: MusicLibraryPersisting
     private var pending: MusicLibrarySnapshot?
     private var saveTask: Task<Void, Never>?
+    private var latestRevision: UInt64 = 0
 
     init(store: MusicLibraryPersisting = MusicLibraryFileStore()) { self.store = store }
 
     func load() throws -> MusicLibrarySnapshot { try store.load() }
 
-    func scheduleSave(_ snapshot: MusicLibrarySnapshot) {
+    func scheduleSave(_ snapshot: MusicLibrarySnapshot, revision: UInt64) {
+        guard revision >= latestRevision else { return }
+        latestRevision = revision
         pending = snapshot
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
             await self?.flush()
         }
+    }
+
+    func saveNow(_ snapshot: MusicLibrarySnapshot, revision: UInt64) {
+        guard revision >= latestRevision else { return }
+        latestRevision = revision
+        pending = snapshot
+        saveTask?.cancel()
+        saveTask = nil
+        flush()
     }
 
     func flush() {

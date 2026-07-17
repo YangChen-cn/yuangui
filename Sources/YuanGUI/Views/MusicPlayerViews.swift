@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -113,9 +114,9 @@ struct MusicStatusCard: View {
         ScrollView {
             VStack(spacing: 10) {
                 nowPlayingSection
-                playbackSettingsSection
                 if music.source == .bilibili { bilibiliLibrarySection }
                 else { appleMusicQueueSection }
+                playbackSettingsSection
             }
             .padding(.horizontal, 1)
             .padding(.bottom, 2)
@@ -289,7 +290,7 @@ struct MusicStatusCard: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
             } else {
-                ForEach(selectedLibraryTracks) { track in
+                ForEach(Array(selectedLibraryTracks.prefix(4))) { track in
                     Button { music.play(track) } label: {
                         HStack(spacing: 8) {
                             MusicArtworkView(track: track, size: 30)
@@ -308,6 +309,13 @@ struct MusicStatusCard: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                }
+                if selectedLibraryTracks.count > 4 {
+                    Text("还有 \(selectedLibraryTracks.count - 4) 首，请在完整资料库中查看")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 2)
                 }
             }
             Button("打开完整资料库…") { music.showFullPlayer() }
@@ -378,6 +386,7 @@ struct MusicPlayerView: View {
     @State private var isCreatingPlaylist = false
     @State private var newPlaylistName = ""
     @State private var isSearchingLyrics = false
+    @State private var isBilibiliLoginPresented = false
     @State private var lyricsSearchTitle = ""
     @State private var lyricsSearchArtist = ""
 
@@ -386,7 +395,10 @@ struct MusicPlayerView: View {
             Picker("播放来源", selection: Binding(get: { music.source }, set: music.setSource)) {
                 ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
             }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 310).padding(12)
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 310)
+            .padding(.vertical, 10)
             Divider()
             NavigationSplitView {
                 sidebar
@@ -411,6 +423,9 @@ struct MusicPlayerView: View {
                 artist: $lyricsSearchArtist,
                 isPresented: $isSearchingLyrics
             )
+        }
+        .sheet(isPresented: $isBilibiliLoginPresented) {
+            BilibiliLoginSheet(music: music, isPresented: $isBilibiliLoginPresented)
         }
     }
 
@@ -493,7 +508,14 @@ struct MusicPlayerView: View {
     private var detail: some View {
         ScrollView {
             VStack(spacing: 16) {
-                MusicArtworkView(track: music.currentTrack, size: 190).shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+                ZStack(alignment: .topTrailing) {
+                    MusicArtworkView(track: music.currentTrack, size: 190)
+                        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+                        .frame(maxWidth: .infinity)
+                    if music.source == .bilibili {
+                        bilibiliAccountButton
+                    }
+                }
                 VStack(spacing: 4) {
                     Text(music.currentTrack?.title ?? emptyTitle).font(.system(size: 24, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
                     Text(music.currentTrack?.artist ?? music.source.title).foregroundStyle(.secondary)
@@ -533,6 +555,39 @@ struct MusicPlayerView: View {
             }
             .padding(28).frame(maxWidth: .infinity)
         }
+    }
+
+    private var bilibiliAccountButton: some View {
+        Button { isBilibiliLoginPresented = true } label: {
+            HStack(spacing: 7) {
+                if let account = music.bilibiliAccount {
+                    AsyncImage(url: account.avatarURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+
+                    Text(account.name)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                        .frame(maxWidth: 78)
+                } else {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("登录哔哩哔哩")
+                        .font(.callout.weight(.semibold))
+                }
+            }
+            .padding(.horizontal, 4)
+            .frame(minHeight: 30)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.regular)
+        .help(music.bilibiliAccount.map { "已登录：\($0.name)，点击管理账号" } ?? "扫码登录哔哩哔哩")
     }
 
     private var emptyTitle: String { music.source == .appleMusic ? "连接 Apple Music" : "从左侧导入并选择歌曲" }
@@ -651,6 +706,127 @@ struct MusicPlayerView: View {
         lyricsSearchTitle = music.currentTrack?.title ?? ""
         lyricsSearchArtist = music.currentTrack?.artist ?? ""
         isSearchingLyrics = true
+    }
+}
+
+struct BilibiliLoginSheet: View {
+    @ObservedObject var music: MusicStore
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Label("哔哩哔哩账号", systemImage: "person.crop.circle")
+                    .font(.title2.bold())
+                Spacer()
+            }
+
+            if let account = music.bilibiliAccount {
+                VStack(spacing: 10) {
+                    AsyncImage(url: account.avatarURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable().foregroundStyle(.secondary)
+                    }
+                    .frame(width: 72, height: 72)
+                    .clipShape(Circle())
+                    Text(account.name).font(.headline)
+                    Text("已登录，可读取账号有权访问的播放器字幕。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("退出账号", role: .destructive) { music.logoutBilibili() }
+                    Spacer()
+                    Button("完成") { isPresented = false }
+                        .keyboardShortcut(.defaultAction)
+                }
+            } else {
+                Group {
+                    if let value = music.bilibiliQRCodeURL, let image = qrImage(from: value) {
+                        Image(nsImage: image)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(width: 190, height: 190)
+                            .padding(10)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    } else if music.bilibiliLoginPhase == .requestingQRCode {
+                        ProgressView("正在生成二维码…")
+                            .frame(width: 210, height: 210)
+                    } else {
+                        Image(systemName: "qrcode")
+                            .font(.system(size: 100, weight: .light))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 210, height: 210)
+                    }
+                }
+
+                Text(loginStatusText)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(loginStatusColor)
+                Text("请使用哔哩哔哩手机客户端扫码并确认。YuanGUI 不会读取或保存账号密码。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+
+                HStack {
+                    Button("取消") { isPresented = false }
+                        .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button(music.bilibiliQRCodeURL == nil ? "生成二维码" : "刷新二维码") {
+                        music.startBilibiliLogin()
+                    }
+                    .disabled(music.bilibiliLoginPhase == .requestingQRCode)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 420)
+        .onAppear {
+            if music.bilibiliAccount == nil,
+               music.bilibiliLoginPhase != .requestingQRCode,
+               music.bilibiliLoginPhase != .waitingForScan,
+               music.bilibiliLoginPhase != .waitingForConfirmation {
+                music.startBilibiliLogin()
+            }
+        }
+        .onDisappear {
+            if music.bilibiliAccount == nil { music.cancelBilibiliLogin() }
+        }
+    }
+
+    private var loginStatusText: String {
+        switch music.bilibiliLoginPhase {
+        case .loggedOut: return "尚未登录"
+        case .requestingQRCode: return "正在连接哔哩哔哩…"
+        case .waitingForScan: return "等待扫码"
+        case .waitingForConfirmation: return "已扫码，请在手机上确认"
+        case .expired: return "二维码已失效，请刷新"
+        case .loggedIn: return "登录成功"
+        case .failed(let message): return message
+        }
+    }
+
+    private var loginStatusColor: Color {
+        switch music.bilibiliLoginPhase {
+        case .failed, .expired: return .orange
+        case .waitingForConfirmation: return .blue
+        default: return .secondary
+        }
+    }
+
+    private func qrImage(from value: String) -> NSImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(value.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)) else {
+            return nil
+        }
+        let representation = NSCIImageRep(ciImage: output)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+        return image
     }
 }
 
