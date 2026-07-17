@@ -205,6 +205,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showMusic() {
+        dashboardController?.hide()
+        musicStore.isMiniPlayerPresented = false
         if musicController == nil { musicController = MusicWindowController(music: musicStore) }
         musicController?.show()
     }

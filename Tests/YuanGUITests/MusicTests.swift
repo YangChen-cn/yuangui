@@ -281,6 +281,43 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: fileStore.fileURL.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
+    func testBilibiliFavoritesListsFoldersAndFiltersVideoResources() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LyricsURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        LyricsURLProtocol.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            switch url.path {
+            case "/x/v3/fav/folder/created/list":
+                let data = Data(#"{"code":0,"message":"0","data":{"list":[{"id":101,"title":"我的音乐","cover":"http://i0.hdslb.com/a.jpg","state":0,"type":0,"media_count":2,"upper":{"name":"测试账号"}}],"has_more":false}}"#.utf8)
+                return (response, data)
+            case "/x/v3/fav/folder/collected/list":
+                let data = Data(#"{"code":0,"message":"0","data":{"list":[{"id":202,"title":"他人歌单","cover":"//i0.hdslb.com/b.jpg","state":0,"type":11,"media_count":3,"upper":{"name":"UP主"}},{"id":203,"title":"视频合集","cover":"","state":0,"type":21,"media_count":4,"upper":{"name":"UP主"}}],"has_more":false}}"#.utf8)
+                return (response, data)
+            case "/x/v3/fav/resource/ids":
+                let data = Data(#"{"code":0,"message":"0","data":[{"id":1,"type":2,"bvid":"BV1xx411c7mD","bv_id":""},{"id":2,"type":12,"bvid":"","bv_id":""},{"id":3,"type":2,"bvid":"","bv_id":"BV19p4y187Kk"}]}"#.utf8)
+                return (response, data)
+            default:
+                throw URLError(.unsupportedURL)
+            }
+        }
+        defer {
+            LyricsURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let service = BilibiliFavoritesService(session: session)
+        let folders = try await service.folders(for: 12345)
+        let created = try XCTUnwrap(folders.first(where: { $0.kind == .created }))
+        let bvids = try await service.videoBVIDs(in: created)
+
+        XCTAssertEqual(folders.map(\.id), [101, 202])
+        XCTAssertEqual(created.coverURL?.scheme, "https")
+        XCTAssertEqual(folders.last?.ownerName, "UP主")
+        XCTAssertEqual(bvids, ["BV1xx411c7mD", "BV19p4y187Kk"])
+    }
+
     func testPlayModesHaveStableUserFacingLabels() {
         XCTAssertEqual(MusicPlayMode.allCases.map(\.title), ["顺序播放", "单曲循环", "列表循环"])
         XCTAssertEqual(MusicSource.allCases.map(\.title), ["Apple Music", "哔哩哔哩"])

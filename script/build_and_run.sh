@@ -16,7 +16,9 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+if [[ "$MODE" != "build-only" && "$MODE" != "--build-only" ]]; then
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+fi
 
 cd "$ROOT_DIR"
 swift build
@@ -54,9 +56,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.2</string>
+  <string>1.0.3</string>
   <key>CFBundleVersion</key>
-  <string>3</string>
+  <string>4</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
@@ -83,6 +85,8 @@ open_app() {
 }
 
 case "$MODE" in
+  --build-only|build-only)
+    ;;
   run)
     open_app
     ;;
@@ -109,7 +113,7 @@ case "$MODE" in
     exit 1
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|--build-only|--debug|--logs|--telemetry|--verify]" >&2
     exit 2
     ;;
 esac

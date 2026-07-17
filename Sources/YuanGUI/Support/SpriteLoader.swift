@@ -4,15 +4,36 @@ import Foundation
 enum SpriteLoader {
     private static let resourceRoots: [URL] = {
         let bundleName = "YuanGUI_YuanGUI.bundle"
-        let roots = [
+        var roots = [
             Bundle.main.resourceURL?.appendingPathComponent(bundleName, isDirectory: true),
             Bundle.main.bundleURL.appendingPathComponent(bundleName, isDirectory: true),
             Bundle.main.bundleURL.deletingLastPathComponent()
                 .appendingPathComponent(bundleName, isDirectory: true),
             Bundle.main.executableURL?.deletingLastPathComponent()
                 .appendingPathComponent(bundleName, isDirectory: true)
-        ]
-        return roots.compactMap { $0 }
+        ].compactMap { $0 }
+
+        for bundle in Bundle.allBundles + Bundle.allFrameworks {
+            if let resourceURL = bundle.resourceURL {
+                roots.append(resourceURL.appendingPathComponent(bundleName, isDirectory: true))
+            }
+            roots.append(bundle.bundleURL.appendingPathComponent(bundleName, isDirectory: true))
+            roots.append(bundle.bundleURL.deletingLastPathComponent()
+                .appendingPathComponent(bundleName, isDirectory: true))
+        }
+
+        // XCTest executables live inside Foo.xctest/Contents/MacOS while the
+        // SwiftPM resource bundle is beside Foo.xctest. Search a small, bounded
+        // set of parent directories without embedding a developer-machine path.
+        if var directory = Bundle.main.executableURL?.deletingLastPathComponent() {
+            for _ in 0..<4 {
+                roots.append(directory.appendingPathComponent(bundleName, isDirectory: true))
+                directory.deleteLastPathComponent()
+            }
+        }
+
+        var seen = Set<String>()
+        return roots.filter { seen.insert($0.standardizedFileURL.path).inserted }
     }()
 
     enum SequenceKind {
@@ -158,17 +179,10 @@ enum SpriteLoader {
             }
         }
 
-        // XCTest and raw SwiftPM executables do not use an .app as their main
-        // bundle, so the generated accessor is safe and useful there. Never
-        // invoke it from a distributed app because its missing-bundle path is
-        // a fatal assertion containing a developer-machine build path.
-        if mainBundleURL.pathExtension != "app" {
-            return Bundle.module.url(
-                forResource: file,
-                withExtension: "png",
-                subdirectory: subdirectory
-            )
-        }
+        // Do not call SwiftPM's generated Bundle.module accessor here. It embeds
+        // an absolute developer-machine .build path and terminates the process
+        // when neither that path nor its expected bundle location is available.
+        // App bundles and raw SwiftPM runs are both covered by resourceRoots.
         return nil
     }
 }

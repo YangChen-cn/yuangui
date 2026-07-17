@@ -12,7 +12,7 @@
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.2.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.3.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -32,7 +32,7 @@
 - **AI 对话**：支持 OpenAI 兼容接口；填写 URL 与 API Key 后可自动读取模型，也可以手动填写模型名和编辑角色提示词。
 - **附件对话与历史记录**：支持图片和文本类附件，保留本地聊天历史。
 - **统一音乐播放器**：可以控制系统 Apple Music，也能导入哔哩哔哩 URL、BV 号和短链接播放公开视频音频。
-- **哔哩哔哩资料库**：支持播放列表、收藏、本地歌单、顺序播放、列表循环、单曲循环和随机播放。
+- **哔哩哔哩资料库**：支持读取登录账号创建或收藏的视频收藏夹，弹窗选择后一键去重导入；同时支持播放列表、收藏、本地歌单和多种播放模式。
 - **哔哩哔哩扫码登录与字幕**：登录后可读取账号有权访问的播放器字幕；应用不会读取或保存账号密码。
 - **歌词与听歌陪伴**：支持 LRCLIB 自动匹配、手动修正歌曲信息、导入 LRC、歌词偏移和可自定义的桌面悬浮歌词；播放期间角色会切换到听歌动作。
 - **应用内更新**：设置中显示当前版本和更新内容，可读取 GitHub Release 更新日志并一键下载安装新版本。
@@ -53,9 +53,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-1.0.2.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.2.dmg)
+[一键下载最新版 `YuanGUI-1.0.3.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.3.dmg)
 
-1. 打开 `YuanGUI-1.0.2.dmg`。
+1. 打开 `YuanGUI-1.0.3.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -95,7 +95,8 @@ swift test
 2. 选择 Apple Music 后，可以控制系统 Music App 的播放、进度和音量。
 3. 选择哔哩哔哩后，可以粘贴视频 URL、BV 号或 `b23.tv` 短链接导入歌曲。
 4. 如果公开视频没有匿名字幕，可以点击播放器封面右上方的账号入口，使用哔哩哔哩手机客户端扫码登录。
-5. 歌词匹配失败时，可以手动填写歌曲名和歌手重新匹配，或直接导入本地 LRC 文件。
+5. 登录后点击侧边栏的“导入哔哩哔哩收藏夹”，可以选择自己创建或收藏的视频收藏夹并一键导入；应用会去重，并创建或更新同名本地歌单。
+6. 歌词匹配失败时，可以手动填写歌曲名和歌手重新匹配，或直接导入本地 LRC 文件。
 
 播放列表、收藏、本地歌单、歌词、歌词偏移和播放进度都会保存在本机。切换播放来源不会删除已经匹配的歌词。
 
@@ -130,7 +131,7 @@ swift test
 swift test
 ```
 
-当前项目包含 97 项测试，覆盖：
+当前项目包含 98 项测试，覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -151,7 +152,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。产物位于：
 
 ```text
-dist/YuanGUI-1.0.2.dmg
+dist/YuanGUI-1.0.3.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

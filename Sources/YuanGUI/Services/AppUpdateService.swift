@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "1.0.2"
-    static let fallbackBuild = "3"
+    static let fallbackVersion = "1.0.3"
+    static let fallbackBuild = "4"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,10 +14,10 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
-        "新增 Apple Music 与哔哩哔哩统一音乐播放器、播放列表、收藏和本地歌单。",
-        "新增哔哩哔哩扫码登录，并支持读取账号有权访问的播放器字幕。",
-        "改进 LRCLIB 歌词匹配、持久化、桌面歌词样式和播放源切换。",
-        "新增“关于与更新”，可读取 GitHub Release 更新日志并一键更新。"
+        "新增哔哩哔哩账号收藏夹读取，可选择自己创建或收藏的视频收藏夹一键导入。",
+        "导入收藏夹时自动去重，并创建或更新同名本地歌单。",
+        "修复从迷你播放器打开完整播放器时窗口偶尔无法激活、输入框无法使用 Command-V 的问题。",
+        "修复账号自己创建的收藏夹因类型字段差异而无法显示的问题。"
     ]
 }
 

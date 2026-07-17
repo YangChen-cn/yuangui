@@ -387,6 +387,7 @@ struct MusicPlayerView: View {
     @State private var newPlaylistName = ""
     @State private var isSearchingLyrics = false
     @State private var isBilibiliLoginPresented = false
+    @State private var isBilibiliFavoritesPresented = false
     @State private var lyricsSearchTitle = ""
     @State private var lyricsSearchArtist = ""
 
@@ -427,6 +428,9 @@ struct MusicPlayerView: View {
         .sheet(isPresented: $isBilibiliLoginPresented) {
             BilibiliLoginSheet(music: music, isPresented: $isBilibiliLoginPresented)
         }
+        .sheet(isPresented: $isBilibiliFavoritesPresented) {
+            BilibiliFavoriteImportSheet(music: music, isPresented: $isBilibiliFavoritesPresented)
+        }
     }
 
     @ViewBuilder private var sidebar: some View {
@@ -446,6 +450,21 @@ struct MusicPlayerView: View {
                         music.isImporting ? AnyView(ProgressView().controlSize(.small)) : AnyView(Image(systemName: "plus"))
                     }.disabled(music.isImporting || music.importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }.padding(10)
+                HStack {
+                    Button {
+                        if music.bilibiliAccount == nil { isBilibiliLoginPresented = true }
+                        else { isBilibiliFavoritesPresented = true }
+                    } label: {
+                        Label(
+                            music.bilibiliAccount == nil ? "登录后导入收藏夹" : "导入哔哩哔哩收藏夹",
+                            systemImage: "folder.badge.plus"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
                 List(selection: $selectedTrackID) {
                     Section("资料库") {
                         collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: music.playlist.count)
@@ -706,6 +725,126 @@ struct MusicPlayerView: View {
         lyricsSearchTitle = music.currentTrack?.title ?? ""
         lyricsSearchArtist = music.currentTrack?.artist ?? ""
         isSearchingLyrics = true
+    }
+}
+
+struct BilibiliFavoriteImportSheet: View {
+    @ObservedObject var music: MusicStore
+    @Binding var isPresented: Bool
+    @State private var selectedFolderID: Int64?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("导入哔哩哔哩收藏夹", systemImage: "folder.badge.plus")
+                    .font(.title2.bold())
+                Spacer()
+                if let account = music.bilibiliAccount {
+                    Text(account.name)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text("选择一个收藏夹后，YuanGUI 会去重加入播放列表，并创建或更新同名本地歌单。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if music.isLoadingBilibiliFavoriteFolders {
+                ProgressView("正在读取收藏夹…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if music.bilibiliFavoriteFolders.isEmpty {
+                ContentUnavailableView(
+                    "没有可导入的收藏夹",
+                    systemImage: "folder",
+                    description: Text(music.bilibiliFavoriteMessage ?? "请确认账号已登录，并尝试刷新。")
+                )
+                .frame(maxHeight: .infinity)
+            } else {
+                List(selection: $selectedFolderID) {
+                    ForEach(BilibiliFavoriteFolderKind.allCases, id: \.self) { kind in
+                        let folders = music.bilibiliFavoriteFolders.filter { $0.kind == kind }
+                        if !folders.isEmpty {
+                            Section(kind.title) {
+                                ForEach(folders) { folder in
+                                    HStack(spacing: 10) {
+                                        AsyncImage(url: folder.coverURL) { image in
+                                            image.resizable().scaledToFill()
+                                        } placeholder: {
+                                            Image(systemName: "folder.fill")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .frame(width: 42, height: 42)
+                                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(folder.title).lineLimit(1)
+                                            HStack(spacing: 6) {
+                                                Text("\(folder.mediaCount) 个视频")
+                                                if let owner = folder.ownerName, folder.kind == .collected {
+                                                    Text("· \(owner)").lineLimit(1)
+                                                }
+                                            }
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                    }
+                                    .tag(folder.id)
+                                }
+                            }
+                        }
+                    }
+                }
+                .listStyle(.inset)
+            }
+
+            if music.isImportingBilibiliFavoriteFolder {
+                VStack(alignment: .leading, spacing: 5) {
+                    ProgressView(
+                        value: Double(music.bilibiliFavoriteImportCompleted),
+                        total: Double(max(music.bilibiliFavoriteImportTotal, 1))
+                    )
+                    Text("正在解析视频 \(music.bilibiliFavoriteImportCompleted)/\(music.bilibiliFavoriteImportTotal)…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let message = music.bilibiliFavoriteMessage,
+                      !music.bilibiliFavoriteFolders.isEmpty {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(message.hasPrefix("已从") ? Color.green : Color.orange)
+            }
+
+            HStack {
+                Button("刷新") { music.loadBilibiliFavoriteFolders() }
+                    .disabled(music.isLoadingBilibiliFavoriteFolders || music.isImportingBilibiliFavoriteFolder)
+                Spacer()
+                Button("完成") { isPresented = false }
+                    .disabled(music.isImportingBilibiliFavoriteFolder)
+                Button("一键导入") {
+                    if let selectedFolder { music.importBilibiliFavoriteFolder(selectedFolder) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedFolder == nil || music.isLoadingBilibiliFavoriteFolders || music.isImportingBilibiliFavoriteFolder)
+            }
+        }
+        .padding(20)
+        .frame(width: 540, height: 500)
+        .interactiveDismissDisabled(music.isImportingBilibiliFavoriteFolder)
+        .onAppear {
+            if music.bilibiliFavoriteFolders.isEmpty { music.loadBilibiliFavoriteFolders() }
+            else { selectedFolderID = music.bilibiliFavoriteFolders.first?.id }
+        }
+        .onChange(of: music.bilibiliFavoriteFolders) { _, folders in
+            if selectedFolderID == nil || !folders.contains(where: { $0.id == selectedFolderID }) {
+                selectedFolderID = folders.first?.id
+            }
+        }
+    }
+
+    private var selectedFolder: BilibiliFavoriteFolder? {
+        guard let selectedFolderID else { return nil }
+        return music.bilibiliFavoriteFolders.first { $0.id == selectedFolderID }
     }
 }
 

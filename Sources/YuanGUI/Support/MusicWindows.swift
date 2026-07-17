@@ -1,12 +1,17 @@
 import AppKit
 import SwiftUI
 
+private final class MusicPlayerWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 @MainActor
 final class MusicWindowController {
     private let window: NSWindow
 
     init(music: MusicStore) {
-        window = NSWindow(
+        window = MusicPlayerWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
@@ -20,8 +25,18 @@ final class MusicWindowController {
     }
 
     func show() {
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        // Activation of an accessory app and dismissal of its source panel can
+        // finish one run-loop turn later. Reassert key/main status after that.
+        DispatchQueue.main.async { [weak window] in
+            guard let window, window.isVisible else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.makeMain()
+        }
     }
 }
 

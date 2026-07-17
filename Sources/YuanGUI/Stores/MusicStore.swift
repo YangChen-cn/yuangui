@@ -35,11 +35,18 @@ final class MusicStore: ObservableObject {
     @Published private(set) var bilibiliAccount: BilibiliAccount?
     @Published private(set) var bilibiliLoginPhase: BilibiliLoginPhase = .loggedOut
     @Published private(set) var bilibiliQRCodeURL: String?
+    @Published private(set) var bilibiliFavoriteFolders: [BilibiliFavoriteFolder] = []
+    @Published private(set) var isLoadingBilibiliFavoriteFolders = false
+    @Published private(set) var isImportingBilibiliFavoriteFolder = false
+    @Published private(set) var bilibiliFavoriteImportCompleted = 0
+    @Published private(set) var bilibiliFavoriteImportTotal = 0
+    @Published private(set) var bilibiliFavoriteMessage: String?
     @Published var isMiniPlayerPresented = false
 
     private let appleMusic = AppleMusicController()
     private let bilibili = BilibiliClient()
     private let bilibiliAccountService = BilibiliAccountService()
+    private let bilibiliFavoritesService = BilibiliFavoritesService()
     private let bilibiliPlayer = BilibiliPlayerEngine()
     private let lyricsService = LyricsService()
     private let library = MusicLibraryActor()
@@ -49,6 +56,7 @@ final class MusicStore: ObservableObject {
     private var lyricsSearchTask: Task<Void, Never>?
     private var bilibiliLoadTask: Task<Void, Never>?
     private var bilibiliLoginTask: Task<Void, Never>?
+    private var bilibiliFavoriteTask: Task<Void, Never>?
     private var lyricsByTrackID: [String: LyricsDocument] = [:]
     private var currentTrackID: String?
     private var lastSavedSecond = -1
@@ -213,6 +221,119 @@ final class MusicStore: ObservableObject {
         }
     }
 
+    func loadBilibiliFavoriteFolders() {
+        guard let account = bilibiliAccount else {
+            bilibiliFavoriteMessage = "请先登录哔哩哔哩账号"
+            return
+        }
+        bilibiliFavoriteTask?.cancel()
+        isLoadingBilibiliFavoriteFolders = true
+        bilibiliFavoriteMessage = nil
+        bilibiliFavoriteTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let folders = try await bilibiliFavoritesService.folders(for: account.mid)
+                guard !Task.isCancelled else { return }
+                bilibiliFavoriteFolders = folders
+                if folders.isEmpty { bilibiliFavoriteMessage = "这个账号没有可导入的视频收藏夹" }
+            } catch is CancellationError {
+                return
+            } catch {
+                bilibiliFavoriteMessage = error.localizedDescription
+            }
+            isLoadingBilibiliFavoriteFolders = false
+            bilibiliFavoriteTask = nil
+        }
+    }
+
+    func importBilibiliFavoriteFolder(_ folder: BilibiliFavoriteFolder) {
+        guard bilibiliAccount != nil, !isImportingBilibiliFavoriteFolder else { return }
+        bilibiliFavoriteTask?.cancel()
+        isLoadingBilibiliFavoriteFolders = false
+        isImportingBilibiliFavoriteFolder = true
+        bilibiliFavoriteImportCompleted = 0
+        bilibiliFavoriteImportTotal = max(folder.mediaCount, 0)
+        bilibiliFavoriteMessage = nil
+        bilibiliFavoriteTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let bvids = try await bilibiliFavoritesService.videoBVIDs(in: folder)
+                guard !bvids.isEmpty else {
+                    bilibiliFavoriteMessage = "“\(folder.title)”没有可导入的公开视频"
+                    isImportingBilibiliFavoriteFolder = false
+                    bilibiliFavoriteTask = nil
+                    return
+                }
+                bilibiliFavoriteImportTotal = bvids.count
+                var resolved: [(Int, [MusicTrack])] = []
+                var failedCount = 0
+                let batchSize = 4
+                let client = bilibili
+                for start in stride(from: 0, to: bvids.count, by: batchSize) {
+                    try Task.checkCancellation()
+                    let end = min(start + batchSize, bvids.count)
+                    let batch = Array(bvids[start..<end].enumerated()).map { (start + $0.offset, $0.element) }
+                    let batchResults = await withTaskGroup(of: (Int, [MusicTrack]?).self) { group in
+                        for (index, bvid) in batch {
+                            group.addTask { [client] in
+                                do { return (index, try await client.resolveTracks(from: bvid)) }
+                                catch { return (index, nil) }
+                            }
+                        }
+                        var values: [(Int, [MusicTrack]?)] = []
+                        for await value in group { values.append(value) }
+                        return values
+                    }
+                    for (index, tracks) in batchResults {
+                        if let tracks { resolved.append((index, tracks)) }
+                        else { failedCount += 1 }
+                        bilibiliFavoriteImportCompleted += 1
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                let tracks = resolved.sorted { $0.0 < $1.0 }.flatMap(\.1)
+                let existingIDs = Set(playlist.map(\.id))
+                let added = tracks.filter { !existingIDs.contains($0.id) }
+                playlist.append(contentsOf: added)
+                updateLocalPlaylist(named: folder.title, with: tracks)
+                setSource(.bilibili)
+                persistLibrary()
+                let duplicateCount = tracks.count - added.count
+                var details = "已从“\(folder.title)”导入 \(added.count) 首"
+                if duplicateCount > 0 { details += "，跳过 \(duplicateCount) 首重复歌曲" }
+                if failedCount > 0 { details += "，\(failedCount) 个视频解析失败" }
+                bilibiliFavoriteMessage = details
+            } catch is CancellationError {
+                return
+            } catch {
+                bilibiliFavoriteMessage = error.localizedDescription
+            }
+            isImportingBilibiliFavoriteFolder = false
+            bilibiliFavoriteTask = nil
+        }
+    }
+
+    func cancelBilibiliFavoriteOperation() {
+        bilibiliFavoriteTask?.cancel()
+        bilibiliFavoriteTask = nil
+        isLoadingBilibiliFavoriteFolders = false
+        isImportingBilibiliFavoriteFolder = false
+    }
+
+    private func updateLocalPlaylist(named name: String, with tracks: [MusicTrack]) {
+        guard !tracks.isEmpty else { return }
+        if let index = savedPlaylists.firstIndex(where: { $0.name == name }) {
+            var existing = Set(savedPlaylists[index].trackIDs)
+            savedPlaylists[index].trackIDs.append(contentsOf: tracks.map(\.id).filter { existing.insert($0).inserted })
+        } else {
+            var seen = Set<String>()
+            savedPlaylists.append(SavedMusicPlaylist(
+                name: name,
+                trackIDs: tracks.map(\.id).filter { seen.insert($0).inserted }
+            ))
+        }
+    }
+
     func refreshBilibiliAccount() {
         Task { [weak self] in
             guard let self else { return }
@@ -286,6 +407,8 @@ final class MusicStore: ObservableObject {
             bilibiliAccount = nil
             bilibiliQRCodeURL = nil
             bilibiliLoginPhase = .loggedOut
+            bilibiliFavoriteFolders = []
+            bilibiliFavoriteMessage = nil
         }
     }
 
@@ -533,10 +656,18 @@ final class MusicStore: ObservableObject {
         updateLyric()
     }
 
-    func showFullPlayer() { NotificationCenter.default.post(name: .showYuanGUIMusic, object: nil) }
+    func showFullPlayer() {
+        // A SwiftUI popover is hosted by a non-activating panel. Let it close before
+        // asking the regular player window to become key, otherwise the panel can
+        // reclaim focus at the end of the current mouse event.
+        isMiniPlayerPresented = false
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .showYuanGUIMusic, object: nil)
+        }
+    }
 
     func shutdown() async {
-        syncTask?.cancel(); lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliPlayer.stop()
+        syncTask?.cancel(); lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliFavoriteTask?.cancel(); bilibiliPlayer.stop()
         persistenceRevision &+= 1
         await library.saveNow(librarySnapshot(), revision: persistenceRevision)
     }
