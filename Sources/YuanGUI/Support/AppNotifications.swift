@@ -9,4 +9,5 @@ extension Notification.Name {
     static let showYuanGUIMusic = Notification.Name("showYuanGUIMusic")
     static let musicLyricsVisibilityChanged = Notification.Name("musicLyricsVisibilityChanged")
     static let musicLyricsLockChanged = Notification.Name("musicLyricsLockChanged")
+    static let terminateYuanGUIForUpdate = Notification.Name("terminateYuanGUIForUpdate")
 }

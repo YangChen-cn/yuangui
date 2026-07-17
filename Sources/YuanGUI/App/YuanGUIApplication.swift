@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lyricsController: LyricsPanelController?
     private var weatherStartupTask: Task<Void, Never>?
     private var terminationTask: Task<Void, Never>?
+    private var isPreparingUpdateTermination = false
+    private var isUpdateTerminationReady = false
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -88,6 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isUpdateTerminationReady { return .terminateNow }
+        if isPreparingUpdateTermination { return .terminateLater }
         guard terminationTask == nil else { return .terminateLater }
         terminationTask = Task { [weak self] in
             guard let self else {
@@ -154,7 +158,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.publisher(for: .musicLyricsLockChanged)
             .sink { [weak self] _ in Task { @MainActor in self?.lyrics().updateLock() } }
             .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .terminateYuanGUIForUpdate)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.prepareToTerminateForUpdate() }
+            }
+            .store(in: &cancellables)
         self.statusItem = statusItem
+    }
+
+    private func prepareToTerminateForUpdate() {
+        guard !isPreparingUpdateTermination, !isUpdateTerminationReady else { return }
+        isPreparingUpdateTermination = true
+        terminationTask = Task { [weak self] in
+            guard let self else {
+                NSApp.terminate(nil)
+                return
+            }
+            await musicStore.shutdown()
+            isUpdateTerminationReady = true
+            isPreparingUpdateTermination = false
+            NSApp.terminate(nil)
+        }
     }
 
     @objc private func toggleDashboard() {

@@ -3,7 +3,7 @@ import Foundation
 
 enum AppVersionInfo {
     static let fallbackVersion = "1.0.3"
-    static let fallbackBuild = "4"
+    static let fallbackBuild = "5"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -17,7 +17,8 @@ enum AppVersionInfo {
         "新增哔哩哔哩账号收藏夹读取，可选择自己创建或收藏的视频收藏夹一键导入。",
         "导入收藏夹时自动去重，并创建或更新同名本地歌单。",
         "修复从迷你播放器打开完整播放器时窗口偶尔无法激活、输入框无法使用 Command-V 的问题。",
-        "修复账号自己创建的收藏夹因类型字段差异而无法显示的问题。"
+        "修复账号自己创建的收藏夹因类型字段差异而无法显示的问题。",
+        "修复一键更新准备安装后无法自动退出、替换并重启应用的问题。"
     ]
 }
 
@@ -117,6 +118,52 @@ struct PreparedAppUpdate {
     let targetApp: URL
     let mountPoint: URL
     let dmgURL: URL
+}
+
+enum AppUpdateInstallerScript {
+    static let source = """
+    #!/bin/zsh
+    set -eu
+    source_app="$1"
+    target_app="$2"
+    mount_point="$3"
+    dmg_path="$4"
+    old_pid="$5"
+    staging="${target_app}.updating-${old_pid}"
+    backup="${target_app}.backup-${old_pid}"
+    wait_attempts=0
+    while /bin/kill -0 "$old_pid" 2>/dev/null; do
+      if (( wait_attempts >= 50 )); then
+        print -u2 "YuanGUI did not quit after 10 seconds; sending TERM"
+        /bin/kill -TERM "$old_pid" 2>/dev/null || true
+        break
+      fi
+      /bin/sleep 0.2
+      (( wait_attempts += 1 ))
+    done
+    force_attempts=0
+    while /bin/kill -0 "$old_pid" 2>/dev/null; do
+      if (( force_attempts >= 25 )); then
+        print -u2 "YuanGUI ignored TERM for 5 seconds; sending KILL"
+        /bin/kill -KILL "$old_pid" 2>/dev/null || true
+        break
+      fi
+      /bin/sleep 0.2
+      (( force_attempts += 1 ))
+    done
+    /usr/bin/ditto "$source_app" "$staging"
+    if [[ -e "$target_app" ]]; then /bin/mv "$target_app" "$backup"; fi
+    if /bin/mv "$staging" "$target_app"; then
+      /bin/rm -rf "$backup"
+      /usr/bin/open -n "$target_app"
+    else
+      [[ -e "$backup" ]] && /bin/mv "$backup" "$target_app"
+      exit 1
+    fi
+    /usr/bin/hdiutil detach "$mount_point" -quiet || true
+    /bin/rm -rf "${dmg_path:h}"
+    /bin/rm -f "$0"
+    """
 }
 
 actor AppUpdateService {
@@ -267,7 +314,7 @@ final class AppUpdateStore: ObservableObject {
                 let prepared = try await service.prepare(release)
                 state = .installing
                 try launchInstaller(for: prepared)
-                NSApp.terminate(nil)
+                NotificationCenter.default.post(name: .terminateYuanGUIForUpdate, object: nil)
             } catch {
                 state = .failed(error.localizedDescription)
             }
@@ -277,31 +324,7 @@ final class AppUpdateStore: ObservableObject {
     private func launchInstaller(for update: PreparedAppUpdate) throws {
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("yuangui-update-\(UUID().uuidString).zsh")
-        let script = """
-        #!/bin/zsh
-        set -eu
-        source_app="$1"
-        target_app="$2"
-        mount_point="$3"
-        dmg_path="$4"
-        old_pid="$5"
-        staging="${target_app}.updating-${old_pid}"
-        backup="${target_app}.backup-${old_pid}"
-        while /bin/kill -0 "$old_pid" 2>/dev/null; do /bin/sleep 0.2; done
-        /usr/bin/ditto "$source_app" "$staging"
-        if [[ -e "$target_app" ]]; then /bin/mv "$target_app" "$backup"; fi
-        if /bin/mv "$staging" "$target_app"; then
-          /bin/rm -rf "$backup"
-          /usr/bin/open -n "$target_app"
-        else
-          [[ -e "$backup" ]] && /bin/mv "$backup" "$target_app"
-          exit 1
-        fi
-        /usr/bin/hdiutil detach "$mount_point" -quiet || true
-        /bin/rm -rf "${dmg_path:h}"
-        /bin/rm -f "$0"
-        """
-        try Data(script.utf8).write(to: scriptURL, options: .atomic)
+        try Data(AppUpdateInstallerScript.source.utf8).write(to: scriptURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
 
         let process = Process()
