@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "1.0.4"
-    static let fallbackBuild = "6"
+    static let fallbackVersion = "1.0.5"
+    static let fallbackBuild = "7"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -18,7 +18,12 @@ enum AppVersionInfo {
         "Apple Music 的 LRCLIB 歌词改用稳定缓存键，重启后可继续使用已匹配歌词。",
         "Bilibili 登录信息完整显示昵称和 UID，并支持仅修改歌曲名或歌手而不重新匹配歌词。",
         "歌词偏移新增手动输入与 0.1 秒微调，状态栏、完整播放器和歌词设置操作保持一致。",
-        "提高桌宠聊天气泡的不透明度及深色模式对比度，深色桌面上更易阅读。"
+        "提高桌宠聊天气泡的不透明度及深色模式对比度，深色桌面上更易阅读。",
+        "完整播放器歌词扩展为七行窗口，支持鼠标焦点滚动预览、平滑跟随和点击歌词跳转；歌词加载状态也更加明确。",
+        "分离浏览来源与实际播放来源，切换页面不再意外暂停另一播放器；导入 Bilibili URL 后不再自动播放，并提供明确的开始播放入口。",
+        "新增随机播放模式；导入结果提示会在短暂展示后自动收起，保持资料库浏览连续性。",
+        "Apple Music 同步改为后台串行 worker，真实状态低频读取、播放进度本地平滑推进，避免 AppleScript 阻塞播放器界面。",
+        "更新检查页面优化 GitHub Release 文本排版，长标题、列表和段落均可正常换行。"
     ]
 }
 

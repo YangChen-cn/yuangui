@@ -12,7 +12,7 @@
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.4.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.5.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -53,9 +53,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-1.0.4.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.4.dmg)
+[一键下载最新版 `YuanGUI-1.0.5.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.5.dmg)
 
-1. 打开 `YuanGUI-1.0.4.dmg`。
+1. 打开 `YuanGUI-1.0.5.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -132,7 +132,7 @@ swift test
 swift test
 ```
 
-当前项目包含 106 项测试，覆盖：
+当前项目包含 111 项测试，覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -153,7 +153,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。产物位于：
 
 ```text
-dist/YuanGUI-1.0.4.dmg
+dist/YuanGUI-1.0.5.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：
