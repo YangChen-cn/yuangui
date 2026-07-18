@@ -20,6 +20,20 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(release.dmgAsset?.name, "YuanGUI-1.0.2.dmg")
     }
 
+    func testReleaseNotesKeepGitHubMarkdownStructure() {
+        let rows = ReleaseNoteRow.parse("""
+        ## 改进
+        - 修复播放器布局
+        1. 更新歌词交互
+
+        补充说明会单独换行。
+        """)
+
+        XCTAssertEqual(rows.map(\.kind), [.heading, .bullet, .bullet, .paragraph])
+        XCTAssertEqual(rows.map(\.text), ["改进", "修复播放器布局", "更新歌词交互", "补充说明会单独换行。"])
+        XCTAssertEqual(ReleaseNoteRow.parse("").map(\.text), ["此 Release 没有填写更新日志。"])
+    }
+
     func testInstallerBoundsWaitForOldProcessBeforeReplacingApp() {
         let script = AppUpdateInstallerScript.source
         XCTAssertTrue(script.contains("wait_attempts >= 50"))

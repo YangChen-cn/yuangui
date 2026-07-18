@@ -211,6 +211,7 @@ private struct FullPlayerLyricsView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .allowsHitTesting(isScrollFocused)
         .help("跳转到 \(formatTime(line.time + music.currentLyricOffset))")
         .accessibilityLabel("\(formatTime(line.time + music.currentLyricOffset))，\(line.text)")
         .accessibilityHint("跳转到这句歌词")

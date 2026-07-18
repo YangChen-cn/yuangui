@@ -33,32 +33,38 @@ struct AboutUpdateView: View {
                 }
 
                 GroupBox("检查更新") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            statusView
-                            Spacer()
-                            Button("检查更新") { updater.check() }
-                                .disabled(updater.isBusy)
-                            if updater.state == .available {
-                                Button("一键更新到 \(updater.latestRelease?.version ?? "新版本")") {
-                                    updater.installLatest()
-                                }
-                                .buttonStyle(.borderedProminent)
+                    VStack(alignment: .leading, spacing: 14) {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 10) {
+                                statusView
+                                Spacer(minLength: 12)
+                                updateActions
+                            }
+                            VStack(alignment: .leading, spacing: 10) {
+                                statusView
+                                updateActions
                             }
                         }
 
                         if let release = updater.latestRelease {
                             Divider()
-                            HStack {
+                            VStack(alignment: .leading, spacing: 5) {
                                 Text(release.name ?? "版本 \(release.version)")
                                     .font(.headline)
-                                Spacer()
-                                Link("在 GitHub 查看", destination: release.pageURL)
-                                    .font(.caption)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                HStack(spacing: 8) {
+                                    Text("v\(release.version)")
+                                        .font(.caption.monospaced().weight(.semibold))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
+                                        .background(.blue.opacity(0.12), in: Capsule())
+                                        .foregroundStyle(.blue)
+                                    Link("在 GitHub 查看", destination: release.pageURL)
+                                        .font(.caption)
+                                }
                             }
-                            Text(renderedReleaseNotes(release.body))
-                                .font(.callout)
-                                .textSelection(.enabled)
+                            releaseNotes(release.body)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -70,6 +76,19 @@ struct AboutUpdateView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.bottom, 8)
+        }
+    }
+
+    private var updateActions: some View {
+        HStack(spacing: 8) {
+            Button("检查更新") { updater.check() }
+                .disabled(updater.isBusy)
+            if updater.state == .available {
+                Button("一键更新到 \(updater.latestRelease?.version ?? "新版本")") {
+                    updater.installLatest()
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
     }
 
@@ -95,12 +114,89 @@ struct AboutUpdateView: View {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
                 .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func renderedReleaseNotes(_ body: String) -> AttributedString {
-        let source = body.isEmpty ? "此 Release 没有填写更新日志。" : body
-        return (try? AttributedString(markdown: source)) ?? AttributedString(source)
+    private func releaseNotes(_ body: String) -> some View {
+        let rows = ReleaseNoteRow.parse(body)
+        return VStack(alignment: .leading, spacing: 9) {
+            Text("更新说明")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ForEach(rows) { row in
+                switch row.kind {
+                case .heading:
+                    Text(renderedInlineMarkdown(row.text))
+                        .font(.callout.weight(.semibold))
+                        .padding(.top, row.id == rows.first?.id ? 0 : 3)
+                case .bullet:
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 5))
+                            .foregroundStyle(.blue)
+                        Text(renderedInlineMarkdown(row.text))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                case .paragraph:
+                    Text(renderedInlineMarkdown(row.text))
+                }
+            }
+            .font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func renderedInlineMarkdown(_ source: String) -> AttributedString {
+        (try? AttributedString(markdown: source)) ?? AttributedString(source)
+    }
+}
+
+struct ReleaseNoteRow: Identifiable {
+    enum Kind: Equatable { case heading, bullet, paragraph }
+
+    let id: Int
+    let kind: Kind
+    let text: String
+
+    static func parse(_ body: String) -> [ReleaseNoteRow] {
+        let source = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else {
+            return [ReleaseNoteRow(id: 0, kind: .paragraph, text: "此 Release 没有填写更新日志。")]
+        }
+        return source
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .enumerated()
+            .compactMap { index, rawLine in
+                let line = rawLine.trimmingCharacters(in: .whitespaces)
+                guard !line.isEmpty else { return nil }
+                if line.hasPrefix("#") {
+                    return ReleaseNoteRow(
+                        id: index,
+                        kind: .heading,
+                        text: line.drop(while: { $0 == "#" || $0.isWhitespace }).description
+                    )
+                }
+                for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) {
+                    return ReleaseNoteRow(id: index, kind: .bullet, text: String(line.dropFirst(marker.count)))
+                }
+                if let separator = line.firstIndex(of: "."),
+                   line[..<separator].allSatisfy(\.isNumber),
+                   line.index(after: separator) < line.endIndex,
+                   line[line.index(after: separator)].isWhitespace {
+                    return ReleaseNoteRow(
+                        id: index,
+                        kind: .bullet,
+                        text: String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+                    )
+                }
+                return ReleaseNoteRow(id: index, kind: .paragraph, text: line)
+            }
     }
 }
 
@@ -109,6 +205,7 @@ private struct AboutReleaseNoteLabelStyle: LabelStyle {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             configuration.icon.foregroundStyle(.green)
             configuration.title
+                .fixedSize(horizontal: false, vertical: true)
         }
         .font(.callout)
     }
