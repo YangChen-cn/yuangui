@@ -43,31 +43,157 @@ struct MusicTransportControls: View {
     var body: some View {
         HStack(spacing: compact ? 15 : 22) {
             Button(action: music.previous) { Image(systemName: "backward.fill") }
+                .help("上一首")
+                .accessibilityLabel("上一首")
             Button(action: music.playPause) {
                 Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: compact ? 15 : 20, weight: .bold))
                     .frame(width: compact ? 27 : 38, height: compact ? 27 : 38)
                     .background(.primary.opacity(0.10), in: Circle())
             }
+            .help(music.isPlaying ? "暂停" : "播放")
+            .accessibilityLabel(music.isPlaying ? "暂停" : "播放")
             Button(action: music.next) { Image(systemName: "forward.fill") }
+                .help("下一首")
+                .accessibilityLabel("下一首")
         }
         .buttonStyle(.plain)
-        .disabled(!music.canControl && music.source == .bilibili && music.playlist.isEmpty)
+        .disabled(!music.canControl)
     }
 }
 
 struct MusicProgressView: View {
-    @ObservedObject var music: MusicStore
+    let music: MusicStore
+    @ObservedObject private var progress: MusicPlaybackProgress
+    @State private var previewPosition: TimeInterval = 0
+    @State private var isSeeking = false
+
+    init(music: MusicStore) {
+        self.music = music
+        _progress = ObservedObject(wrappedValue: music.playbackProgress)
+    }
+
     var body: some View {
         VStack(spacing: 2) {
-            Slider(value: Binding(get: { music.position }, set: music.seek), in: 0...max(music.duration, 1))
+            Slider(
+                value: Binding(
+                    get: { isSeeking ? previewPosition : progress.position },
+                    set: { newPosition in
+                        previewPosition = newPosition
+                        if !isSeeking { music.seek(to: newPosition) }
+                    }
+                ),
+                in: 0...max(progress.duration, 1),
+                onEditingChanged: handleSeeking
+            )
                 .controlSize(.mini)
-                .disabled(music.duration <= 0)
+                .disabled(progress.duration <= 0)
+                .help("拖动调整播放位置")
+                .accessibilityLabel("播放进度")
             HStack {
-                Text(formatTime(music.position)); Spacer(); Text(formatTime(music.duration))
+                Text(formatTime(isSeeking ? previewPosition : progress.position))
+                Spacer()
+                Text(formatTime(progress.duration))
             }
             .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
         }
+    }
+
+    private func handleSeeking(_ editing: Bool) {
+        if editing {
+            previewPosition = progress.position
+            isSeeking = true
+        } else if isSeeking {
+            let target = previewPosition
+            isSeeking = false
+            music.seek(to: target)
+        }
+    }
+}
+
+private struct FullPlayerLyricsView: View {
+    @ObservedObject var music: MusicStore
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Label("歌词", systemImage: "quote.bubble")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if let source = music.lyrics?.source, !source.isEmpty {
+                    Text(source)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            lyricContent
+        }
+        .padding(14)
+        .frame(maxWidth: 520)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var lyricContent: some View {
+        if music.currentTrack == nil {
+            lyricStatus("播放歌曲后显示歌词", systemImage: "music.note")
+        } else if music.isLoadingLyrics {
+            VStack(spacing: 9) {
+                ProgressView().controlSize(.small)
+                Text("正在加载歌词").foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 264)
+        } else if let document = music.lyrics, !document.lines.isEmpty {
+            lyricRows(document)
+        } else {
+            lyricStatus("暂无同步歌词", systemImage: "text.badge.xmark")
+        }
+    }
+
+    private func lyricRows(_ document: LyricsDocument) -> some View {
+        let indices = document.lineIndices(around: music.currentLyricIndex)
+        return VStack(spacing: 0) {
+            ForEach(indices.indices, id: \.self) { slot in
+                if let lineIndex = indices[slot] {
+                    lyricButton(
+                        document.lines[lineIndex],
+                        isCurrent: lineIndex == music.currentLyricIndex,
+                        distance: abs(slot - 3)
+                    )
+                } else {
+                    Color.clear.frame(height: 38)
+                }
+            }
+        }
+        .frame(minHeight: 266)
+    }
+
+    private func lyricButton(_ line: TimedLyricLine, isCurrent: Bool, distance: Int) -> some View {
+        Button {
+            music.seek(toLyric: line)
+        } label: {
+            Text(line.text)
+                .font(.system(
+                    size: isCurrent ? 16 : 13,
+                    weight: isCurrent ? .semibold : .regular,
+                    design: .rounded
+                ))
+                .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(max(0.42, 0.82 - Double(distance) * 0.12)))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("跳转到 \(formatTime(line.time + music.currentLyricOffset))")
+        .accessibilityLabel("\(formatTime(line.time + music.currentLyricOffset))，\(line.text)")
+        .accessibilityHint("跳转到这句歌词")
+    }
+
+    private func lyricStatus(_ text: String, systemImage: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 264)
     }
 }
 
@@ -79,8 +205,8 @@ struct MiniMusicPlayerView: View {
                 MusicArtworkView(track: music.currentTrack, size: 52)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(music.currentTrack?.title ?? "暂无播放内容").font(.headline).lineLimit(1)
-                    Text(music.currentTrack?.artist ?? music.source.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Label(music.source.title, systemImage: music.source.systemImage)
+                    Text(music.currentTrack?.artist ?? music.playbackSource.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Label(music.playbackSource.title, systemImage: music.playbackSource.systemImage)
                         .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -132,7 +258,7 @@ struct MusicStatusCard: View {
     private var nowPlayingSection: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Label(music.currentTrack == nil ? "音乐" : "正在播放", systemImage: music.source.systemImage)
+                Label(music.currentTrack == nil ? "音乐" : "正在播放", systemImage: music.playbackSource.systemImage)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                 Spacer()
                 if let track = music.currentTrack, track.source == .bilibili {
@@ -158,7 +284,7 @@ struct MusicStatusCard: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                        Label(music.source.title, systemImage: music.source.systemImage)
+                        Label(track.source.title, systemImage: track.source.systemImage)
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(.tertiary)
                     }
@@ -193,7 +319,7 @@ struct MusicStatusCard: View {
         VStack(alignment: .leading, spacing: 9) {
             Label("播放与歌词", systemImage: "slider.horizontal.3")
                 .font(.system(size: 12, weight: .bold, design: .rounded))
-            Picker("播放源", selection: Binding(get: { music.source }, set: music.setSource)) {
+            Picker("浏览来源", selection: Binding(get: { music.source }, set: music.setSource)) {
                 ForEach(MusicSource.allCases) { source in
                     Label(source.title, systemImage: source.systemImage).tag(source)
                 }
@@ -203,7 +329,7 @@ struct MusicStatusCard: View {
                 Text("歌词偏移").font(.caption)
                 LyricOffsetControl(music: music, compact: true)
             }
-            if music.source == .bilibili, music.currentTrack != nil {
+            if music.source == .bilibili, music.currentTrack?.source == .bilibili {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("歌曲信息与歌词匹配")
                         .font(.caption.weight(.semibold))
@@ -338,8 +464,11 @@ struct MusicStatusCard: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("打开 Music") { music.openAppleMusic() }
-                .controlSize(.small)
+            VStack(spacing: 5) {
+                Button("连接控制") { music.connectAppleMusic() }
+                Button("打开 Music") { music.openAppleMusic() }
+            }
+            .controlSize(.small)
         }
         .musicDashboardSection()
     }
@@ -392,7 +521,7 @@ struct MusicPlayerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("播放来源", selection: Binding(get: { music.source }, set: music.setSource)) {
+            Picker("浏览来源", selection: Binding(get: { music.source }, set: music.setSource)) {
                 ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
             }
             .pickerStyle(.segmented)
@@ -437,6 +566,7 @@ struct MusicPlayerView: View {
             List {
                 Section("Apple Music") {
                     Label(music.appleMusicRunning ? "Music 正在运行" : "Music 尚未运行", systemImage: "music.note")
+                    Button("连接并控制 Music App") { music.connectAppleMusic() }
                     Button("打开 Music App") { music.openAppleMusic() }
                 }
             }.listStyle(.sidebar)
@@ -449,6 +579,22 @@ struct MusicPlayerView: View {
                         music.isImporting ? AnyView(ProgressView().controlSize(.small)) : AnyView(Image(systemName: "plus"))
                     }.disabled(music.isImporting || music.importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }.padding(10)
+                if let message = music.bilibiliImportMessage {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Label(message, systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                        HStack(spacing: 8) {
+                            Button("开始播放") { music.playLastBilibiliImport() }
+                                .buttonStyle(.borderedProminent)
+                            Button("继续浏览") { music.dismissBilibiliImportResult() }
+                                .buttonStyle(.bordered)
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+                }
                 HStack {
                     Button {
                         if music.bilibiliAccount == nil { isBilibiliLoginPresented = true }
@@ -536,12 +682,12 @@ struct MusicPlayerView: View {
                 }
                 VStack(spacing: 4) {
                     Text(music.currentTrack?.title ?? emptyTitle).font(.system(size: 24, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
-                    Text(music.currentTrack?.artist ?? music.source.title).foregroundStyle(.secondary)
+                    Text(music.currentTrack?.artist ?? music.playbackSource.title).foregroundStyle(.secondary)
                     if let album = music.currentTrack?.album, !album.isEmpty { Text(album).font(.caption).foregroundStyle(.tertiary) }
                 }
                 MusicProgressView(music: music).frame(maxWidth: 480)
                 MusicTransportControls(music: music)
-                if music.source == .bilibili, let track = music.currentTrack {
+                if let track = music.currentTrack, track.source == .bilibili {
                     Button { music.toggleFavorite(track) } label: {
                         Label(music.isFavorite(track) ? "已收藏" : "收藏", systemImage: music.isFavorite(track) ? "heart.fill" : "heart")
                     }
@@ -557,10 +703,7 @@ struct MusicPlayerView: View {
                         }.labelsHidden().frame(width: 120)
                     }
                 }
-                if let line = music.currentLyric?.text {
-                    Text(line).font(.system(size: 17, weight: .semibold, design: .rounded)).multilineTextAlignment(.center).padding(.top, 4)
-                    if let next = music.nextLyric?.text { Text(next).font(.subheadline).foregroundStyle(.secondary) }
-                } else { Text("暂无歌词").foregroundStyle(.secondary) }
+                FullPlayerLyricsView(music: music)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { lyricsActionButtons }
                     VStack(alignment: .leading, spacing: 7) { lyricsActionButtons }
@@ -568,7 +711,7 @@ struct MusicPlayerView: View {
                 lyricsAdjustments
                 if let error = music.errorMessage {
                     Text(error).font(.caption).foregroundStyle(.orange).multilineTextAlignment(.center)
-                    if music.source == .appleMusic { Button("打开自动化权限设置") { music.openAutomationSettings() } }
+                    if music.playbackSource == .appleMusic { Button("打开自动化权限设置") { music.openAutomationSettings() } }
                 }
             }
             .padding(28).frame(maxWidth: .infinity)
@@ -592,15 +735,15 @@ struct MusicPlayerView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(account.name)
                             .font(.callout.weight(.semibold))
-                            .lineLimit(2)
-                        Text("UID \(account.mid)")
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(verbatim: "UID \(account.mid)")
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     .multilineTextAlignment(.leading)
-                    .frame(maxWidth: 180, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 136, alignment: .leading)
                 } else {
                     Image(systemName: "person.crop.circle.badge.plus")
                         .font(.system(size: 17, weight: .semibold))
@@ -609,10 +752,13 @@ struct MusicPlayerView: View {
                 }
             }
             .padding(.horizontal, 4)
+            .frame(width: music.bilibiliAccount == nil ? 148 : 175, alignment: .leading)
             .frame(minHeight: 30)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.regular)
+        .fixedSize(horizontal: true, vertical: true)
+        .offset(x: music.bilibiliAccount == nil ? 0 : 20)
         .help(music.bilibiliAccount.map { "已登录：\($0.name)，点击管理账号" } ?? "扫码登录哔哩哔哩")
     }
 

@@ -3,12 +3,32 @@ import Combine
 import Foundation
 
 @MainActor
-final class MusicStore: ObservableObject {
-    @Published private(set) var source: MusicSource
-    @Published private(set) var playbackState: MusicPlaybackState = .stopped
-    @Published private(set) var currentTrack: MusicTrack?
+final class MusicPlaybackProgress: ObservableObject {
     @Published private(set) var position: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
+
+    func setPosition(_ position: TimeInterval) {
+        guard self.position != position else { return }
+        self.position = position
+    }
+
+    func setDuration(_ duration: TimeInterval) {
+        guard self.duration != duration else { return }
+        self.duration = duration
+    }
+
+    func reset(position: TimeInterval = 0, duration: TimeInterval = 0) {
+        setPosition(position)
+        setDuration(duration)
+    }
+}
+
+@MainActor
+final class MusicStore: ObservableObject {
+    @Published private(set) var browsingSource: MusicSource
+    @Published private(set) var activePlaybackSource: MusicSource? = nil
+    @Published private(set) var playbackState: MusicPlaybackState = .stopped
+    @Published private(set) var currentTrack: MusicTrack?
     @Published private(set) var volume: Double
     @Published private(set) var playlist: [MusicTrack] = []
     @Published private(set) var playMode: MusicPlayMode = .sequential
@@ -17,8 +37,11 @@ final class MusicStore: ObservableObject {
     @Published private(set) var lyrics: LyricsDocument?
     @Published private(set) var currentLyric: TimedLyricLine?
     @Published private(set) var nextLyric: TimedLyricLine?
+    @Published private(set) var currentLyricIndex: Int?
+    @Published private(set) var isLoadingLyrics = false
     @Published private(set) var appleMusicRunning = false
     @Published private(set) var isImporting = false
+    @Published private(set) var bilibiliImportMessage: String?
     @Published var importText = ""
     @Published var errorMessage: String?
     @Published private(set) var lyricsVisible: Bool
@@ -43,6 +66,7 @@ final class MusicStore: ObservableObject {
     @Published private(set) var bilibiliFavoriteMessage: String?
     @Published var isMiniPlayerPresented = false
 
+    let playbackProgress = MusicPlaybackProgress()
     private let appleMusic = AppleMusicController()
     private let bilibili = BilibiliClient()
     private let bilibiliAccountService = BilibiliAccountService()
@@ -60,13 +84,19 @@ final class MusicStore: ObservableObject {
     private var lyricsByTrackID: [String: LyricsDocument] = [:]
     private var currentTrackID: String?
     private var lastSavedSecond = -1
+    private var lastBilibiliPosition: TimeInterval = 0
     private var bilibiliRefreshAttempted = false
+    private var bilibiliVolume: Double
+    private var lastImportedTrackID: String?
     private var persistenceRevision: UInt64 = 0
+    private var lyricLoadRevision: UInt64 = 0
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.source = MusicSource(rawValue: defaults.string(forKey: "musicSource") ?? "") ?? .appleMusic
-        self.volume = defaults.object(forKey: "bilibiliMusicVolume") as? Double ?? 0.8
+        self.browsingSource = MusicSource(rawValue: defaults.string(forKey: "musicSource") ?? "") ?? .appleMusic
+        let savedBilibiliVolume = defaults.object(forKey: "bilibiliMusicVolume") as? Double ?? 0.8
+        self.volume = savedBilibiliVolume
+        self.bilibiliVolume = savedBilibiliVolume
         self.lyricsVisible = defaults.bool(forKey: "musicLyricsVisible")
         self.lightSingAlongEnabled = defaults.object(forKey: "musicLightSingAlong") == nil ? true : defaults.bool(forKey: "musicLightSingAlong")
         self.lyricsPanelLocked = defaults.bool(forKey: "musicLyricsPanelLocked")
@@ -79,13 +109,14 @@ final class MusicStore: ObservableObject {
         self.lyricsBackgroundVisible = defaults.bool(forKey: "musicLyricsBackgroundVisible")
         bilibiliPlayer.setVolume(volume)
         bilibiliPlayer.onStateChange = { [weak self] state in
-            guard self?.source == .bilibili else { return }
-            self?.playbackState = state
+            guard let self, self.activePlaybackSource == .bilibili else { return }
+            if self.playbackState != state { self.playbackState = state }
         }
         bilibiliPlayer.onProgress = { [weak self] position, duration in
-            guard let self, self.source == .bilibili else { return }
-            self.position = position
-            if duration > 0 { self.duration = duration }
+            guard let self, self.activePlaybackSource == .bilibili else { return }
+            self.playbackProgress.setPosition(position)
+            self.lastBilibiliPosition = position
+            if duration > 0 { self.playbackProgress.setDuration(duration) }
             self.updateLyric()
             self.persistProgressIfNeeded()
         }
@@ -99,62 +130,82 @@ final class MusicStore: ObservableObject {
     }
 
     var progress: Double { duration > 0 ? min(max(position / duration, 0), 1) : 0 }
+    var position: TimeInterval { playbackProgress.position }
+    var duration: TimeInterval { playbackProgress.duration }
+    var source: MusicSource { browsingSource }
+    var playbackSource: MusicSource { activePlaybackSource ?? currentTrack?.source ?? browsingSource }
     var isPlaying: Bool { playbackState.isPlaying }
-    var canControl: Bool { source == .appleMusic ? appleMusicRunning : currentTrack != nil }
+    var canControl: Bool {
+        if let activePlaybackSource {
+            return activePlaybackSource == .appleMusic ? true : currentTrack != nil
+        }
+        return browsingSource == .appleMusic ? true : currentTrack != nil || !playlist.isEmpty
+    }
     var currentLyricOffset: TimeInterval { currentTrack.flatMap { lyricOffsets[$0.id] } ?? 0 }
 
     func setSource(_ newSource: MusicSource) {
-        guard newSource != source else { return }
-        switch source {
+        guard newSource != browsingSource else { return }
+        browsingSource = newSource
+        defaults.set(newSource.rawValue, forKey: "musicSource")
+        if newSource == .bilibili, activePlaybackSource == nil, currentTrack == nil {
+            restoreBilibiliSelection()
+        }
+    }
+
+    @discardableResult
+    private func activatePlaybackSource(_ newSource: MusicSource) -> Bool {
+        guard activePlaybackSource != newSource else { return false }
+        switch newSource {
         case .appleMusic:
-            appleMusic.pause()
-        case .bilibili:
+            if activePlaybackSource == .bilibili { lastBilibiliPosition = position }
             bilibiliLoadTask?.cancel()
             bilibiliLoadTask = nil
             bilibiliPlayer.pause()
+        case .bilibili:
+            appleMusic.pause()
+            if volume != bilibiliVolume { volume = bilibiliVolume }
+            bilibiliPlayer.setVolume(bilibiliVolume)
         }
-        source = newSource
-        defaults.set(newSource.rawValue, forKey: "musicSource")
-        clearTransientPlaybackState()
-        if newSource == .bilibili {
-            restoreBilibiliSelection()
-        } else if appleMusic.hasRequestedAccess {
-            refreshAppleMusic()
-        } else {
-            currentTrack = nil
-            position = 0
-            duration = 0
-            playbackState = appleMusicRunning ? .paused : .stopped
-        }
+        activePlaybackSource = newSource
+        return true
     }
 
     private func clearTransientPlaybackState() {
         currentTrack = nil
-        position = 0
-        duration = 0
+        playbackProgress.reset()
         playbackState = .stopped
         lyrics = nil
         currentLyric = nil
         nextLyric = nil
+        currentLyricIndex = nil
         errorMessage = nil
         lyricsSearchMessage = nil
         isSearchingLyrics = false
-        lyricLoadTask?.cancel()
-        lyricLoadTask = nil
+        cancelLyricLoad()
         lyricsSearchTask?.cancel()
         lyricsSearchTask = nil
     }
 
-    func connectAppleMusic() {
+    func connectAppleMusic(autoplay: Bool = false) {
         setSource(.appleMusic)
+        if activatePlaybackSource(.appleMusic) { clearTransientPlaybackState() }
         if !appleMusicRunning {
             appleMusic.openMusic()
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(1))
-                self?.refreshAppleMusic()
+                self?.finishAppleMusicConnection(autoplay: autoplay)
             }
         } else {
-            refreshAppleMusic()
+            finishAppleMusicConnection(autoplay: autoplay)
+        }
+    }
+
+    private func finishAppleMusicConnection(autoplay: Bool) {
+        guard activePlaybackSource == .appleMusic else { return }
+        refreshAppleMusic()
+        if autoplay, appleMusicRunning, !playbackState.isPlaying {
+            appleMusic.playPause()
+            scheduleAppleRefresh()
         }
     }
 
@@ -163,14 +214,21 @@ final class MusicStore: ObservableObject {
 
     func playPause() {
         errorMessage = nil
-        switch source {
+        guard let activePlaybackSource else {
+            if currentTrack?.source == .bilibili || browsingSource == .bilibili {
+                if let currentTrack, currentTrack.source == .bilibili { play(currentTrack, at: position) }
+                else if let first = playlist.first { play(first) }
+            } else {
+                connectAppleMusic(autoplay: true)
+            }
+            return
+        }
+        switch activePlaybackSource {
         case .appleMusic:
-            bilibiliPlayer.pause()
-            guard appleMusicRunning else { connectAppleMusic(); return }
+            guard appleMusicRunning else { connectAppleMusic(autoplay: true); return }
             appleMusic.playPause()
             scheduleAppleRefresh()
         case .bilibili:
-            appleMusic.pause()
             if let currentTrack, !bilibiliPlayer.hasLoadedItem {
                 play(currentTrack, at: position)
             } else if currentTrack == nil, let first = playlist.first {
@@ -185,15 +243,32 @@ final class MusicStore: ObservableObject {
     func next() { move(by: 1) }
 
     func seek(to newPosition: TimeInterval) {
-        position = min(max(newPosition, 0), max(duration, 0))
-        source == .appleMusic ? appleMusic.seek(to: position) : bilibiliPlayer.seek(to: position)
+        let lowerBounded = max(newPosition, 0)
+        let target = duration > 0 ? min(lowerBounded, duration) : lowerBounded
+        playbackProgress.setPosition(target)
+        if playbackSource == .bilibili { lastBilibiliPosition = target }
+        playbackSource == .appleMusic ? appleMusic.seek(to: target) : bilibiliPlayer.seek(to: target)
         updateLyric()
+    }
+
+    func seek(toLyric line: TimedLyricLine) {
+        seek(to: Self.lyricSeekPosition(for: line, offset: currentLyricOffset, duration: duration))
+    }
+
+    nonisolated static func lyricSeekPosition(
+        for line: TimedLyricLine,
+        offset: TimeInterval,
+        duration: TimeInterval
+    ) -> TimeInterval {
+        let target = max(0, line.time + offset)
+        return duration > 0 ? min(target, duration) : target
     }
 
     func setVolume(_ newValue: Double) {
         volume = min(max(newValue, 0), 1)
-        if source == .appleMusic { appleMusic.setVolume(volume) }
+        if playbackSource == .appleMusic { appleMusic.setVolume(volume) }
         else {
+            bilibiliVolume = volume
             bilibiliPlayer.setVolume(volume)
             defaults.set(volume, forKey: "bilibiliMusicVolume")
         }
@@ -206,6 +281,7 @@ final class MusicStore: ObservableObject {
         guard !input.isEmpty else { return }
         isImporting = true
         errorMessage = nil
+        dismissBilibiliImportResult()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -217,10 +293,28 @@ final class MusicStore: ObservableObject {
                 importText = ""
                 setSource(.bilibili)
                 persistLibrary()
-                if let first = added.first ?? tracks.first { play(first) }
+                lastImportedTrackID = (added.first ?? tracks.first)?.id
+                bilibiliImportMessage = added.isEmpty
+                    ? "歌曲已在资料库中"
+                    : "已加入 \(added.count) 首歌曲"
             } catch { errorMessage = error.localizedDescription }
             isImporting = false
         }
+    }
+
+    func playLastBilibiliImport() {
+        guard let lastImportedTrackID,
+              let track = playlist.first(where: { $0.id == lastImportedTrackID }) else {
+            dismissBilibiliImportResult()
+            return
+        }
+        dismissBilibiliImportResult()
+        play(track)
+    }
+
+    func dismissBilibiliImportResult() {
+        bilibiliImportMessage = nil
+        lastImportedTrackID = nil
     }
 
     func loadBilibiliFavoriteFolders() {
@@ -416,12 +510,11 @@ final class MusicStore: ObservableObject {
 
     func play(_ track: MusicTrack, at savedPosition: TimeInterval = 0) {
         guard track.source == .bilibili else { return }
-        setSource(.bilibili)
-        appleMusic.pause()
+        activatePlaybackSource(.bilibili)
         currentTrack = track
         currentTrackID = track.id
-        duration = track.duration
-        position = savedPosition
+        lastBilibiliPosition = savedPosition
+        playbackProgress.reset(position: savedPosition, duration: track.duration)
         playbackState = .loading
         errorMessage = nil
         bilibiliRefreshAttempted = false
@@ -437,12 +530,12 @@ final class MusicStore: ObservableObject {
                 let location = try await bilibili.audioLocation(for: track)
                 let headers = await bilibili.playbackHeaders()
                 guard !Task.isCancelled,
-                      source == .bilibili,
+                      activePlaybackSource == .bilibili,
                       currentTrack?.id == track.id else { return }
                 bilibiliPlayer.load(urls: location.candidates, headers: headers, position: savedPosition)
                 persistLibrary()
             } catch {
-                guard !Task.isCancelled, source == .bilibili else { return }
+                guard !Task.isCancelled, activePlaybackSource == .bilibili else { return }
                 playbackState = .failed(error.localizedDescription)
                 errorMessage = error.localizedDescription
             }
@@ -458,7 +551,10 @@ final class MusicStore: ObservableObject {
         for index in savedPlaylists.indices { savedPlaylists[index].trackIDs.removeAll { $0 == track.id } }
         if wasCurrent {
             bilibiliPlayer.stop(); currentTrack = nil; currentTrackID = nil; playbackState = .stopped
-            lyrics = nil; currentLyric = nil; nextLyric = nil
+            lastBilibiliPosition = 0
+            if activePlaybackSource == .bilibili { activePlaybackSource = nil }
+            playbackProgress.reset(); cancelLyricLoad()
+            lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
         }
         persistLibrary()
     }
@@ -466,8 +562,15 @@ final class MusicStore: ObservableObject {
     func clearPlaylist() {
         for track in playlist { removeCachedLyrics(for: track) }
         bilibiliPlayer.stop(); playlist.removeAll(); favoriteTrackIDs.removeAll(); savedPlaylists.removeAll()
-        currentTrack = nil; currentTrackID = nil; playbackState = .stopped
-        lyrics = nil; currentLyric = nil; nextLyric = nil; persistLibrary()
+        currentTrackID = nil
+        lastBilibiliPosition = 0
+        if activePlaybackSource == .bilibili || currentTrack?.source == .bilibili {
+            activePlaybackSource = nil
+            currentTrack = nil; playbackState = .stopped
+            playbackProgress.reset(); cancelLyricLoad()
+            lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
+        }
+        persistLibrary()
     }
 
     func isFavorite(_ track: MusicTrack) -> Bool { favoriteTrackIDs.contains(track.id) }
@@ -575,7 +678,7 @@ final class MusicStore: ObservableObject {
         }
         isSearchingLyrics = true
         lyricsSearchMessage = nil
-        lyricLoadTask?.cancel()
+        cancelLyricLoad()
         lyricsSearchTask?.cancel()
         lyricsSearchTask = Task { [weak self] in
             guard let self else { return }
@@ -665,6 +768,7 @@ final class MusicStore: ObservableObject {
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
             errorMessage = "无法读取这个 LRC 文件"; return
         }
+        cancelLyricLoad()
         let document = LyricsParser.parseLRC(text)
         lyrics = document
         if let track = currentTrack {
@@ -696,13 +800,12 @@ final class MusicStore: ObservableObject {
         guard appleMusicRunning else { playbackState = .stopped; return }
         do {
             let snapshot = try appleMusic.requestSnapshot()
-            guard source == .appleMusic else { return }
+            guard activePlaybackSource == .appleMusic else { return }
             let changed = currentTrack?.id != snapshot.track?.id
-            currentTrack = snapshot.track
-            playbackState = snapshot.state
-            position = snapshot.position
-            duration = snapshot.track?.duration ?? 0
-            volume = snapshot.volume
+            if currentTrack != snapshot.track { currentTrack = snapshot.track }
+            if playbackState != snapshot.state { playbackState = snapshot.state }
+            playbackProgress.reset(position: snapshot.position, duration: snapshot.track?.duration ?? 0)
+            if volume != snapshot.volume { volume = snapshot.volume }
             if changed, let track = snapshot.track { loadLyrics(for: track) }
             updateLyric()
             errorMessage = nil
@@ -713,8 +816,8 @@ final class MusicStore: ObservableObject {
         while !Task.isCancelled {
             let running = appleMusic.isRunning
             if appleMusicRunning != running { appleMusicRunning = running }
-            if source == .appleMusic, appleMusic.hasRequestedAccess { refreshAppleMusic() }
-            let seconds = source == .appleMusic && playbackState.isPlaying ? 1.0 : 3.0
+            if activePlaybackSource == .appleMusic, appleMusic.hasRequestedAccess { refreshAppleMusic() }
+            let seconds = activePlaybackSource == .appleMusic && playbackState.isPlaying ? 1.0 : 3.0
             do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
         }
     }
@@ -724,7 +827,9 @@ final class MusicStore: ObservableObject {
     }
 
     private func move(by delta: Int) {
-        if source == .appleMusic {
+        let controlSource = activePlaybackSource ?? currentTrack?.source ?? browsingSource
+        if controlSource == .appleMusic {
+            if activePlaybackSource == nil { connectAppleMusic() }
             delta < 0 ? appleMusic.previous() : appleMusic.next(); scheduleAppleRefresh(); return
         }
         guard !playlist.isEmpty else { return }
@@ -735,12 +840,13 @@ final class MusicStore: ObservableObject {
     }
 
     private func handleTrackFinished() {
+        guard activePlaybackSource == .bilibili else { return }
         if playMode == .repeatOne, let currentTrack { play(currentTrack) }
         else { move(by: 1) }
     }
 
     private func handleBilibiliFailure(_ error: Error) {
-        guard source == .bilibili, let track = currentTrack else { return }
+        guard activePlaybackSource == .bilibili, let track = currentTrack else { return }
         if !bilibiliRefreshAttempted {
             bilibiliRefreshAttempted = true
             playbackState = .loading
@@ -754,8 +860,8 @@ final class MusicStore: ObservableObject {
     private func loadLyrics(for track: MusicTrack) {
         lyricsSearchTask?.cancel()
         lyricsSearchTask = nil
-        lyricLoadTask?.cancel()
-        lyricLoadTask = nil
+        cancelLyricLoad()
+        let revision = lyricLoadRevision
         isSearchingLyrics = false
         lyricsSearchMessage = nil
         if track.source != .bilibili, let cached = cachedLyrics(for: track) {
@@ -763,14 +869,16 @@ final class MusicStore: ObservableObject {
             updateLyric()
             return
         }
-        lyrics = nil; currentLyric = nil; nextLyric = nil
+        lyrics = nil
+        updateLyric()
+        isLoadingLyrics = true
         lyricLoadTask = Task { [weak self] in
             guard let self else { return }
             var resolvedTrack = track
             var cached = cachedLyrics(for: track)
             if track.source == .bilibili {
                 let exactSubtitleURL = await bilibili.subtitleURL(for: track)
-                guard !Task.isCancelled, currentTrack?.id == track.id else { return }
+                guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
                 if let exactSubtitleURL {
                     resolvedTrack.subtitleURL = exactSubtitleURL
                     if exactSubtitleURL != track.subtitleURL {
@@ -787,19 +895,39 @@ final class MusicStore: ObservableObject {
                 }
             }
             if let cached {
+                guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
                 lyrics = cached
                 updateLyric()
+                finishLyricLoad(revision, trackID: track.id)
                 return
             }
             let found = await lyricsService.lyrics(for: resolvedTrack)
-            guard !Task.isCancelled, currentTrack?.id == track.id else { return }
+            guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
             lyrics = found
             if let found {
                 cacheLyrics(found, for: track)
                 persistLibrary()
             }
             updateLyric()
+            finishLyricLoad(revision, trackID: track.id)
         }
+    }
+
+    private func cancelLyricLoad() {
+        lyricLoadRevision &+= 1
+        lyricLoadTask?.cancel()
+        lyricLoadTask = nil
+        if isLoadingLyrics { isLoadingLyrics = false }
+    }
+
+    private func isCurrentLyricLoad(_ revision: UInt64, trackID: String) -> Bool {
+        !Task.isCancelled && lyricLoadRevision == revision && currentTrack?.id == trackID
+    }
+
+    private func finishLyricLoad(_ revision: UInt64, trackID: String) {
+        guard lyricLoadRevision == revision, currentTrack?.id == trackID else { return }
+        if isLoadingLyrics { isLoadingLyrics = false }
+        lyricLoadTask = nil
     }
 
     private func refreshCurrentBilibiliSubtitleAfterLogin() async {
@@ -855,8 +983,15 @@ final class MusicStore: ObservableObject {
 
     private func updateLyric() {
         let adjustedPosition = max(0, position - currentLyricOffset)
-        currentLyric = lyrics?.line(at: adjustedPosition)
-        nextLyric = lyrics?.nextLine(after: adjustedPosition)
+        let index = lyrics?.lineIndex(at: adjustedPosition)
+        let current = index.flatMap { lyrics?.lines[$0] }
+        let nextIndex = index.map { $0 + 1 } ?? 0
+        let next = lyrics.flatMap { document in
+            document.lines.indices.contains(nextIndex) ? document.lines[nextIndex] : nil
+        }
+        if currentLyricIndex != index { currentLyricIndex = index }
+        if currentLyric != current { currentLyric = current }
+        if nextLyric != next { nextLyric = next }
     }
 
     private func restoreLibrary() async {
@@ -870,18 +1005,22 @@ final class MusicStore: ObservableObject {
         lyricOffsets = snapshot.lyricOffsets
         lyricsByTrackID = snapshot.lyricsByTrackID
         currentTrackID = snapshot.currentTrackID
-        if source == .bilibili { restoreBilibiliSelection(position: snapshot.lastPosition) }
+        lastBilibiliPosition = snapshot.lastPosition
+        if browsingSource == .bilibili { restoreBilibiliSelection(position: snapshot.lastPosition) }
         else if let currentTrack { loadLyrics(for: currentTrack) }
     }
 
     private func restoreBilibiliSelection(position savedPosition: TimeInterval = 0) {
         if let id = currentTrackID, let track = playlist.first(where: { $0.id == id }) {
-            currentTrack = track; duration = track.duration; position = savedPosition; playbackState = .paused
+            let restoredPosition = min(max(savedPosition, 0), max(track.duration, 0))
+            lastBilibiliPosition = restoredPosition
+            currentTrack = track; playbackProgress.reset(position: restoredPosition, duration: track.duration); playbackState = .paused
             loadLyrics(for: track)
         } else if let first = playlist.first {
-            currentTrack = first; currentTrackID = first.id; duration = first.duration; position = 0; playbackState = .paused
+            lastBilibiliPosition = 0
+            currentTrack = first; currentTrackID = first.id; playbackProgress.reset(position: 0, duration: first.duration); playbackState = .paused
             loadLyrics(for: first)
-        } else { currentTrack = nil; position = 0; duration = 0; playbackState = .stopped }
+        } else { currentTrack = nil; lastBilibiliPosition = 0; playbackProgress.reset(); playbackState = .stopped }
     }
 
     private func persistProgressIfNeeded() {
@@ -902,7 +1041,7 @@ final class MusicStore: ObservableObject {
             playlist: playlist,
             playMode: playMode,
             currentTrackID: currentTrackID,
-            lastPosition: position,
+            lastPosition: activePlaybackSource == .bilibili ? position : lastBilibiliPosition,
             favoriteTrackIDs: favoriteTrackIDs,
             savedPlaylists: savedPlaylists,
             lyricOffsets: lyricOffsets,

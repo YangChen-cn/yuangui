@@ -90,6 +90,64 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(document.nextLine(after: 4)?.text, "第二句")
     }
 
+    func testLyricsDocumentBinarySearchHandlesBoundariesAndDuplicateTimestamps() {
+        let document = LyricsDocument(
+            title: nil,
+            artist: nil,
+            lines: [
+                TimedLyricLine(time: 1, text: "第一句"),
+                TimedLyricLine(time: 2, text: "同时间 A"),
+                TimedLyricLine(time: 2, text: "同时间 B"),
+                TimedLyricLine(time: 4, text: "最后一句")
+            ],
+            source: "测试"
+        )
+
+        XCTAssertNil(document.lineIndex(at: 0.99))
+        XCTAssertEqual(document.lineIndex(at: 1), 0)
+        XCTAssertEqual(document.lineIndex(at: 2), 2)
+        XCTAssertEqual(document.lineIndex(at: 3.99), 2)
+        XCTAssertEqual(document.lineIndex(at: 20), 3)
+        XCTAssertEqual(document.line(at: 2)?.text, "同时间 B")
+        XCTAssertEqual(document.nextLine(after: 2)?.text, "最后一句")
+    }
+
+    func testLyricsDocumentBuildsStableSevenSlotWindows() {
+        let document = LyricsDocument(
+            title: nil,
+            artist: nil,
+            lines: (0..<5).map { TimedLyricLine(time: Double($0), text: "第\($0)句") },
+            source: "测试"
+        )
+
+        XCTAssertEqual(document.lineIndices(around: 0), [nil, nil, nil, 0, 1, 2, 3])
+        XCTAssertEqual(document.lineIndices(around: 2), [nil, 0, 1, 2, 3, 4, nil])
+        XCTAssertEqual(document.lineIndices(around: 4), [1, 2, 3, 4, nil, nil, nil])
+        XCTAssertEqual(document.lineIndices(around: nil), [nil, nil, nil, 0, 1, 2, 3])
+    }
+
+    func testLyricsDocumentBinarySearchHandlesLongDocuments() {
+        let document = LyricsDocument(
+            title: nil,
+            artist: nil,
+            lines: (0..<10_000).map {
+                TimedLyricLine(time: Double($0) * 0.25, text: "第\($0)句")
+            },
+            source: "测试"
+        )
+
+        XCTAssertEqual(document.lineIndex(at: 1_234.24), 4_936)
+        XCTAssertEqual(document.lineIndex(at: 2_499.75), 9_999)
+    }
+
+    func testLyricSeekPositionAppliesOffsetAndClampsToTrackBounds() {
+        let line = TimedLyricLine(time: 10, text: "目标歌词")
+        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: 1.5, duration: 30), 11.5)
+        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: -12, duration: 30), 0)
+        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: 25, duration: 30), 30)
+        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: 2, duration: 0), 12)
+    }
+
     func testMusicLibraryFileStoreRoundTripsWithoutTemporaryStreamURLs() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

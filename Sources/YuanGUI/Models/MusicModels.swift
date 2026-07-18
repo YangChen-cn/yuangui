@@ -133,12 +133,39 @@ struct LyricsDocument: Codable, Equatable {
     var lines: [TimedLyricLine]
     var source: String
 
+    func lineIndex(at position: TimeInterval) -> Int? {
+        guard !lines.isEmpty, lines[0].time <= position else { return nil }
+        var lowerBound = 0
+        var upperBound = lines.count
+        while lowerBound < upperBound {
+            let middle = lowerBound + (upperBound - lowerBound) / 2
+            if lines[middle].time <= position {
+                lowerBound = middle + 1
+            } else {
+                upperBound = middle
+            }
+        }
+        return lowerBound - 1
+    }
+
     func line(at position: TimeInterval) -> TimedLyricLine? {
-        lines.last(where: { $0.time <= position })
+        guard let index = lineIndex(at: position) else { return nil }
+        return lines[index]
     }
 
     func nextLine(after position: TimeInterval) -> TimedLyricLine? {
-        lines.first(where: { $0.time > position })
+        let index = lineIndex(at: position).map { $0 + 1 } ?? 0
+        return lines.indices.contains(index) ? lines[index] : nil
+    }
+
+    func lineIndices(around index: Int?, radius: Int = 3) -> [Int?] {
+        guard radius >= 0 else { return [] }
+        guard !lines.isEmpty else { return Array(repeating: nil, count: radius * 2 + 1) }
+        let center = min(max(index ?? 0, 0), lines.count - 1)
+        return (-radius...radius).map { offset in
+            let candidate = center + offset
+            return lines.indices.contains(candidate) ? candidate : nil
+        }
     }
 }
 
