@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-struct AppleMusicSnapshot: Equatable {
+struct AppleMusicSnapshot: Equatable, Sendable {
     var isRunning: Bool
     var track: MusicTrack?
     var state: MusicPlaybackState
@@ -23,28 +23,18 @@ enum AppleMusicControlError: LocalizedError {
     }
 }
 
-@MainActor
-final class AppleMusicController: MusicPlaybackControlling {
-    private(set) var hasRequestedAccess = false
+actor AppleMusicController {
     private var cachedArtworkTrackID: String?
     private var cachedArtworkURL: URL?
 
-    var isRunning: Bool {
+    func isRunning() -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
     }
 
-    func openMusic() {
-        NSWorkspace.shared.openApplication(
-            at: URL(fileURLWithPath: "/System/Applications/Music.app"),
-            configuration: NSWorkspace.OpenConfiguration()
-        )
-    }
-
     func requestSnapshot() throws -> AppleMusicSnapshot {
-        guard isRunning else {
+        guard isRunning() else {
             return AppleMusicSnapshot(isRunning: false, track: nil, state: .stopped, position: 0, volume: 1)
         }
-        hasRequestedAccess = true
         let descriptor = try execute("""
         tell application "Music"
             set stateText to (player state as text)
@@ -71,18 +61,17 @@ final class AppleMusicController: MusicPlaybackControlling {
         let album = descriptor.atIndex(6)?.stringValue
         let duration = descriptor.atIndex(7)?.doubleValue ?? 0
         let state: MusicPlaybackState = stateText == "playing" ? .playing : (stateText == "paused" ? .paused : .stopped)
-        let trackID = "\(title)|\(artist)|\(Int(duration))"
-        let track = title.isEmpty ? nil : MusicTrack.appleMusic(
+        var track = title.isEmpty ? nil : MusicTrack.appleMusic(
             title: title,
             artist: artist.isEmpty ? "未知歌手" : artist,
             album: album,
-            duration: duration,
-            coverURL: artworkURL(for: trackID)
+            duration: duration
         )
+        if track?.id == cachedArtworkTrackID { track?.coverURL = cachedArtworkURL }
         return AppleMusicSnapshot(isRunning: true, track: track, state: state, position: position, volume: volume)
     }
 
-    private func artworkURL(for trackID: String) -> URL? {
+    func artworkURL(for trackID: String) -> URL? {
         if cachedArtworkTrackID == trackID { return cachedArtworkURL }
         cachedArtworkTrackID = trackID
         cachedArtworkURL = nil
@@ -129,21 +118,14 @@ final class AppleMusicController: MusicPlaybackControlling {
     }
 
     func playPause() { try? command("playpause") }
-    func pause() { guard isRunning else { return }; try? command("pause") }
+    func pause() { guard isRunning() else { return }; try? command("pause") }
     func previous() { try? command("previous track") }
     func next() { try? command("next track") }
     func seek(to position: TimeInterval) { try? command("set player position to \(max(0, position))") }
     func setVolume(_ volume: Double) { try? command("set sound volume to \(Int(min(max(volume, 0), 1) * 100))") }
 
-    func openAutomationSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     private func command(_ body: String) throws {
-        guard isRunning else { throw AppleMusicControlError.notRunning }
-        hasRequestedAccess = true
+        guard isRunning() else { throw AppleMusicControlError.notRunning }
         _ = try execute("tell application \"Music\" to \(body)")
     }
 

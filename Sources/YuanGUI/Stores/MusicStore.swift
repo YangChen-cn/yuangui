@@ -76,6 +76,10 @@ final class MusicStore: ObservableObject {
     private let library = MusicLibraryActor()
     private let defaults: UserDefaults
     private var syncTask: Task<Void, Never>?
+    private var appleClockTask: Task<Void, Never>?
+    private var appleRefreshTask: Task<Void, Never>?
+    private var appleArtworkTask: Task<Void, Never>?
+    private var bilibiliImportResultTask: Task<Void, Never>?
     private var lyricLoadTask: Task<Void, Never>?
     private var lyricsSearchTask: Task<Void, Never>?
     private var bilibiliLoadTask: Task<Void, Never>?
@@ -90,6 +94,7 @@ final class MusicStore: ObservableObject {
     private var lastImportedTrackID: String?
     private var persistenceRevision: UInt64 = 0
     private var lyricLoadRevision: UInt64 = 0
+    private var lastAppleClockTime: TimeInterval?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -127,6 +132,9 @@ final class MusicStore: ObservableObject {
             await self?.restoreLibrary()
             await self?.runSyncLoop()
         }
+        appleClockTask = Task { [weak self] in
+            await self?.runAppleClock()
+        }
     }
 
     var progress: Double { duration > 0 ? min(max(position / duration, 0), 1) : 0 }
@@ -162,7 +170,7 @@ final class MusicStore: ObservableObject {
             bilibiliLoadTask = nil
             bilibiliPlayer.pause()
         case .bilibili:
-            appleMusic.pause()
+            Task { [appleMusic] in await appleMusic.pause() }
             if volume != bilibiliVolume { volume = bilibiliVolume }
             bilibiliPlayer.setVolume(bilibiliVolume)
         }
@@ -190,7 +198,7 @@ final class MusicStore: ObservableObject {
         setSource(.appleMusic)
         if activatePlaybackSource(.appleMusic) { clearTransientPlaybackState() }
         if !appleMusicRunning {
-            appleMusic.openMusic()
+            openAppleMusic()
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(1))
                 self?.finishAppleMusicConnection(autoplay: autoplay)
@@ -201,16 +209,30 @@ final class MusicStore: ObservableObject {
     }
 
     private func finishAppleMusicConnection(autoplay: Bool) {
-        guard activePlaybackSource == .appleMusic else { return }
-        refreshAppleMusic()
-        if autoplay, appleMusicRunning, !playbackState.isPlaying {
-            appleMusic.playPause()
-            scheduleAppleRefresh()
+        Task { [weak self] in
+            guard let self, activePlaybackSource == .appleMusic else { return }
+            await refreshAppleMusic()
+            guard activePlaybackSource == .appleMusic else { return }
+            if autoplay, appleMusicRunning, !playbackState.isPlaying {
+                playbackState = .playing
+                lastAppleClockTime = Date.timeIntervalSinceReferenceDate
+                await appleMusic.playPause()
+                scheduleAppleRefresh()
+            }
         }
     }
 
-    func openAppleMusic() { appleMusic.openMusic() }
-    func openAutomationSettings() { appleMusic.openAutomationSettings() }
+    func openAppleMusic() {
+        NSWorkspace.shared.openApplication(
+            at: URL(fileURLWithPath: "/System/Applications/Music.app"),
+            configuration: NSWorkspace.OpenConfiguration()
+        )
+    }
+
+    func openAutomationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     func playPause() {
         errorMessage = nil
@@ -226,8 +248,12 @@ final class MusicStore: ObservableObject {
         switch activePlaybackSource {
         case .appleMusic:
             guard appleMusicRunning else { connectAppleMusic(autoplay: true); return }
-            appleMusic.playPause()
-            scheduleAppleRefresh()
+            playbackState = playbackState.isPlaying ? .paused : .playing
+            lastAppleClockTime = Date.timeIntervalSinceReferenceDate
+            Task { [weak self, appleMusic] in
+                await appleMusic.playPause()
+                self?.scheduleAppleRefresh()
+            }
         case .bilibili:
             if let currentTrack, !bilibiliPlayer.hasLoadedItem {
                 play(currentTrack, at: position)
@@ -247,7 +273,12 @@ final class MusicStore: ObservableObject {
         let target = duration > 0 ? min(lowerBounded, duration) : lowerBounded
         playbackProgress.setPosition(target)
         if playbackSource == .bilibili { lastBilibiliPosition = target }
-        playbackSource == .appleMusic ? appleMusic.seek(to: target) : bilibiliPlayer.seek(to: target)
+        if playbackSource == .appleMusic {
+            lastAppleClockTime = Date.timeIntervalSinceReferenceDate
+            Task { [appleMusic] in await appleMusic.seek(to: target) }
+        } else {
+            bilibiliPlayer.seek(to: target)
+        }
         updateLyric()
     }
 
@@ -266,7 +297,7 @@ final class MusicStore: ObservableObject {
 
     func setVolume(_ newValue: Double) {
         volume = min(max(newValue, 0), 1)
-        if playbackSource == .appleMusic { appleMusic.setVolume(volume) }
+        if playbackSource == .appleMusic { Task { [appleMusic, volume] in await appleMusic.setVolume(volume) } }
         else {
             bilibiliVolume = volume
             bilibiliPlayer.setVolume(volume)
@@ -293,10 +324,11 @@ final class MusicStore: ObservableObject {
                 importText = ""
                 setSource(.bilibili)
                 persistLibrary()
-                lastImportedTrackID = (added.first ?? tracks.first)?.id
-                bilibiliImportMessage = added.isEmpty
+                let importedTrackID = (added.first ?? tracks.first)?.id
+                let message = added.isEmpty
                     ? "歌曲已在资料库中"
                     : "已加入 \(added.count) 首歌曲"
+                showBilibiliImportResult(message, trackID: importedTrackID)
             } catch { errorMessage = error.localizedDescription }
             isImporting = false
         }
@@ -313,8 +345,21 @@ final class MusicStore: ObservableObject {
     }
 
     func dismissBilibiliImportResult() {
+        bilibiliImportResultTask?.cancel()
+        bilibiliImportResultTask = nil
         bilibiliImportMessage = nil
         lastImportedTrackID = nil
+    }
+
+    private func showBilibiliImportResult(_ message: String, trackID: String?) {
+        bilibiliImportResultTask?.cancel()
+        bilibiliImportMessage = message
+        lastImportedTrackID = trackID
+        bilibiliImportResultTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            guard let self, bilibiliImportMessage == message, lastImportedTrackID == trackID else { return }
+            dismissBilibiliImportResult()
+        }
     }
 
     func loadBilibiliFavoriteFolders() {
@@ -789,24 +834,38 @@ final class MusicStore: ObservableObject {
     }
 
     func shutdown() async {
-        syncTask?.cancel(); lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliFavoriteTask?.cancel(); bilibiliPlayer.stop()
+        syncTask?.cancel(); appleClockTask?.cancel(); appleRefreshTask?.cancel(); appleArtworkTask?.cancel(); bilibiliImportResultTask?.cancel()
+        lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliFavoriteTask?.cancel(); bilibiliPlayer.stop()
         persistenceRevision &+= 1
         await library.saveNow(librarySnapshot(), revision: persistenceRevision)
     }
 
-    private func refreshAppleMusic() {
-        let running = appleMusic.isRunning
+    private func refreshAppleMusic() async {
+        let running = await appleMusic.isRunning()
         if appleMusicRunning != running { appleMusicRunning = running }
-        guard appleMusicRunning else { playbackState = .stopped; return }
+        guard appleMusicRunning else {
+            if activePlaybackSource == .appleMusic { playbackState = .stopped }
+            lastAppleClockTime = nil
+            return
+        }
+        guard activePlaybackSource == .appleMusic else { return }
         do {
-            let snapshot = try appleMusic.requestSnapshot()
+            let snapshot = try await appleMusic.requestSnapshot()
             guard activePlaybackSource == .appleMusic else { return }
             let changed = currentTrack?.id != snapshot.track?.id
-            if currentTrack != snapshot.track { currentTrack = snapshot.track }
+            var publishedTrack = snapshot.track
+            if publishedTrack?.id == currentTrack?.id, publishedTrack?.coverURL == nil {
+                publishedTrack?.coverURL = currentTrack?.coverURL
+            }
+            if currentTrack != publishedTrack { currentTrack = publishedTrack }
             if playbackState != snapshot.state { playbackState = snapshot.state }
             playbackProgress.reset(position: snapshot.position, duration: snapshot.track?.duration ?? 0)
+            lastAppleClockTime = Date.timeIntervalSinceReferenceDate
             if volume != snapshot.volume { volume = snapshot.volume }
-            if changed, let track = snapshot.track { loadLyrics(for: track) }
+            if changed, let track = publishedTrack {
+                loadLyrics(for: track)
+                loadAppleArtwork(for: track)
+            }
             updateLyric()
             errorMessage = nil
         } catch { errorMessage = error.localizedDescription }
@@ -814,25 +873,63 @@ final class MusicStore: ObservableObject {
 
     private func runSyncLoop() async {
         while !Task.isCancelled {
-            let running = appleMusic.isRunning
-            if appleMusicRunning != running { appleMusicRunning = running }
-            if activePlaybackSource == .appleMusic, appleMusic.hasRequestedAccess { refreshAppleMusic() }
-            let seconds = activePlaybackSource == .appleMusic && playbackState.isPlaying ? 1.0 : 3.0
-            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
+            await refreshAppleMusic()
+            do { try await Task.sleep(for: .milliseconds(2500)) } catch { return }
+        }
+    }
+
+    private func runAppleClock() async {
+        while !Task.isCancelled {
+            let now = Date.timeIntervalSinceReferenceDate
+            if activePlaybackSource == .appleMusic, playbackState.isPlaying {
+                if let lastAppleClockTime {
+                    let elapsed = min(max(now - lastAppleClockTime, 0), 1)
+                    let advanced = duration > 0 ? min(position + elapsed, duration) : position + elapsed
+                    playbackProgress.setPosition(advanced)
+                    updateLyric()
+                }
+                lastAppleClockTime = now
+            } else {
+                lastAppleClockTime = nil
+            }
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+        }
+    }
+
+    private func loadAppleArtwork(for track: MusicTrack) {
+        appleArtworkTask?.cancel()
+        appleArtworkTask = Task { [weak self, appleMusic] in
+            let url = await appleMusic.artworkURL(for: track.id)
+            guard !Task.isCancelled, let self, currentTrack?.id == track.id else { return }
+            if currentTrack?.coverURL != url { currentTrack?.coverURL = url }
+            appleArtworkTask = nil
         }
     }
 
     private func scheduleAppleRefresh() {
-        Task { [weak self] in try? await Task.sleep(for: .milliseconds(250)); self?.refreshAppleMusic() }
+        appleRefreshTask?.cancel()
+        appleRefreshTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            await self?.refreshAppleMusic()
+        }
     }
 
     private func move(by delta: Int) {
         let controlSource = activePlaybackSource ?? currentTrack?.source ?? browsingSource
         if controlSource == .appleMusic {
             if activePlaybackSource == nil { connectAppleMusic() }
-            delta < 0 ? appleMusic.previous() : appleMusic.next(); scheduleAppleRefresh(); return
+            Task { [weak self, appleMusic] in
+                if delta < 0 { await appleMusic.previous() } else { await appleMusic.next() }
+                self?.scheduleAppleRefresh()
+            }
+            return
         }
         guard !playlist.isEmpty else { return }
+        if playMode == .shuffle {
+            let choices = playlist.filter { $0.id != currentTrack?.id }
+            if let track = (choices.isEmpty ? playlist : choices).randomElement() { play(track) }
+            return
+        }
         let current = playlist.firstIndex(where: { $0.id == currentTrack?.id }) ?? 0
         let target = current + delta
         if playlist.indices.contains(target) { play(playlist[target]) }

@@ -113,6 +113,8 @@ struct MusicProgressView: View {
 
 private struct FullPlayerLyricsView: View {
     @ObservedObject var music: MusicStore
+    @State private var previewLyricIndex: Int?
+    @State private var resumeFollowingTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 10) {
@@ -131,6 +133,9 @@ private struct FullPlayerLyricsView: View {
         .padding(14)
         .frame(maxWidth: 520)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(LyricsScrollWheelMonitor(onScroll: previewLyrics))
+        .help("上下滚动预览歌词，点击任意可见歌词可跳转")
+        .onDisappear { resumeFollowingTask?.cancel() }
     }
 
     @ViewBuilder
@@ -151,7 +156,7 @@ private struct FullPlayerLyricsView: View {
     }
 
     private func lyricRows(_ document: LyricsDocument) -> some View {
-        let indices = document.lineIndices(around: music.currentLyricIndex)
+        let indices = document.lineIndices(around: previewLyricIndex ?? music.currentLyricIndex)
         return VStack(spacing: 0) {
             ForEach(indices.indices, id: \.self) { slot in
                 if let lineIndex = indices[slot] {
@@ -170,6 +175,8 @@ private struct FullPlayerLyricsView: View {
 
     private func lyricButton(_ line: TimedLyricLine, isCurrent: Bool, distance: Int) -> some View {
         Button {
+            resumeFollowingTask?.cancel()
+            previewLyricIndex = nil
             music.seek(toLyric: line)
         } label: {
             Text(line.text)
@@ -194,6 +201,78 @@ private struct FullPlayerLyricsView: View {
         Label(text, systemImage: systemImage)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 264)
+    }
+
+    private func previewLyrics(_ delta: CGFloat) {
+        guard let document = music.lyrics, !document.lines.isEmpty, abs(delta) > 0.01 else { return }
+        let center = previewLyricIndex ?? music.currentLyricIndex ?? 0
+        let steps = min(max(Int(abs(delta) / 10), 1), 3)
+        let direction = delta > 0 ? -1 : 1
+        previewLyricIndex = min(max(center + direction * steps, 0), document.lines.count - 1)
+        resumeFollowingTask?.cancel()
+        resumeFollowingTask = Task {
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            previewLyricIndex = nil
+        }
+    }
+}
+
+private struct LyricsScrollWheelMonitor: NSViewRepresentable {
+    let onScroll: (CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onScroll: onScroll) }
+
+    func makeNSView(context: Context) -> MonitorView {
+        let view = MonitorView()
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: MonitorView, context: Context) {
+        context.coordinator.onScroll = onScroll
+    }
+
+    static func dismantleNSView(_ nsView: MonitorView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class MonitorView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    final class Coordinator {
+        var onScroll: (CGFloat) -> Void
+        private weak var view: MonitorView?
+        private var eventMonitor: Any?
+        private var preciseDelta: CGFloat = 0
+
+        init(onScroll: @escaping (CGFloat) -> Void) { self.onScroll = onScroll }
+
+        func attach(to view: MonitorView) {
+            self.view = view
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let monitoredView = self.view, event.window === monitoredView.window,
+                      monitoredView.bounds.contains(monitoredView.convert(event.locationInWindow, from: nil)) else { return event }
+                if event.hasPreciseScrollingDeltas {
+                    preciseDelta += event.scrollingDeltaY
+                    guard abs(preciseDelta) >= 8 else { return event }
+                    let delta = preciseDelta
+                    preciseDelta = 0
+                    onScroll(delta)
+                } else {
+                    onScroll(event.scrollingDeltaY)
+                }
+                return event
+            }
+        }
+
+        func detach() {
+            if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+            eventMonitor = nil
+            view = nil
+        }
+
+        deinit { detach() }
     }
 }
 

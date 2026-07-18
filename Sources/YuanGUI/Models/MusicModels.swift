@@ -1,6 +1,6 @@
 import Foundation
 
-enum MusicSource: String, Codable, CaseIterable, Identifiable {
+enum MusicSource: String, Codable, CaseIterable, Identifiable, Sendable {
     case appleMusic
     case bilibili
 
@@ -9,7 +9,7 @@ enum MusicSource: String, Codable, CaseIterable, Identifiable {
     var systemImage: String { self == .appleMusic ? "music.note" : "play.tv.fill" }
 }
 
-enum MusicPlaybackState: Equatable {
+enum MusicPlaybackState: Equatable, Sendable {
     case stopped
     case loading
     case playing
@@ -23,6 +23,7 @@ enum MusicPlayMode: String, Codable, CaseIterable, Identifiable {
     case sequential
     case repeatOne
     case repeatAll
+    case shuffle
 
     var id: String { rawValue }
     var title: String {
@@ -30,6 +31,7 @@ enum MusicPlayMode: String, Codable, CaseIterable, Identifiable {
         case .sequential: return "顺序播放"
         case .repeatOne: return "单曲循环"
         case .repeatAll: return "列表循环"
+        case .shuffle: return "随机播放"
         }
     }
     var systemImage: String {
@@ -37,6 +39,7 @@ enum MusicPlayMode: String, Codable, CaseIterable, Identifiable {
         case .sequential: return "arrow.right"
         case .repeatOne: return "repeat.1"
         case .repeatAll: return "repeat"
+        case .shuffle: return "shuffle"
         }
     }
 }
@@ -58,14 +61,14 @@ enum LyricsFontStyle: String, CaseIterable, Identifiable {
     }
 }
 
-struct BilibiliTrackReference: Codable, Hashable {
+struct BilibiliTrackReference: Codable, Hashable, Sendable {
     let bvid: String
     let aid: Int
     let cid: Int
     let page: Int
 }
 
-struct MusicTrack: Codable, Identifiable, Hashable {
+struct MusicTrack: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let source: MusicSource
     var title: String

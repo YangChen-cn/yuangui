@@ -556,7 +556,7 @@ final class MusicTests: XCTestCase {
     }
 
     func testPlayModesHaveStableUserFacingLabels() {
-        XCTAssertEqual(MusicPlayMode.allCases.map(\.title), ["顺序播放", "单曲循环", "列表循环"])
+        XCTAssertEqual(MusicPlayMode.allCases.map(\.title), ["顺序播放", "单曲循环", "列表循环", "随机播放"])
         XCTAssertEqual(MusicSource.allCases.map(\.title), ["Apple Music", "哔哩哔哩"])
         XCTAssertEqual(LyricsFontStyle.allCases.map(\.title), ["圆体", "系统字体", "衬线体", "等宽体"])
     }
