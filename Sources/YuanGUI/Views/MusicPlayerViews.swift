@@ -113,7 +113,8 @@ struct MusicProgressView: View {
 
 private struct FullPlayerLyricsView: View {
     @ObservedObject var music: MusicStore
-    @State private var previewLyricIndex: Int?
+    @State private var previewLyricPosition: Double?
+    @State private var isScrollFocused = false
     @State private var resumeFollowingTask: Task<Void, Never>?
 
     var body: some View {
@@ -133,8 +134,19 @@ private struct FullPlayerLyricsView: View {
         .padding(14)
         .frame(maxWidth: 520)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(LyricsScrollWheelMonitor(onScroll: previewLyrics))
-        .help("上下滚动预览歌词，点击任意可见歌词可跳转")
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.accentColor.opacity(isScrollFocused ? 0.65 : 0), lineWidth: 1.5)
+        }
+        .overlay(LyricsScrollWheelMonitor(
+            isEnabled: music.lyrics?.lines.isEmpty == false,
+            isActive: isScrollFocused,
+            onActivationChange: setScrollFocus,
+            onScroll: previewLyrics
+        ))
+        .help(isScrollFocused
+            ? "歌词滚动已选中；点击播放器空白处退出，点击歌词可跳转"
+            : "点击选中歌词区域，再上下滚动预览；点击歌词可跳转")
         .onDisappear { resumeFollowingTask?.cancel() }
     }
 
@@ -156,27 +168,34 @@ private struct FullPlayerLyricsView: View {
     }
 
     private func lyricRows(_ document: LyricsDocument) -> some View {
-        let indices = document.lineIndices(around: previewLyricIndex ?? music.currentLyricIndex)
-        return VStack(spacing: 0) {
-            ForEach(indices.indices, id: \.self) { slot in
-                if let lineIndex = indices[slot] {
-                    lyricButton(
-                        document.lines[lineIndex],
-                        isCurrent: lineIndex == music.currentLyricIndex,
-                        distance: abs(slot - 3)
-                    )
-                } else {
-                    Color.clear.frame(height: 38)
+        let currentPosition = previewLyricPosition ?? Double(music.currentLyricIndex ?? 0)
+        let center = min(max(Int(currentPosition.rounded()), 0), document.lines.count - 1)
+        let candidates = Array((center - 4)...(center + 4))
+        let rowOffset = CGFloat(Double(center) - currentPosition) * 38
+        return ZStack {
+            VStack(spacing: 0) {
+                ForEach(candidates, id: \.self) { lineIndex in
+                    if document.lines.indices.contains(lineIndex) {
+                        lyricButton(
+                            document.lines[lineIndex],
+                            isCurrent: lineIndex == music.currentLyricIndex,
+                            distance: min(abs(lineIndex - center), 3)
+                        )
+                    } else {
+                        Color.clear.frame(height: 38)
+                    }
                 }
             }
+            .offset(y: rowOffset)
         }
-        .frame(minHeight: 266)
+        .frame(height: 266)
+        .clipped()
     }
 
     private func lyricButton(_ line: TimedLyricLine, isCurrent: Bool, distance: Int) -> some View {
         Button {
             resumeFollowingTask?.cancel()
-            previewLyricIndex = nil
+            withAnimation(.easeOut(duration: 0.16)) { previewLyricPosition = nil }
             music.seek(toLyric: line)
         } label: {
             Text(line.text)
@@ -205,22 +224,42 @@ private struct FullPlayerLyricsView: View {
 
     private func previewLyrics(_ delta: CGFloat) {
         guard let document = music.lyrics, !document.lines.isEmpty, abs(delta) > 0.01 else { return }
-        let center = previewLyricIndex ?? music.currentLyricIndex ?? 0
-        let steps = min(max(Int(abs(delta) / 10), 1), 3)
-        let direction = delta > 0 ? -1 : 1
-        previewLyricIndex = min(max(center + direction * steps, 0), document.lines.count - 1)
+        let current = previewLyricPosition ?? Double(music.currentLyricIndex ?? 0)
+        let target = min(max(current - Double(delta / 38), 0), Double(document.lines.count - 1))
+        withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.88)) {
+            previewLyricPosition = target
+        }
         resumeFollowingTask?.cancel()
         resumeFollowingTask = Task {
             do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            previewLyricIndex = nil
+            withAnimation(.easeOut(duration: 0.2)) { previewLyricPosition = nil }
+        }
+    }
+
+    private func setScrollFocus(_ focused: Bool) {
+        guard focused != isScrollFocused else { return }
+        isScrollFocused = focused
+        if !focused {
+            resumeFollowingTask?.cancel()
+            withAnimation(.easeOut(duration: 0.18)) { previewLyricPosition = nil }
         }
     }
 }
 
 private struct LyricsScrollWheelMonitor: NSViewRepresentable {
+    let isEnabled: Bool
+    let isActive: Bool
+    let onActivationChange: (Bool) -> Void
     let onScroll: (CGFloat) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onScroll: onScroll) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            isEnabled: isEnabled,
+            isActive: isActive,
+            onActivationChange: onActivationChange,
+            onScroll: onScroll
+        )
+    }
 
     func makeNSView(context: Context) -> MonitorView {
         let view = MonitorView()
@@ -229,6 +268,9 @@ private struct LyricsScrollWheelMonitor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: MonitorView, context: Context) {
+        context.coordinator.isEnabled = isEnabled
+        context.coordinator.isActive = isActive
+        context.coordinator.onActivationChange = onActivationChange
         context.coordinator.onScroll = onScroll
     }
 
@@ -241,28 +283,40 @@ private struct LyricsScrollWheelMonitor: NSViewRepresentable {
     }
 
     final class Coordinator {
+        var isEnabled: Bool
+        var isActive: Bool
+        var onActivationChange: (Bool) -> Void
         var onScroll: (CGFloat) -> Void
         private weak var view: MonitorView?
         private var eventMonitor: Any?
-        private var preciseDelta: CGFloat = 0
 
-        init(onScroll: @escaping (CGFloat) -> Void) { self.onScroll = onScroll }
+        init(
+            isEnabled: Bool,
+            isActive: Bool,
+            onActivationChange: @escaping (Bool) -> Void,
+            onScroll: @escaping (CGFloat) -> Void
+        ) {
+            self.isEnabled = isEnabled
+            self.isActive = isActive
+            self.onActivationChange = onActivationChange
+            self.onScroll = onScroll
+        }
 
         func attach(to view: MonitorView) {
             self.view = view
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                guard let self, let monitoredView = self.view, event.window === monitoredView.window,
-                      monitoredView.bounds.contains(monitoredView.convert(event.locationInWindow, from: nil)) else { return event }
-                if event.hasPreciseScrollingDeltas {
-                    preciseDelta += event.scrollingDeltaY
-                    guard abs(preciseDelta) >= 8 else { return event }
-                    let delta = preciseDelta
-                    preciseDelta = 0
-                    onScroll(delta)
-                } else {
-                    onScroll(event.scrollingDeltaY)
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .scrollWheel]) { [weak self] event in
+                guard let self, let monitoredView = self.view, event.window === monitoredView.window else { return event }
+                let isInside = monitoredView.bounds.contains(monitoredView.convert(event.locationInWindow, from: nil))
+                if event.type == .leftMouseDown {
+                    onActivationChange(isInside && isEnabled)
+                    return event
                 }
-                return event
+                guard isActive else { return event }
+                let delta = event.hasPreciseScrollingDeltas
+                    ? event.scrollingDeltaY
+                    : event.scrollingDeltaY * 12
+                onScroll(delta)
+                return nil
             }
         }
 
