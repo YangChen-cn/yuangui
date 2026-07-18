@@ -147,6 +147,9 @@ private struct FullPlayerLyricsView: View {
         .help(isScrollFocused
             ? "歌词滚动已选中；点击播放器空白处退出，点击歌词可跳转"
             : "点击选中歌词区域，再上下滚动预览；点击歌词可跳转")
+        .onHover { isInside in
+            if !isInside, isScrollFocused { setScrollFocus(false) }
+        }
         .onDisappear { resumeFollowingTask?.cancel() }
     }
 
