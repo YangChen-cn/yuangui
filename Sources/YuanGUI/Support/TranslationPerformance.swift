@@ -30,6 +30,22 @@ enum TranslationPerformance {
         }
     }
 
+    static func measureSync<T>(
+        _ stage: TranslationPerformanceStage,
+        operation: () throws -> T
+    ) rethrows -> T {
+        let clock = ContinuousClock()
+        let start = clock.now
+        do {
+            let value = try operation()
+            log(stage: stage, duration: start.duration(to: clock.now), outcome: "success")
+            return value
+        } catch {
+            log(stage: stage, duration: start.duration(to: clock.now), outcome: "failure")
+            throw error
+        }
+    }
+
     static func logCacheHit(engine: TranslationEngine) {
         logger.debug("cache_hit engine=\(engine.rawValue, privacy: .public)")
     }

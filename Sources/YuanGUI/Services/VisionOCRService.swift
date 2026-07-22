@@ -24,6 +24,13 @@ struct OCRBackgroundColor: Equatable, Sendable {
     }
 }
 
+enum OCRTextRole: String, Equatable, Sendable {
+    case body
+    case title
+    case listItem
+    case protectedContent
+}
+
 struct OCRTextRegion: Equatable, Sendable {
     let text: String
     /// Vision coordinates: normalized to 0...1 with the origin at bottom-left.
@@ -32,9 +39,12 @@ struct OCRTextRegion: Equatable, Sendable {
     let confidence: Float
     let detectedLanguage: String?
     let estimatedFontScale: CGFloat
+    let baseline: CGFloat
     let paragraphIndex: Int
+    let columnIndex: Int
     let readingOrder: Int
     let isProtectedText: Bool
+    let role: OCRTextRole
 
     init(
         text: String,
@@ -43,9 +53,12 @@ struct OCRTextRegion: Equatable, Sendable {
         confidence: Float = 1,
         detectedLanguage: String? = nil,
         estimatedFontScale: CGFloat? = nil,
+        baseline: CGFloat? = nil,
         paragraphIndex: Int = 0,
+        columnIndex: Int = 0,
         readingOrder: Int = 0,
-        isProtectedText: Bool? = nil
+        isProtectedText: Bool? = nil,
+        role: OCRTextRole = .body
     ) {
         self.text = text
         self.normalizedRect = normalizedRect
@@ -53,12 +66,20 @@ struct OCRTextRegion: Equatable, Sendable {
         self.confidence = confidence
         self.detectedLanguage = detectedLanguage
         self.estimatedFontScale = estimatedFontScale ?? normalizedRect.height
+        self.baseline = baseline ?? normalizedRect.minY
         self.paragraphIndex = paragraphIndex
+        self.columnIndex = columnIndex
         self.readingOrder = readingOrder
         self.isProtectedText = isProtectedText ?? Self.protectedText(text)
+        self.role = role
     }
 
-    func assigningLayout(paragraphIndex: Int, readingOrder: Int) -> OCRTextRegion {
+    func assigningLayout(
+        paragraphIndex: Int,
+        columnIndex: Int,
+        readingOrder: Int,
+        role: OCRTextRole
+    ) -> OCRTextRegion {
         OCRTextRegion(
             text: text,
             normalizedRect: normalizedRect,
@@ -66,9 +87,12 @@ struct OCRTextRegion: Equatable, Sendable {
             confidence: confidence,
             detectedLanguage: detectedLanguage,
             estimatedFontScale: estimatedFontScale,
+            baseline: baseline,
             paragraphIndex: paragraphIndex,
+            columnIndex: columnIndex,
             readingOrder: readingOrder,
-            isProtectedText: isProtectedText
+            isProtectedText: isProtectedText,
+            role: role
         )
     }
 
@@ -131,42 +155,115 @@ struct VisionOCRService: OCRTextRecognizing {
     func recognizeLayout(in image: CGImage) async throws -> OCRRecognition {
         try await TranslationPerformance.measure(.ocr) {
             try await Task.detached(priority: .userInitiated) {
-            let recognitionImage = Self.imageForRecognition(image)
-            let backgroundSampler = ImageBackgroundSampler(image: recognitionImage)
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            request.automaticallyDetectsLanguage = true
-            let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR"]
-            if let supported = try? request.supportedRecognitionLanguages() {
-                request.recognitionLanguages = preferredLanguages.filter(supported.contains)
-            }
+                let recognitionImage = Self.imageForRecognition(image)
+                let backgroundSampler = TranslationPerformance.measureSync(.background) {
+                    ImageBackgroundSampler(image: recognitionImage)
+                }
+                let request = Self.recognitionRequest()
+                do {
+                    try VNImageRequestHandler(cgImage: recognitionImage, options: [:]).perform([request])
+                } catch {
+                    throw VisionOCRError.recognitionFailed(error.localizedDescription)
+                }
 
-            do {
-                try VNImageRequestHandler(cgImage: recognitionImage, options: [:]).perform([request])
-            } catch {
-                throw VisionOCRError.recognitionFailed(error.localizedDescription)
-            }
-
-            let rawRegions = (request.results ?? [])
-                .compactMap { observation -> OCRTextRegion? in
+                let rawRegions = (request.results ?? []).compactMap { observation -> OCRTextRegion? in
                     guard let candidate = observation.topCandidates(1).first,
                           !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-                    let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return OCRTextRegion(
-                        text: text,
-                        normalizedRect: observation.boundingBox,
-                        backgroundColor: backgroundSampler?.color(around: observation.boundingBox) ?? .white,
-                        confidence: candidate.confidence,
-                        detectedLanguage: NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue,
-                        estimatedFontScale: observation.boundingBox.height
+                    return Self.region(
+                        candidate: candidate,
+                        rect: observation.boundingBox,
+                        backgroundColor: backgroundSampler?.color(around: observation.boundingBox) ?? .white
                     )
                 }
-            return await TranslationPerformance.measure(.grouping) {
-                OCRLayoutAnalyzer.organize(rawRegions)
-            }
-        }.value
+                let refinedRegions = Self.refineLowConfidenceRegions(rawRegions, in: recognitionImage)
+                return await TranslationPerformance.measure(.grouping) {
+                    OCRLayoutAnalyzer.organize(refinedRegions)
+                }
+            }.value
         }
+    }
+
+    static func shouldRetry(_ region: OCRTextRegion) -> Bool {
+        region.confidence < 0.48
+            || (region.detectedLanguage == nil && region.text.count >= 4 && !region.isProtectedText)
+    }
+
+    static func benchmarkBackgroundSampling(
+        in image: CGImage,
+        rectangles: [CGRect]
+    ) -> [OCRBackgroundColor] {
+        guard let sampler = ImageBackgroundSampler(image: image) else { return [] }
+        return rectangles.map(sampler.color)
+    }
+
+    private static func recognitionRequest() -> VNRecognizeTextRequest {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.automaticallyDetectsLanguage = true
+        let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR"]
+        if let supported = try? request.supportedRecognitionLanguages() {
+            request.recognitionLanguages = preferredLanguages.filter(supported.contains)
+        }
+        return request
+    }
+
+    private static func region(
+        candidate: VNRecognizedText,
+        rect: CGRect,
+        backgroundColor: OCRBackgroundColor
+    ) -> OCRTextRegion {
+        let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return OCRTextRegion(
+            text: text,
+            normalizedRect: rect,
+            backgroundColor: backgroundColor,
+            confidence: candidate.confidence,
+            detectedLanguage: NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue,
+            estimatedFontScale: rect.height,
+            baseline: rect.minY
+        )
+    }
+
+    private static func refineLowConfidenceRegions(
+        _ regions: [OCRTextRegion],
+        in image: CGImage
+    ) -> [OCRTextRegion] {
+        let retryIndices = regions.indices.filter { shouldRetry(regions[$0]) }.prefix(6)
+        guard !retryIndices.isEmpty else { return regions }
+        var result = regions
+        for index in retryIndices {
+            let original = regions[index]
+            guard let crop = croppedImage(image, around: original.normalizedRect) else { continue }
+            let request = recognitionRequest()
+            guard (try? VNImageRequestHandler(cgImage: crop, options: [:]).perform([request])) != nil,
+                  let candidate = request.results?.compactMap({ $0.topCandidates(1).first }).max(by: {
+                      $0.confidence < $1.confidence
+                  }),
+                  candidate.confidence > original.confidence,
+                  !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            result[index] = region(
+                candidate: candidate,
+                rect: original.normalizedRect,
+                backgroundColor: original.backgroundColor
+            )
+        }
+        return result
+    }
+
+    private static func croppedImage(_ image: CGImage, around normalizedRect: CGRect) -> CGImage? {
+        let padding = max(0.006, normalizedRect.height * 0.3)
+        let expanded = normalizedRect.insetBy(dx: -padding, dy: -padding)
+            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard !expanded.isNull, expanded.width > 0, expanded.height > 0 else { return nil }
+        let rect = CGRect(
+            x: expanded.minX * CGFloat(image.width),
+            y: (1 - expanded.maxY) * CGFloat(image.height),
+            width: expanded.width * CGFloat(image.width),
+            height: expanded.height * CGFloat(image.height)
+        ).integral.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard rect.width > 1, rect.height > 1 else { return nil }
+        return image.cropping(to: rect)
     }
 
     private static func imageForRecognition(_ image: CGImage) -> CGImage {

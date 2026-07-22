@@ -70,12 +70,18 @@ actor TranslationPipeline {
         let estimatedBytes: Int
     }
 
+    private struct InFlightEntry: Sendable {
+        let identifier: UUID
+        let task: Task<[TranslationSegmentResult], Error>
+        var waiterCount: Int
+    }
+
     private let clock = ContinuousClock()
     private let expiration: Duration
     private let maximumEntryCount: Int
     private let maximumEstimatedBytes: Int
     private var cache: [TranslationRequest: CacheEntry] = [:]
-    private var inFlight: [TranslationRequest: Task<[TranslationSegmentResult], Error>] = [:]
+    private var inFlight: [TranslationRequest: InFlightEntry] = [:]
 
     init(
         expiration: Duration = .seconds(600),
@@ -99,22 +105,30 @@ actor TranslationPipeline {
             TranslationPerformance.logCacheHit(engine: request.engine)
             return cached.value
         }
-        if let existing = inFlight[request] {
+        let identifier: UUID
+        let task: Task<[TranslationSegmentResult], Error>
+        if var existing = inFlight[request] {
             TranslationPerformance.logRequestCoalesced(engine: request.engine)
-            let value = try await existing.value
-            try Task.checkCancellation()
-            return value
-        }
-
-        let task = Task(priority: .userInitiated) {
-            try await TranslationPerformance.measure(.translation) {
-                try await operation()
+            existing.waiterCount += 1
+            inFlight[request] = existing
+            identifier = existing.identifier
+            task = existing.task
+        } else {
+            identifier = UUID()
+            task = Task(priority: .userInitiated) {
+                try await TranslationPerformance.measure(.translation) {
+                    try await operation()
+                }
             }
+            inFlight[request] = InFlightEntry(identifier: identifier, task: task, waiterCount: 1)
         }
-        inFlight[request] = task
         do {
-            let value = try await task.value
-            inFlight[request] = nil
+            let value = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                Task { await self.cancelWaiter(for: request, identifier: identifier) }
+            }
+            if inFlight[request]?.identifier == identifier { inFlight[request] = nil }
             cache[request] = CacheEntry(
                 value: value,
                 lastAccess: clock.now,
@@ -124,8 +138,19 @@ actor TranslationPipeline {
             try Task.checkCancellation()
             return value
         } catch {
-            inFlight[request] = nil
+            if inFlight[request]?.identifier == identifier { inFlight[request] = nil }
             throw error
+        }
+    }
+
+    private func cancelWaiter(for request: TranslationRequest, identifier: UUID) {
+        guard var entry = inFlight[request], entry.identifier == identifier else { return }
+        entry.waiterCount -= 1
+        if entry.waiterCount <= 0 {
+            entry.task.cancel()
+            inFlight[request] = nil
+        } else {
+            inFlight[request] = entry
         }
     }
 

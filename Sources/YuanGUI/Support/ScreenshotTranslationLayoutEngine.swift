@@ -32,17 +32,55 @@ enum ScreenshotTranslationLayoutEngine {
                 minimum: minimumReadableFontSize,
                 maximum: preferredMaximum
             )
-            return ScreenshotTranslationDisplayBlock(
-                id: block.id,
+            var fontSize = fitting.fontSize
+            var candidate = displayBlock(
+                source: block,
                 frame: frame,
-                text: block.text,
-                fontSize: fitting.fontSize,
-                backgroundColor: block.backgroundColor,
-                lineSpacing: max(1, fitting.fontSize * 0.15),
-                usesOverflowCard: !fitting.fits
+                fontSize: fontSize,
+                usesOverflowCard: false
+            )
+            while fontSize > minimumReadableFontSize, !textFits(candidate) {
+                fontSize = max(minimumReadableFontSize, floor((fontSize - 0.5) * 10) / 10)
+                candidate = displayBlock(
+                    source: block,
+                    frame: frame,
+                    fontSize: fontSize,
+                    usesOverflowCard: false
+                )
+            }
+            return displayBlock(
+                source: block,
+                frame: frame,
+                fontSize: fontSize,
+                usesOverflowCard: !textFits(candidate)
             )
         }
         return ScreenshotTranslationLayout(blocks: displayBlocks)
+    }
+
+    static func textFits(_ block: ScreenshotTranslationDisplayBlock) -> Bool {
+        measuredSize(
+            block.text,
+            fontSize: block.fontSize,
+            width: max(1, block.frame.width - 8)
+        ).height <= max(1, block.frame.height - 4)
+    }
+
+    private static func displayBlock(
+        source: ScreenshotTranslationBlock,
+        frame: CGRect,
+        fontSize: CGFloat,
+        usesOverflowCard: Bool
+    ) -> ScreenshotTranslationDisplayBlock {
+        ScreenshotTranslationDisplayBlock(
+            id: source.id,
+            frame: frame,
+            text: source.text,
+            fontSize: fontSize,
+            backgroundColor: source.backgroundColor,
+            lineSpacing: max(1, fontSize * 0.15),
+            usesOverflowCard: usesOverflowCard
+        )
     }
 
     private static func fittingFontSize(
@@ -52,16 +90,17 @@ enum ScreenshotTranslationLayoutEngine {
         maximum: CGFloat
     ) -> (fontSize: CGFloat, fits: Bool) {
         let available = CGSize(width: max(1, size.width - 8), height: max(1, size.height - 4))
-        if measuredSize(text, fontSize: maximum, width: available.width).height <= available.height {
+        let safeHeight = max(1, available.height - 1.5)
+        if measuredSize(text, fontSize: maximum, width: available.width).height <= safeHeight {
             return (maximum, true)
         }
         let minimumHeight = measuredSize(text, fontSize: minimum, width: available.width).height
-        guard minimumHeight <= available.height else { return (minimum, false) }
+        guard minimumHeight <= safeHeight else { return (minimum, false) }
         var lower = minimum
         var upper = maximum
         for _ in 0..<12 {
             let candidate = (lower + upper) / 2
-            if measuredSize(text, fontSize: candidate, width: available.width).height <= available.height {
+            if measuredSize(text, fontSize: candidate, width: available.width).height <= safeHeight {
                 lower = candidate
             } else {
                 upper = candidate

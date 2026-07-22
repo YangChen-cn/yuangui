@@ -73,7 +73,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     private var comparisonWindow: ScreenshotTranslationOverlayPanel?
     private var standardFrame: CGRect
     private var escapeMonitor: Any?
-    private var toolbarDragStart: (mouse: CGPoint, window: CGRect, comparison: CGRect?)?
+    private var toolbarDragStart: (mouse: CGPoint, window: CGRect)?
     private var didClose = false
 
     init(
@@ -112,7 +112,6 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         super.init()
         configure(panel: window, title: "截图翻译图文覆盖层", shadow: true)
         configure(panel: toolbarWindow, title: "截图翻译工具栏", shadow: true)
-        toolbarWindow.level = .popUpMenu
         window.isMovableByWindowBackground = true
         window.delegate = self
         window.onEscape = { [weak self] in self?.close() }
@@ -126,6 +125,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             close: { [weak self] in self?.close() }
         ))
         positionToolbar()
+        window.addChildWindow(toolbarWindow, ordered: .above)
     }
 
     deinit {
@@ -133,9 +133,11 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     }
 
     func show() {
-        window.orderFrontRegardless()
-        toolbarWindow.orderFrontRegardless()
-        window.makeKey()
+        TranslationPerformance.measureSync(.presentation) {
+            window.orderFrontRegardless()
+            toolbarWindow.orderFrontRegardless()
+            window.makeKey()
+        }
         installEscapeMonitor()
     }
 
@@ -162,7 +164,9 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
         escapeMonitor = nil
         comparisonWindow?.orderOut(nil)
+        if let comparisonWindow { window.removeChildWindow(comparisonWindow) }
         comparisonWindow = nil
+        window.removeChildWindow(toolbarWindow)
         toolbarWindow.orderOut(nil)
         model.regions = []
         store.clearSensitiveState()
@@ -172,7 +176,6 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     func windowDidMove(_ notification: Notification) {
         guard notification.object as? NSWindow === window else { return }
         if comparisonWindow == nil { standardFrame = window.frame }
-        positionToolbar()
     }
 
     nonisolated static func overlayFrame(for selection: ScreenshotSelection) -> CGRect {
@@ -270,6 +273,36 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         regions: [OCRTextRegion],
         translatedLines: [String]
     ) -> [ScreenshotTranslationBlock] {
+        let paragraphGroups = translatableParagraphGroups(regions: regions)
+        if translatedLines.count == paragraphGroups.count {
+            return zip(paragraphGroups, translatedLines).flatMap { group, translatedParagraph in
+                makeTranslationBlocks(
+                    regions: group,
+                    translatedLines: distributedTranslation(translatedParagraph, matching: group)
+                )
+            }
+        }
+        return makeTranslationBlocks(regions: regions, translatedLines: translatedLines)
+    }
+
+    nonisolated static func translatableParagraphs(regions: [OCRTextRegion]) -> [String] {
+        translatableParagraphGroups(regions: regions).map { group in
+            group.map(\.text).joined(separator: " ")
+        }
+    }
+
+    nonisolated private static func translatableParagraphGroups(regions: [OCRTextRegion]) -> [[OCRTextRegion]] {
+        let translatable = regions.filter { !$0.isProtectedText }
+        let grouped = Dictionary(grouping: translatable, by: \.paragraphIndex)
+        return grouped.values.sorted {
+            ($0.map(\.readingOrder).min() ?? .max) < ($1.map(\.readingOrder).min() ?? .max)
+        }.map { $0.sorted { $0.readingOrder < $1.readingOrder } }
+    }
+
+    nonisolated private static func makeTranslationBlocks(
+        regions: [OCRTextRegion],
+        translatedLines: [String]
+    ) -> [ScreenshotTranslationBlock] {
         zip(regions, translatedLines).enumerated().compactMap { index, pair in
             let translation = pair.1.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !translation.isEmpty else { return nil }
@@ -299,7 +332,9 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         from blocks: [ScreenshotTranslationBlock],
         in size: CGSize
     ) -> [ScreenshotTranslationDisplayBlock] {
-        ScreenshotTranslationLayoutEngine.layout(blocks: blocks, in: size).blocks
+        TranslationPerformance.measureSync(.layout) {
+            ScreenshotTranslationLayoutEngine.layout(blocks: blocks, in: size).blocks
+        }
     }
 
     nonisolated private static func availableRightBoundary(
@@ -382,7 +417,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     private func dragToolbarToPointer(ended: Bool) {
         let mouse = NSEvent.mouseLocation
         if toolbarDragStart == nil {
-            toolbarDragStart = (mouse, window.frame, comparisonWindow?.frame)
+            toolbarDragStart = (mouse, window.frame)
         }
         guard let start = toolbarDragStart else { return }
         let offset = CGSize(width: mouse.x - start.mouse.x, height: mouse.y - start.mouse.y)
@@ -390,17 +425,31 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             x: start.window.minX + offset.width,
             y: start.window.minY + offset.height
         ))
-        if let comparisonWindow, let comparisonFrame = start.comparison {
-            comparisonWindow.setFrameOrigin(CGPoint(
-                x: comparisonFrame.minX + offset.width,
-                y: comparisonFrame.minY + offset.height
-            ))
+        if ended {
+            toolbarDragStart = nil
+            constrainWindowGroupToVisibleFrame()
         }
-        if ended { toolbarDragStart = nil }
+    }
+
+    private func constrainWindowGroupToVisibleFrame() {
+        let visibleFrame = window.screen?.visibleFrame
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(window.frame) })?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? window.frame
+        let frames = [window.frame, toolbarWindow.frame] + (comparisonWindow.map { [$0.frame] } ?? [])
+        let group = frames.dropFirst().reduce(frames[0]) { $0.union($1) }
+        var offset = CGSize.zero
+        if group.minX < visibleFrame.minX { offset.width = visibleFrame.minX - group.minX }
+        if group.maxX > visibleFrame.maxX { offset.width = visibleFrame.maxX - group.maxX }
+        if group.minY < visibleFrame.minY { offset.height = visibleFrame.minY - group.minY }
+        if group.maxY > visibleFrame.maxY { offset.height = visibleFrame.maxY - group.maxY }
+        guard offset != .zero else { return }
+        window.setFrameOrigin(CGPoint(x: window.frame.minX + offset.width, y: window.frame.minY + offset.height))
     }
 
     private func toggleComparison() {
         if let comparisonWindow {
+            window.removeChildWindow(comparisonWindow)
             comparisonWindow.orderOut(nil)
             self.comparisonWindow = nil
             model.comparisonEnabled = false
@@ -424,6 +473,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         comparisonWindow = original
         model.comparisonEnabled = true
         window.setFrame(frames.translated, display: true)
+        window.addChildWindow(original, ordered: .below)
         original.orderFrontRegardless()
         window.orderFrontRegardless()
         toolbarWindow.orderFrontRegardless()
@@ -495,7 +545,10 @@ struct ScreenshotTranslationOverlayView: View {
             await requestTranslation()
         }
         .translationTask(configuration) { session in
-            await store.performLineTranslations(using: session, sourceLines: model.regions.map(\.text))
+            await store.performLineTranslations(
+                using: session,
+                sourceLines: ScreenshotTranslationOverlayWindowController.translatableParagraphs(regions: model.regions)
+            )
         }
     }
 
@@ -566,9 +619,19 @@ struct ScreenshotTranslationOverlayView: View {
         }
     }
 
-    private func blockBackground(_ color: OCRBackgroundColor) -> some ShapeStyle {
-        Color(red: color.red, green: color.green, blue: color.blue)
-            .opacity(color.variation > 0.08 ? 0.86 : 0.98)
+    @ViewBuilder
+    private func blockBackground(_ color: OCRBackgroundColor) -> some View {
+        if color.variation > 0.08 {
+            Rectangle()
+                .fill(.regularMaterial)
+                .overlay(
+                    Color(red: color.red, green: color.green, blue: color.blue)
+                        .opacity(0.58)
+                )
+        } else {
+            Color(red: color.red, green: color.green, blue: color.blue)
+                .opacity(0.98)
+        }
     }
 
     private func statusPill(_ text: String, showsProgress: Bool) -> some View {
@@ -582,7 +645,7 @@ struct ScreenshotTranslationOverlayView: View {
     }
 
     private func requestTranslation() async {
-        let sourceLines = model.regions.map(\.text)
+        let sourceLines = ScreenshotTranslationOverlayWindowController.translatableParagraphs(regions: model.regions)
         if store.usesShortcutTranslation {
             configuration = nil
             await store.performShortcutLineTranslations(sourceLines: sourceLines)

@@ -21,7 +21,8 @@ let package = Package(
         .testTarget(
             name: "YuanGUITests",
             dependencies: ["YuanGUI"],
-            path: "Tests/YuanGUITests"
+            path: "Tests/YuanGUITests",
+            resources: [.process("Fixtures")]
         )
     ],
     swiftLanguageModes: [.v5]

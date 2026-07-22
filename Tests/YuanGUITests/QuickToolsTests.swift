@@ -334,6 +334,49 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertLessThan(recognition.regions[0].paragraphIndex, recognition.regions[2].paragraphIndex)
     }
 
+    func testOCRLayoutAnalyzerRecognizesColumnsTitlesListsAndBaselines() {
+        let regions = [
+            OCRTextRegion(text: "Document title", normalizedRect: CGRect(x: 0.08, y: 0.9, width: 0.84, height: 0.07), estimatedFontScale: 0.07),
+            OCRTextRegion(text: "Left one", normalizedRect: CGRect(x: 0.08, y: 0.72, width: 0.28, height: 0.03)),
+            OCRTextRegion(text: "• Left two", normalizedRect: CGRect(x: 0.08, y: 0.62, width: 0.28, height: 0.03)),
+            OCRTextRegion(text: "Right one", normalizedRect: CGRect(x: 0.62, y: 0.72, width: 0.28, height: 0.03)),
+            OCRTextRegion(text: "Right two", normalizedRect: CGRect(x: 0.62, y: 0.62, width: 0.28, height: 0.03))
+        ]
+
+        let result = OCRLayoutAnalyzer.organize(regions).regions
+
+        XCTAssertEqual(result.first?.role, .title)
+        XCTAssertEqual(result.filter { $0.text.hasPrefix("Left") || $0.text.hasPrefix("•") }.map(\.columnIndex), [0, 0])
+        XCTAssertEqual(
+            result.filter { $0.text.hasPrefix("Right") }.map(\.columnIndex),
+            [1, 1],
+            "\(result.map { ($0.text, $0.columnIndex) })"
+        )
+        XCTAssertEqual(result.first { $0.text.hasPrefix("•") }?.role, .listItem)
+        XCTAssertEqual(result.first { $0.text == "Left one" }?.baseline ?? -1, 0.72, accuracy: 0.0001)
+    }
+
+    func testScreenshotTranslationBatchesParagraphsAndProtectsURLs() {
+        let regions = [
+            OCRTextRegion(text: "First visual line", normalizedRect: CGRect(x: 0.1, y: 0.75, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 0),
+            OCRTextRegion(text: "continues here", normalizedRect: CGRect(x: 0.1, y: 0.68, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 1),
+            OCRTextRegion(text: "https://example.com", normalizedRect: CGRect(x: 0.1, y: 0.55, width: 0.5, height: 0.05), paragraphIndex: 1, readingOrder: 2),
+            OCRTextRegion(text: "Second paragraph", normalizedRect: CGRect(x: 0.1, y: 0.42, width: 0.5, height: 0.05), paragraphIndex: 2, readingOrder: 3)
+        ]
+
+        XCTAssertEqual(
+            ScreenshotTranslationOverlayWindowController.translatableParagraphs(regions: regions),
+            ["First visual line continues here", "Second paragraph"]
+        )
+        let blocks = ScreenshotTranslationOverlayWindowController.translationBlocks(
+            regions: regions,
+            translatedLines: ["第一段翻译继续", "第二段翻译"]
+        )
+        XCTAssertEqual(blocks.count, 3)
+        XCTAssertFalse(blocks.contains { $0.text.contains("example.com") })
+        XCTAssertEqual(blocks.map(\.text).joined(), "第一段翻译继续第二段翻译")
+    }
+
     func testScreenshotLayoutUsesReadableOverflowCardForImpossibleDensity() {
         let block = ScreenshotTranslationBlock(
             id: 0,
@@ -350,6 +393,125 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(result.blocks[0].fontSize, ScreenshotTranslationLayoutEngine.minimumReadableFontSize)
         XCTAssertTrue(result.blocks[0].usesOverflowCard)
         XCTAssertEqual(result.overflowBlocks[0].text, block.text)
+    }
+
+    func testScreenshotLayoutFixturesHaveNoOverlapTruncationOrMarkerLeak() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "screenshot-layout-fixtures",
+            withExtension: "json"
+        ))
+        let data = try Data(contentsOf: url)
+        let fixtures = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        XCTAssertEqual(fixtures.count, 8)
+
+        for fixture in fixtures {
+            let name = try XCTUnwrap(fixture["name"] as? String)
+            let width = try XCTUnwrap(fixture["width"] as? NSNumber).doubleValue
+            let height = try XCTUnwrap(fixture["height"] as? NSNumber).doubleValue
+            let rawRegions = try XCTUnwrap(fixture["regions"] as? [[Any]])
+            let background = name == "dark-background"
+                ? OCRBackgroundColor(red: 0.08, green: 0.09, blue: 0.12, variation: 0.14)
+                : .white
+            let blocks = try rawRegions.enumerated().map { index, values in
+                ScreenshotTranslationBlock(
+                    id: index,
+                    normalizedRect: CGRect(
+                        x: try XCTUnwrap(values[0] as? NSNumber).doubleValue,
+                        y: try XCTUnwrap(values[1] as? NSNumber).doubleValue,
+                        width: try XCTUnwrap(values[2] as? NSNumber).doubleValue,
+                        height: try XCTUnwrap(values[3] as? NSNumber).doubleValue
+                    ),
+                    text: try XCTUnwrap(values[4] as? String),
+                    backgroundColor: background
+                )
+            }
+            assertValidLayout(
+                ScreenshotTranslationLayoutEngine.layout(
+                    blocks: blocks,
+                    in: CGSize(width: width, height: height)
+                ),
+                size: CGSize(width: width, height: height),
+                context: name
+            )
+        }
+    }
+
+    func testRandomizedScreenshotLayoutsPreserveGlobalInvariants() {
+        var random = DeterministicRandom(seed: 0x5955_414E_4755_49)
+        for fixtureIndex in 0..<100 {
+            let size = CGSize(
+                width: 320 + random.nextUnit() * 1_000,
+                height: 180 + random.nextUnit() * 700
+            )
+            let rowCount = 2 + Int(random.next() % 14)
+            let columns = random.next() % 3 == 0 ? 2 : 1
+            let blocks = (0..<rowCount).map { index in
+                let column = index % columns
+                let row = index / columns
+                let columnWidth = 0.88 / CGFloat(columns)
+                let x = 0.05 + CGFloat(column) * (columnWidth + 0.02)
+                let y = max(0.04, 0.92 - CGFloat(row) * (0.055 + random.nextUnit() * 0.055))
+                let textLength = 12 + Int(random.next() % 120)
+                return ScreenshotTranslationBlock(
+                    id: index,
+                    normalizedRect: CGRect(
+                        x: x,
+                        y: y,
+                        width: columnWidth,
+                        height: 0.025 + random.nextUnit() * 0.045
+                    ),
+                    text: String(repeating: "readable ", count: max(2, textLength / 9)),
+                    backgroundColor: .white
+                )
+            }
+            assertValidLayout(
+                ScreenshotTranslationLayoutEngine.layout(blocks: blocks, in: size),
+                size: size,
+                context: "random-\(fixtureIndex)"
+            )
+        }
+    }
+
+    private func assertValidLayout(
+        _ layout: ScreenshotTranslationLayout,
+        size: CGSize,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -0.01, dy: -0.01)
+        for block in layout.blocks {
+            XCTAssertTrue(bounds.contains(block.frame), "\(context): frame escaped bounds", file: file, line: line)
+            XCTAssertGreaterThanOrEqual(
+                block.fontSize,
+                ScreenshotTranslationLayoutEngine.minimumReadableFontSize,
+                context,
+                file: file,
+                line: line
+            )
+            XCTAssertFalse(block.text.contains("…"), "\(context): ellipsis leaked", file: file, line: line)
+            XCTAssertFalse(block.text.contains("YGUI"), "\(context): internal marker leaked", file: file, line: line)
+            if !block.usesOverflowCard {
+                XCTAssertTrue(
+                    ScreenshotTranslationLayoutEngine.textFits(block),
+                    "\(context): text does not fit its calculated frame \(block)",
+                    file: file,
+                    line: line
+                )
+            }
+        }
+        let visible = layout.blocks.filter { !$0.usesOverflowCard }
+        for first in visible.indices {
+            for second in visible.indices where second > first {
+                let intersection = visible[first].frame.intersection(visible[second].frame)
+                XCTAssertTrue(
+                    intersection.isNull || intersection.width <= 0.01 || intersection.height <= 0.01,
+                    "\(context): translated frames overlap",
+                    file: file,
+                    line: line
+                )
+            }
+        }
     }
 
     func testScreenshotTranslationOverlayStaysOnCurrentDesktop() {
@@ -458,6 +620,59 @@ final class QuickToolsTests: XCTestCase {
             "😀中文"
         )
         XCTAssertNil(AccessibilitySelectedTextProvider.substring(value, range: CFRange(location: 99, length: 1)))
+    }
+
+    func testBrowserSelectionScriptsCoverSafariChromeAndEdge() {
+        let safari = AccessibilitySelectedTextProvider.browserSelectionScript(for: "com.apple.Safari")
+        let chrome = AccessibilitySelectedTextProvider.browserSelectionScript(for: "com.google.Chrome")
+        let edge = AccessibilitySelectedTextProvider.browserSelectionScript(for: "com.microsoft.edgemac")
+
+        XCTAssertTrue(safari?.contains("window.getSelection().toString()") == true)
+        XCTAssertTrue(safari?.contains("do JavaScript") == true)
+        XCTAssertTrue(chrome?.contains("execute active tab") == true)
+        XCTAssertTrue(edge?.contains("execute active tab") == true)
+        XCTAssertNil(AccessibilitySelectedTextProvider.browserSelectionScript(for: "com.apple.TextEdit"))
+
+        let replacement = AccessibilitySelectedTextProvider.browserReplacementScript(
+            for: "com.google.Chrome",
+            originalText: "selected \"text\"",
+            replacementText: "替换后的\n译文"
+        )
+        XCTAssertTrue(replacement?.contains("setRangeText") == true)
+        XCTAssertTrue(replacement?.contains("contenteditable") == true)
+        XCTAssertTrue(replacement?.contains("state.text") == true)
+        XCTAssertNil(AccessibilitySelectedTextProvider.browserReplacementScript(
+            for: "com.apple.TextEdit",
+            originalText: "a",
+            replacementText: "b"
+        ))
+    }
+
+    func testTranslationPipelineCancelsSoleInflightOperation() async {
+        let pipeline = TranslationPipeline()
+        let segment = TranslationSegment(id: "0", sourceText: "cancel me")
+        let request = TranslationRequest(
+            segments: [segment],
+            targetLanguage: .simplifiedChinese,
+            engine: .systemShortcut
+        )
+        let task = Task {
+            try await pipeline.translate(request) {
+                try await Task.sleep(for: .seconds(10))
+                return [TranslationSegmentResult(id: "0", sourceText: "cancel me", translatedText: "取消")]
+            }
+        }
+        await Task.yield()
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("A closed translation request must not keep running")
+        } catch is CancellationError {
+            // Expected: the sole in-flight engine task is cancelled with its UI request.
+        } catch {
+            XCTFail("Unexpected cancellation error: \(error)")
+        }
     }
 
     @MainActor
@@ -682,6 +897,23 @@ final class QuickToolsTests: XCTestCase {
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         guard let image = context.makeImage() else { throw ScreenshotOutputError.imageCreationFailed }
         return image
+    }
+}
+
+private struct DeterministicRandom {
+    private var state: UInt64
+
+    init(seed: UInt64) { state = seed }
+
+    mutating func next() -> UInt64 {
+        state ^= state << 13
+        state ^= state >> 7
+        state ^= state << 17
+        return state
+    }
+
+    mutating func nextUnit() -> CGFloat {
+        CGFloat(next() % 10_000) / 10_000
     }
 }
 

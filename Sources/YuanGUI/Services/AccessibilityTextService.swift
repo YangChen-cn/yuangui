@@ -26,6 +26,11 @@ enum AccessibilityTextError: LocalizedError {
 }
 
 @MainActor
+struct BrowserReplacementSnapshot: Sendable {
+    let bundleIdentifier: String
+}
+
+@MainActor
 struct TranslationTargetSnapshot {
     let processID: pid_t
     let applicationName: String
@@ -35,6 +40,29 @@ struct TranslationTargetSnapshot {
     let selectedRange: CFRange?
     let role: String?
     let canReplace: Bool
+    let browserReplacement: BrowserReplacementSnapshot?
+
+    init(
+        processID: pid_t,
+        applicationName: String,
+        element: AXUIElement,
+        originalText: String,
+        fullValue: String?,
+        selectedRange: CFRange?,
+        role: String?,
+        canReplace: Bool,
+        browserReplacement: BrowserReplacementSnapshot? = nil
+    ) {
+        self.processID = processID
+        self.applicationName = applicationName
+        self.element = element
+        self.originalText = originalText
+        self.fullValue = fullValue
+        self.selectedRange = selectedRange
+        self.role = role
+        self.canReplace = canReplace
+        self.browserReplacement = browserReplacement
+    }
 }
 
 @MainActor
@@ -83,6 +111,7 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
         // of the nominally focused child. Check the short ancestor chain first.
         var selectionElement: AXUIElement?
         var selectedText: String?
+        var browserReplacement: BrowserReplacementSnapshot?
         var candidate: AXUIElement? = focused
         for _ in 0..<10 {
             guard let current = candidate else { break }
@@ -99,6 +128,15 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
         if processID == 0 { _ = AXUIElementGetPid(focused, &processID) }
         guard processID != 0 else {
             throw AccessibilityTextError.targetUnavailable
+        }
+        if selectedText == nil,
+           let bundleIdentifier = workspaceApplication?.bundleIdentifier,
+           let browserSelection = await Self.browserSelectedText(bundleIdentifier: bundleIdentifier) {
+            selectedText = browserSelection.text
+            selectionElement = focused
+            if browserSelection.canReplace {
+                browserReplacement = BrowserReplacementSnapshot(bundleIdentifier: bundleIdentifier)
+            }
         }
         if selectedText == nil {
             selectedText = try await copiedSelectionFromFrontmostApplication()
@@ -119,7 +157,7 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
             range.map { Self.substring(value, range: $0) == selected }
         } ?? false
         let isEditableRole = role.map(editableRoles.contains) == true || subrole == kAXSearchFieldSubrole
-        let canReplace = canSetRange && rangeMatches && isEditableRole
+        let canReplace = browserReplacement != nil || (canSetRange && rangeMatches && isEditableRole)
 
         return TranslationTargetSnapshot(
             processID: processID,
@@ -129,7 +167,8 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
             fullValue: fullValue,
             selectedRange: range,
             role: role,
-            canReplace: canReplace
+            canReplace: canReplace,
+            browserReplacement: browserReplacement
         )
     }
 
@@ -143,7 +182,17 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
         defer { restorePasteboard(savedItems, to: pasteboard) }
 
         pasteboard.clearContents()
-        let changeCount = pasteboard.changeCount
+        let menuChangeCount = pasteboard.changeCount
+        if performCopyMenuAction(),
+           let selected = await Self.waitForCopiedString(
+            from: pasteboard,
+            after: menuChangeCount,
+            attempts: 25
+           ) {
+            return selected
+        }
+
+        let keyboardChangeCount = pasteboard.changeCount
         guard let source = CGEventSource(stateID: .combinedSessionState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false) else {
@@ -158,11 +207,130 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
         up.post(tap: .cghidEventTap)
         guard let selected = await Self.waitForCopiedString(
             from: pasteboard,
-            after: changeCount
+            after: keyboardChangeCount
         ) else {
             throw AccessibilityTextError.noSelection
         }
         return selected
+    }
+
+    private func performCopyMenuAction() -> Bool {
+        guard let runningApplication = NSWorkspace.shared.frontmostApplication else { return false }
+        let application = AXUIElementCreateApplication(runningApplication.processIdentifier)
+        guard let menuBar = copyElementAttribute(application, kAXMenuBarAttribute) else { return false }
+        return pressCopyMenuItem(in: menuBar, depth: 0)
+    }
+
+    private func pressCopyMenuItem(in element: AXUIElement, depth: Int) -> Bool {
+        guard depth <= 6 else { return false }
+        let role = copyStringAttribute(element, kAXRoleAttribute)
+        let title = copyStringAttribute(element, kAXTitleAttribute)?.lowercased() ?? ""
+        let command = copyStringAttribute(element, kAXMenuItemCmdCharAttribute)?.lowercased() ?? ""
+        let enabled = copyBooleanAttribute(element, kAXEnabledAttribute) ?? true
+        let copyTitles: Set<String> = ["copy", "复制", "拷贝"]
+        if role == kAXMenuItemRole,
+           enabled,
+           (command == "c" || copyTitles.contains(title)),
+           AXUIElementPerformAction(element, kAXPressAction as CFString) == .success {
+            return true
+        }
+        for child in copyElementArrayAttribute(element, kAXChildrenAttribute) {
+            if pressCopyMenuItem(in: child, depth: depth + 1) { return true }
+        }
+        return false
+    }
+
+    nonisolated static func browserSelectionScript(for bundleIdentifier: String) -> String? {
+        let javascript = """
+        (()=>{const active=document.activeElement;let text='';let record=null;if(active&&/^(INPUT|TEXTAREA)$/.test(active.tagName)&&active.selectionStart!==null&&active.selectionEnd>active.selectionStart){text=active.value.slice(active.selectionStart,active.selectionEnd);record={kind:'input',element:active,start:active.selectionStart,end:active.selectionEnd,value:active.value,text:text};}else{const selection=window.getSelection();text=selection?window.getSelection().toString():'';if(text&&selection.rangeCount){const range=selection.getRangeAt(0).cloneRange();const node=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;const host=node&&node.closest?node.closest('[contenteditable]'):null;if(host&&host.isContentEditable){record={kind:'contenteditable',element:host,range:range,value:host.textContent,text:text};}}}window.__yuanguiTranslationSelection=record;return JSON.stringify({text:text,canReplace:!!record});})()
+        """
+        return browserScript(bundleIdentifier: bundleIdentifier, javascript: javascript)
+    }
+
+    nonisolated static func browserReplacementScript(
+        for bundleIdentifier: String,
+        originalText: String,
+        replacementText: String
+    ) -> String? {
+        let original = javascriptStringLiteral(originalText)
+        let replacement = javascriptStringLiteral(replacementText)
+        let javascript = """
+        (()=>{const state=window.__yuanguiTranslationSelection;const original=\(original);const replacement=\(replacement);if(!state||!state.element||!state.element.isConnected||state.text!==original)return 'changed';if(state.kind==='input'){if(state.element.value!==state.value||state.element.value.slice(state.start,state.end)!==original)return 'changed';state.element.focus();state.element.setSelectionRange(state.start,state.end);state.element.setRangeText(replacement,state.start,state.end,'end');state.element.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:replacement}));return 'ok';}if(state.kind==='contenteditable'){if(!state.range||state.range.toString()!==original||state.element.textContent!==state.value)return 'changed';state.element.focus();state.range.deleteContents();const node=document.createTextNode(replacement);state.range.insertNode(node);state.range.setStartAfter(node);state.range.collapse(true);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(state.range);state.element.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:replacement}));return 'ok';}return 'readonly';})()
+        """
+        return browserScript(bundleIdentifier: bundleIdentifier, javascript: javascript)
+    }
+
+    nonisolated private struct BrowserSelectionResult: Decodable {
+        let text: String
+        let canReplace: Bool
+    }
+
+    nonisolated private static func browserSelectedText(bundleIdentifier: String) async -> BrowserSelectionResult? {
+        guard let script = browserSelectionScript(for: bundleIdentifier) else { return nil }
+        guard let output = await runBrowserScript(script),
+              let data = output.data(using: .utf8),
+              let result = try? JSONDecoder().decode(BrowserSelectionResult.self, from: data),
+              !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return result
+    }
+
+    nonisolated static func runBrowserScript(_ script: String) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            let process = Process()
+            let output = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = ["-e", script]
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+            } catch {
+                return nil
+            }
+            let deadline = Date().addingTimeInterval(0.7)
+            while process.isRunning, Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nilIfEmpty
+        }.value
+    }
+
+    nonisolated private static func browserScript(
+        bundleIdentifier: String,
+        javascript: String
+    ) -> String? {
+        let safariIdentifiers: Set<String> = ["com.apple.Safari", "com.apple.SafariTechnologyPreview"]
+        let chromiumIdentifiers: Set<String> = [
+            "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.canary",
+            "com.microsoft.edgemac", "com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Dev"
+        ]
+        let literal = appleScriptStringLiteral(javascript)
+        if safariIdentifiers.contains(bundleIdentifier) {
+            return "tell application id \"\(bundleIdentifier)\"\nif (count of windows) is 0 then return \"\"\nreturn do JavaScript \(literal) in current tab of front window\nend tell"
+        }
+        if chromiumIdentifiers.contains(bundleIdentifier) {
+            return "tell application id \"\(bundleIdentifier)\"\nif (count of windows) is 0 then return \"\"\nreturn execute active tab of front window javascript \(literal)\nend tell"
+        }
+        return nil
+    }
+
+    nonisolated private static func javascriptStringLiteral(_ value: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+              let encoded = String(data: data, encoding: .utf8) else { return "''" }
+        return String(encoded.dropFirst().dropLast())
+    }
+
+    nonisolated private static func appleScriptStringLiteral(_ value: String) -> String {
+        "\"" + value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n") + "\""
     }
 
     static func waitForCopiedString(
@@ -207,6 +375,10 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
 @MainActor
 struct AccessibilityTextReplacementService: AccessibilityTextReplacing {
     func replace(_ snapshot: TranslationTargetSnapshot, with text: String) async throws {
+        if let browserReplacement = snapshot.browserReplacement {
+            try await replaceBrowserSelection(snapshot, browser: browserReplacement, with: text)
+            return
+        }
         guard snapshot.canReplace, let selectedRange = snapshot.selectedRange else {
             throw AccessibilityTextError.targetReadOnly
         }
@@ -232,6 +404,32 @@ struct AccessibilityTextReplacementService: AccessibilityTextReplacing {
         }
         try validate(snapshot, expectedRange: selectedRange)
         try postUnicode(text, to: snapshot.processID)
+    }
+
+    private func replaceBrowserSelection(
+        _ snapshot: TranslationTargetSnapshot,
+        browser: BrowserReplacementSnapshot,
+        with text: String
+    ) async throws {
+        guard let runningApplication = NSRunningApplication(processIdentifier: snapshot.processID),
+              !runningApplication.isTerminated else { throw AccessibilityTextError.targetUnavailable }
+        guard runningApplication.bundleIdentifier == browser.bundleIdentifier else {
+            throw AccessibilityTextError.targetChanged
+        }
+        runningApplication.activate()
+        try await Task.sleep(for: .milliseconds(80))
+        guard let script = AccessibilitySelectedTextProvider.browserReplacementScript(
+            for: browser.bundleIdentifier,
+            originalText: snapshot.originalText,
+            replacementText: text
+        ), let result = await AccessibilitySelectedTextProvider.runBrowserScript(script) else {
+            throw AccessibilityTextError.replacementFailed("浏览器没有返回写入结果")
+        }
+        switch result {
+        case "ok": return
+        case "changed": throw AccessibilityTextError.targetChanged
+        default: throw AccessibilityTextError.targetReadOnly
+        }
     }
 
     private func validate(_ snapshot: TranslationTargetSnapshot, expectedRange: CFRange) throws {
@@ -288,7 +486,28 @@ private func copyRangeAttribute(_ element: AXUIElement, _ attribute: String) -> 
     return range
 }
 
+private func copyElementArrayAttribute(_ element: AXUIElement, _ attribute: String) -> [AXUIElement] {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+          let items = value as? [Any] else { return [] }
+    return items.compactMap { item in
+        let object = item as CFTypeRef
+        guard CFGetTypeID(object) == AXUIElementGetTypeID() else { return nil }
+        return (object as! AXUIElement)
+    }
+}
+
+private func copyBooleanAttribute(_ element: AXUIElement, _ attribute: String) -> Bool? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+    return value as? Bool
+}
+
 private func isAttributeSettable(_ element: AXUIElement, _ attribute: String) -> Bool {
     var settable = DarwinBoolean(false)
     return AXUIElementIsAttributeSettable(element, attribute as CFString, &settable) == .success && settable.boolValue
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

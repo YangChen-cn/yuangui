@@ -103,6 +103,8 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
     private var cancellables = Set<AnyCancellable>()
     private var didClose = false
     private var isApplyingContentSize = false
+    private var isUserMoving = false
+    private var moveSettledWorkItem: DispatchWorkItem?
     private var pendingResizeRequest: (
         source: String,
         translation: String,
@@ -185,8 +187,34 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
     func windowWillClose(_ notification: Notification) {
         guard !didClose else { return }
         didClose = true
+        moveSettledWorkItem?.cancel()
+        moveSettledWorkItem = nil
         store.clearSensitiveState()
         onClose()
+    }
+
+    func windowWillMove(_ notification: Notification) {
+        guard !isApplyingContentSize else { return }
+        isUserMoving = true
+        moveSettledWorkItem?.cancel()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard !isApplyingContentSize, isUserMoving else { return }
+        moveSettledWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.didClose else { return }
+            self.isUserMoving = false
+            let request = self.pendingResizeRequest ?? (
+                source: self.store.editableSourceText,
+                translation: self.store.translatedText,
+                state: self.store.state
+            )
+            self.pendingResizeRequest = nil
+            self.resizeForContent(source: request.source, translation: request.translation, state: request.state)
+        }
+        moveSettledWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14, execute: workItem)
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
@@ -207,7 +235,7 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
         translation: String,
         state: TranslationEditorStore.State
     ) {
-        guard !window.inLiveResize else {
+        guard !window.inLiveResize, !isUserMoving else {
             pendingResizeRequest = (source, translation, state)
             return
         }
