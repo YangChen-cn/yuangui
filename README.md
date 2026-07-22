@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple">
+  <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-111111?logo=apple">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.5.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.1.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -29,7 +29,7 @@
 - **系统状态面板**：查看 CPU、内存、磁盘、网络、电池和运行时间。
 - **本地天气**：经用户授权后获取大致位置，并通过 Open-Meteo 获取天气，无需天气 API Key。
 - **主动对白**：可设置 1–120 分钟的日常对白间隔，并在天气刷新后进行角色化播报。
-- **AI 对话**：支持 OpenAI 兼容接口；填写 URL 与 API Key 后可自动读取模型，也可以手动填写模型名和编辑角色提示词。
+- **AI 对话**：支持 OpenAI 兼容接口、SSE 流式回复（单次最多 4096 tokens）；填写 URL 与 API Key 后可自动读取模型，也可以手动填写模型名和编辑角色提示词。
 - **附件对话与历史记录**：支持图片和文本类附件，保留本地聊天历史。
 - **统一音乐播放器**：可以控制系统 Apple Music，也能导入哔哩哔哩 URL、BV 号和短链接播放公开视频音频。
 - **哔哩哔哩资料库**：支持读取登录账号创建或收藏的视频收藏夹，弹窗选择后一键去重导入；同时支持播放列表、收藏、本地歌单和多种播放模式。
@@ -39,11 +39,16 @@
 - **清理屋**：提供保守的空间清理、软件卸载、白名单、操作记录和路径安全检查。
 - **废纸篓互动**：把文件拖到桌宠上即可移入废纸篓，也可以打开或确认清空废纸篓。
 - **桌面交互**：支持拖动、四边贴靠、迷你露头、尺寸调节、交互锁定与鼠标穿透，也可一键隐藏或显示 Finder 桌面图标。
-- **菜单栏入口与登录启动**：桌宠隐藏后仍可通过菜单栏恢复，并可选择登录时自动启动。
+- **菜单栏入口与登录启动**：桌宠隐藏后仍可通过菜单栏恢复；状态栏“工具”页集中提供 AI 对话、清理屋、软件卸载、截图、翻译、废纸篓和设置入口，并可选择登录时自动启动。
+- **区域截图与标注**：按 `Control-A` 选区截图，添加画笔、文字、箭头、形状、高亮和马赛克，并复制或保存 PNG。
+- **截图翻译（OCR）**：按 `Control-Shift-A` 选区截图，通过 Vision 在本机识别中英文等文字，再进入可编辑的翻译窗口。
+- **划词与手动翻译**：按 `Control-Z` 翻译网页或应用选区；没有选中文字时仍会打开窗口，可直接输入原文。默认通过系统快捷指令免费调用 Apple 翻译，也可手动选择系统离线模型或在线 AI；支持修正原文、重新翻译、复制译文，并在可编辑输入框中安全替换原文。
+
+系统快捷指令调用参考 [QuickTranslate](https://github.com/ringozzt/quicktranslate)（MIT）：通过 `shortcuts run` 的标准输入传入 JSON，源语言留空自动检测，并使用系统要求的 `zh_CN`、`en_US` 等语言标识。
 
 ## 系统要求
 
-- macOS 14 Sonoma 或更高版本
+- macOS 15 Sequoia 或更高版本
 - 从源码构建需要 Swift 6 工具链（推荐使用最新版 Xcode）
 - 天气功能需要授予位置权限并允许网络访问
 - AI 对话需要用户自己的 OpenAI 兼容 API 地址和 API Key
@@ -53,9 +58,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-1.0.5.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.0.5.dmg)
+[一键下载最新版 `YuanGUI-1.1.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.1.dmg)
 
-1. 打开 `YuanGUI-1.0.5.dmg`。
+1. 打开 `YuanGUI-1.1.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -132,7 +137,7 @@ swift test
 swift test
 ```
 
-当前项目包含 111 项测试，覆盖：
+当前项目包含 124 项测试，覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -153,7 +158,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。产物位于：
 
 ```text
-dist/YuanGUI-1.0.5.dmg
+dist/YuanGUI-1.1.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

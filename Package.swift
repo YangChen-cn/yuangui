@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "YuanGUI",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(name: "YuanGUI", targets: ["YuanGUI"])
     ],
@@ -13,6 +13,7 @@ let package = Package(
             path: "Sources/YuanGUI",
             resources: [
                 .copy("Resources/Sprites"),
+                .copy("Resources/YuanGUI.Translate.shortcut"),
                 .copy("Resources/AppIcon.png"),
                 .copy("Resources/AppIcon.icns")
             ]

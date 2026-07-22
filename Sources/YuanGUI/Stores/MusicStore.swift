@@ -874,7 +874,8 @@ final class MusicStore: ObservableObject {
     private func runSyncLoop() async {
         while !Task.isCancelled {
             await refreshAppleMusic()
-            do { try await Task.sleep(for: .milliseconds(2500)) } catch { return }
+            let delay: Duration = activePlaybackSource == .appleMusic ? .milliseconds(2500) : .seconds(15)
+            do { try await Task.sleep(for: delay) } catch { return }
         }
     }
 
@@ -892,7 +893,10 @@ final class MusicStore: ObservableObject {
             } else {
                 lastAppleClockTime = nil
             }
-            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            let delay: Duration = activePlaybackSource == .appleMusic && playbackState.isPlaying
+                ? .milliseconds(250)
+                : .seconds(2)
+            do { try await Task.sleep(for: delay) } catch { return }
         }
     }
 
@@ -1122,7 +1126,7 @@ final class MusicStore: ObservableObject {
 
     private func persistProgressIfNeeded() {
         let second = Int(position)
-        guard second != lastSavedSecond, second % 5 == 0 else { return }
+        guard second != lastSavedSecond, second % 15 == 0 else { return }
         lastSavedSecond = second; persistLibrary()
     }
 

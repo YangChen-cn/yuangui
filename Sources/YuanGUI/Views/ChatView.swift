@@ -56,7 +56,7 @@ struct PetReplyBubble: View {
     }
 
     private var replyContentHeight: CGFloat {
-        if chat.isSending || chat.errorMessage != nil { return 28 }
+        if chat.errorMessage != nil { return 28 }
         let count = chat.latestReply?.count ?? 0
         let estimatedLines = max(1, Int(ceil(Double(count) / 32.0)))
         return min(max(CGFloat(estimatedLines) * 18, 28), 92)
@@ -64,20 +64,30 @@ struct PetReplyBubble: View {
 
     @ViewBuilder
     private var replyContent: some View {
-        if chat.isSending {
+        if let error = chat.errorMessage {
+            Label(error, systemImage: "exclamationmark.circle.fill")
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+        } else if let reply = chat.latestReply, !reply.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(reply)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if chat.isSending {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("正在继续生成…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } else if chat.isSending {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("正在认真想怎么回复你…")
                     .foregroundStyle(.secondary)
             }
-        } else if let error = chat.errorMessage {
-            Label(error, systemImage: "exclamationmark.circle.fill")
-                .foregroundStyle(.red)
-                .textSelection(.enabled)
-        } else if let reply = chat.latestReply {
-            Text(reply)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

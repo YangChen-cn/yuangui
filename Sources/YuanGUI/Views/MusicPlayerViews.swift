@@ -675,6 +675,9 @@ struct MusicPlayerView: View {
         }
         .frame(minWidth: 760, minHeight: 520)
         .onAppear { selectedTrackID = music.currentTrack?.id }
+        .onChange(of: music.currentTrack?.id) { _, currentTrackID in
+            selectedTrackID = currentTrackID
+        }
         .alert("新建歌单", isPresented: $isCreatingPlaylist) {
             TextField("歌单名称", text: $newPlaylistName)
             Button("创建") { createPlaylist() }

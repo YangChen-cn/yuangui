@@ -7,34 +7,36 @@ struct SettingsView: View {
     @ObservedObject var loginItem: LoginItemStore
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedObject var music: MusicStore
+    @ObservedObject var quickTools: QuickToolsController
     let showPet: () -> Void
     @State private var selectedTab = 0
     @State private var promptEditorState: PromptEditorState?
     @State private var isBilibiliLoginPresented = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("设置分类", selection: $selectedTab) {
+        HStack(spacing: 0) {
+            List(selection: $selectedTab) {
                 Label("桌宠", systemImage: "pawprint.fill").tag(0)
-                Label("AI 对话", systemImage: "bubble.left.and.sparkles.fill").tag(1)
-                Label("专注", systemImage: "timer").tag(2)
-                Label("音乐", systemImage: "music.note").tag(3)
-                Label("关于", systemImage: "info.circle.fill").tag(4)
+                Label("快捷工具", systemImage: "wand.and.stars").tag(1)
+                Label("AI 对话", systemImage: "message.fill").tag(2)
+                Label("专注", systemImage: "timer").tag(3)
+                Label("音乐", systemImage: "music.note").tag(4)
+                Label("关于", systemImage: "info.circle.fill").tag(5)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(16)
-
+            .listStyle(.sidebar)
+            .frame(width: 170)
             Divider()
 
             Group {
                 if selectedTab == 0 {
                     ScrollView { petSettings.padding(.bottom, 8) }
                 } else if selectedTab == 1 {
-                    aiSettings
+                    QuickToolsSettingsView(controller: quickTools, settings: quickTools.settings)
                 } else if selectedTab == 2 {
-                    focusSettings
+                    aiSettings
                 } else if selectedTab == 3 {
+                    focusSettings
+                } else if selectedTab == 4 {
                     musicSettings
                 } else {
                     AboutUpdateView()
@@ -43,7 +45,7 @@ struct SettingsView: View {
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: 540, height: 500)
+        .frame(minWidth: 700, idealWidth: 760, minHeight: 520, idealHeight: 560)
         .background(.regularMaterial)
         .sheet(isPresented: $isBilibiliLoginPresented) {
             BilibiliLoginSheet(music: music, isPresented: $isBilibiliLoginPresented)
@@ -327,6 +329,31 @@ struct SettingsView: View {
 
     private var aiSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "message.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        LinearGradient(
+                            colors: [.pink, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("AI 对话")
+                        .font(.title3.bold())
+                    Text("支持流式回复，单次最多生成 \(AIChatService.maximumCompletionTokens) tokens")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.36), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
             Form {
                 TextField("API 基础地址", text: Binding(
                     get: { ai.baseURL },

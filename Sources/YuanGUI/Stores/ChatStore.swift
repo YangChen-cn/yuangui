@@ -54,7 +54,7 @@ final class ChatStore: ObservableObject {
         let userMessage = ChatMessage(role: .user, content: displayContent, attachments: attachments.map(\.metadata))
         append(userMessage)
         do {
-            let reply = try await service.reply(
+            let reply = try await service.streamReply(
                 messages: Array((currentSession?.messages ?? [userMessage]).suffix(12)),
                 attachments: attachments,
                 configuration: AIChatConfiguration(
@@ -63,7 +63,10 @@ final class ChatStore: ObservableObject {
                     apiKey: settings.apiKey,
                     systemPrompt: settings.systemPrompt
                 ),
-                petMode: petMode
+                petMode: petMode,
+                onPartialReply: { [weak self] partialReply in
+                    self?.latestReply = partialReply
+                }
             )
             latestReply = reply
             append(ChatMessage(role: .assistant, content: reply))

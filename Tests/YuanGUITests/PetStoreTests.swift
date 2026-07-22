@@ -427,8 +427,8 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testBottomToolbarPanelSizeMatchesItsFourButtons() {
-        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 155)
+    func testBottomToolbarPanelSizeMatchesItsFiveButtons() {
+        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 160)
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 70)
     }
 

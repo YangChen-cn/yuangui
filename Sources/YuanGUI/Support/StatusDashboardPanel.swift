@@ -15,6 +15,7 @@ final class StatusDashboardPanelController {
     private let store: PetStore
     private let focusTimer: FocusTimerStore
     private let music: MusicStore
+    private let quickTools: QuickToolsController
     private let togglePet: () -> Void
     private let showPet: () -> Void
     private let openSettings: () -> Void
@@ -28,6 +29,7 @@ final class StatusDashboardPanelController {
         store: PetStore,
         focusTimer: FocusTimerStore,
         music: MusicStore,
+        quickTools: QuickToolsController,
         togglePet: @escaping () -> Void,
         showPet: @escaping () -> Void,
         openSettings: @escaping () -> Void
@@ -35,6 +37,7 @@ final class StatusDashboardPanelController {
         self.store = store
         self.focusTimer = focusTimer
         self.music = music
+        self.quickTools = quickTools
         self.togglePet = togglePet
         self.showPet = showPet
         self.openSettings = openSettings
@@ -104,6 +107,7 @@ final class StatusDashboardPanelController {
             store: store,
             focusTimer: focusTimer,
             music: music,
+            quickTools: quickTools,
             dashboardWidth: width,
             dashboardHeight: height,
             togglePet: togglePet,

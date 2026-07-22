@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var chatStore = ChatStore(settings: aiSettings)
     private lazy var maintenanceStore = MaintenanceStore(pet: store)
     private lazy var musicStore = MusicStore()
+    private lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardController: StatusDashboardPanelController?
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
+        quickTools.start()
         panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore, focusTimer: focusTimer, music: musicStore)
         panelController?.show()
         lyrics().updateVisibility()
@@ -81,12 +83,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)
 
+        let toolsItem = NSMenuItem(title: "工具", action: nil, keyEquivalent: "")
+        let toolsMenu = NSMenu(title: "工具")
+        toolsMenu.addItem(withTitle: "区域截图", action: #selector(startRegionScreenshot), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: "截图翻译", action: #selector(startScreenshotTranslation), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: "翻译所选文字", action: #selector(translateSelection), keyEquivalent: "")
+        toolsItem.submenu = toolsMenu
+        mainMenu.addItem(toolsItem)
+
         NSApp.mainMenu = mainMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         weatherStartupTask?.cancel()
         store.monitor.stop()
+        quickTools.stop()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -163,6 +174,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in self?.prepareToTerminateForUpdate() }
             }
             .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .startYuanGUIRegionScreenshot)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.quickTools.beginRegionScreenshot() }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .translateYuanGUISelection)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.quickTools.translateSelection() }
+            }
+            .store(in: &cancellables)
         self.statusItem = statusItem
     }
 
@@ -192,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store: store,
             focusTimer: focusTimer,
             music: musicStore,
+            quickTools: quickTools,
             togglePet: { [weak self] in self?.panelController?.toggle() },
             showPet: { [weak self] in self?.panelController?.show() },
             openSettings: { [weak self] in self?.showSettings() }
@@ -208,6 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 loginItem: loginItemStore,
                 focusTimer: focusTimer,
                 music: musicStore,
+                quickTools: quickTools,
                 showPet: { [weak self] in self?.panelController?.show() }
             )
         }
@@ -240,6 +263,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = LyricsPanelController(music: musicStore)
         lyricsController = controller
         return controller
+    }
+
+    @objc private func startRegionScreenshot() {
+        quickTools.beginRegionScreenshot()
+    }
+
+    @objc private func translateSelection() {
+        quickTools.translateSelection()
+    }
+
+    @objc private func startScreenshotTranslation() {
+        quickTools.beginScreenshotTranslation()
     }
 
 }

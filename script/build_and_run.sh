@@ -4,7 +4,7 @@ set -euo pipefail
 MODE="${1:-run}"
 APP_NAME="YuanGUI"
 BUNDLE_ID="com.yang.yuangui"
-MIN_SYSTEM_VERSION="14.0"
+MIN_SYSTEM_VERSION="15.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -56,9 +56,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.5</string>
+  <string>1.1</string>
   <key>CFBundleVersion</key>
-  <string>7</string>
+  <string>8</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
@@ -69,6 +69,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>用于获取你所在区域的当前天气，只请求公里级位置且不保存轨迹。</string>
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>用于获取你所在区域的当前天气，只请求公里级位置且不保存轨迹。</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>用于在你主动触发区域截图时读取选中的屏幕画面，并在本机编辑、复制或保存。</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSHighResolutionCapable</key>

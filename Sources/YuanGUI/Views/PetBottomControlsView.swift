@@ -67,6 +67,17 @@ struct PetBottomControlsView: View {
             .disabled(store.interactionLocked)
             .opacity(store.interactionLocked ? 0.38 : 1)
 
+            Button {
+                NotificationCenter.default.post(name: .startYuanGUIRegionScreenshot, object: nil)
+            } label: {
+                toolIcon("scissors", tint: .blue)
+            }
+            .buttonStyle(.plain)
+            .onHover { setTip($0 ? "区域截图" : nil) }
+            .help("区域截图并编辑")
+            .disabled(store.interactionLocked)
+            .opacity(store.interactionLocked ? 0.38 : 1)
+
             Button { store.toggleInteractionLock() } label: {
                 toolIcon(
                     store.interactionLocked ? "lock.fill" : "lock.open.fill",

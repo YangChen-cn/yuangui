@@ -52,10 +52,6 @@ actor BilibiliClient {
         guard response.code == 0, let data = response.data else { throw BilibiliMusicError.api(response.message) }
         var tracks: [MusicTrack] = []
         for page in data.pages {
-            // The top-level subtitle list returned by the view endpoint is not
-            // scoped to each page. Always resolve subtitles with the exact CID,
-            // otherwise a multi-page video can attach P1's captions to every P.
-            let subtitleURL = await subtitleURL(bvid: data.bvid, aid: data.aid, cid: page.cid)
             let title = data.pages.count > 1 ? "\(data.title) · \(page.part)" : data.title
             tracks.append(MusicTrack(
                 id: "bili:\(data.bvid):\(page.cid)",
@@ -66,7 +62,10 @@ actor BilibiliClient {
                 coverURL: Self.normalizedURL(page.firstFrame ?? data.pic),
                 duration: TimeInterval(page.duration),
                 bilibili: BilibiliTrackReference(bvid: data.bvid, aid: data.aid, cid: page.cid, page: page.page),
-                subtitleURL: subtitleURL
+                // Resolving captions can require several player API requests per
+                // page. Keep imports cheap and resolve only for the track whose
+                // lyrics are actually opened or played.
+                subtitleURL: nil
             ))
         }
         return tracks
@@ -292,19 +291,30 @@ actor BilibiliClient {
 
     private func firstReachableURL(in candidates: [URL]) async -> URL? {
         let headers = playbackHeaders()
-        for url in candidates.prefix(4) {
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 8
-            request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
-            request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-            headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
-            guard let (data, response) = try? await session.data(for: request),
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode),
-                  !data.isEmpty else { continue }
-            return url
+        let session = session
+        return await withTaskGroup(of: URL?.self) { group in
+            for url in candidates.prefix(4) {
+                group.addTask {
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 8
+                    request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+                    request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+                    headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+                    guard let (data, response) = try? await session.data(for: request),
+                          let http = response as? HTTPURLResponse,
+                          (200..<300).contains(http.statusCode),
+                          !data.isEmpty else { return nil }
+                    return url
+                }
+            }
+            while let result = await group.next() {
+                if let result {
+                    group.cancelAll()
+                    return result
+                }
+            }
+            return nil
         }
-        return nil
     }
 
     private func resolveBVID(_ raw: String) async throws -> String {

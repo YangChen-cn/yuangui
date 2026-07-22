@@ -49,7 +49,8 @@ final class MusicTests: XCTestCase {
                 let tracks = try await client.resolveTracks(from: bvid)
                 let track = try XCTUnwrap(tracks.first)
                 let reference = try XCTUnwrap(track.bilibili)
-                let subtitleURL = try XCTUnwrap(track.subtitleURL)
+                let resolvedSubtitleURL = await client.subtitleURL(for: track)
+                let subtitleURL = try XCTUnwrap(resolvedSubtitleURL)
                 XCTAssertEqual(reference.bvid, bvid)
                 XCTAssertTrue(
                     subtitleURL.path.contains(marker),
@@ -255,11 +256,19 @@ final class MusicTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
+        var queries: [(title: String?, artist: String?)] = []
         LyricsURLProtocol.handler = { request in
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil
             )!
-            let data = Data(#"[{"trackName":"陶喆","artistName":"讨厌红楼梦","duration":235,"syncedLyrics":"[00:01.00]交换字段也能匹配"}]"#.utf8)
+            let items = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems
+            let title = items?.first(where: { $0.name == "track_name" })?.value
+            let artist = items?.first(where: { $0.name == "artist_name" })?.value
+            queries.append((title, artist))
+            guard title == "讨厌红楼梦", artist == "陶喆" else {
+                return (response, Data("[]".utf8))
+            }
+            let data = Data(#"[{"trackName":"讨厌红楼梦","artistName":"陶喆","duration":235,"syncedLyrics":"[00:01.00]交换字段也能匹配"}]"#.utf8)
             return (response, data)
         }
         defer {
@@ -268,9 +277,14 @@ final class MusicTests: XCTestCase {
         }
 
         let service = LyricsService(session: session)
-        let document = try await service.search(title: "讨厌红楼梦", artist: "陶喆", duration: 235)
+        let document = try await service.search(title: "陶喆", artist: "讨厌红楼梦", duration: 235)
 
         XCTAssertEqual(document?.lines.first?.text, "交换字段也能匹配")
+        XCTAssertEqual(queries.count, 2)
+        XCTAssertEqual(queries[0].title, "陶喆")
+        XCTAssertEqual(queries[0].artist, "讨厌红楼梦")
+        XCTAssertEqual(queries[1].title, "讨厌红楼梦")
+        XCTAssertEqual(queries[1].artist, "陶喆")
     }
 
     func testLyricsServiceDoesNotRunSlowBroadFallbackAfterExactMiss() async throws {
@@ -294,7 +308,7 @@ final class MusicTests: XCTestCase {
         let document = try await service.search(title: "测试歌曲", artist: "测试歌手", duration: 120)
 
         XCTAssertNil(document)
-        XCTAssertEqual(requestCount, 1)
+        XCTAssertEqual(requestCount, 2)
     }
 
     func testMusicLibraryActorFlushesLatestRevisionImmediately() async throws {
@@ -335,9 +349,16 @@ final class MusicTests: XCTestCase {
             session.invalidateAndCancel()
         }
 
-        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Bt4y1Y71r")
+        let client = BilibiliClient(session: session)
+        let tracks = try await client.resolveTracks(from: "BV1Bt4y1Y71r")
+        let track = try XCTUnwrap(tracks.first)
+        let subtitleURL = await client.subtitleURL(for: track)
 
-        XCTAssertEqual(tracks.first?.subtitleURL?.absoluteString, "https://aisubtitle.hdslb.com/test.json")
+        XCTAssertNil(track.subtitleURL)
+        XCTAssertEqual(
+            subtitleURL?.absoluteString,
+            "https://aisubtitle.hdslb.com/test.json"
+        )
     }
 
     func testBilibiliClientUsesEachPagesExactCIDInsteadOfViewSubtitle() async throws {
@@ -367,11 +388,18 @@ final class MusicTests: XCTestCase {
             session.invalidateAndCancel()
         }
 
-        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Bt4y1Y71r")
+        let client = BilibiliClient(session: session)
+        let tracks = try await client.resolveTracks(from: "BV1Bt4y1Y71r")
 
+        XCTAssertEqual(requestedCIDs, [])
+        XCTAssertTrue(tracks.allSatisfy { $0.subtitleURL == nil })
+        var subtitleURLs: [URL?] = []
+        for track in tracks {
+            subtitleURLs.append(await client.subtitleURL(for: track))
+        }
         XCTAssertEqual(requestedCIDs, ["101", "202"])
         XCTAssertEqual(
-            tracks.map(\.subtitleURL?.lastPathComponent),
+            subtitleURLs.compactMap { $0?.lastPathComponent },
             ["628037055-cid-101.json", "628037055-cid-202.json"]
         )
     }
@@ -399,9 +427,12 @@ final class MusicTests: XCTestCase {
             session.invalidateAndCancel()
         }
 
-        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Bt4y1Y71r")
+        let client = BilibiliClient(session: session)
+        let tracks = try await client.resolveTracks(from: "BV1Bt4y1Y71r")
+        let track = try XCTUnwrap(tracks.first)
+        let subtitleURL = await client.subtitleURL(for: track)
 
-        XCTAssertNil(tracks.first?.subtitleURL)
+        XCTAssertNil(subtitleURL)
     }
 
     func testBilibiliClientRejectsRandomAISubtitleUntilURLMatchesCID() async throws {
@@ -432,10 +463,13 @@ final class MusicTests: XCTestCase {
             session.invalidateAndCancel()
         }
 
-        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1Sy4y1m7Uk")
+        let client = BilibiliClient(session: session)
+        let tracks = try await client.resolveTracks(from: "BV1Sy4y1m7Uk")
+        let track = try XCTUnwrap(tracks.first)
+        let subtitleURL = await client.subtitleURL(for: track)
 
         XCTAssertEqual(playerRequestCount, 2)
-        XCTAssertTrue(tracks.first?.subtitleURL?.path.contains("266999608-correct") == true)
+        XCTAssertTrue(subtitleURL?.path.contains("266999608-correct") == true)
     }
 
     func testBilibiliClientRequiresRepeatedIdentityForHumanSubtitle() async throws {
@@ -464,10 +498,13 @@ final class MusicTests: XCTestCase {
             session.invalidateAndCancel()
         }
 
-        let tracks = try await BilibiliClient(session: session).resolveTracks(from: "BV1HumanSub1")
+        let client = BilibiliClient(session: session)
+        let tracks = try await client.resolveTracks(from: "BV1HumanSub1")
+        let track = try XCTUnwrap(tracks.first)
+        let subtitleURL = await client.subtitleURL(for: track)
 
         XCTAssertEqual(playerRequestCount, 3)
-        XCTAssertEqual(tracks.first?.subtitleURL?.lastPathComponent, "correct-human.json")
+        XCTAssertEqual(subtitleURL?.lastPathComponent, "correct-human.json")
     }
 
     func testBilibiliQRCodeLoginPersistsReturnedSessionCookie() async throws {

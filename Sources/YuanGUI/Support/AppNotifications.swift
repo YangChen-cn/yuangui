@@ -10,4 +10,6 @@ extension Notification.Name {
     static let musicLyricsVisibilityChanged = Notification.Name("musicLyricsVisibilityChanged")
     static let musicLyricsLockChanged = Notification.Name("musicLyricsLockChanged")
     static let terminateYuanGUIForUpdate = Notification.Name("terminateYuanGUIForUpdate")
+    static let startYuanGUIRegionScreenshot = Notification.Name("startYuanGUIRegionScreenshot")
+    static let translateYuanGUISelection = Notification.Name("translateYuanGUISelection")
 }

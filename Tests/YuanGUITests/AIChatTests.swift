@@ -20,6 +20,23 @@ final class AIChatTests: XCTestCase {
         XCTAssertNil(AIChatService.chatEndpoint(from: "ftp://example.com/v1"))
     }
 
+    func testChatUsesExpandedCompletionLimitAndParsesStreamingFragments() throws {
+        XCTAssertEqual(AIChatService.maximumCompletionTokens, 4_096)
+        XCTAssertEqual(
+            try AIChatService.contentFragment(
+                fromStreamLine: #"data: {"choices":[{"delta":{"content":"元圭"}}]}"#
+            ),
+            "元圭"
+        )
+        XCTAssertEqual(
+            try AIChatService.contentFragment(
+                fromStreamLine: #"data: {"choices":[{"delta":{"content":"与 VCC"}}]}"#
+            ),
+            "与 VCC"
+        )
+        XCTAssertNil(try AIChatService.contentFragment(fromStreamLine: "data: [DONE]"))
+    }
+
     func testModelsEndpointUsesSameCompatibleBasePath() {
         XCTAssertEqual(
             AIModelService.modelsEndpoint(from: "https://example.com/v1")?.absoluteString,

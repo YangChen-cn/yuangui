@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "1.0.5"
-    static let fallbackBuild = "7"
+    static let fallbackVersion = "1.1"
+    static let fallbackBuild = "8"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,6 +14,10 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
+        "1.1：新增区域截图编辑、截图 OCR 翻译、划词翻译和手动输入翻译，支持复制译文、编辑原文后重新翻译及可编辑位置替换。",
+        "1.1：状态栏新增工具页，集中提供 AI 对话、清理屋、软件卸载、截图、翻译、废纸篓和设置入口。",
+        "1.1：AI 对话支持 SSE 流式回复，单次最大输出提升至 4096 tokens；设置页和翻译窗口视觉信息重新整理。",
+        "1.1：音乐播放列表选中状态会跟随当前播放曲目，手动切换 Bilibili 歌曲时不再停留在旧歌曲。",
         "修复 Bilibili 接口偶发返回其他视频字幕轨的问题，AI 字幕按 aid/cid 校验，人工字幕使用轨道一致性确认。",
         "Apple Music 的 LRCLIB 歌词改用稳定缓存键，重启后可继续使用已匹配歌词。",
         "Bilibili 登录信息完整显示昵称和 UID，并支持仅修改歌曲名或歌手而不重新匹配歌词。",

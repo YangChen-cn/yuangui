@@ -98,7 +98,18 @@ actor LyricsService {
             fieldQuery.append(URLQueryItem(name: "artist_name", value: artist))
         }
         let candidates = try await fetchCandidates(queryItems: fieldQuery)
-        return bestDocument(in: candidates, for: track)
+        if let direct = bestDocument(in: candidates, for: track) { return direct }
+
+        // Some LRCLIB records (and some imported Bilibili metadata) have the
+        // title and artist fields reversed. Scoring already accepts that shape,
+        // but the field-filtered API cannot return it unless we also issue the
+        // exact swapped query.
+        guard !artist.isEmpty, normalize(title) != normalize(artist) else { return nil }
+        let swappedCandidates = try await fetchCandidates(queryItems: [
+            URLQueryItem(name: "track_name", value: artist),
+            URLQueryItem(name: "artist_name", value: title)
+        ])
+        return bestDocument(in: swappedCandidates, for: track)
     }
 
     private func fetchCandidates(queryItems: [URLQueryItem]) async throws -> [LRCLIBResult] {

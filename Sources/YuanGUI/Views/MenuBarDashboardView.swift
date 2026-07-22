@@ -7,6 +7,7 @@ struct MenuBarDashboardView: View {
     @ObservedObject var store: PetStore
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedObject var music: MusicStore
+    @ObservedObject var quickTools: QuickToolsController
     let dashboardWidth: CGFloat
     let dashboardHeight: CGFloat
     let togglePet: () -> Void
@@ -19,6 +20,7 @@ struct MenuBarDashboardView: View {
     private enum DashboardSection: String, CaseIterable, Identifiable {
         case mac = "Mac 状态"
         case music = "音乐"
+        case tools = "工具"
         var id: String { rawValue }
     }
 
@@ -63,9 +65,12 @@ struct MenuBarDashboardView: View {
             if selectedSection == .mac {
                 WeatherStatusCard(weather: store.weather)
                 SystemStatusCard(monitor: store.monitor)
-            } else {
+            } else if selectedSection == .music {
                 MusicStatusCard(music: music)
                     .frame(maxHeight: .infinity)
+            } else {
+                toolsGrid
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
 
             HStack(spacing: 8) {
@@ -137,6 +142,74 @@ struct MenuBarDashboardView: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .layoutPriority(2)
+    }
+
+    private var toolsGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 2), spacing: 9) {
+            toolButton("AI 对话", subtitle: "和元圭、VCC 聊天", systemImage: "message.fill", tint: .pink) {
+                launchTool { store.showChat() }
+            }
+            toolButton("清理屋", subtitle: "扫描缓存与残留", systemImage: "sparkles", tint: .mint) {
+                launchTool { store.showMaintenance(tab: 0) }
+            }
+            toolButton("软件卸载", subtitle: "应用与关联残留", systemImage: "shippingbox.fill", tint: .orange) {
+                launchTool { store.showMaintenance(tab: 1) }
+            }
+            toolButton("区域截图", subtitle: quickTools.settings.screenshotHotKey.displayText, systemImage: "viewfinder", tint: .blue) {
+                launchTool { quickTools.beginRegionScreenshot() }
+            }
+            toolButton("截图翻译", subtitle: quickTools.settings.screenshotTranslationHotKey.displayText, systemImage: "text.viewfinder", tint: .purple) {
+                launchTool { quickTools.beginScreenshotTranslation() }
+            }
+            toolButton("划词翻译", subtitle: quickTools.settings.translationHotKey.displayText, systemImage: "translate", tint: .indigo) {
+                launchTool { quickTools.translateSelection() }
+            }
+            toolButton("废纸篓", subtitle: "查看已删除项目", systemImage: "trash.fill", tint: .gray) {
+                launchTool { store.openTrash() }
+            }
+            toolButton("设置", subtitle: "快捷键与偏好", systemImage: "gearshape.fill", tint: .secondary) {
+                launchTool(action: openSettings)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func toolButton(
+        _ title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 34, height: 34)
+                    .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    Text(subtitle)
+                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 56)
+            .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(.white.opacity(0.24), lineWidth: 0.6))
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func launchTool(action: @escaping () -> Void) {
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: action)
     }
 
     private var smartStateTitle: String {
