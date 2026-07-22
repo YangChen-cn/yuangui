@@ -14,31 +14,44 @@ enum ScreenshotTranslationLayoutEngine {
     static let minimumReadableFontSize: CGFloat = 11
     static let minimumInPlaceFontSize: CGFloat = 7
 
-    /// Layout used by the live screenshot overlay. Unlike the general-purpose solver, this
-    /// deliberately never borrows whitespace, moves a block, or merges neighboring blocks.
-    /// Every translated visual line stays on the exact OCR rectangle that produced it.
+    /// Layout used by the live screenshot overlay. The horizontal anchor is immutable. A sentence
+    /// may use free vertical space in its own text column, but it can never move sideways, cross a
+    /// neighboring OCR sentence, or merge with another translation.
     static func inPlaceLayout(
         blocks: [ScreenshotTranslationBlock],
         in size: CGSize
     ) -> ScreenshotTranslationLayout {
         guard size.width > 0, size.height > 0 else { return ScreenshotTranslationLayout(blocks: []) }
         let bounds = CGRect(origin: .zero, size: size)
-        let displayBlocks = blocks.map { block in
-            let frame = clampedDisplayRect(for: block.normalizedRect, in: size, bounds: bounds)
+        let anchors = blocks.map { clampedDisplayRect(for: $0.normalizedRect, in: size, bounds: bounds) }
+        let displayBlocks = blocks.enumerated().map { index, block in
+            let anchor = anchors[index]
+            let availableFrame = readableFrame(for: index, anchors: anchors, bounds: bounds)
             let preferredMaximum = min(
                 40,
-                max(minimumInPlaceFontSize, block.sourceFontScale * size.height * 0.94)
+                max(16, block.sourceFontScale * size.height * 1.05)
             )
             let fitting = fittingFontSize(
                 for: block.text,
-                in: frame.size,
+                in: availableFrame.size,
                 minimum: minimumInPlaceFontSize,
                 maximum: preferredMaximum
+            )
+            let fontSize = fitting.fontSize
+            let requiredHeight = measuredSize(
+                block.text,
+                fontSize: fontSize,
+                width: max(1, availableFrame.width - 8)
+            ).height + 4
+            let frame = tightenedFrame(
+                availableFrame,
+                around: anchor.midY,
+                requiredHeight: max(anchor.height, requiredHeight)
             )
             return displayBlock(
                 source: block,
                 frame: frame,
-                fontSize: fitting.fontSize,
+                fontSize: fontSize,
                 usesOverflowCard: false
             )
         }

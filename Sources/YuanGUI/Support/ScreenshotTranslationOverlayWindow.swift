@@ -91,12 +91,12 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         model = ScreenshotTranslationOverlayModel(image: image)
         window = ScreenshotTranslationOverlayPanel(
             contentRect: standardFrame,
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
         toolbarWindow = ScreenshotTranslationOverlayPanel(
-            contentRect: CGRect(origin: .zero, size: CGSize(width: 160, height: 40)),
+            contentRect: CGRect(origin: .zero, size: CGSize(width: 224, height: 40)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -121,6 +121,8 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             model: model,
             store: store,
             dragToPointer: { [weak self] ended in self?.dragToolbarToPointer(ended: ended) },
+            zoomOut: { [weak self] in self?.resizeOverlay(by: 0.82) },
+            zoomIn: { [weak self] in self?.resizeOverlay(by: 1.22) },
             toggleComparison: { [weak self] in self?.toggleComparison() },
             close: { [weak self] in self?.close() }
         ))
@@ -202,6 +204,36 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         return CGRect(origin: CGPoint(x: x, y: y), size: toolbarSize)
     }
 
+    nonisolated static func scaledFrame(
+        for frame: CGRect,
+        by factor: CGFloat,
+        visibleFrame: CGRect,
+        minimumWidth: CGFloat = 240
+    ) -> CGRect {
+        guard frame.width > 0, frame.height > 0, factor > 0 else { return frame }
+        let aspectRatio = frame.width / frame.height
+        var width = max(minimumWidth, frame.width * factor)
+        var height = width / aspectRatio
+        let maximumSize = CGSize(width: visibleFrame.width * 0.96, height: visibleFrame.height * 0.92)
+        if width > maximumSize.width || height > maximumSize.height {
+            let scale = min(maximumSize.width / width, maximumSize.height / height)
+            width *= scale
+            height *= scale
+        }
+        let proposed = CGRect(
+            x: frame.midX - width / 2,
+            y: frame.midY - height / 2,
+            width: width,
+            height: height
+        )
+        return CGRect(
+            x: min(max(proposed.minX, visibleFrame.minX), visibleFrame.maxX - proposed.width),
+            y: min(max(proposed.minY, visibleFrame.minY), visibleFrame.maxY - proposed.height),
+            width: proposed.width,
+            height: proposed.height
+        )
+    }
+
     nonisolated static func comparisonFrames(
         for contentFrame: CGRect,
         visibleFrame: CGRect,
@@ -259,16 +291,16 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         regions: [OCRTextRegion],
         translatedText: String
     ) -> [ScreenshotTranslationBlock] {
-        let translatable = translatableRegions(regions: regions)
-        guard !translatable.isEmpty else { return [] }
+        let groups = translatableSentenceGroups(regions: regions)
+        guard !groups.isEmpty else { return [] }
         let lines = translatedText.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let assignedLines = lines.count == translatable.count
+        let assignedLines = lines.count == groups.count
             ? lines
             : distributedTranslation(
                 translatedText,
-                matching: translatable
+                matching: groups.map(paragraphProxyRegion)
             )
         return translationBlocks(regions: regions, translatedLines: assignedLines)
     }
@@ -277,14 +309,14 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         regions: [OCRTextRegion],
         translatedLines: [String]
     ) -> [ScreenshotTranslationBlock] {
-        let translatable = translatableRegions(regions: regions)
-        if translatedLines.count == translatable.count {
-            return makeTranslationBlocks(regions: translatable, translatedLines: translatedLines)
+        let groups = translatableSentenceGroups(regions: regions)
+        if translatedLines.count == groups.count {
+            return makeParagraphTranslationBlocks(groups: groups, translatedParagraphs: translatedLines)
         }
         let joined = translatedLines.joined(separator: "\n")
-        return makeTranslationBlocks(
-            regions: translatable,
-            translatedLines: distributedTranslation(joined, matching: translatable)
+        return makeParagraphTranslationBlocks(
+            groups: groups,
+            translatedParagraphs: distributedTranslation(joined, matching: groups.map(paragraphProxyRegion))
         )
     }
 
@@ -293,7 +325,11 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     }
 
     nonisolated static func translatableParagraphs(regions: [OCRTextRegion]) -> [String] {
-        translatableParagraphGroups(regions: regions).map(paragraphSourceText)
+        translatableSentenceGroups(regions: regions).map(paragraphSourceText)
+    }
+
+    nonisolated static func translatableSentences(regions: [OCRTextRegion]) -> [String] {
+        translatableSentenceGroups(regions: regions).map(paragraphSourceText)
     }
 
     nonisolated private static func translatableRegions(regions: [OCRTextRegion]) -> [OCRTextRegion] {
@@ -306,12 +342,64 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         }
     }
 
-    nonisolated private static func translatableParagraphGroups(regions: [OCRTextRegion]) -> [[OCRTextRegion]] {
-        let translatable = regions.filter { !$0.isProtectedText }
-        let grouped = Dictionary(grouping: translatable, by: \.paragraphIndex)
-        return grouped.values.sorted {
-            ($0.map(\.readingOrder).min() ?? .max) < ($1.map(\.readingOrder).min() ?? .max)
-        }.map { $0.sorted { $0.readingOrder < $1.readingOrder } }
+    /// Builds stable translation units from visual OCR lines. Wrapped lines belonging to one
+    /// sentence are merged, while controls, metadata and completed sentences remain independent.
+    /// This gives every translation engine one semantic unit and one unambiguous screen anchor.
+    nonisolated private static func translatableSentenceGroups(regions: [OCRTextRegion]) -> [[OCRTextRegion]] {
+        let ordered = translatableRegions(regions: regions)
+        var groups: [[OCRTextRegion]] = []
+        for region in ordered {
+            guard var current = groups.popLast() else {
+                groups.append([region])
+                continue
+            }
+            if shouldJoinSentenceLine(previous: current.last!, current: region) {
+                current.append(region)
+                groups.append(current)
+            } else {
+                groups.append(current)
+                groups.append([region])
+            }
+        }
+        return groups
+    }
+
+    nonisolated private static func shouldJoinSentenceLine(
+        previous: OCRTextRegion,
+        current: OCRTextRegion
+    ) -> Bool {
+        guard previous.paragraphIndex == current.paragraphIndex,
+              previous.columnIndex == current.columnIndex,
+              previous.role == .body,
+              current.role == .body else { return false }
+        let previousText = previous.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentText = current.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !previousText.isEmpty, !currentText.isEmpty,
+              !endsSemanticSentence(previousText),
+              !looksLikeCompactMetadata(currentText) else { return false }
+        let previousRect = previous.normalizedRect
+        let currentRect = current.normalizedRect
+        let verticalGap = max(0, previousRect.minY - currentRect.maxY)
+        let lineHeight = max(previousRect.height, currentRect.height)
+        let aligned = abs(previousRect.minX - currentRect.minX) <= max(0.035, lineHeight * 1.2)
+        let fontRatio = max(previous.estimatedFontScale, current.estimatedFontScale)
+            / max(0.0001, min(previous.estimatedFontScale, current.estimatedFontScale))
+        return currentRect.midY < previousRect.midY
+            && verticalGap <= lineHeight * 1.35
+            && aligned
+            && fontRatio <= 1.4
+    }
+
+    nonisolated private static func endsSemanticSentence(_ text: String) -> Bool {
+        text.range(of: #"[.!?。！？；;：:]\s*[\"'”’）)]*$"#, options: .regularExpression) != nil
+    }
+
+    nonisolated private static func looksLikeCompactMetadata(_ text: String) -> Bool {
+        if text.count > 30 { return false }
+        return text.range(
+            of: #"^(?:[•●★☆]\s*)?(?:[\p{L}\p{N}+#._-]+(?:\s*[/|·]\s*[\p{L}\p{N}+#._-]+)?)(?:\s+[★☆]?\s*\d+(?:\.\d+)?[kKmM千]?)?$"#,
+            options: .regularExpression
+        ) != nil
     }
 
     nonisolated private static func paragraphSourceText(_ group: [OCRTextRegion]) -> String {
@@ -351,41 +439,12 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             let source = pair.0
             let translation = TranslationTextFormatter.addingSemanticLineBreaks(pair.1)
             guard !translation.isEmpty else { return nil }
-            let expansion = max(1, CGFloat(translation.count) / CGFloat(max(1, source.text.count)))
-            let rightBoundary = availableRightBoundary(for: index, in: proxies)
-            let width = min(
-                max(source.normalizedRect.width, rightBoundary - source.normalizedRect.minX),
-                source.normalizedRect.width * expansion
-            )
             return ScreenshotTranslationBlock(
                 id: index,
-                normalizedRect: CGRect(
-                    x: source.normalizedRect.minX,
-                    y: source.normalizedRect.minY,
-                    width: width,
-                    height: source.normalizedRect.height
-                ),
+                normalizedRect: source.normalizedRect,
                 text: translation,
                 backgroundColor: source.backgroundColor,
                 sourceFontScale: source.estimatedFontScale
-            )
-        }
-    }
-
-    nonisolated private static func makeTranslationBlocks(
-        regions: [OCRTextRegion],
-        translatedLines: [String]
-    ) -> [ScreenshotTranslationBlock] {
-        zip(regions, translatedLines).enumerated().compactMap { index, pair in
-            let translation = pair.1.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !translation.isEmpty else { return nil }
-            let region = pair.0
-            return ScreenshotTranslationBlock(
-                id: index,
-                normalizedRect: region.normalizedRect,
-                text: translation,
-                backgroundColor: region.backgroundColor,
-                sourceFontScale: region.estimatedFontScale
             )
         }
     }
@@ -397,22 +456,6 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         TranslationPerformance.measureSync(.layout) {
             ScreenshotTranslationLayoutEngine.inPlaceLayout(blocks: blocks, in: size).blocks
         }
-    }
-
-    nonisolated private static func availableRightBoundary(
-        for index: Int,
-        in regions: [OCRTextRegion]
-    ) -> CGFloat {
-        let region = regions[index].normalizedRect
-        let neighborX = regions.enumerated().compactMap { candidateIndex, candidate -> CGFloat? in
-            guard candidateIndex != index else { return nil }
-            let rect = candidate.normalizedRect
-            guard rect.minX > region.minX else { return nil }
-            let verticalOverlap = max(0, min(region.maxY, rect.maxY) - max(region.minY, rect.minY))
-            guard verticalOverlap >= min(region.height, rect.height) * 0.4 else { return nil }
-            return rect.minX
-        }.min()
-        return max(region.maxX, (neighborX.map { $0 - 0.008 }) ?? 1)
     }
 
     nonisolated private static func distributedTranslation(
@@ -491,6 +534,18 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             toolbarDragStart = nil
             constrainWindowGroupToVisibleFrame()
         }
+    }
+
+    private func resizeOverlay(by factor: CGFloat) {
+        guard comparisonWindow == nil else { return }
+        let visibleFrame = window.screen?.visibleFrame
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(window.frame) })?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? window.frame.insetBy(dx: -300, dy: -200)
+        let resized = Self.scaledFrame(for: window.frame, by: factor, visibleFrame: visibleFrame)
+        window.setFrame(resized, display: true, animate: true)
+        standardFrame = resized
+        positionToolbar()
     }
 
     private func constrainWindowGroupToVisibleFrame() {
@@ -609,7 +664,7 @@ struct ScreenshotTranslationOverlayView: View {
         .translationTask(configuration) { session in
             await store.performLineTranslations(
                 using: session,
-                sourceLines: ScreenshotTranslationOverlayWindowController.translatableVisualLines(regions: model.regions)
+                sourceLines: ScreenshotTranslationOverlayWindowController.translatableSentences(regions: model.regions)
             )
         }
     }
@@ -685,7 +740,7 @@ struct ScreenshotTranslationOverlayView: View {
     }
 
     private func requestTranslation() async {
-        let sourceLines = ScreenshotTranslationOverlayWindowController.translatableVisualLines(regions: model.regions)
+        let sourceLines = ScreenshotTranslationOverlayWindowController.translatableSentences(regions: model.regions)
         if store.usesShortcutTranslation {
             configuration = nil
             await store.performShortcutLineTranslations(sourceLines: sourceLines)
@@ -720,6 +775,8 @@ private struct ScreenshotTranslationToolbarView: View {
     @ObservedObject var model: ScreenshotTranslationOverlayModel
     @ObservedObject var store: TranslationEditorStore
     let dragToPointer: (Bool) -> Void
+    let zoomOut: () -> Void
+    let zoomIn: () -> Void
     let toggleComparison: () -> Void
     let close: () -> Void
 
@@ -731,6 +788,18 @@ private struct ScreenshotTranslationToolbarView: View {
                 .gesture(DragGesture()
                     .onChanged { _ in dragToPointer(false) }
                     .onEnded { _ in dragToPointer(true) })
+            Button(action: zoomOut) {
+                Image(systemName: "minus.magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .disabled(model.comparisonEnabled)
+            .help("缩小翻译窗口")
+            Button(action: zoomIn) {
+                Image(systemName: "plus.magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .disabled(model.comparisonEnabled)
+            .help("放大翻译窗口")
             Button {
                 store.copyTranslation()
             } label: {
@@ -753,7 +822,7 @@ private struct ScreenshotTranslationToolbarView: View {
         .font(.system(size: 14, weight: .semibold))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
-        .frame(width: 160, height: 40)
+        .frame(width: 224, height: 40)
         .background(.ultraThickMaterial, in: Capsule())
     }
 }

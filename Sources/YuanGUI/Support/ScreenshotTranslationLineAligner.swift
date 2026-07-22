@@ -4,6 +4,8 @@ enum ScreenshotTranslationLineAligner {
     static func combinedText(for sourceLines: [String]) -> String {
         sourceLines.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+            .enumerated()
+            .map { index, text in "[[\(String(format: "%04d", index))]] \(text)" }
             .joined(separator: "\n")
     }
 
@@ -11,12 +13,43 @@ enum ScreenshotTranslationLineAligner {
         let sourceLines = sourceLines.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         guard !sourceLines.isEmpty else { return [] }
+        if let marked = markedLines(from: translatedText, count: sourceLines.count) {
+            return marked
+        }
         let formatted = TranslationTextFormatter.addingSemanticLineBreaks(translatedText)
         let explicitLines = formatted.components(separatedBy: .newlines)
             .map(singleLine)
             .filter { !$0.isEmpty }
-        if explicitLines.count == sourceLines.count { return explicitLines }
-        return proportionalLines(from: formatted, sourceLines: sourceLines)
+        if explicitLines.count == sourceLines.count { return explicitLines.map(removingMarkers) }
+        return proportionalLines(from: removingMarkers(formatted), sourceLines: sourceLines)
+    }
+
+    private static func markedLines(from text: String, count: Int) -> [String]? {
+        let pattern = #"[\[［]{1,2}\s*(\d{1,4})\s*[\]］]{1,2}"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let value = text as NSString
+        let matches = expression.matches(in: text, range: NSRange(location: 0, length: value.length))
+        guard !matches.isEmpty else { return nil }
+        var mapped: [Int: String] = [:]
+        for (offset, match) in matches.enumerated() {
+            guard match.numberOfRanges > 1 else { continue }
+            let identifier = Int(value.substring(with: match.range(at: 1)))
+            let start = NSMaxRange(match.range)
+            let end = offset + 1 < matches.count ? matches[offset + 1].range.location : value.length
+            guard let identifier, identifier < count, end >= start else { continue }
+            let content = value.substring(with: NSRange(location: start, length: end - start))
+            mapped[identifier] = singleLine(removingMarkers(content))
+        }
+        guard mapped.count == count else { return nil }
+        return (0..<count).map { mapped[$0] ?? "" }
+    }
+
+    private static func removingMarkers(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: #"[\[［]{1,2}\s*\d{1,4}\s*[\]］]{1,2}"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 
     private static func proportionalLines(from text: String, sourceLines: [String]) -> [String] {
