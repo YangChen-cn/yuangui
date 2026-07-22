@@ -12,12 +12,14 @@
   <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-111111?logo=apple">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
+  <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
   <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.1.2.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
 
-“元圭与 VCC”是一款使用 SwiftUI、AppKit 和 Swift Package Manager 开发的原生 macOS 桌宠。它把角色陪伴、音乐播放、系统状态、天气、AI 对话和基础维护工具放在一个轻量的透明悬浮面板中。
+“元圭与 VCC”是一款使用 SwiftUI、AppKit 和 Swift Package Manager 开发的原生 macOS 桌宠与效率工具。它把角色陪伴、音乐播放、系统状态、天气、AI 对话、截图标注、OCR 翻译和基础维护工具整合在轻量的透明悬浮面板与菜单栏入口中。
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
@@ -41,8 +43,9 @@
 - **桌面交互**：支持拖动、四边贴靠、迷你露头、尺寸调节、交互锁定与鼠标穿透，也可一键隐藏或显示 Finder 桌面图标。
 - **菜单栏入口与登录启动**：桌宠隐藏后仍可通过菜单栏恢复；状态栏“工具”页集中提供 AI 对话、清理屋、软件卸载、截图、翻译、废纸篓和设置入口，并可选择登录时自动启动。
 - **区域截图与标注**：按 `Control-A` 选区截图，添加画笔、文字、箭头、形状、高亮和马赛克，并复制或保存 PNG。
-- **截图翻译（OCR）**：按 `Control-Shift-A` 选区截图，通过 Vision 在本机识别中英文等文字，再进入可编辑的翻译窗口。
-- **划词与手动翻译**：按 `Control-Z` 翻译网页或应用选区；没有选中文字时仍会打开窗口，可直接输入原文。默认通过系统快捷指令免费调用 Apple 翻译，也可手动选择系统离线模型或在线 AI；支持修正原文、重新翻译、复制译文，并在可编辑输入框中安全替换原文。
+- **截图翻译（OCR）**：按 `Control-Shift-A` 选区截图，通过 Vision 在本机完成结构化 OCR，再按语义句子批量翻译。可以使用紧凑翻译窗口，也可以把译文按原文位置覆盖到截图上；覆盖层支持自适应字号与换行、缩放、中英对照、复制、拖动和 `Esc` 关闭。
+- **划词与手动翻译**：按 `Control-Z` 翻译网页或应用选区；没有选中文字时仍会打开窗口，可直接输入原文。翻译窗口保持单实例，新窗口会自动关闭上一个；支持修正原文后重新翻译、复制译文，并在可编辑输入框中校验后替换原选区。
+- **可选翻译引擎**：默认通过系统快捷指令免费调用 Apple 翻译，也可手动选择 Apple 本地翻译或在线 AI。在线 AI 只有在用户明确选择并完成配置后才会调用。
 
 系统快捷指令调用参考 [QuickTranslate](https://github.com/ringozzt/quicktranslate)（MIT）：通过 `shortcuts run` 的标准输入传入 JSON，源语言留空自动检测，并使用系统要求的 `zh_CN`、`en_US` 等语言标识。
 
@@ -94,6 +97,16 @@ swift test
 
 不同服务商对基础地址的格式要求可能不同。应用会在同一兼容路径下访问模型列表和聊天接口。
 
+## 截图与翻译
+
+1. 在“设置 → 快捷工具”中配置区域截图、截图翻译和划词翻译的全局快捷键。
+2. 截图翻译使用 macOS Vision 在本机识别文字；截图和 OCR 中间数据只保留在内存中。
+3. 开启“将截图译文覆盖显示在原位置”后，译文会在所选截图区域内按 OCR 坐标排版；关闭后使用可编辑的普通翻译窗口。
+4. 默认翻译引擎为 `YuanGUI.Translate` 系统快捷指令，可从设置页安装；它通过 Apple 翻译工作，不需要付费 API Key。
+5. Apple 本地翻译可能需要先下载对应语言资源；在线 AI 则使用“AI 对话”中配置的 OpenAI 兼容服务。
+6. 划词读取依次尝试辅助功能选区、浏览器脚本和复制选区；如果仍未取得文字，会打开手动输入窗口。
+7. “替换原文”只在原应用、控件和选区仍与取词时一致且位置可编辑时启用，避免写回错误位置。
+
 ## 音乐播放器
 
 1. 从状态栏音乐页或设置中打开完整音乐播放器。
@@ -137,7 +150,7 @@ swift test
 swift test
 ```
 
-当前项目包含 159 项测试，覆盖：
+当前项目包含 160 项测试；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -148,6 +161,7 @@ swift test
 - 精灵资源和动作配置
 - 清理、卸载与路径安全
 - 桌宠布局、贴边和设置持久化
+- 截图 OCR 分组、译文对齐、覆盖层排版、缓存与翻译窗口生命周期
 
 ## 打包 DMG
 
@@ -173,6 +187,8 @@ NOTARY_PROFILE="your-notary-profile" \
 
 ```text
 YuanGUI/
+├── .github/workflows/ # GitHub Actions 自动测试
+├── LICENSE            # GNU GPL v3 许可证全文
 ├── Package.swift
 ├── Sources/YuanGUI/
 │   ├── App/          # 应用入口与菜单栏
@@ -193,7 +209,8 @@ YuanGUI/
 - 系统状态读取通过 macOS 原生接口完成。
 - 角色动作图片按需加载并使用有上限的内存缓存。
 - 当前动作效果是基于 SwiftUI 的轻量变换，不使用持续渲染循环。
+- `push` 和 Pull Request 会运行 `.github/workflows/tests.yml` 中的 `swift test`。
 
 ## 许可证
 
-当前仓库尚未提供开源许可证。除非版权所有者另行授权，否则保留所有权利；公开源码不代表允许复制、修改、分发或商用。
+本项目采用 [GNU General Public License v3.0 only](LICENSE) 开源。你可以在 GPL 3.0 条款下使用、研究、修改和分发本项目；分发修改版或二进制版本时，需要同时满足 GPL 3.0 对源码提供、版权与许可证声明等要求。本项目不提供任何明示或默示担保。
