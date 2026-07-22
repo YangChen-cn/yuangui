@@ -12,6 +12,38 @@ struct ScreenshotTranslationLayout: Equatable, Sendable {
 
 enum ScreenshotTranslationLayoutEngine {
     static let minimumReadableFontSize: CGFloat = 11
+    static let minimumInPlaceFontSize: CGFloat = 7
+
+    /// Layout used by the live screenshot overlay. Unlike the general-purpose solver, this
+    /// deliberately never borrows whitespace, moves a block, or merges neighboring blocks.
+    /// Every translated visual line stays on the exact OCR rectangle that produced it.
+    static func inPlaceLayout(
+        blocks: [ScreenshotTranslationBlock],
+        in size: CGSize
+    ) -> ScreenshotTranslationLayout {
+        guard size.width > 0, size.height > 0 else { return ScreenshotTranslationLayout(blocks: []) }
+        let bounds = CGRect(origin: .zero, size: size)
+        let displayBlocks = blocks.map { block in
+            let frame = clampedDisplayRect(for: block.normalizedRect, in: size, bounds: bounds)
+            let preferredMaximum = min(
+                40,
+                max(minimumInPlaceFontSize, block.sourceFontScale * size.height * 0.94)
+            )
+            let fitting = fittingFontSize(
+                for: block.text,
+                in: frame.size,
+                minimum: minimumInPlaceFontSize,
+                maximum: preferredMaximum
+            )
+            return displayBlock(
+                source: block,
+                frame: frame,
+                fontSize: fitting.fontSize,
+                usesOverflowCard: false
+            )
+        }
+        return ScreenshotTranslationLayout(blocks: displayBlocks)
+    }
 
     static func layout(
         blocks: [ScreenshotTranslationBlock],

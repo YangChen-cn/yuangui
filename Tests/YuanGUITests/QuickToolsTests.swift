@@ -150,7 +150,7 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testScreenshotTranslationDisplayBlocksFitEveryLineWithoutOverlapOrTruncation() {
+    func testScreenshotTranslationDisplayBlocksStayOnExactOCRFramesAndUseSevenPointFloor() {
         let blocks = [
             ScreenshotTranslationBlock(
                 id: 0,
@@ -171,27 +171,24 @@ final class QuickToolsTests: XCTestCase {
         )
 
         XCTAssertEqual(display.count, 2)
-        for block in display {
-            let font = NSFont.systemFont(ofSize: block.fontSize, weight: .regular)
-            let measured = (block.text as NSString).boundingRect(
-                with: CGSize(width: block.frame.width - 8, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: font]
+        for (index, block) in display.enumerated() {
+            assertRectEqual(
+                block.frame,
+                ScreenshotTranslationOverlayView.displayRect(
+                    for: blocks[index].normalizedRect,
+                    in: CGSize(width: 500, height: 260)
+                )
             )
-            let measuredHeight = ceil(measured.height + block.fontSize * 0.12)
-            XCTAssertLessThanOrEqual(measuredHeight, block.frame.height - 2)
             XCTAssertGreaterThanOrEqual(
                 block.fontSize,
-                ScreenshotTranslationLayoutEngine.minimumReadableFontSize
+                ScreenshotTranslationLayoutEngine.minimumInPlaceFontSize
             )
             XCTAssertFalse(block.usesOverflowCard)
         }
-        let sorted = display.sorted { $0.frame.minY < $1.frame.minY }
-        XCTAssertLessThanOrEqual(sorted[0].frame.maxY + 1, sorted[1].frame.minY)
     }
 
     @MainActor
-    func testScreenshotTranslationUsesNearbyWhitespaceForLargerReadableText() {
+    func testScreenshotTranslationDoesNotBorrowNearbyWhitespace() {
         let target = ScreenshotTranslationBlock(
             id: 1,
             normalizedRect: CGRect(x: 0.1, y: 0.48, width: 0.6, height: 0.04),
@@ -221,12 +218,12 @@ final class QuickToolsTests: XCTestCase {
             in: CGSize(width: 500, height: 260)
         ).first { $0.id == target.id }!
 
-        XCTAssertGreaterThan(isolated.frame.height, dense.frame.height)
-        XCTAssertGreaterThan(isolated.fontSize, dense.fontSize)
+        XCTAssertEqual(isolated.frame, dense.frame)
+        XCTAssertEqual(isolated.fontSize, dense.fontSize)
     }
 
     @MainActor
-    func testScreenshotTranslationSeparatesAlreadyOverlappingOCRRows() {
+    func testScreenshotTranslationPreservesAlreadyOverlappingOCRRowsInsteadOfMovingThem() {
         let blocks = [
             ScreenshotTranslationBlock(
                 id: 0,
@@ -253,9 +250,14 @@ final class QuickToolsTests: XCTestCase {
         ).sorted { $0.frame.minY < $1.frame.minY }
 
         XCTAssertEqual(display.count, 3)
-        for pair in zip(display, display.dropFirst()) {
-            XCTAssertLessThanOrEqual(pair.0.frame.maxY + 0.5, pair.1.frame.minY)
-            XCTAssertFalse(pair.0.frame.intersects(pair.1.frame))
+        let expectedFrames = blocks.map {
+            ScreenshotTranslationOverlayView.displayRect(
+                for: $0.normalizedRect,
+                in: CGSize(width: 720, height: 420)
+            )
+        }.sorted { $0.minY < $1.minY }
+        for (actual, expected) in zip(display.map(\.frame), expectedFrames) {
+            assertRectEqual(actual, expected)
         }
     }
 
@@ -396,7 +398,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(firstDescription?.columnIndex, 0)
     }
 
-    func testScreenshotTranslationBatchesParagraphsAndProtectsURLs() {
+    func testScreenshotTranslationBatchesVisualLinesAndProtectsURLs() {
         let regions = [
             OCRTextRegion(text: "First visual line", normalizedRect: CGRect(x: 0.1, y: 0.75, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 0),
             OCRTextRegion(text: "continues here", normalizedRect: CGRect(x: 0.1, y: 0.68, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 1),
@@ -410,20 +412,19 @@ final class QuickToolsTests: XCTestCase {
         )
         let blocks = ScreenshotTranslationOverlayWindowController.translationBlocks(
             regions: regions,
-            translatedLines: ["第一段翻译继续", "第二段翻译"]
+            translatedLines: ["第一行译文", "继续译文", "第二段译文"]
         )
-        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks.count, 3)
         XCTAssertFalse(blocks.contains { $0.text.contains("example.com") })
-        XCTAssertEqual(blocks.map(\.text).joined(), "第一段翻译继续第二段翻译")
-        let sourceUnion = regions[0].normalizedRect.union(regions[1].normalizedRect)
-        XCTAssertEqual(blocks[0].normalizedRect.minX, sourceUnion.minX)
-        XCTAssertEqual(blocks[0].normalizedRect.minY, sourceUnion.minY)
-        XCTAssertEqual(blocks[0].normalizedRect.height, sourceUnion.height)
-        XCTAssertGreaterThanOrEqual(blocks[0].normalizedRect.width, sourceUnion.width)
-        XCTAssertLessThanOrEqual(blocks[0].normalizedRect.maxX, 1)
+        XCTAssertEqual(blocks.map(\.text), ["第一行译文", "继续译文", "第二段译文"])
+        XCTAssertEqual(blocks.map(\.normalizedRect), [
+            regions[0].normalizedRect,
+            regions[1].normalizedRect,
+            regions[3].normalizedRect
+        ])
     }
 
-    func testWrappedVisualLinesRenderAsOneLogicalParagraphBlock() {
+    func testWrappedVisualLinesKeepIndependentOriginalFrames() {
         let regions = [
             OCRTextRegion(
                 text: "我会先执行",
@@ -445,16 +446,11 @@ final class QuickToolsTests: XCTestCase {
         )
         let blocks = ScreenshotTranslationOverlayWindowController.translationBlocks(
             regions: regions,
-            translatedLines: ["I will run swift test first, and then build the app."]
+            translatedLines: ["I will run", "swift test first, then build the app."]
         )
-        XCTAssertEqual(blocks.count, 1)
-        XCTAssertEqual(blocks[0].text, "I will run swift test first, and then build the app.")
-        let sourceUnion = regions[0].normalizedRect.union(regions[1].normalizedRect)
-        XCTAssertEqual(blocks[0].normalizedRect.minX, sourceUnion.minX)
-        XCTAssertEqual(blocks[0].normalizedRect.minY, sourceUnion.minY)
-        XCTAssertEqual(blocks[0].normalizedRect.height, sourceUnion.height)
-        XCTAssertGreaterThanOrEqual(blocks[0].normalizedRect.width, sourceUnion.width)
-        XCTAssertLessThanOrEqual(blocks[0].normalizedRect.maxX, 1)
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks.map(\.text), ["I will run", "swift test first, then build the app."])
+        XCTAssertEqual(blocks.map(\.normalizedRect), regions.map(\.normalizedRect))
     }
 
     func testScreenshotTranslationKeepsVisualLineBreaksWhileBatchingAndSkipsProtectedRows() {
@@ -1011,6 +1007,19 @@ final class QuickToolsTests: XCTestCase {
             shortcut
         )
         XCTAssertNil(SystemShortcutTranslationService.installURL(resourceRoots: [root.appendingPathComponent("missing")]))
+    }
+
+    private func assertRectEqual(
+        _ actual: CGRect,
+        _ expected: CGRect,
+        accuracy: CGFloat = 0.0001,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(actual.minX, expected.minX, accuracy: accuracy, file: file, line: line)
+        XCTAssertEqual(actual.minY, expected.minY, accuracy: accuracy, file: file, line: line)
+        XCTAssertEqual(actual.width, expected.width, accuracy: accuracy, file: file, line: line)
+        XCTAssertEqual(actual.height, expected.height, accuracy: accuracy, file: file, line: line)
     }
 
     private func makeImage(width: Int, height: Int) throws -> CGImage {

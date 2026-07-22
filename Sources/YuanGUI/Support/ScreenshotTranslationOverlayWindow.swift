@@ -259,16 +259,16 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         regions: [OCRTextRegion],
         translatedText: String
     ) -> [ScreenshotTranslationBlock] {
-        let paragraphGroups = translatableParagraphGroups(regions: regions)
-        guard !paragraphGroups.isEmpty else { return [] }
+        let translatable = translatableRegions(regions: regions)
+        guard !translatable.isEmpty else { return [] }
         let lines = translatedText.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let assignedLines = lines.count == paragraphGroups.count
+        let assignedLines = lines.count == translatable.count
             ? lines
             : distributedTranslation(
                 translatedText,
-                matching: paragraphGroups.map(paragraphProxyRegion)
+                matching: translatable
             )
         return translationBlocks(regions: regions, translatedLines: assignedLines)
     }
@@ -280,13 +280,6 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         let translatable = translatableRegions(regions: regions)
         if translatedLines.count == translatable.count {
             return makeTranslationBlocks(regions: translatable, translatedLines: translatedLines)
-        }
-        let paragraphGroups = translatableParagraphGroups(regions: regions)
-        if translatedLines.count == paragraphGroups.count {
-            return makeParagraphTranslationBlocks(
-                groups: paragraphGroups,
-                translatedParagraphs: translatedLines
-            )
         }
         let joined = translatedLines.joined(separator: "\n")
         return makeTranslationBlocks(
@@ -387,20 +380,9 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             let translation = pair.1.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !translation.isEmpty else { return nil }
             let region = pair.0
-            let expansion = max(1, CGFloat(translation.count) / CGFloat(max(1, region.text.count)))
-            let rightBoundary = availableRightBoundary(for: index, in: regions)
-            let width = min(
-                max(region.normalizedRect.width, rightBoundary - region.normalizedRect.minX),
-                region.normalizedRect.width * expansion
-            )
             return ScreenshotTranslationBlock(
                 id: index,
-                normalizedRect: CGRect(
-                    x: region.normalizedRect.minX,
-                    y: region.normalizedRect.minY,
-                    width: width,
-                    height: region.normalizedRect.height
-                ),
+                normalizedRect: region.normalizedRect,
                 text: translation,
                 backgroundColor: region.backgroundColor,
                 sourceFontScale: region.estimatedFontScale
@@ -413,7 +395,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         in size: CGSize
     ) -> [ScreenshotTranslationDisplayBlock] {
         TranslationPerformance.measureSync(.layout) {
-            ScreenshotTranslationLayoutEngine.layout(blocks: blocks, in: size).blocks
+            ScreenshotTranslationLayoutEngine.inPlaceLayout(blocks: blocks, in: size).blocks
         }
     }
 
@@ -627,7 +609,7 @@ struct ScreenshotTranslationOverlayView: View {
         .translationTask(configuration) { session in
             await store.performLineTranslations(
                 using: session,
-                sourceLines: ScreenshotTranslationOverlayWindowController.translatableParagraphs(regions: model.regions)
+                sourceLines: ScreenshotTranslationOverlayWindowController.translatableVisualLines(regions: model.regions)
             )
         }
     }
@@ -668,12 +650,13 @@ struct ScreenshotTranslationOverlayView: View {
             .lineSpacing(block.lineSpacing)
             .lineLimit(nil)
             .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: false)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 4)
             .frame(width: max(block.frame.width, 1), height: max(block.frame.height, 1), alignment: .leading)
             .background(blockBackground(block.backgroundColor))
             .shadow(color: block.backgroundColor.variation > 0.08 ? (block.backgroundColor.isDark ? .black.opacity(0.7) : .white.opacity(0.8)) : .clear, radius: 0.7)
             .position(x: block.frame.midX, y: block.frame.midY)
+            .clipped()
     }
 
     @ViewBuilder
@@ -702,7 +685,7 @@ struct ScreenshotTranslationOverlayView: View {
     }
 
     private func requestTranslation() async {
-        let sourceLines = ScreenshotTranslationOverlayWindowController.translatableParagraphs(regions: model.regions)
+        let sourceLines = ScreenshotTranslationOverlayWindowController.translatableVisualLines(regions: model.regions)
         if store.usesShortcutTranslation {
             configuration = nil
             await store.performShortcutLineTranslations(sourceLines: sourceLines)
