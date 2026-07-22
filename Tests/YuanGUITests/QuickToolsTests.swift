@@ -130,6 +130,32 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(layout.resultHeight, max(68, ceil(measured.height) + 20), accuracy: 1)
     }
 
+    @MainActor
+    func testShowingTranslationEditorClosesPreviousWindow() {
+        let suiteName = "TranslationWindowSingletonTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let controller = QuickToolsController(settings: QuickToolsSettingsStore(defaults: defaults))
+        let snapshot = TranslationTargetSnapshot(
+            processID: ProcessInfo.processInfo.processIdentifier,
+            applicationName: "手动输入",
+            element: AXUIElementCreateSystemWide(),
+            originalText: "",
+            fullValue: nil,
+            selectedRange: nil,
+            role: nil,
+            canReplace: false
+        )
+
+        let first = controller.showTranslationEditor(snapshot: snapshot)
+        XCTAssertTrue(first.isVisible)
+        let second = controller.showTranslationEditor(snapshot: snapshot)
+
+        XCTAssertFalse(first.isVisible)
+        XCTAssertTrue(second.isVisible)
+        second.close()
+    }
+
     func testScreenshotTranslationToolbarChoosesAvailableOutsideEdge() {
         let screen = CGRect(x: 0, y: 0, width: 1_000, height: 700)
         let toolbarSize = CGSize(width: 160, height: 40)

@@ -23,6 +23,7 @@ final class QuickToolsController: ObservableObject {
     private weak var aiSettings: AISettingsStore?
     private var screenshotEditor: ScreenshotEditorWindowController?
     private var translationEditor: TranslationEditorWindowController?
+    private var translationEditorPresentationID: UUID?
     private var screenshotTranslationOverlay: ScreenshotTranslationOverlayWindowController?
 
     init(
@@ -221,15 +222,22 @@ final class QuickToolsController: ObservableObject {
     }
 
     @discardableResult
-    private func showTranslationEditor(snapshot: TranslationTargetSnapshot) -> TranslationEditorWindowController {
+    func showTranslationEditor(snapshot: TranslationTargetSnapshot) -> TranslationEditorWindowController {
+        translationEditor?.close()
         translationEditor = nil
+        let presentationID = UUID()
+        translationEditorPresentationID = presentationID
         let controller = TranslationEditorWindowController(
             snapshot: snapshot,
             nonChineseTarget: settings.nonChineseTarget,
             chineseTarget: settings.chineseTarget,
             engine: settings.translationEngine,
             onlineConfiguration: onlineTranslationConfiguration,
-            onClose: { [weak self] in self?.translationEditor = nil }
+            onClose: { [weak self] in
+                guard self?.translationEditorPresentationID == presentationID else { return }
+                self?.translationEditor = nil
+                self?.translationEditorPresentationID = nil
+            }
         )
         translationEditor = controller
         controller.show()

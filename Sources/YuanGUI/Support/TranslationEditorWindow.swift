@@ -176,6 +176,14 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
         window.makeKeyAndOrderFront(nil)
     }
 
+    func close() {
+        window.close()
+    }
+
+    var isVisible: Bool {
+        window.isVisible
+    }
+
     func updateSourceText(_ text: String) {
         store.updateEditableSourceText(text)
     }
