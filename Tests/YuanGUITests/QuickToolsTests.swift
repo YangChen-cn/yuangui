@@ -528,6 +528,64 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(receivedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
     }
 
+    func testOnlineTranslationKeepsStructuredSegmentIdentifiers() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [TranslationURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let service = OnlineTranslationService(session: session)
+        TranslationURLProtocol.handler = { request in
+            let response = #"{"choices":[{"message":{"content":"{\"segments\":[{\"id\":\"section-a\",\"text\":\"First\"},{\"id\":\"section-b\",\"text\":\"Second\"}]}"}}]}"#
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(response.utf8)
+            )
+        }
+        defer {
+            TranslationURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let segments = [
+            TranslationSegment(id: "section-a", sourceText: "第一段"),
+            TranslationSegment(id: "section-b", sourceText: "第二段")
+        ]
+        let result = try await service.translateSegments(
+            segments,
+            target: .english,
+            configuration: AITranslationConfiguration(
+                baseURL: "https://example.com/v1",
+                model: "test-model",
+                apiKey: "test-key"
+            )
+        )
+
+        XCTAssertEqual(result.map(\.id), ["section-a", "section-b"])
+        XCTAssertEqual(result.map(\.translatedText), ["First", "Second"])
+    }
+
+    func testTranslationPipelineCachesIdenticalRequestsInMemory() async throws {
+        let pipeline = TranslationPipeline(maximumEntryCount: 4, maximumEstimatedBytes: 8_192)
+        let request = TranslationRequest(
+            segments: [TranslationSegment(id: "0", sourceText: "缓存测试")],
+            targetLanguage: .english,
+            engine: .systemShortcut
+        )
+        let counter = TranslationOperationCounter()
+        let operation: TranslationPipeline.Operation = {
+            await counter.increment()
+            return [TranslationSegmentResult(id: "0", sourceText: "缓存测试", translatedText: "Cache test")]
+        }
+
+        let first = try await pipeline.translate(request, operation: operation)
+        let second = try await pipeline.translate(request, operation: operation)
+        let invocationCount = await counter.value
+        let cachedEntryCount = await pipeline.cachedEntryCount()
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(invocationCount, 1)
+        XCTAssertEqual(cachedEntryCount, 1)
+    }
+
     func testSystemShortcutTranslationPayloadUsesYuanGUIDictionaryProtocol() throws {
         let data = try SystemShortcutTranslationService.inputData(text: "并检测冲突", target: .english)
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
@@ -571,7 +629,7 @@ final class QuickToolsTests: XCTestCase {
     }
 }
 
-private final class StubShortcutTranslationService: SystemShortcutTranslationServicing {
+private final class StubShortcutTranslationService: SystemShortcutTranslationServicing, @unchecked Sendable {
     private(set) var callCount = 0
     private(set) var lastInput = ""
 
@@ -582,6 +640,11 @@ private final class StubShortcutTranslationService: SystemShortcutTranslationSer
             .replacingOccurrences(of: "第一行", with: "First row")
             .replacingOccurrences(of: "第二行", with: "Second row")
     }
+}
+
+private actor TranslationOperationCounter {
+    private(set) var value = 0
+    func increment() { value += 1 }
 }
 
 private final class TranslationURLProtocol: URLProtocol {

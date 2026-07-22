@@ -30,6 +30,7 @@ final class TranslationEditorStore: ObservableObject {
     private let shortcutService: SystemShortcutTranslationServicing
     private let onlineService: OnlineTranslationServicing
     private let onlineConfiguration: AITranslationConfiguration?
+    private let pipeline: TranslationPipeline
     private let onReplaced: () -> Void
     private let nonChineseTarget: QuickToolLanguage
     private let chineseTarget: QuickToolLanguage
@@ -45,6 +46,7 @@ final class TranslationEditorStore: ObservableObject {
         replacementService: AccessibilityTextReplacing? = nil,
         shortcutService: SystemShortcutTranslationServicing = SystemShortcutTranslationService(),
         onlineService: OnlineTranslationServicing = OnlineTranslationService(),
+        pipeline: TranslationPipeline = .shared,
         onReplaced: @escaping () -> Void
     ) {
         targetSnapshot = snapshot
@@ -57,6 +59,7 @@ final class TranslationEditorStore: ObservableObject {
         self.engine = engine
         self.onlineConfiguration = onlineConfiguration
         self.onlineService = onlineService
+        self.pipeline = pipeline
         self.onReplaced = onReplaced
         self.nonChineseTarget = nonChineseTarget
         self.chineseTarget = chineseTarget
@@ -135,10 +138,21 @@ final class TranslationEditorStore: ObservableObject {
         state = .translating
         message = nil
         do {
-            let response = try await session.translate(requestedSource)
+            let segment = TranslationSegment(id: "0", sourceText: requestedSource)
+            let request = translationRequest(segments: [segment], target: requestedTarget)
+            let results = try await pipeline.translate(request) {
+                let response = try await session.translate(requestedSource)
+                return [TranslationSegmentResult(
+                    id: segment.id,
+                    sourceText: segment.sourceText,
+                    translatedText: response.targetText,
+                    detectedSourceLanguage: response.sourceLanguage.minimalIdentifier
+                )]
+            }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            detectedSourceLanguage = response.sourceLanguage.minimalIdentifier
-            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(response.targetText)
+            guard let result = results.first else { throw TranslationPipelineError.emptyResult }
+            detectedSourceLanguage = result.detectedSourceLanguage
+            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result.translatedText)
             translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
@@ -169,13 +183,23 @@ final class TranslationEditorStore: ObservableObject {
         state = .translating
         message = nil
         do {
-            let result = try await onlineService.translate(
-                requestedSource,
-                target: requestedTarget,
-                configuration: onlineConfiguration
-            )
+            let segment = TranslationSegment(id: "0", sourceText: requestedSource)
+            let request = translationRequest(segments: [segment], target: requestedTarget)
+            let results = try await pipeline.translate(request) { [onlineService, onlineConfiguration] in
+                let result = try await onlineService.translate(
+                    requestedSource,
+                    target: requestedTarget,
+                    configuration: onlineConfiguration
+                )
+                return [TranslationSegmentResult(
+                    id: segment.id,
+                    sourceText: segment.sourceText,
+                    translatedText: result
+                )]
+            }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result)
+            guard let result = results.first else { throw TranslationPipelineError.emptyResult }
+            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result.translatedText)
             translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
@@ -200,9 +224,19 @@ final class TranslationEditorStore: ObservableObject {
         state = .translating
         message = nil
         do {
-            let result = try await shortcutService.translate(requestedSource, target: requestedTarget)
+            let segment = TranslationSegment(id: "0", sourceText: requestedSource)
+            let request = translationRequest(segments: [segment], target: requestedTarget)
+            let results = try await pipeline.translate(request) { [shortcutService] in
+                let result = try await shortcutService.translate(requestedSource, target: requestedTarget)
+                return [TranslationSegmentResult(
+                    id: segment.id,
+                    sourceText: segment.sourceText,
+                    translatedText: result
+                )]
+            }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result)
+            guard let result = results.first else { throw TranslationPipelineError.emptyResult }
+            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result.translatedText)
             translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
@@ -228,10 +262,29 @@ final class TranslationEditorStore: ObservableObject {
         state = .translating
         message = nil
         do {
-            let response = try await session.translate(ScreenshotTranslationLineAligner.combinedText(for: lines))
+            let segments = Self.translationSegments(for: lines)
+            let request = translationRequest(segments: segments, target: requestedTarget)
+            let results = try await pipeline.translate(request) {
+                let batch = segments.map {
+                    TranslationSession.Request(sourceText: $0.sourceText, clientIdentifier: $0.id)
+                }
+                var mapped: [String: TranslationSegmentResult] = [:]
+                for try await response in session.translate(batch: batch) {
+                    guard let identifier = response.clientIdentifier,
+                          let segment = segments.first(where: { $0.id == identifier }) else { continue }
+                    mapped[identifier] = TranslationSegmentResult(
+                        id: identifier,
+                        sourceText: segment.sourceText,
+                        translatedText: response.targetText,
+                        detectedSourceLanguage: response.sourceLanguage.minimalIdentifier
+                    )
+                }
+                return segments.compactMap { mapped[$0.id] }
+            }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            detectedSourceLanguage = response.sourceLanguage.minimalIdentifier
-            applyLineTranslations(ScreenshotTranslationLineAligner.align(response.targetText, to: lines))
+            guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
+            detectedSourceLanguage = results.compactMap(\.detectedSourceLanguage).first
+            applyLineTranslations(results.map(\.translatedText))
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
@@ -262,13 +315,18 @@ final class TranslationEditorStore: ObservableObject {
         state = .translating
         message = nil
         do {
-            let result = try await onlineService.translate(
-                ScreenshotTranslationLineAligner.combinedText(for: lines),
-                target: requestedTarget,
-                configuration: onlineConfiguration
-            )
+            let segments = Self.translationSegments(for: lines)
+            let request = translationRequest(segments: segments, target: requestedTarget)
+            let results = try await pipeline.translate(request) { [onlineService, onlineConfiguration] in
+                try await onlineService.translateSegments(
+                    segments,
+                    target: requestedTarget,
+                    configuration: onlineConfiguration
+                )
+            }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            applyLineTranslations(ScreenshotTranslationLineAligner.align(result, to: lines))
+            guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
+            applyLineTranslations(results.map(\.translatedText))
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
@@ -293,12 +351,25 @@ final class TranslationEditorStore: ObservableObject {
         state = .translating
         message = nil
         do {
-            let translated = try await shortcutService.translate(
-                ScreenshotTranslationLineAligner.combinedText(for: lines),
-                target: requestedTarget
-            )
+            let segments = Self.translationSegments(for: lines)
+            let request = translationRequest(segments: segments, target: requestedTarget)
+            let results = try await pipeline.translate(request) { [shortcutService] in
+                let translated = try await shortcutService.translate(
+                    ScreenshotTranslationLineAligner.combinedText(for: lines),
+                    target: requestedTarget
+                )
+                let aligned = ScreenshotTranslationLineAligner.align(translated, to: lines)
+                return zip(segments, aligned).map { segment, text in
+                    TranslationSegmentResult(
+                        id: segment.id,
+                        sourceText: segment.sourceText,
+                        translatedText: text
+                    )
+                }
+            }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            applyLineTranslations(ScreenshotTranslationLineAligner.align(translated, to: lines))
+            guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
+            applyLineTranslations(results.map(\.translatedText))
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
@@ -358,4 +429,40 @@ final class TranslationEditorStore: ObservableObject {
             .filter { !$0.isEmpty }
     }
 
+    private static func translationSegments(for lines: [String]) -> [TranslationSegment] {
+        lines.enumerated().map { index, text in
+            TranslationSegment(id: String(index), sourceText: text)
+        }
+    }
+
+    private func translationRequest(
+        segments: [TranslationSegment],
+        target: QuickToolLanguage
+    ) -> TranslationRequest {
+        let variant: String
+        if engine == .onlineAI, let onlineConfiguration {
+            variant = onlineConfiguration.baseURL + "\u{0}" + onlineConfiguration.model
+        } else {
+            variant = ""
+        }
+        return TranslationRequest(
+            segments: segments,
+            targetLanguage: target,
+            engine: engine,
+            configurationVariant: variant
+        )
+    }
+
+}
+
+private enum TranslationPipelineError: LocalizedError {
+    case emptyResult
+    case incompleteResult
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyResult: "翻译服务没有返回译文。"
+        case .incompleteResult: "部分截图文字没有返回译文，请重试。"
+        }
+    }
 }

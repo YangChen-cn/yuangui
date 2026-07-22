@@ -1,11 +1,11 @@
 import Darwin
 import Foundation
 
-protocol SystemShortcutTranslationServicing {
+protocol SystemShortcutTranslationServicing: Sendable {
     func translate(_ text: String, target: QuickToolLanguage) async throws -> String
 }
 
-struct SystemShortcutTranslationService: SystemShortcutTranslationServicing {
+struct SystemShortcutTranslationService: SystemShortcutTranslationServicing, Sendable {
     static let shortcutName = "YuanGUI.Translate"
     static var installURL: URL? {
         installURL(resourceRoots: defaultResourceRoots)
