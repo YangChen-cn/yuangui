@@ -15,12 +15,14 @@ concurrency:
 jobs:
   swift-test:
     name: Swift tests
-    runs-on: macos-15
+    # The app still targets macOS 15, but compilation needs the macOS 26 SDK
+    # for APIs guarded by `#available(macOS 26, *)`.
+    runs-on: macos-26
     timeout-minutes: 20
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Show Swift toolchain
         run: swift --version
