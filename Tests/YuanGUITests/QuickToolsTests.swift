@@ -173,11 +173,18 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(display.count, 2)
         for block in display {
             let font = NSFont.systemFont(ofSize: block.fontSize, weight: .regular)
-            let measuredWidth = ceil((block.text as NSString).size(withAttributes: [.font: font]).width)
-            let measuredHeight = ceil(font.ascender - font.descender + font.leading)
-            XCTAssertLessThanOrEqual(measuredWidth, block.frame.width - 4)
+            let measured = (block.text as NSString).boundingRect(
+                with: CGSize(width: block.frame.width - 8, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: font]
+            )
+            let measuredHeight = ceil(measured.height + block.fontSize * 0.12)
             XCTAssertLessThanOrEqual(measuredHeight, block.frame.height - 2)
-            XCTAssertGreaterThanOrEqual(block.fontSize, 5)
+            XCTAssertGreaterThanOrEqual(
+                block.fontSize,
+                ScreenshotTranslationLayoutEngine.minimumReadableFontSize
+            )
+            XCTAssertFalse(block.usesOverflowCard)
         }
         let sorted = display.sorted { $0.frame.minY < $1.frame.minY }
         XCTAssertLessThanOrEqual(sorted[0].frame.maxY + 1, sorted[1].frame.minY)
@@ -294,6 +301,55 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(aligned.joined(separator: " "), "The first item is short. The second item contains noticeably more detail. The third item is brief.")
         XCTAssertTrue(aligned[0].hasSuffix("."))
         XCTAssertTrue(aligned[1].hasSuffix("."))
+    }
+
+    func testOCRLayoutAnalyzerDeduplicatesAndAssignsStableReadingOrder() {
+        let regions = [
+            OCRTextRegion(
+                text: "Second line",
+                normalizedRect: CGRect(x: 0.1, y: 0.60, width: 0.45, height: 0.05),
+                confidence: 0.92
+            ),
+            OCRTextRegion(
+                text: "First line",
+                normalizedRect: CGRect(x: 0.1, y: 0.72, width: 0.45, height: 0.05),
+                confidence: 0.96
+            ),
+            OCRTextRegion(
+                text: "First line",
+                normalizedRect: CGRect(x: 0.102, y: 0.721, width: 0.448, height: 0.049),
+                confidence: 0.61
+            ),
+            OCRTextRegion(
+                text: "Footer",
+                normalizedRect: CGRect(x: 0.65, y: 0.12, width: 0.2, height: 0.04),
+                confidence: 0.88
+            )
+        ]
+
+        let recognition = OCRLayoutAnalyzer.organize(regions)
+
+        XCTAssertEqual(recognition.regions.map(\.text), ["First line", "Second line", "Footer"])
+        XCTAssertEqual(recognition.regions.map(\.readingOrder), [0, 1, 2])
+        XCTAssertLessThan(recognition.regions[0].paragraphIndex, recognition.regions[2].paragraphIndex)
+    }
+
+    func testScreenshotLayoutUsesReadableOverflowCardForImpossibleDensity() {
+        let block = ScreenshotTranslationBlock(
+            id: 0,
+            normalizedRect: CGRect(x: 0.05, y: 0.45, width: 0.25, height: 0.05),
+            text: "A complete translation that cannot fit inside this extremely small region without becoming unreadable.",
+            backgroundColor: .white
+        )
+
+        let result = ScreenshotTranslationLayoutEngine.layout(
+            blocks: [block],
+            in: CGSize(width: 120, height: 40)
+        )
+
+        XCTAssertEqual(result.blocks[0].fontSize, ScreenshotTranslationLayoutEngine.minimumReadableFontSize)
+        XCTAssertTrue(result.blocks[0].usesOverflowCard)
+        XCTAssertEqual(result.overflowBlocks[0].text, block.text)
     }
 
     func testScreenshotTranslationOverlayStaysOnCurrentDesktop() {

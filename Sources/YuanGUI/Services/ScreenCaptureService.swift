@@ -73,7 +73,9 @@ struct ScreenCaptureService: ScreenCapturing {
             throw ScreenCaptureServiceError.permissionDenied
         }
 
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        let content = try await ScreenCaptureContentCache.shared.content(
+            containingWindowNumbers: excludingWindowNumbers
+        )
         guard let display = content.displays.first(where: { $0.displayID == selection.displayID }) else {
             throw ScreenCaptureServiceError.displayUnavailable
         }
@@ -92,5 +94,23 @@ struct ScreenCaptureService: ScreenCapturing {
             configuration: configuration
         )
         return CapturedScreenshot(image: image, selection: selection)
+    }
+}
+
+private actor ScreenCaptureContentCache {
+    static let shared = ScreenCaptureContentCache()
+
+    private let clock = ContinuousClock()
+    private var cached: (content: SCShareableContent, createdAt: ContinuousClock.Instant)?
+
+    func content(containingWindowNumbers required: Set<Int>) async throws -> SCShareableContent {
+        if let cached,
+           clock.now - cached.createdAt < .seconds(2),
+           required.isSubset(of: Set(cached.content.windows.map { Int($0.windowID) })) {
+            return cached.content
+        }
+        let fresh = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        cached = (fresh, clock.now)
+        return fresh
     }
 }

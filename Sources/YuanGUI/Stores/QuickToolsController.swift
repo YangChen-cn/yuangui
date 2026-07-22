@@ -156,8 +156,9 @@ final class QuickToolsController: ObservableObject {
         for purpose: CapturePurpose
     ) async {
         do {
-            try await Task.sleep(for: .milliseconds(80))
-            let captured = try await captureService.capture(selection, excludingWindowNumbers: windows)
+            let captured = try await TranslationPerformance.measure(.capture) {
+                try await captureService.capture(selection, excludingWindowNumbers: windows)
+            }
             selectionController.cancel()
             isCapturing = false
             switch purpose {

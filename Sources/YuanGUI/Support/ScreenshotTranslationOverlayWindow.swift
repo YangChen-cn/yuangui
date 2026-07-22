@@ -7,6 +7,21 @@ struct ScreenshotTranslationBlock: Equatable, Identifiable, Sendable {
     let normalizedRect: CGRect
     let text: String
     let backgroundColor: OCRBackgroundColor
+    let sourceFontScale: CGFloat
+
+    init(
+        id: Int,
+        normalizedRect: CGRect,
+        text: String,
+        backgroundColor: OCRBackgroundColor,
+        sourceFontScale: CGFloat? = nil
+    ) {
+        self.id = id
+        self.normalizedRect = normalizedRect
+        self.text = text
+        self.backgroundColor = backgroundColor
+        self.sourceFontScale = sourceFontScale ?? normalizedRect.height
+    }
 }
 
 struct ScreenshotTranslationDisplayBlock: Equatable, Identifiable, Sendable {
@@ -15,6 +30,26 @@ struct ScreenshotTranslationDisplayBlock: Equatable, Identifiable, Sendable {
     let text: String
     let fontSize: CGFloat
     let backgroundColor: OCRBackgroundColor
+    let lineSpacing: CGFloat
+    let usesOverflowCard: Bool
+
+    init(
+        id: Int,
+        frame: CGRect,
+        text: String,
+        fontSize: CGFloat,
+        backgroundColor: OCRBackgroundColor,
+        lineSpacing: CGFloat = 1,
+        usesOverflowCard: Bool = false
+    ) {
+        self.id = id
+        self.frame = frame
+        self.text = text
+        self.fontSize = fontSize
+        self.backgroundColor = backgroundColor
+        self.lineSpacing = lineSpacing
+        self.usesOverflowCard = usesOverflowCard
+    }
 }
 
 @MainActor
@@ -254,109 +289,17 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
                     height: region.normalizedRect.height
                 ),
                 text: translation,
-                backgroundColor: region.backgroundColor
+                backgroundColor: region.backgroundColor,
+                sourceFontScale: region.estimatedFontScale
             )
         }
     }
 
-    @MainActor
     static func displayBlocks(
         from blocks: [ScreenshotTranslationBlock],
         in size: CGSize
     ) -> [ScreenshotTranslationDisplayBlock] {
-        guard size.width > 0, size.height > 0 else { return [] }
-        let bounds = CGRect(origin: .zero, size: size)
-        let anchors = blocks.map { block in
-            clampedDisplayRect(for: block.normalizedRect, in: size, bounds: bounds)
-        }
-        return blocks.enumerated().map { index, block in
-            let frame = readableFrame(for: index, anchors: anchors, bounds: bounds)
-            return ScreenshotTranslationDisplayBlock(
-                id: block.id,
-                frame: frame,
-                text: block.text,
-                fontSize: fittingFontSize(for: block.text, in: frame.size),
-                backgroundColor: block.backgroundColor
-            )
-        }
-    }
-
-    @MainActor
-    private static func fittingFontSize(for text: String, in size: CGSize) -> CGFloat {
-        let maximum = max(6, min(40, (size.height - 2) * 0.9))
-        let availableWidth = max(1, size.width - 6)
-        let availableHeight = max(1, size.height - 2)
-        func fits(_ fontSize: CGFloat) -> Bool {
-            let font = NSFont.systemFont(ofSize: fontSize, weight: .regular)
-            let measuredWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
-            let measuredHeight = ceil(font.ascender - font.descender + font.leading)
-            return measuredWidth <= availableWidth && measuredHeight <= availableHeight
-        }
-        if fits(maximum) { return maximum }
-        var lower: CGFloat = 5
-        var upper = maximum
-        for _ in 0..<12 {
-            let candidate = (lower + upper) / 2
-            if fits(candidate) { lower = candidate } else { upper = candidate }
-        }
-        return max(5, floor(lower * 10) / 10)
-    }
-
-    nonisolated private static func clampedDisplayRect(
-        for normalizedRect: CGRect,
-        in size: CGSize,
-        bounds: CGRect
-    ) -> CGRect {
-        let anchor = ScreenshotTranslationOverlayView.displayRect(for: normalizedRect, in: size)
-            .intersection(bounds)
-        return CGRect(
-            x: max(0, anchor.minX),
-            y: max(0, anchor.minY),
-            width: min(max(1, anchor.width), max(1, size.width - anchor.minX)),
-            height: min(max(1, anchor.height), max(1, size.height - anchor.minY))
-        )
-    }
-
-    nonisolated private static func readableFrame(
-        for index: Int,
-        anchors: [CGRect],
-        bounds: CGRect
-    ) -> CGRect {
-        let anchor = anchors[index]
-        let verticallyRelevant = anchors.enumerated().compactMap { candidateIndex, candidate -> (Int, CGRect)? in
-            guard candidateIndex != index else { return nil }
-            let horizontalOverlap = max(0, min(anchor.maxX, candidate.maxX) - max(anchor.minX, candidate.minX))
-            guard horizontalOverlap >= min(anchor.width, candidate.width) * 0.2 else { return nil }
-            return (candidateIndex, candidate)
-        }
-        let above = verticallyRelevant
-            .filter { candidateIndex, candidate in
-                candidate.midY < anchor.midY
-                    || (abs(candidate.midY - anchor.midY) < 0.5 && candidateIndex < index)
-            }
-            .max { $0.1.midY < $1.1.midY }
-        let below = verticallyRelevant
-            .filter { candidateIndex, candidate in
-                candidate.midY > anchor.midY
-                    || (abs(candidate.midY - anchor.midY) < 0.5 && candidateIndex > index)
-            }
-            .min { $0.1.midY < $1.1.midY }
-        let separation: CGFloat = 1
-        let topLimit = above.map { ($0.1.midY + anchor.midY) / 2 + separation / 2 } ?? bounds.minY
-        let bottomLimit = below.map { (anchor.midY + $0.1.midY) / 2 - separation / 2 } ?? bounds.maxY
-        let slotTop = min(max(topLimit, bounds.minY), anchor.midY)
-        let slotBottom = max(min(bottomLimit, bounds.maxY), anchor.midY)
-        let slotHeight = max(1, slotBottom - slotTop)
-        let preferredExpansion = min(6, max(1, anchor.height * 0.22))
-        let height = min(slotHeight, anchor.height + preferredExpansion * 2)
-        let centeredTop = anchor.midY - height / 2
-        let top = min(max(centeredTop, slotTop), slotBottom - height)
-        return CGRect(
-            x: anchor.minX,
-            y: top,
-            width: anchor.width,
-            height: height
-        )
+        ScreenshotTranslationLayoutEngine.layout(blocks: blocks, in: size).blocks
     }
 
     nonisolated private static func availableRightBoundary(
@@ -527,7 +470,7 @@ private struct ScreenshotOriginalImageView: View {
     }
 }
 
-private struct ScreenshotTranslationOverlayView: View {
+struct ScreenshotTranslationOverlayView: View {
     @ObservedObject var model: ScreenshotTranslationOverlayModel
     @ObservedObject var store: TranslationEditorStore
     @State private var configuration: TranslationSession.Configuration?
@@ -579,7 +522,8 @@ private struct ScreenshotTranslationOverlayView: View {
             )
             let blocks = ScreenshotTranslationOverlayWindowController.displayBlocks(from: sourceBlocks, in: size)
             ZStack(alignment: .topLeading) {
-                ForEach(blocks) { block in translatedBlock(block) }
+                ForEach(blocks.filter { !$0.usesOverflowCard }) { block in translatedBlock(block) }
+                overflowCard(blocks.filter(\.usesOverflowCard), size: size)
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
         }
@@ -589,16 +533,42 @@ private struct ScreenshotTranslationOverlayView: View {
         Text(block.text)
             .font(.system(size: block.fontSize, weight: .regular))
             .foregroundStyle(block.backgroundColor.isDark ? Color.white : Color.black)
-            .fixedSize(horizontal: true, vertical: true)
-            .padding(.horizontal, 2)
+            .lineSpacing(block.lineSpacing)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: false)
+            .padding(.horizontal, 4)
             .frame(width: max(block.frame.width, 1), height: max(block.frame.height, 1), alignment: .leading)
-            .background(Color(
-                red: block.backgroundColor.red,
-                green: block.backgroundColor.green,
-                blue: block.backgroundColor.blue
-            ))
+            .background(blockBackground(block.backgroundColor))
+            .shadow(color: block.backgroundColor.variation > 0.08 ? (block.backgroundColor.isDark ? .black.opacity(0.7) : .white.opacity(0.8)) : .clear, radius: 0.7)
             .position(x: block.frame.midX, y: block.frame.midY)
-            .clipped()
+    }
+
+    @ViewBuilder
+    private func overflowCard(_ blocks: [ScreenshotTranslationDisplayBlock], size: CGSize) -> some View {
+        if !blocks.isEmpty {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("完整译文").font(.caption.bold()).foregroundStyle(.secondary)
+                    ForEach(blocks) { block in
+                        Text(block.text)
+                            .font(.system(size: ScreenshotTranslationLayoutEngine.minimumReadableFontSize))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(9)
+            }
+            .frame(width: min(max(220, size.width * 0.52), max(1, size.width - 16)))
+            .frame(maxHeight: max(80, size.height * 0.38))
+            .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(.separator.opacity(0.5)))
+            .padding(8)
+            .frame(width: size.width, height: size.height, alignment: .bottomTrailing)
+        }
+    }
+
+    private func blockBackground(_ color: OCRBackgroundColor) -> some ShapeStyle {
+        Color(red: color.red, green: color.green, blue: color.blue)
+            .opacity(color.variation > 0.08 ? 0.86 : 0.98)
     }
 
     private func statusPill(_ text: String, showsProgress: Bool) -> some View {
