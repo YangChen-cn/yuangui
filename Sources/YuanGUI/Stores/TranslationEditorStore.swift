@@ -19,6 +19,7 @@ final class TranslationEditorStore: ObservableObject {
 
     @Published var editableSourceText: String
     @Published private(set) var translatedText = ""
+    @Published private(set) var translatedLines: [String] = []
     @Published private(set) var detectedSourceLanguage: String?
     @Published private(set) var targetLanguage: QuickToolLanguage
     @Published private(set) var state: State = .idle
@@ -48,7 +49,8 @@ final class TranslationEditorStore: ObservableObject {
     ) {
         targetSnapshot = snapshot
         originalSourceText = snapshot.originalText
-        editableSourceText = snapshot.originalText
+        let formattedSource = TranslationTextFormatter.addingSemanticLineBreaks(snapshot.originalText)
+        editableSourceText = formattedSource
         sourceApplicationName = snapshot.applicationName
         self.replacementService = replacementService ?? AccessibilityTextReplacementService()
         self.shortcutService = shortcutService
@@ -58,8 +60,8 @@ final class TranslationEditorStore: ObservableObject {
         self.onReplaced = onReplaced
         self.nonChineseTarget = nonChineseTarget
         self.chineseTarget = chineseTarget
-        automaticallySwitchesTarget = snapshot.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let dominant = NLLanguageRecognizer.dominantLanguage(for: snapshot.originalText)?.rawValue
+        automaticallySwitchesTarget = formattedSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let dominant = NLLanguageRecognizer.dominantLanguage(for: formattedSource)?.rawValue
         detectedSourceLanguage = dominant
         targetLanguage = dominant?.hasPrefix("zh") == true ? chineseTarget : nonChineseTarget
     }
@@ -96,12 +98,14 @@ final class TranslationEditorStore: ObservableObject {
         guard language != targetLanguage else { return }
         targetLanguage = language
         translatedText = ""
+        translatedLines = []
         state = .idle
     }
 
     func updateEditableSourceText(_ text: String) {
         editableSourceText = text
         translatedText = ""
+        translatedLines = []
         state = .idle
         guard automaticallySwitchesTarget, !userSelectedTarget else { return }
         let dominant = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue
@@ -109,11 +113,22 @@ final class TranslationEditorStore: ObservableObject {
         targetLanguage = dominant?.hasPrefix("zh") == true ? chineseTarget : nonChineseTarget
     }
 
+    func formatSourceLineBreaks() {
+        let formatted = TranslationTextFormatter.addingSemanticLineBreaks(editableSourceText)
+        guard formatted != editableSourceText else {
+            message = "当前文本不需要重新整理。"
+            return
+        }
+        updateEditableSourceText(formatted)
+        message = "已按列表结构整理换行。"
+    }
+
     func performTranslation(using session: TranslationSession) async {
         let requestedTarget = targetLanguage
         let requestedSource = editableSourceText
         guard !requestedSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             translatedText = ""
+            translatedLines = []
             state = .idle
             return
         }
@@ -123,13 +138,15 @@ final class TranslationEditorStore: ObservableObject {
             let response = try await session.translate(requestedSource)
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             detectedSourceLanguage = response.sourceLanguage.minimalIdentifier
-            translatedText = response.targetText
+            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(response.targetText)
+            translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            translatedLines = []
             state = .failed(error.localizedDescription)
         }
     }
@@ -139,11 +156,13 @@ final class TranslationEditorStore: ObservableObject {
         let requestedSource = editableSourceText
         guard !requestedSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             translatedText = ""
+            translatedLines = []
             state = .idle
             return
         }
         guard let onlineConfiguration else {
             translatedText = ""
+            translatedLines = []
             state = .failed(OnlineTranslationError.notConfigured.localizedDescription)
             return
         }
@@ -156,13 +175,15 @@ final class TranslationEditorStore: ObservableObject {
                 configuration: onlineConfiguration
             )
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            translatedText = result
+            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result)
+            translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            translatedLines = []
             state = .failed(error.localizedDescription)
         }
     }
@@ -172,6 +193,7 @@ final class TranslationEditorStore: ObservableObject {
         let requestedSource = editableSourceText
         guard !requestedSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             translatedText = ""
+            translatedLines = []
             state = .idle
             return
         }
@@ -180,13 +202,110 @@ final class TranslationEditorStore: ObservableObject {
         do {
             let result = try await shortcutService.translate(requestedSource, target: requestedTarget)
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
-            translatedText = result
+            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result)
+            translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            translatedLines = []
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    func performLineTranslations(using session: TranslationSession, sourceLines: [String]) async {
+        let requestedTarget = targetLanguage
+        let requestedSource = editableSourceText
+        let lines = Self.normalizedSourceLines(sourceLines)
+        guard !lines.isEmpty else {
+            translatedText = ""
+            translatedLines = []
+            state = .idle
+            return
+        }
+        state = .translating
+        message = nil
+        do {
+            let response = try await session.translate(ScreenshotTranslationLineAligner.combinedText(for: lines))
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            detectedSourceLanguage = response.sourceLanguage.minimalIdentifier
+            applyLineTranslations(ScreenshotTranslationLineAligner.align(response.targetText, to: lines))
+        } catch is CancellationError {
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            state = .idle
+        } catch {
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            translatedText = ""
+            translatedLines = []
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    func performOnlineLineTranslations(sourceLines: [String]) async {
+        let requestedTarget = targetLanguage
+        let requestedSource = editableSourceText
+        let lines = Self.normalizedSourceLines(sourceLines)
+        guard !lines.isEmpty else {
+            translatedText = ""
+            translatedLines = []
+            state = .idle
+            return
+        }
+        guard let onlineConfiguration else {
+            translatedText = ""
+            translatedLines = []
+            state = .failed(OnlineTranslationError.notConfigured.localizedDescription)
+            return
+        }
+        state = .translating
+        message = nil
+        do {
+            let result = try await onlineService.translate(
+                ScreenshotTranslationLineAligner.combinedText(for: lines),
+                target: requestedTarget,
+                configuration: onlineConfiguration
+            )
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            applyLineTranslations(ScreenshotTranslationLineAligner.align(result, to: lines))
+        } catch is CancellationError {
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            state = .idle
+        } catch {
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            translatedText = ""
+            translatedLines = []
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    func performShortcutLineTranslations(sourceLines: [String]) async {
+        let requestedTarget = targetLanguage
+        let requestedSource = editableSourceText
+        let lines = Self.normalizedSourceLines(sourceLines)
+        guard !lines.isEmpty else {
+            translatedText = ""
+            translatedLines = []
+            state = .idle
+            return
+        }
+        state = .translating
+        message = nil
+        do {
+            let translated = try await shortcutService.translate(
+                ScreenshotTranslationLineAligner.combinedText(for: lines),
+                target: requestedTarget
+            )
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            applyLineTranslations(ScreenshotTranslationLineAligner.align(translated, to: lines))
+        } catch is CancellationError {
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            state = .idle
+        } catch {
+            guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
+            translatedText = ""
+            translatedLines = []
             state = .failed(error.localizedDescription)
         }
     }
@@ -224,6 +343,19 @@ final class TranslationEditorStore: ObservableObject {
     func clearSensitiveState() {
         editableSourceText = ""
         translatedText = ""
+        translatedLines = []
         message = nil
     }
+
+    private func applyLineTranslations(_ lines: [String]) {
+        translatedLines = lines
+        translatedText = lines.joined(separator: "\n")
+        state = .ready
+    }
+
+    private static func normalizedSourceLines(_ lines: [String]) -> [String] {
+        lines.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
 }

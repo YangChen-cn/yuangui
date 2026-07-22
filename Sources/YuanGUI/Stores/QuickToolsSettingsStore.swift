@@ -7,6 +7,7 @@ final class QuickToolsSettingsStore: ObservableObject {
     @Published private(set) var screenshotTranslationHotKey: HotKeyBinding
     @Published private(set) var translationHotKey: HotKeyBinding
     @Published private(set) var screenshotDirectoryPath: String
+    @Published private(set) var screenshotTranslationOverlayEnabled: Bool
     @Published private(set) var nonChineseTarget: QuickToolLanguage
     @Published private(set) var chineseTarget: QuickToolLanguage
     @Published private(set) var translationEngine: TranslationEngine
@@ -32,6 +33,7 @@ final class QuickToolsSettingsStore: ObservableObject {
         static let screenshotTranslationHotKey = "quickTools.screenshotTranslationHotKey"
         static let translationHotKey = "quickTools.translationHotKey"
         static let screenshotDirectory = "quickTools.screenshotDirectory"
+        static let screenshotTranslationOverlayEnabled = "quickTools.screenshotTranslationOverlayEnabled"
         static let nonChineseTarget = "quickTools.nonChineseTarget"
         static let chineseTarget = "quickTools.chineseTarget"
         static let translationEngine = "quickTools.translationEngine"
@@ -52,6 +54,7 @@ final class QuickToolsSettingsStore: ObservableObject {
         screenshotDirectoryPath = defaults.string(forKey: Key.screenshotDirectory)
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Pictures/YuanGUI Screenshots", isDirectory: true).path
+        screenshotTranslationOverlayEnabled = defaults.bool(forKey: Key.screenshotTranslationOverlayEnabled)
         nonChineseTarget = QuickToolLanguage(rawValue: defaults.string(forKey: Key.nonChineseTarget) ?? "") ?? .simplifiedChinese
         chineseTarget = QuickToolLanguage(rawValue: defaults.string(forKey: Key.chineseTarget) ?? "") ?? .english
         translationEngine = TranslationEngine(rawValue: defaults.string(forKey: Key.translationEngine) ?? "") ?? .systemShortcut
@@ -93,6 +96,11 @@ final class QuickToolsSettingsStore: ObservableObject {
     func setScreenshotDirectory(_ url: URL) {
         screenshotDirectoryPath = url.standardizedFileURL.path
         defaults.set(screenshotDirectoryPath, forKey: Key.screenshotDirectory)
+    }
+
+    func setScreenshotTranslationOverlayEnabled(_ enabled: Bool) {
+        screenshotTranslationOverlayEnabled = enabled
+        defaults.set(enabled, forKey: Key.screenshotTranslationOverlayEnabled)
     }
 
     func setNonChineseTarget(_ language: QuickToolLanguage) {

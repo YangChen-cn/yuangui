@@ -3,6 +3,7 @@ import Translation
 
 struct TranslationEditorView: View {
     @ObservedObject var store: TranslationEditorStore
+    @ObservedObject var layout: TranslationWindowLayoutModel
     let close: () -> Void
     @State private var configuration: TranslationSession.Configuration?
     @FocusState private var sourceIsFocused: Bool
@@ -15,8 +16,15 @@ struct TranslationEditorView: View {
             footer
         }
         .padding(12)
-        .frame(minWidth: 400, idealWidth: 440, minHeight: 300, idealHeight: 352)
+        .frame(
+            minWidth: 400,
+            maxWidth: .infinity,
+            minHeight: 280,
+            maxHeight: .infinity,
+            alignment: .top
+        )
         .background(.regularMaterial)
+        .transaction { transaction in transaction.animation = nil }
         .onAppear {
             DispatchQueue.main.async { sourceIsFocused = true }
         }
@@ -71,6 +79,12 @@ struct TranslationEditorView: View {
                 if let language = store.detectedSourceLanguage {
                     Text(language).font(.caption).foregroundStyle(.secondary)
                 }
+                Spacer()
+                Button(action: store.formatSourceLineBreaks) {
+                    Label("整理换行", systemImage: "text.alignleft")
+                }
+                .controlSize(.mini)
+                .help("将被网页压成一行的列表符号恢复为分行显示")
             }
             ZStack(alignment: .topLeading) {
                 TextEditor(text: Binding(
@@ -89,7 +103,7 @@ struct TranslationEditorView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .frame(minHeight: 64, maxHeight: 90)
+            .frame(height: layout.value.sourceHeight)
             .background(.background.opacity(0.75), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(.separator.opacity(0.45)))
         }
@@ -112,7 +126,7 @@ struct TranslationEditorView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
             }
-            .frame(minHeight: 68, maxHeight: 96)
+            .frame(height: layout.value.resultHeight)
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 9))
             if case let .failed(message) = store.state {
                 HStack {

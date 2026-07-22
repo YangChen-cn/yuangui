@@ -14,7 +14,9 @@ struct MenuBarDashboardView: View {
     let showPet: () -> Void
     let openSettings: () -> Void
     let dismiss: () -> Void
+    @StateObject private var updater = AppUpdateStore()
     @State private var showsFocusPopover = false
+    @State private var showsUpdatePopover = false
     @State private var selectedSection: DashboardSection = .mac
 
     private enum DashboardSection: String, CaseIterable, Identifiable {
@@ -115,6 +117,20 @@ struct MenuBarDashboardView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .frame(width: 28)
+                    Button {
+                        showsUpdatePopover = true
+                        if !updater.isBusy && updater.state != .available {
+                            updater.check()
+                        }
+                    } label: {
+                        updateButtonLabel
+                    }
+                    .disabled(updater.state == .downloading || updater.state == .installing)
+                    .help(updateButtonHelp)
+                    .accessibilityLabel("检查更新")
+                    .popover(isPresented: $showsUpdatePopover, arrowEdge: .top) {
+                        updatePopover
+                    }
                 }
                 .font(.system(size: 13, weight: .semibold))
                 .fixedSize(horizontal: true, vertical: false)
@@ -164,6 +180,14 @@ struct MenuBarDashboardView: View {
             toolButton("划词翻译", subtitle: quickTools.settings.translationHotKey.displayText, systemImage: "translate", tint: .indigo) {
                 launchTool { quickTools.translateSelection() }
             }
+            toolButton(
+                store.desktopIconsVisible ? "隐藏桌面图标" : "显示桌面图标",
+                subtitle: store.desktopIconsVisible ? "当前桌面图标可见" : "当前桌面图标已隐藏",
+                systemImage: store.desktopIconsVisible ? "rectangle.grid.2x2.fill" : "rectangle.grid.2x2",
+                tint: .cyan
+            ) {
+                store.toggleDesktopIcons()
+            }
             toolButton("废纸篓", subtitle: "查看已删除项目", systemImage: "trash.fill", tint: .gray) {
                 launchTool { store.openTrash() }
             }
@@ -210,6 +234,80 @@ struct MenuBarDashboardView: View {
     private func launchTool(action: @escaping () -> Void) {
         dismiss()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: action)
+    }
+
+    @ViewBuilder
+    private var updateButtonLabel: some View {
+        switch updater.state {
+        case .checking, .downloading, .installing:
+            ProgressView().controlSize(.mini).frame(width: 16, height: 16)
+        case .upToDate:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .available:
+            Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+        case .failed:
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        case .idle:
+            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+        }
+    }
+
+    private var updateButtonHelp: String {
+        switch updater.state {
+        case .idle: return "检查更新"
+        case .checking: return "正在检查更新"
+        case .upToDate: return "当前已是最新版本"
+        case .available: return "发现版本 \(updater.latestRelease?.version ?? "")"
+        case .downloading: return "正在下载更新"
+        case .installing: return "正在准备安装"
+        case .failed(let message): return "检查更新失败：\(message)"
+        }
+    }
+
+    private var updatePopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("YuanGUI 更新")
+                .font(.headline)
+            updateStatusView
+            HStack {
+                Button("重新检查") { updater.check() }
+                    .disabled(updater.isBusy)
+                if updater.state == .available {
+                    Button("更新到 \(updater.latestRelease?.version ?? "新版本")") {
+                        updater.installLatest()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 270, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updater.state {
+        case .idle:
+            Label("尚未检查", systemImage: "arrow.triangle.2.circlepath")
+                .foregroundStyle(.secondary)
+        case .checking:
+            HStack { ProgressView().controlSize(.small); Text("正在检查 GitHub Release…") }
+        case .upToDate:
+            Label("当前已是最新版本", systemImage: "checkmark.seal.fill")
+                .foregroundStyle(.green)
+        case .available:
+            Label("发现版本 \(updater.latestRelease?.version ?? "")", systemImage: "arrow.down.circle.fill")
+                .foregroundStyle(.blue)
+        case .downloading:
+            HStack { ProgressView().controlSize(.small); Text("正在下载更新…") }
+        case .installing:
+            HStack { ProgressView().controlSize(.small); Text("准备安装，应用即将重启…") }
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var smartStateTitle: String {

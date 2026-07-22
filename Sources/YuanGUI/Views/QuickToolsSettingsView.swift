@@ -34,6 +34,13 @@ struct QuickToolsSettingsView: View {
                     Button("开始截图") { controller.beginRegionScreenshot() }
                     Button("截图翻译") { controller.beginScreenshotTranslation() }
                 }
+                Toggle("将截图译文覆盖显示在原位置", isOn: Binding(
+                    get: { settings.screenshotTranslationOverlayEnabled },
+                    set: settings.setScreenshotTranslationOverlayEnabled
+                ))
+                Text("开启后不再打开截图翻译窗口，而是在框选区域上显示可拖动的译文覆盖层；仍可复制或关闭。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("划词翻译") {

@@ -23,6 +23,7 @@ final class QuickToolsController: ObservableObject {
     private weak var aiSettings: AISettingsStore?
     private var screenshotEditor: ScreenshotEditorWindowController?
     private var translationEditor: TranslationEditorWindowController?
+    private var screenshotTranslationOverlay: ScreenshotTranslationOverlayWindowController?
 
     init(
         settings: QuickToolsSettingsStore? = nil,
@@ -91,6 +92,7 @@ final class QuickToolsController: ObservableObject {
 
     private func beginCapture(for purpose: CapturePurpose) {
         guard !isCapturing else { return }
+        screenshotTranslationOverlay?.close()
         if ScreenCapturePermission.state != .granted, !ScreenCapturePermission.request() {
             message = ScreenCaptureServiceError.permissionDenied.localizedDescription
             showError(title: "无法开始截图", message: message ?? "请开启屏幕录制权限。", openSettings: ScreenCapturePermission.openSettings)
@@ -120,9 +122,18 @@ final class QuickToolsController: ObservableObject {
                 let snapshot = try await selectedTextProvider.selectedText(promptForPermission: true)
                 showTranslationEditor(snapshot: snapshot)
                 message = nil
-            } catch is AccessibilityTextError {
+            } catch let error as AccessibilityTextError {
                 showTranslationEditor(snapshot: manualSnapshot(text: "", source: "手动输入"))
-                message = "未取得选中文字，已打开手动输入翻译。"
+                if case .permissionDenied = error {
+                    message = error.localizedDescription
+                    showError(
+                        title: "需要辅助功能权限",
+                        message: "请在系统设置中允许 YuanGUI 控制这台 Mac。若已允许但仍无法取词，请先移除旧的 YuanGUI 项，再重新添加当前应用。",
+                        openSettings: AccessibilityPermission.openSettings
+                    )
+                } else {
+                    message = "未取得选中文字，已打开手动输入翻译。"
+                }
             } catch {
                 present(error, title: "无法翻译所选文字")
             }
@@ -160,16 +171,38 @@ final class QuickToolsController: ObservableObject {
                 screenshotEditor = controller
                 controller.show()
             case .translate:
-                let editor = showTranslationEditor(snapshot: manualSnapshot(text: "", source: "截图 OCR"))
-                editor.setMessage("正在识别截图文字…")
+                let presenter: ScreenshotTranslationPresenting
+                if settings.screenshotTranslationOverlayEnabled {
+                    let controller = ScreenshotTranslationOverlayWindowController(
+                        selection: selection,
+                        image: captured.image,
+                        snapshot: manualSnapshot(text: "", source: "截图 OCR 覆盖"),
+                        nonChineseTarget: settings.nonChineseTarget,
+                        chineseTarget: settings.chineseTarget,
+                        engine: settings.translationEngine,
+                        onlineConfiguration: onlineTranslationConfiguration,
+                        onClose: { [weak self] in self?.screenshotTranslationOverlay = nil }
+                    )
+                    screenshotTranslationOverlay = controller
+                    controller.show()
+                    presenter = controller
+                } else {
+                    presenter = showTranslationEditor(snapshot: manualSnapshot(text: "", source: "截图 OCR"))
+                }
+                presenter.setMessage("正在识别截图文字…")
                 do {
-                    let text = try await ocrService.recognizeText(in: captured.image)
-                    editor.updateSourceText(text)
-                    let status = text.isEmpty ? "未识别到文字，可以手动输入。" : nil
-                    editor.setMessage(status)
+                    let recognition = try await ocrService.recognizeLayout(in: captured.image)
+                    let text = recognition.text
+                    presenter.updateRecognition(recognition)
+                    let status = text.isEmpty
+                        ? (settings.screenshotTranslationOverlayEnabled
+                            ? "未识别到文字，请关闭后重新框选。"
+                            : "未识别到文字，可以手动输入。")
+                        : nil
+                    presenter.setMessage(status)
                     message = status
                 } catch {
-                    editor.setMessage(error.localizedDescription)
+                    presenter.setMessage(error.localizedDescription)
                     message = error.localizedDescription
                 }
             }

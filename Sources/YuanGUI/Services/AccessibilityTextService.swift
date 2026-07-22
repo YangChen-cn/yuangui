@@ -101,7 +101,7 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
             throw AccessibilityTextError.targetUnavailable
         }
         if selectedText == nil {
-            selectedText = try await copiedSelectionFromFrontmostApplication(processID: processID)
+            selectedText = try await copiedSelectionFromFrontmostApplication()
             selectionElement = focused
         }
         guard let selected = selectedText,
@@ -133,7 +133,7 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
         )
     }
 
-    private func copiedSelectionFromFrontmostApplication(processID: pid_t) async throws -> String {
+    private func copiedSelectionFromFrontmostApplication() async throws -> String {
         let pasteboard = NSPasteboard.general
         let savedItems = pasteboard.pasteboardItems?.map { item in
             item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
@@ -143,6 +143,7 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
         defer { restorePasteboard(savedItems, to: pasteboard) }
 
         pasteboard.clearContents()
+        let changeCount = pasteboard.changeCount
         guard let source = CGEventSource(stateID: .combinedSessionState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false) else {
@@ -150,14 +151,36 @@ struct AccessibilitySelectedTextProvider: SelectedTextProviding {
         }
         down.flags = .maskCommand
         up.flags = .maskCommand
-        down.postToPid(processID)
-        up.postToPid(processID)
-        try await Task.sleep(for: .milliseconds(140))
-        guard let selected = pasteboard.string(forType: .string),
-              !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        // Match the normal Command-C path used by the frontmost application.
+        // Posting to one PID is unreliable for browsers whose web content lives
+        // in a helper process, and a fixed delay is too short on slower Macs.
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        guard let selected = await Self.waitForCopiedString(
+            from: pasteboard,
+            after: changeCount
+        ) else {
             throw AccessibilityTextError.noSelection
         }
         return selected
+    }
+
+    static func waitForCopiedString(
+        from pasteboard: NSPasteboard,
+        after changeCount: Int,
+        attempts: Int = 70,
+        pollInterval: Duration = .milliseconds(10)
+    ) async -> String? {
+        for _ in 0..<attempts {
+            if pasteboard.changeCount != changeCount,
+               let value = pasteboard.string(forType: .string)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+            try? await Task.sleep(for: pollInterval)
+        }
+        return nil
     }
 
     private func restorePasteboard(
