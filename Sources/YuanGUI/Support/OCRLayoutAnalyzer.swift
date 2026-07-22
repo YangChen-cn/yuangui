@@ -107,11 +107,36 @@ enum OCRLayoutAnalyzer {
         guard leftCount >= 2, rightCount >= 2 else { return nil }
         let left = columnCandidates.filter { $0.normalizedRect.midX < best.split }
         let right = columnCandidates.filter { $0.normalizedRect.midX >= best.split }
+        // Sparse trailing controls (for example a pair of GitHub "Star" buttons) are not a
+        // document column. Treating them as one changes the reading order and can anchor an
+        // otherwise unrelated paragraph translation at the far-right edge of the screenshot.
+        // Real text columns carry a comparable amount of text and occupy comparable widths.
+        let leftTextMass = textMass(left)
+        let rightTextMass = textMass(right)
+        let smallerTextMass = min(leftTextMass, rightTextMass)
+        let largerTextMass = max(leftTextMass, rightTextMass)
+        guard smallerTextMass >= 12,
+              CGFloat(smallerTextMass) / CGFloat(max(1, largerTextMass)) >= 0.18 else {
+            return nil
+        }
+        let leftMedianWidth = median(left.map { $0.normalizedRect.width })
+        let rightMedianWidth = median(right.map { $0.normalizedRect.width })
+        guard min(leftMedianWidth, rightMedianWidth) >= max(leftMedianWidth, rightMedianWidth) * 0.35 else {
+            return nil
+        }
         let leftVertical = verticalExtent(left)
         let rightVertical = verticalExtent(right)
         let overlap = max(0, min(leftVertical.maxY, rightVertical.maxY) - max(leftVertical.minY, rightVertical.minY))
         guard overlap >= min(leftVertical.height, rightVertical.height) * 0.25 else { return nil }
         return best.split
+    }
+
+    private static func textMass(_ regions: [OCRTextRegion]) -> Int {
+        regions.reduce(into: 0) { result, region in
+            result += region.text.unicodeScalars.reduce(into: 0) { count, scalar in
+                if !CharacterSet.whitespacesAndNewlines.contains(scalar) { count += 1 }
+            }
+        }
     }
 
     private static func verticalExtent(_ regions: [OCRTextRegion]) -> CGRect {

@@ -96,7 +96,7 @@ enum ScreenshotTranslationLayoutEngine {
             text: source.text,
             fontSize: fontSize,
             backgroundColor: source.backgroundColor,
-            lineSpacing: max(1, fontSize * 0.15),
+            lineSpacing: 0,
             usesOverflowCard: usesOverflowCard
         )
     }
@@ -199,7 +199,7 @@ enum ScreenshotTranslationLayoutEngine {
                 text: text,
                 fontSize: minimumReadableFontSize,
                 backgroundColor: first.backgroundColor,
-                lineSpacing: max(1, minimumReadableFontSize * 0.15),
+                lineSpacing: 0,
                 usesOverflowCard: false
             )
             result.remove(at: pair.1)
@@ -282,7 +282,7 @@ enum ScreenshotTranslationLayoutEngine {
             CGSize(width: max(1, width), height: .greatestFiniteMagnitude),
             &fitRange
         )
-        return CGSize(width: ceil(measured.width), height: ceil(measured.height + fontSize * 0.12))
+        return CGSize(width: ceil(measured.width), height: ceil(measured.height + 1))
     }
 
     private static func clampedDisplayRect(

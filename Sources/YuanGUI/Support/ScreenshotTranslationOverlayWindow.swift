@@ -666,6 +666,7 @@ struct ScreenshotTranslationOverlayView: View {
             .font(.system(size: block.fontSize, weight: .regular))
             .foregroundStyle(block.backgroundColor.isDark ? Color.white : Color.black)
             .lineSpacing(block.lineSpacing)
+            .lineLimit(nil)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: false)
             .padding(.horizontal, 4)
@@ -686,7 +687,7 @@ struct ScreenshotTranslationOverlayView: View {
                 )
         } else {
             Color(red: color.red, green: color.green, blue: color.blue)
-                .opacity(0.98)
+                .opacity(1)
         }
     }
 

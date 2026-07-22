@@ -379,6 +379,23 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertNotEqual(control?.paragraphIndex, description?.paragraphIndex)
     }
 
+    func testOCRLayoutAnalyzerDoesNotTreatRepeatedTrailingControlsAsASecondColumn() {
+        let result = OCRLayoutAnalyzer.organize([
+            OCRTextRegion(text: "koala73/worldmonitor", normalizedRect: CGRect(x: 0.06, y: 0.82, width: 0.25, height: 0.04)),
+            OCRTextRegion(text: "Star", normalizedRect: CGRect(x: 0.84, y: 0.82, width: 0.08, height: 0.04)),
+            OCRTextRegion(text: "Real-time global intelligence dashboard and infrastructure tracking", normalizedRect: CGRect(x: 0.06, y: 0.72, width: 0.68, height: 0.05)),
+            OCRTextRegion(text: "TypeScript 68.3k", normalizedRect: CGRect(x: 0.06, y: 0.63, width: 0.22, height: 0.04)),
+            OCRTextRegion(text: "ruvnet/RuView", normalizedRect: CGRect(x: 0.06, y: 0.45, width: 0.22, height: 0.04)),
+            OCRTextRegion(text: "Star", normalizedRect: CGRect(x: 0.84, y: 0.45, width: 0.08, height: 0.04)),
+            OCRTextRegion(text: "RuView turns commodity WiFi signals into real-time spatial intelligence", normalizedRect: CGRect(x: 0.06, y: 0.35, width: 0.70, height: 0.05)),
+            OCRTextRegion(text: "Rust 83.4k", normalizedRect: CGRect(x: 0.06, y: 0.26, width: 0.18, height: 0.04))
+        ]).regions
+
+        XCTAssertEqual(Set(result.map(\.columnIndex)), [0], "Trailing buttons must stay in row reading order")
+        let firstDescription = try? XCTUnwrap(result.first { $0.text.hasPrefix("Real-time") })
+        XCTAssertEqual(firstDescription?.columnIndex, 0)
+    }
+
     func testScreenshotTranslationBatchesParagraphsAndProtectsURLs() {
         let regions = [
             OCRTextRegion(text: "First visual line", normalizedRect: CGRect(x: 0.1, y: 0.75, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 0),
