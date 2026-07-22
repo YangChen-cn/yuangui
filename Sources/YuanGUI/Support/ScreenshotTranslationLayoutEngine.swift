@@ -21,7 +21,7 @@ enum ScreenshotTranslationLayoutEngine {
         let bounds = CGRect(origin: .zero, size: size)
         let anchors = blocks.map { clampedDisplayRect(for: $0.normalizedRect, in: size, bounds: bounds) }
         let displayBlocks = blocks.enumerated().map { index, block in
-            let frame = readableFrame(for: index, anchors: anchors, bounds: bounds)
+            var frame = readableFrame(for: index, anchors: anchors, bounds: bounds)
             let preferredMaximum = min(
                 40,
                 max(16, block.sourceFontScale * size.height * 0.94)
@@ -48,14 +48,32 @@ enum ScreenshotTranslationLayoutEngine {
                     usesOverflowCard: false
                 )
             }
+            let fitsCurrentSlot = textFits(candidate)
+            let requiredHeight = measuredSize(
+                block.text,
+                fontSize: fitsCurrentSlot ? fontSize : minimumReadableFontSize,
+                width: max(1, frame.width - 8)
+            ).height + 4
+            if fitsCurrentSlot {
+                frame = tightenedFrame(frame, around: anchors[index].midY, requiredHeight: requiredHeight)
+            } else {
+                frame = expandedFrame(
+                    frame,
+                    around: anchors[index].midY,
+                    requiredHeight: requiredHeight,
+                    bounds: bounds
+                )
+                fontSize = minimumReadableFontSize
+            }
             return displayBlock(
                 source: block,
                 frame: frame,
                 fontSize: fontSize,
-                usesOverflowCard: !textFits(candidate)
+                usesOverflowCard: false
             )
         }
-        return ScreenshotTranslationLayout(blocks: displayBlocks)
+        let resolved = resolveOverlaps(displayBlocks, bounds: bounds)
+        return ScreenshotTranslationLayout(blocks: mergeResidualOverlaps(resolved, bounds: bounds))
     }
 
     static func textFits(_ block: ScreenshotTranslationDisplayBlock) -> Bool {
@@ -80,6 +98,148 @@ enum ScreenshotTranslationLayoutEngine {
             backgroundColor: source.backgroundColor,
             lineSpacing: max(1, fontSize * 0.15),
             usesOverflowCard: usesOverflowCard
+        )
+    }
+
+    private static func expandedFrame(
+        _ frame: CGRect,
+        around anchorY: CGFloat,
+        requiredHeight: CGFloat,
+        bounds: CGRect
+    ) -> CGRect {
+        let height = min(bounds.height, max(frame.height, requiredHeight))
+        let proposedY = anchorY - height / 2
+        let y = min(max(proposedY, bounds.minY), bounds.maxY - height)
+        return CGRect(x: frame.minX, y: y, width: frame.width, height: height)
+    }
+
+    private static func tightenedFrame(
+        _ frame: CGRect,
+        around anchorY: CGFloat,
+        requiredHeight: CGFloat
+    ) -> CGRect {
+        let height = min(frame.height, max(1, requiredHeight))
+        let y = min(max(anchorY - height / 2, frame.minY), frame.maxY - height)
+        return CGRect(x: frame.minX, y: y, width: frame.width, height: height)
+    }
+
+    private static func resolveOverlaps(
+        _ blocks: [ScreenshotTranslationDisplayBlock],
+        bounds: CGRect
+    ) -> [ScreenshotTranslationDisplayBlock] {
+        var result = blocks
+        let spacing: CGFloat = 2
+        for _ in 0..<6 {
+            var changed = false
+            let order = result.indices.sorted { result[$0].frame.minY < result[$1].frame.minY }
+            for firstPosition in order.indices {
+                for secondPosition in order.indices where secondPosition > firstPosition {
+                    let firstIndex = order[firstPosition]
+                    let secondIndex = order[secondPosition]
+                    var first = result[firstIndex]
+                    var second = result[secondIndex]
+                    let horizontalOverlap = max(
+                        0,
+                        min(first.frame.maxX, second.frame.maxX) - max(first.frame.minX, second.frame.minX)
+                    )
+                    guard horizontalOverlap >= min(first.frame.width, second.frame.width) * 0.15 else { continue }
+                    var collision = first.frame.maxY + spacing - second.frame.minY
+                    guard collision > 0 else { continue }
+
+                    let moveDown = min(collision, max(0, bounds.maxY - second.frame.maxY))
+                    if moveDown > 0 {
+                        second = replacingFrame(second, second.frame.offsetBy(dx: 0, dy: moveDown))
+                        result[secondIndex] = second
+                        collision -= moveDown
+                        changed = true
+                    }
+                    let moveUp = min(collision, max(0, first.frame.minY - bounds.minY))
+                    if moveUp > 0 {
+                        first = replacingFrame(first, first.frame.offsetBy(dx: 0, dy: -moveUp))
+                        result[firstIndex] = first
+                        changed = true
+                    }
+                }
+            }
+            if !changed { break }
+        }
+        return result
+    }
+
+    /// Dense screenshots can be geometrically impossible to lay out as independent 11 pt boxes.
+    /// Keep every translation on the screenshot by folding only the boxes that still collide
+    /// after normal placement into one in-place multiline region. This replaces the old detached
+    /// overflow card without hiding translated content or drawing two text layers on top of each other.
+    private static func mergeResidualOverlaps(
+        _ blocks: [ScreenshotTranslationDisplayBlock],
+        bounds: CGRect
+    ) -> [ScreenshotTranslationDisplayBlock] {
+        var result = blocks
+        while let pair = firstOverlappingPair(in: result) {
+            let first = result[pair.0]
+            let second = result[pair.1]
+            var frame = first.frame.union(second.frame).intersection(bounds)
+            let text = [first.text, second.text]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n")
+            let requiredHeight = measuredSize(
+                text,
+                fontSize: minimumReadableFontSize,
+                width: max(1, frame.width - 8)
+            ).height + 4
+            frame = expandedFrame(
+                frame,
+                around: frame.midY,
+                requiredHeight: requiredHeight,
+                bounds: bounds
+            )
+            let merged = ScreenshotTranslationDisplayBlock(
+                id: min(first.id, second.id),
+                frame: frame,
+                text: text,
+                fontSize: minimumReadableFontSize,
+                backgroundColor: first.backgroundColor,
+                lineSpacing: max(1, minimumReadableFontSize * 0.15),
+                usesOverflowCard: false
+            )
+            result.remove(at: pair.1)
+            result.remove(at: pair.0)
+            result.append(merged)
+            result = resolveOverlaps(result, bounds: bounds)
+        }
+        return result.sorted { lhs, rhs in
+            if abs(lhs.frame.minY - rhs.frame.minY) > 0.5 { return lhs.frame.minY < rhs.frame.minY }
+            return lhs.frame.minX < rhs.frame.minX
+        }
+    }
+
+    private static func firstOverlappingPair(
+        in blocks: [ScreenshotTranslationDisplayBlock]
+    ) -> (Int, Int)? {
+        guard blocks.count > 1 else { return nil }
+        for first in blocks.indices {
+            for second in blocks.indices where second > first {
+                let intersection = blocks[first].frame.intersection(blocks[second].frame)
+                if !intersection.isNull, intersection.width > 0.01, intersection.height > 0.01 {
+                    return (first, second)
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func replacingFrame(
+        _ block: ScreenshotTranslationDisplayBlock,
+        _ frame: CGRect
+    ) -> ScreenshotTranslationDisplayBlock {
+        ScreenshotTranslationDisplayBlock(
+            id: block.id,
+            frame: frame,
+            text: block.text,
+            fontSize: block.fontSize,
+            backgroundColor: block.backgroundColor,
+            lineSpacing: block.lineSpacing,
+            usesOverflowCard: false
         )
     }
 

@@ -575,8 +575,7 @@ struct ScreenshotTranslationOverlayView: View {
             )
             let blocks = ScreenshotTranslationOverlayWindowController.displayBlocks(from: sourceBlocks, in: size)
             ZStack(alignment: .topLeading) {
-                ForEach(blocks.filter { !$0.usesOverflowCard }) { block in translatedBlock(block) }
-                overflowCard(blocks.filter(\.usesOverflowCard), size: size)
+                ForEach(blocks) { block in translatedBlock(block) }
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
         }
@@ -594,29 +593,6 @@ struct ScreenshotTranslationOverlayView: View {
             .background(blockBackground(block.backgroundColor))
             .shadow(color: block.backgroundColor.variation > 0.08 ? (block.backgroundColor.isDark ? .black.opacity(0.7) : .white.opacity(0.8)) : .clear, radius: 0.7)
             .position(x: block.frame.midX, y: block.frame.midY)
-    }
-
-    @ViewBuilder
-    private func overflowCard(_ blocks: [ScreenshotTranslationDisplayBlock], size: CGSize) -> some View {
-        if !blocks.isEmpty {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("完整译文").font(.caption.bold()).foregroundStyle(.secondary)
-                    ForEach(blocks) { block in
-                        Text(block.text)
-                            .font(.system(size: ScreenshotTranslationLayoutEngine.minimumReadableFontSize))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(9)
-            }
-            .frame(width: min(max(220, size.width * 0.52), max(1, size.width - 16)))
-            .frame(maxHeight: max(80, size.height * 0.38))
-            .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(.separator.opacity(0.5)))
-            .padding(8)
-            .frame(width: size.width, height: size.height, alignment: .bottomTrailing)
-        }
     }
 
     @ViewBuilder

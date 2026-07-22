@@ -377,7 +377,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(blocks.map(\.text).joined(), "第一段翻译继续第二段翻译")
     }
 
-    func testScreenshotLayoutUsesReadableOverflowCardForImpossibleDensity() {
+    func testScreenshotLayoutKeepsImpossibleDensityTranslationInPlace() {
         let block = ScreenshotTranslationBlock(
             id: 0,
             normalizedRect: CGRect(x: 0.05, y: 0.45, width: 0.25, height: 0.05),
@@ -391,8 +391,10 @@ final class QuickToolsTests: XCTestCase {
         )
 
         XCTAssertEqual(result.blocks[0].fontSize, ScreenshotTranslationLayoutEngine.minimumReadableFontSize)
-        XCTAssertTrue(result.blocks[0].usesOverflowCard)
-        XCTAssertEqual(result.overflowBlocks[0].text, block.text)
+        XCTAssertFalse(result.blocks[0].usesOverflowCard)
+        XCTAssertTrue(result.overflowBlocks.isEmpty)
+        XCTAssertEqual(result.blocks[0].text, block.text)
+        XCTAssertTrue(CGRect(origin: .zero, size: CGSize(width: 120, height: 40)).contains(result.blocks[0].frame))
     }
 
     func testScreenshotLayoutFixturesHaveNoOverlapTruncationOrMarkerLeak() throws {
@@ -491,16 +493,16 @@ final class QuickToolsTests: XCTestCase {
             )
             XCTAssertFalse(block.text.contains("…"), "\(context): ellipsis leaked", file: file, line: line)
             XCTAssertFalse(block.text.contains("YGUI"), "\(context): internal marker leaked", file: file, line: line)
-            if !block.usesOverflowCard {
-                XCTAssertTrue(
-                    ScreenshotTranslationLayoutEngine.textFits(block),
-                    "\(context): text does not fit its calculated frame \(block)",
-                    file: file,
-                    line: line
-                )
-            }
+            XCTAssertFalse(block.usesOverflowCard, "\(context): translation escaped into a separate card", file: file, line: line)
+            let consumesAllAvailableHeight = abs(block.frame.height - size.height) <= 0.01
+            XCTAssertTrue(
+                ScreenshotTranslationLayoutEngine.textFits(block) || consumesAllAvailableHeight,
+                "\(context): text neither fits nor uses the full in-place fallback region \(block)",
+                file: file,
+                line: line
+            )
         }
-        let visible = layout.blocks.filter { !$0.usesOverflowCard }
+        let visible = layout.blocks
         for first in visible.indices {
             for second in visible.indices where second > first {
                 let intersection = visible[first].frame.intersection(visible[second].frame)

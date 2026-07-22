@@ -117,20 +117,6 @@ struct MenuBarDashboardView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .frame(width: 28)
-                    Button {
-                        showsUpdatePopover = true
-                        if !updater.isBusy && updater.state != .available {
-                            updater.check()
-                        }
-                    } label: {
-                        updateButtonLabel
-                    }
-                    .disabled(updater.state == .downloading || updater.state == .installing)
-                    .help(updateButtonHelp)
-                    .accessibilityLabel("检查更新")
-                    .popover(isPresented: $showsUpdatePopover, arrowEdge: .top) {
-                        updatePopover
-                    }
                 }
                 .font(.system(size: 13, weight: .semibold))
                 .fixedSize(horizontal: true, vertical: false)
@@ -194,8 +180,58 @@ struct MenuBarDashboardView: View {
             toolButton("设置", subtitle: "快捷键与偏好", systemImage: "gearshape.fill", tint: .secondary) {
                 launchTool(action: openSettings)
             }
+            updateToolButton
         }
         .padding(.top, 2)
+    }
+
+    private var updateToolButton: some View {
+        Button {
+            showsUpdatePopover = true
+            if !updater.isBusy && updater.state != .available {
+                updater.check()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                updateButtonLabel
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .background(Color.blue.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("检查更新")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    Text(updateToolSubtitle)
+                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 56)
+            .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(.white.opacity(0.24), lineWidth: 0.6))
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(updater.state == .downloading || updater.state == .installing)
+        .help(updateButtonHelp)
+        .accessibilityLabel("检查更新")
+        .popover(isPresented: $showsUpdatePopover, arrowEdge: .top) {
+            updatePopover
+        }
+    }
+
+    private var updateToolSubtitle: String {
+        switch updater.state {
+        case .idle: return "获取最新版本"
+        case .checking: return "正在检查…"
+        case .upToDate: return "当前已是最新版"
+        case .available: return "发现 \(updater.latestRelease?.version ?? "新版本")"
+        case .downloading: return "正在下载…"
+        case .installing: return "正在安装…"
+        case .failed: return "检查失败，点按重试"
+        }
     }
 
     private func toolButton(
