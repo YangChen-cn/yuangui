@@ -135,7 +135,11 @@ enum OCRLayoutAnalyzer {
         let currentRect = current.normalizedRect
         let sameVisualRow = abs(previousRect.midY - currentRect.midY)
             <= max(previousRect.height, currentRect.height) * 0.55
-        if sameVisualRow { return false }
+        if sameVisualRow {
+            let horizontalGap = max(0, currentRect.minX - previousRect.maxX)
+            let inlineTolerance = max(0.06, max(previousRect.height, currentRect.height) * 3.5)
+            return horizontalGap > inlineTolerance
+        }
         let verticalGap = max(0, previousRect.minY - currentRect.maxY)
         let allowedGap = max(previousRect.height, currentRect.height) * 0.95
         let overlap = horizontalOverlap(previousRect, currentRect)

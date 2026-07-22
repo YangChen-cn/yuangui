@@ -259,13 +259,17 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         regions: [OCRTextRegion],
         translatedText: String
     ) -> [ScreenshotTranslationBlock] {
-        guard !regions.isEmpty else { return [] }
+        let paragraphGroups = translatableParagraphGroups(regions: regions)
+        guard !paragraphGroups.isEmpty else { return [] }
         let lines = translatedText.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let assignedLines = lines.count == regions.count
+        let assignedLines = lines.count == paragraphGroups.count
             ? lines
-            : distributedTranslation(translatedText, matching: regions)
+            : distributedTranslation(
+                translatedText,
+                matching: paragraphGroups.map(paragraphProxyRegion)
+            )
         return translationBlocks(regions: regions, translatedLines: assignedLines)
     }
 
@@ -273,21 +277,39 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         regions: [OCRTextRegion],
         translatedLines: [String]
     ) -> [ScreenshotTranslationBlock] {
+        let translatable = translatableRegions(regions: regions)
+        if translatedLines.count == translatable.count {
+            return makeTranslationBlocks(regions: translatable, translatedLines: translatedLines)
+        }
         let paragraphGroups = translatableParagraphGroups(regions: regions)
         if translatedLines.count == paragraphGroups.count {
-            return zip(paragraphGroups, translatedLines).flatMap { group, translatedParagraph in
-                makeTranslationBlocks(
-                    regions: group,
-                    translatedLines: distributedTranslation(translatedParagraph, matching: group)
-                )
-            }
+            return makeParagraphTranslationBlocks(
+                groups: paragraphGroups,
+                translatedParagraphs: translatedLines
+            )
         }
-        return makeTranslationBlocks(regions: regions, translatedLines: translatedLines)
+        let joined = translatedLines.joined(separator: "\n")
+        return makeTranslationBlocks(
+            regions: translatable,
+            translatedLines: distributedTranslation(joined, matching: translatable)
+        )
+    }
+
+    nonisolated static func translatableVisualLines(regions: [OCRTextRegion]) -> [String] {
+        translatableRegions(regions: regions).map(\.text)
     }
 
     nonisolated static func translatableParagraphs(regions: [OCRTextRegion]) -> [String] {
-        translatableParagraphGroups(regions: regions).map { group in
-            group.map(\.text).joined(separator: " ")
+        translatableParagraphGroups(regions: regions).map(paragraphSourceText)
+    }
+
+    nonisolated private static func translatableRegions(regions: [OCRTextRegion]) -> [OCRTextRegion] {
+        regions.filter { !$0.isProtectedText }.sorted { lhs, rhs in
+            if lhs.readingOrder != rhs.readingOrder { return lhs.readingOrder < rhs.readingOrder }
+            if abs(lhs.normalizedRect.midY - rhs.normalizedRect.midY) > 0.001 {
+                return lhs.normalizedRect.midY > rhs.normalizedRect.midY
+            }
+            return lhs.normalizedRect.minX < rhs.normalizedRect.minX
         }
     }
 
@@ -297,6 +319,64 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         return grouped.values.sorted {
             ($0.map(\.readingOrder).min() ?? .max) < ($1.map(\.readingOrder).min() ?? .max)
         }.map { $0.sorted { $0.readingOrder < $1.readingOrder } }
+    }
+
+    nonisolated private static func paragraphSourceText(_ group: [OCRTextRegion]) -> String {
+        group.enumerated().reduce(into: "") { result, item in
+            let (index, region) = item
+            guard index > 0 else {
+                result = region.text
+                return
+            }
+            let previous = group[index - 1]
+            let keepsVisualBreak = region.role == .listItem
+                || previous.role == .listItem
+                || region.text.trimmingCharacters(in: .whitespaces).hasPrefix("•")
+            result += keepsVisualBreak ? "\n" : " "
+            result += region.text
+        }
+    }
+
+    nonisolated private static func paragraphProxyRegion(_ group: [OCRTextRegion]) -> OCRTextRegion {
+        let rect = group.dropFirst().reduce(group.first?.normalizedRect ?? .zero) {
+            $0.union($1.normalizedRect)
+        }
+        return OCRTextRegion(
+            text: paragraphSourceText(group),
+            normalizedRect: rect,
+            backgroundColor: group.first?.backgroundColor ?? .white,
+            estimatedFontScale: group.map(\.estimatedFontScale).sorted()[group.count / 2]
+        )
+    }
+
+    nonisolated private static func makeParagraphTranslationBlocks(
+        groups: [[OCRTextRegion]],
+        translatedParagraphs: [String]
+    ) -> [ScreenshotTranslationBlock] {
+        let proxies = groups.map(paragraphProxyRegion)
+        return zip(proxies, translatedParagraphs).enumerated().compactMap { index, pair in
+            let source = pair.0
+            let translation = TranslationTextFormatter.addingSemanticLineBreaks(pair.1)
+            guard !translation.isEmpty else { return nil }
+            let expansion = max(1, CGFloat(translation.count) / CGFloat(max(1, source.text.count)))
+            let rightBoundary = availableRightBoundary(for: index, in: proxies)
+            let width = min(
+                max(source.normalizedRect.width, rightBoundary - source.normalizedRect.minX),
+                source.normalizedRect.width * expansion
+            )
+            return ScreenshotTranslationBlock(
+                id: index,
+                normalizedRect: CGRect(
+                    x: source.normalizedRect.minX,
+                    y: source.normalizedRect.minY,
+                    width: width,
+                    height: source.normalizedRect.height
+                ),
+                text: translation,
+                backgroundColor: source.backgroundColor,
+                sourceFontScale: source.estimatedFontScale
+            )
+        }
     }
 
     nonisolated private static func makeTranslationBlocks(

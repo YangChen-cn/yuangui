@@ -419,8 +419,9 @@ final class TranslationEditorStore: ObservableObject {
     }
 
     private func applyLineTranslations(_ lines: [String]) {
-        translatedLines = lines
-        translatedText = lines.joined(separator: "\n")
+        let formatted = lines.map(TranslationTextFormatter.addingSemanticLineBreaks)
+        translatedLines = formatted
+        translatedText = formatted.joined(separator: "\n")
         state = .ready
     }
 

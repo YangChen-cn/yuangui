@@ -56,8 +56,8 @@ final class QuickToolsTests: XCTestCase {
 
     func testScreenshotTranslationBlocksFollowOCRRegionsAndDistributeFallbackText() throws {
         let regions = [
-            OCRTextRegion(text: "第一行", normalizedRect: CGRect(x: 0.1, y: 0.7, width: 0.4, height: 0.1)),
-            OCRTextRegion(text: "第二行", normalizedRect: CGRect(x: 0.2, y: 0.4, width: 0.5, height: 0.1))
+            OCRTextRegion(text: "第一行", normalizedRect: CGRect(x: 0.1, y: 0.7, width: 0.4, height: 0.1), paragraphIndex: 0),
+            OCRTextRegion(text: "第二行", normalizedRect: CGRect(x: 0.2, y: 0.4, width: 0.5, height: 0.1), paragraphIndex: 1)
         ]
         let aligned = ScreenshotTranslationOverlayWindowController.translationBlocks(
             regions: regions,
@@ -356,6 +356,29 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(result.first { $0.text == "Left one" }?.baseline ?? -1, 0.72, accuracy: 0.0001)
     }
 
+    func testOCRLayoutAnalyzerSeparatesDistantControlsOnTheSameVisualRow() {
+        let result = OCRLayoutAnalyzer.organize([
+            OCRTextRegion(
+                text: "ruvnet/RuView",
+                normalizedRect: CGRect(x: 0.06, y: 0.78, width: 0.22, height: 0.05)
+            ),
+            OCRTextRegion(
+                text: "Star",
+                normalizedRect: CGRect(x: 0.82, y: 0.78, width: 0.10, height: 0.05)
+            ),
+            OCRTextRegion(
+                text: "RuView turns commodity WiFi signals into real-time intelligence",
+                normalizedRect: CGRect(x: 0.06, y: 0.67, width: 0.68, height: 0.05)
+            )
+        ]).regions
+
+        let repository = result.first { $0.text == "ruvnet/RuView" }
+        let control = result.first { $0.text == "Star" }
+        let description = result.first { $0.text.hasPrefix("RuView turns") }
+        XCTAssertNotEqual(repository?.paragraphIndex, control?.paragraphIndex)
+        XCTAssertNotEqual(control?.paragraphIndex, description?.paragraphIndex)
+    }
+
     func testScreenshotTranslationBatchesParagraphsAndProtectsURLs() {
         let regions = [
             OCRTextRegion(text: "First visual line", normalizedRect: CGRect(x: 0.1, y: 0.75, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 0),
@@ -372,9 +395,98 @@ final class QuickToolsTests: XCTestCase {
             regions: regions,
             translatedLines: ["第一段翻译继续", "第二段翻译"]
         )
-        XCTAssertEqual(blocks.count, 3)
+        XCTAssertEqual(blocks.count, 2)
         XCTAssertFalse(blocks.contains { $0.text.contains("example.com") })
         XCTAssertEqual(blocks.map(\.text).joined(), "第一段翻译继续第二段翻译")
+        let sourceUnion = regions[0].normalizedRect.union(regions[1].normalizedRect)
+        XCTAssertEqual(blocks[0].normalizedRect.minX, sourceUnion.minX)
+        XCTAssertEqual(blocks[0].normalizedRect.minY, sourceUnion.minY)
+        XCTAssertEqual(blocks[0].normalizedRect.height, sourceUnion.height)
+        XCTAssertGreaterThanOrEqual(blocks[0].normalizedRect.width, sourceUnion.width)
+        XCTAssertLessThanOrEqual(blocks[0].normalizedRect.maxX, 1)
+    }
+
+    func testWrappedVisualLinesRenderAsOneLogicalParagraphBlock() {
+        let regions = [
+            OCRTextRegion(
+                text: "我会先执行",
+                normalizedRect: CGRect(x: 0.08, y: 0.72, width: 0.42, height: 0.05),
+                paragraphIndex: 0,
+                readingOrder: 0
+            ),
+            OCRTextRegion(
+                text: "swift test，再构建应用。",
+                normalizedRect: CGRect(x: 0.08, y: 0.65, width: 0.58, height: 0.05),
+                paragraphIndex: 0,
+                readingOrder: 1
+            )
+        ]
+
+        XCTAssertEqual(
+            ScreenshotTranslationOverlayWindowController.translatableParagraphs(regions: regions),
+            ["我会先执行 swift test，再构建应用。"]
+        )
+        let blocks = ScreenshotTranslationOverlayWindowController.translationBlocks(
+            regions: regions,
+            translatedLines: ["I will run swift test first, and then build the app."]
+        )
+        XCTAssertEqual(blocks.count, 1)
+        XCTAssertEqual(blocks[0].text, "I will run swift test first, and then build the app.")
+        let sourceUnion = regions[0].normalizedRect.union(regions[1].normalizedRect)
+        XCTAssertEqual(blocks[0].normalizedRect.minX, sourceUnion.minX)
+        XCTAssertEqual(blocks[0].normalizedRect.minY, sourceUnion.minY)
+        XCTAssertEqual(blocks[0].normalizedRect.height, sourceUnion.height)
+        XCTAssertGreaterThanOrEqual(blocks[0].normalizedRect.width, sourceUnion.width)
+        XCTAssertLessThanOrEqual(blocks[0].normalizedRect.maxX, 1)
+    }
+
+    func testScreenshotTranslationKeepsVisualLineBreaksWhileBatchingAndSkipsProtectedRows() {
+        let regions = [
+            OCRTextRegion(text: "Main changes:", normalizedRect: CGRect(x: 0.05, y: 0.82, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 0),
+            OCRTextRegion(text: "• First item", normalizedRect: CGRect(x: 0.08, y: 0.72, width: 0.6, height: 0.05), paragraphIndex: 0, readingOrder: 1, role: .listItem),
+            OCRTextRegion(text: "https://example.com", normalizedRect: CGRect(x: 0.08, y: 0.62, width: 0.5, height: 0.04), paragraphIndex: 0, readingOrder: 2, role: .protectedContent),
+            OCRTextRegion(text: "• Second item", normalizedRect: CGRect(x: 0.08, y: 0.52, width: 0.6, height: 0.05), paragraphIndex: 0, readingOrder: 3, role: .listItem)
+        ]
+
+        XCTAssertEqual(
+            ScreenshotTranslationOverlayWindowController.translatableVisualLines(regions: regions),
+            ["Main changes:", "• First item", "• Second item"]
+        )
+
+        let blocks = ScreenshotTranslationOverlayWindowController.translationBlocks(
+            regions: regions,
+            translatedLines: ["主要修改：", "• 第一项", "• 第二项"]
+        )
+        XCTAssertEqual(blocks.map(\.text), ["主要修改：", "• 第一项", "• 第二项"])
+        XCTAssertEqual(blocks.map(\.normalizedRect.minY), [0.82, 0.72, 0.52])
+        XCTAssertFalse(blocks.contains { $0.text.contains("example.com") })
+    }
+
+    func testMixedURLRowsTranslateWhileStandaloneURLsRemainProtected() {
+        let mixed = OCRTextRegion(
+            text: "For more information, visit https://example.com/help",
+            normalizedRect: CGRect(x: 0.1, y: 0.7, width: 0.8, height: 0.05),
+            readingOrder: 0
+        )
+        let standalone = OCRTextRegion(
+            text: "https://example.com/help",
+            normalizedRect: CGRect(x: 0.1, y: 0.6, width: 0.5, height: 0.05),
+            readingOrder: 1
+        )
+
+        XCTAssertFalse(mixed.isProtectedText)
+        XCTAssertTrue(standalone.isProtectedText)
+        XCTAssertEqual(
+            ScreenshotTranslationOverlayWindowController.translatableVisualLines(regions: [mixed, standalone]),
+            [mixed.text]
+        )
+
+        let blocks = ScreenshotTranslationOverlayWindowController.translationBlocks(
+            regions: [mixed, standalone],
+            translatedLines: ["欲了解更多信息，请访问 https://example.com/help"]
+        )
+        XCTAssertEqual(blocks.map(\.text), ["欲了解更多信息，请访问 https://example.com/help"])
+        XCTAssertEqual(blocks.first?.normalizedRect, mixed.normalizedRect)
     }
 
     func testScreenshotLayoutKeepsImpossibleDensityTranslationInPlace() {

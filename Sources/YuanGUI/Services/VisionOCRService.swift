@@ -98,7 +98,13 @@ struct OCRTextRegion: Equatable, Sendable {
 
     private static func protectedText(_ text: String) -> Bool {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.range(of: #"(?:https?://|www\.)\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"#, options: .regularExpression) != nil {
+        // A URL or email embedded in a sentence must not suppress translation of the
+        // surrounding prose. Only rows whose complete meaningful content is the
+        // protected value are excluded from screenshot translation.
+        if value.range(
+            of: #"^(?:(?:https?://|www\.)\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})[\p{P}\p{S}]*$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
             return true
         }
         let meaningful = value.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
