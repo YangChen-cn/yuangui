@@ -121,6 +121,7 @@ struct TranslationEditorView: View {
             }
             ScrollView {
                 Text(store.translatedText.isEmpty ? "等待翻译…" : store.translatedText)
+                    .font(.body)
                     .textSelection(.enabled)
                     .foregroundStyle(store.translatedText.isEmpty ? .secondary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)

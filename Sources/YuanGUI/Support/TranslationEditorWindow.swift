@@ -40,9 +40,9 @@ struct TranslationWindowLayout: Equatable {
         ) + 22
         let measuredResult = measuredHeight(
             translation.isEmpty ? "等待翻译…" : translation,
-            font: .systemFont(ofSize: 15, weight: .medium),
+            font: .systemFont(ofSize: NSFont.systemFontSize),
             width: textWidth - 20
-        ) + 24
+        ) + 20
 
         var sourceHeight = min(max(64, measuredSource), max(64, variableBudget * 0.42))
         var resultHeight = min(max(68, measuredResult), max(68, variableBudget - sourceHeight))

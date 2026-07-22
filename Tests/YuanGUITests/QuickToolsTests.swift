@@ -111,6 +111,25 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertGreaterThan(long.resultHeight, short.resultHeight)
     }
 
+    @MainActor
+    func testTranslationWindowDoesNotReserveBlankHeightFromMismatchedResultFont() {
+        let translation = Array(repeating: "• The translated sentence should fit its measured body text height.", count: 10)
+            .joined(separator: "\n")
+        let layout = TranslationWindowLayout.calculate(
+            source: "这是一段用于验证窗口高度的原文。",
+            translation: translation,
+            availableFrame: CGRect(x: 0, y: 0, width: 1_440, height: 900),
+            preferredWidth: 880
+        )
+        let measured = (translation as NSString).boundingRect(
+            with: CGSize(width: 812, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
+        )
+
+        XCTAssertEqual(layout.resultHeight, max(68, ceil(measured.height) + 20), accuracy: 1)
+    }
+
     func testScreenshotTranslationToolbarChoosesAvailableOutsideEdge() {
         let screen = CGRect(x: 0, y: 0, width: 1_000, height: 700)
         let toolbarSize = CGSize(width: 160, height: 40)
