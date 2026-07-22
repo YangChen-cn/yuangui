@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "1.1.1"
-    static let fallbackBuild = "9"
+    static let fallbackVersion = "1.1.2"
+    static let fallbackBuild = "10"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,6 +14,10 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
+        "截图翻译改为结构化 OCR 与语义句子批量翻译，稳定对应原文位置，并优化换行、字号、遮挡与复杂页面可读性。",
+        "截图翻译覆盖层支持安全利用同列空白、最低 7pt 自适应字号、窗口缩放、中英对照和 Esc 一键关闭。",
+        "翻译管线新增请求合并、任务取消和内存缓存；系统快捷指令继续作为默认免费翻译引擎。",
+        "修复划词翻译窗口高估译文高度、底部出现大块空白的问题。",
         "修复发布版在其他电脑打开“快捷工具”时因 SwiftPM 资源路径失效而闪退的问题，并避免访问开发电脑上的构建目录。",
         "新增区域截图和图片编辑，可添加画笔、文字、箭头、形状、高亮与马赛克，并保存到文件夹或复制到剪贴板。",
         "新增截图 OCR 翻译、划词翻译与手动输入翻译；支持编辑原文后重新翻译、快捷复制译文，并在可编辑位置替换原文。",
