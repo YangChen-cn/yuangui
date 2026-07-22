@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "1.1"
-    static let fallbackBuild = "8"
+    static let fallbackVersion = "1.1.1"
+    static let fallbackBuild = "9"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,6 +14,7 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
+        "修复发布版在其他电脑打开“快捷工具”时因 SwiftPM 资源路径失效而闪退的问题，并避免访问开发电脑上的构建目录。",
         "新增区域截图和图片编辑，可添加画笔、文字、箭头、形状、高亮与马赛克，并保存到文件夹或复制到剪贴板。",
         "新增截图 OCR 翻译、划词翻译与手动输入翻译；支持编辑原文后重新翻译、快捷复制译文，并在可编辑位置替换原文。",
         "默认快捷键调整为 Control-A 区域截图、Control-Shift-A 截图翻译、Control-Z 划词翻译，均可在设置中修改。",

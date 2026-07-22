@@ -200,6 +200,22 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(SystemShortcutTranslationService.installURL?.lastPathComponent, "YuanGUI.Translate.shortcut")
     }
 
+    func testShortcutInstallerFindsPackagedResourceWithoutDeveloperBuildPath() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-PackagedResources-\(UUID().uuidString)", isDirectory: true)
+        let bundle = root.appendingPathComponent("YuanGUI_YuanGUI.bundle", isDirectory: true)
+        let shortcut = bundle.appendingPathComponent("YuanGUI.Translate.shortcut")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: shortcut)
+
+        XCTAssertEqual(
+            SystemShortcutTranslationService.installURL(resourceRoots: [root]),
+            shortcut
+        )
+        XCTAssertNil(SystemShortcutTranslationService.installURL(resourceRoots: [root.appendingPathComponent("missing")]))
+    }
+
     private func makeImage(width: Int, height: Int) throws -> CGImage {
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(

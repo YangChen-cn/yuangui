@@ -8,7 +8,23 @@ protocol SystemShortcutTranslationServicing {
 struct SystemShortcutTranslationService: SystemShortcutTranslationServicing {
     static let shortcutName = "YuanGUI.Translate"
     static var installURL: URL? {
-        Bundle.module.url(forResource: shortcutName, withExtension: "shortcut")
+        installURL(resourceRoots: defaultResourceRoots)
+    }
+
+    static func installURL(resourceRoots: [URL]) -> URL? {
+        let fileName = "\(shortcutName).shortcut"
+        let resourceBundleName = "YuanGUI_YuanGUI.bundle"
+        for root in resourceRoots {
+            let candidates = [
+                root.appendingPathComponent(fileName),
+                root.appendingPathComponent(resourceBundleName, isDirectory: true)
+                    .appendingPathComponent(fileName)
+            ]
+            if let url = candidates.first(where: { FileManager.default.isReadableFile(atPath: $0.path) }) {
+                return url
+            }
+        }
+        return nil
     }
 
     func translate(_ text: String, target: QuickToolLanguage) async throws -> String {
@@ -76,6 +92,22 @@ struct SystemShortcutTranslationService: SystemShortcutTranslationServicing {
             "detectTo": target.shortcutIdentifier,
             "text": text
         ], options: [.sortedKeys])
+    }
+
+    private static var defaultResourceRoots: [URL] {
+        var roots = [
+            Bundle.main.resourceURL,
+            Bundle.main.bundleURL,
+            Bundle.main.bundleURL.deletingLastPathComponent(),
+            Bundle.main.executableURL?.deletingLastPathComponent()
+        ].compactMap { $0 }
+        for bundle in Bundle.allBundles + Bundle.allFrameworks {
+            if let resourceURL = bundle.resourceURL { roots.append(resourceURL) }
+            roots.append(bundle.bundleURL)
+            roots.append(bundle.bundleURL.deletingLastPathComponent())
+        }
+        var seen = Set<String>()
+        return roots.filter { seen.insert($0.standardizedFileURL.path).inserted }
     }
 }
 
