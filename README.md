@@ -204,6 +204,7 @@ YuanGUI/
 
 ## 开发说明
 
+- 后续维护、架构入口、测试约束和发布清单请先阅读 [`DEVELOPMENT.md`](DEVELOPMENT.md)。
 - 主体为 SwiftPM macOS 可执行产品，没有依赖第三方 Swift Package。
 - 桌宠窗口由 AppKit `NSPanel` 承载，内容使用 SwiftUI 构建。
 - 系统状态读取通过 macOS 原生接口完成。
