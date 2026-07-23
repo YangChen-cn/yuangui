@@ -13,7 +13,6 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
   <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.1.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
@@ -55,7 +54,7 @@
 - 从源码构建需要 Swift 6 工具链（推荐使用最新版 Xcode）
 - 天气功能需要授予位置权限并允许网络访问
 - AI 对话需要用户自己的 OpenAI 兼容 API 地址和 API Key
-- 哔哩哔哩播放、歌词匹配和检查更新需要网络访问；部分字幕需要登录哔哩哔哩账号
+- 哔哩哔哩播放、歌词匹配和检查更新需要网络访问；读取字幕需要登录哔哩哔哩账号
 
 ## 安装
 
@@ -134,19 +133,6 @@ swift test
 - 高风险或无法确认归属的项目会被跳过；软件卸载默认移入废纸篓。
 - 清空废纸篓和永久清理操作需要用户确认。
 
-## 性能设计
-
-应用按界面可见状态动态切换监控频率：桌宠隐藏时暂停监控，普通陪伴状态只保留必要的低频电池与内存读取，打开完整状态面板或迷你状态时才启用实时指标。
-
-音乐状态按播放、资料库、歌词、歌词呈现、Bilibili 账号和导入分别发布，播放进度不会牵连整个资料库重绘。Apple Music 结合应用启停事件与使用期间轮询，未作为当前播放来源时不执行常驻查询。截图译文布局按内容和逻辑画布尺寸缓存；窗口缩放时按新的可视尺寸排版，任何因 OCR 框过窄而发生非必要换行的文本都会优先利用同一行的安全空白。
-
-当前 Release 版本在开发设备上的安静窗口实测约为：
-
-- 60 秒 CPU 中位数 `0%`，平均约 `0.32%`
-- 常驻物理内存约 `62.5 MB`
-
-主动对白、面板切换、图片首次载入和状态动画期间会出现短时峰值。实际数据会随 macOS 版本、设备和启用功能不同而变化。
-
 ## 测试
 
 ```bash
@@ -217,6 +203,3 @@ YuanGUI/
 - 当前动作效果是基于 SwiftUI 的轻量变换，不使用持续渲染循环。
 - `push` 和 Pull Request 会运行 `.github/workflows/tests.yml` 中的 `swift test`。
 
-## 许可证
-
-本项目采用 [GNU General Public License v3.0 only](LICENSE) 开源。你可以在 GPL 3.0 条款下使用、研究、修改和分发本项目；分发修改版或二进制版本时，需要同时满足 GPL 3.0 对源码提供、版权与许可证声明等要求。本项目不提供任何明示或默示担保。

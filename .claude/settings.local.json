@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push *)",
+      "Bash(gh release *)",
+      "Read(//Users/yang/**)",
+      "Bash(claude --resume 711f37a7-ccbd-45b1-9ed5-5c65b9afdeb2)",
+      "Bash(claude --resume 711f37a7-ccbd-45b1-9ed5-5c65b9afdeb2 --no-input)"
+    ]
+  }
+}
