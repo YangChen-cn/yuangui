@@ -9,6 +9,7 @@ protocol BilibiliPlaying: AnyObject {
     var onFailure: ((Error) -> Void)? { get set }
     var hasLoadedItem: Bool { get }
     func load(urls: [URL], headers: [String: String], position: TimeInterval, autoplay: Bool)
+    func play()
     func playPause()
     func pause()
     func seek(to position: TimeInterval)
@@ -132,6 +133,7 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
         loadCurrentCandidate()
     }
 
+    func play() { player.play() }
     func playPause() { player.timeControlStatus == .playing ? player.pause() : player.play() }
     func pause() { player.pause() }
     func previous() { }

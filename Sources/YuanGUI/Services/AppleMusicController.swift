@@ -13,6 +13,7 @@ protocol AppleMusicProviding: Sendable {
     func isRunning() async -> Bool
     func requestSnapshot() async throws -> AppleMusicSnapshot
     func artworkURL(for trackID: String) async -> URL?
+    func play() async
     func playPause() async
     func pause() async
     func previous() async
@@ -129,6 +130,7 @@ actor AppleMusicController: AppleMusicProviding {
         return String(hash, radix: 16)
     }
 
+    func play() { guard isRunning() else { return }; try? command("play") }
     func playPause() { try? command("playpause") }
     func pause() { guard isRunning() else { return }; try? command("pause") }
     func previous() { try? command("previous track") }

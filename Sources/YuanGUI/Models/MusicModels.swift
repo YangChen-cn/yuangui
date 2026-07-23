@@ -320,6 +320,7 @@ struct MusicLibrarySnapshot: Codable {
 
 @MainActor
 protocol MusicPlaybackControlling: AnyObject {
+    func play()
     func playPause()
     func pause()
     func previous()

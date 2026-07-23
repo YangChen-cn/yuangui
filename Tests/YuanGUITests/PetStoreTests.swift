@@ -119,6 +119,7 @@ final class PetStoreTests: XCTestCase {
             defaults: defaults,
             startServices: false
         )
+        store.setBedtimeReminderEnabled(false)
         store.setPetPresented(true)
 
         store.showAmbientMessage("天气播报")

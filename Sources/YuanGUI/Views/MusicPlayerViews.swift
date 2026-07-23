@@ -111,6 +111,27 @@ struct MusicProgressView: View {
     }
 }
 
+struct MusicVolumeControl: View {
+    @ObservedMusicFeature var music: MusicFeature
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: compact ? 6 : 9) {
+            Image(systemName: music.playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: compact ? 10 : 13))
+                .foregroundStyle(.secondary)
+            Slider(value: Binding(get: { music.playback.volume }, set: music.setVolume), in: 0...1)
+                .controlSize(compact ? .mini : .regular)
+                .accessibilityLabel("音量")
+            Text("\(Int((music.playback.volume * 100).rounded()))%")
+                .font(.system(size: compact ? 9 : 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: compact ? 28 : 34, alignment: .trailing)
+        }
+        .help("调整音量")
+    }
+}
+
 private struct FullPlayerLyricsView: View {
     @ObservedMusicFeature var music: MusicFeature
     @State private var previewLyricPosition: Double?
@@ -370,6 +391,7 @@ struct MiniMusicPlayerView: View {
 
 struct MusicStatusCard: View {
     @ObservedMusicFeature var music: MusicFeature
+    @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @Environment(\.appActions) private var appActions
     @State private var searchTitle = ""
     @State private var searchArtist = ""
@@ -430,9 +452,16 @@ struct MusicStatusCard: View {
                     Spacer(minLength: 0)
                 }
                 MusicProgressView(music: music)
+                MusicVolumeControl(music: music, compact: true)
                 HStack {
                     MusicTransportControls(music: music, compact: true)
                     Spacer()
+                    Toggle("自动暂停", isOn: Binding(
+                        get: { externalAudioInterruption.isEnabled },
+                        set: externalAudioInterruption.setEnabled
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
                     Toggle("桌面歌词", isOn: Binding(
                         get: { music.lyricsPresentation.isVisible },
                         set: { _ in music.toggleLyricsVisible() }
@@ -860,14 +889,11 @@ struct MusicPlayerView: View {
                     .buttonStyle(.bordered)
                     .tint(.pink)
                 }
-                HStack(spacing: 12) {
-                    Image(systemName: "speaker.fill")
-                    Slider(value: Binding(get: { music.playback.volume }, set: music.setVolume), in: 0...1).frame(width: 160)
-                    if music.playback.source == .bilibili {
-                        Picker("播放模式", selection: Binding(get: { music.playback.playMode }, set: music.setPlayMode)) {
-                            ForEach(MusicPlayMode.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
-                        }.labelsHidden().frame(width: 120)
-                    }
+                MusicVolumeControl(music: music).frame(width: 230)
+                if music.playback.source == .bilibili {
+                    Picker("播放模式", selection: Binding(get: { music.playback.playMode }, set: music.setPlayMode)) {
+                        ForEach(MusicPlayMode.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
+                    }.labelsHidden().frame(width: 120)
                 }
                 FullPlayerLyricsView(music: music)
                 ViewThatFits(in: .horizontal) {

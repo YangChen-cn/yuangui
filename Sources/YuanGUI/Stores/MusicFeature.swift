@@ -61,6 +61,10 @@ final class MusicFeature {
     private var lastAppleClockTime: TimeInterval?
     private var bilibiliPlaybackQueue = BilibiliPlaybackQueue()
     private var appleMusicWorkspaceObservers: [NSObjectProtocol] = []
+    private var pausedForExternalAudio = false
+    var onExternalAudioResumeCancelled: (() -> Void)?
+    var onExternalAudioManualControl: (() -> Void)?
+    var blocksAutomaticPlaybackForExternalAudio: (() -> Bool)?
 
     init(
         defaults: UserDefaults = .standard,
@@ -289,10 +293,15 @@ final class MusicFeature {
 
     func setSource(_ newSource: MusicSource) {
         guard newSource != browsingSource else { return }
+        registerManualPlaybackControl()
         browsingSource = newSource
         defaults.set(newSource.rawValue, forKey: "musicSource")
-        if newSource == .bilibili, activePlaybackSource == nil, currentTrack == nil {
-            restoreBilibiliSelection()
+        if newSource == .bilibili {
+            // Changing the source is also a handoff of transport ownership.
+            // Keep the status panel on the last Bilibili selection rather than
+            // leaving the old Apple Music metadata visible.
+            if activePlaybackSource == .appleMusic { _ = activatePlaybackSource(.bilibili) }
+            if currentTrack?.source != .bilibili { restoreBilibiliSelection() }
         }
     }
 
@@ -331,6 +340,7 @@ final class MusicFeature {
     }
 
     func connectAppleMusic(autoplay: Bool = false) {
+        registerManualPlaybackControl()
         setSource(.appleMusic)
         if activatePlaybackSource(.appleMusic) { clearTransientPlaybackState() }
         if !appleMusicRunning {
@@ -371,6 +381,7 @@ final class MusicFeature {
     }
 
     func playPause() {
+        registerManualPlaybackControl()
         errorMessage = nil
         guard let activePlaybackSource else {
             if currentTrack?.source == .bilibili || browsingSource == .bilibili {
@@ -401,10 +412,11 @@ final class MusicFeature {
         }
     }
 
-    func previous() { move(by: -1) }
-    func next() { move(by: 1) }
+    func previous() { registerManualPlaybackControl(); move(by: -1) }
+    func next() { registerManualPlaybackControl(); move(by: 1) }
 
     func seek(to newPosition: TimeInterval) {
+        registerManualPlaybackControl()
         let lowerBounded = max(newPosition, 0)
         let target = duration > 0 ? min(lowerBounded, duration) : lowerBounded
         playbackProgress.setPosition(target)
@@ -697,7 +709,50 @@ final class MusicFeature {
     }
 
     func play(_ track: MusicTrack, at savedPosition: TimeInterval = 0) {
+        registerManualPlaybackControl()
         playBilibiliTrack(track, at: savedPosition, rebuildQueue: true)
+    }
+
+    func pauseForExternalAudio() {
+        guard isPlaying else { return }
+        pausedForExternalAudio = true
+        switch playbackSource {
+        case .appleMusic:
+            playbackState = .paused
+            lastAppleClockTime = nil
+            Task { [appleMusic] in await appleMusic.pause() }
+        case .bilibili:
+            bilibiliPlayer.pause()
+        }
+    }
+
+    func resumeAfterExternalAudio() {
+        guard pausedForExternalAudio else { return }
+        pausedForExternalAudio = false
+        switch playbackSource {
+        case .appleMusic:
+            guard appleMusicRunning else { return }
+            playbackState = .playing
+            lastAppleClockTime = Date.timeIntervalSinceReferenceDate
+            Task { [weak self, appleMusic] in
+                await appleMusic.play()
+                self?.scheduleAppleRefresh()
+            }
+        case .bilibili:
+            guard bilibiliPlayer.hasLoadedItem else { return }
+            bilibiliPlayer.play()
+        }
+    }
+
+    func cancelExternalAudioResume() {
+        let hadAutomaticPause = pausedForExternalAudio
+        pausedForExternalAudio = false
+        if hadAutomaticPause { onExternalAudioResumeCancelled?() }
+    }
+
+    private func registerManualPlaybackControl() {
+        cancelExternalAudioResume()
+        onExternalAudioManualControl?()
     }
 
     private func playBilibiliTrack(
@@ -987,6 +1042,7 @@ final class MusicFeature {
     }
 
     func shutdown() async {
+        cancelExternalAudioResume()
         syncTask?.cancel(); appleClockTask?.cancel(); appleRefreshTask?.cancel(); appleArtworkTask?.cancel(); bilibiliImportResultTask?.cancel()
         lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliFavoriteTask?.cancel(); bilibiliPlayer.stop()
         appleMusicWorkspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
@@ -1126,6 +1182,10 @@ final class MusicFeature {
 
     private func handleTrackFinished() {
         guard activePlaybackSource == .bilibili else { return }
+        guard !(blocksAutomaticPlaybackForExternalAudio?() ?? false) else {
+            playbackState = .paused
+            return
+        }
         if playMode == .repeatOne, let currentTrack { play(currentTrack) }
         else { move(by: 1) }
     }

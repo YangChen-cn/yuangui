@@ -14,7 +14,7 @@
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.0.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.1.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -33,7 +33,7 @@
 - **主动对白**：可设置 1–120 分钟的日常对白间隔，并在天气刷新后进行角色化播报。
 - **AI 对话**：支持 OpenAI 兼容接口、SSE 流式回复（单次最多 4096 tokens）；填写 URL 与 API Key 后可自动读取模型，也可以手动填写模型名和编辑角色提示词。
 - **附件对话与历史记录**：支持图片和文本类附件，保留本地聊天历史。
-- **统一音乐播放器**：可以控制系统 Apple Music，也能导入哔哩哔哩 URL、BV 号和短链接播放公开视频音频。
+- **统一音乐播放器**：可以控制系统 Apple Music，也能导入哔哩哔哩 URL、BV 号和短链接播放公开视频音频；状态栏和完整播放器均可独立调节音量，并可选择在其他应用持续播放声音时自动暂停。
 - **哔哩哔哩资料库**：支持读取登录账号创建或收藏的视频收藏夹，弹窗选择后一键去重导入；同时支持播放列表、收藏、本地歌单和多种播放模式。
 - **哔哩哔哩扫码登录与字幕**：登录后可读取账号有权访问的播放器字幕；应用不会读取或保存账号密码。
 - **歌词与听歌陪伴**：支持 LRCLIB 自动匹配、单独修改歌曲名或歌手、导入 LRC、手动输入与精细调整歌词偏移，以及可自定义的桌面悬浮歌词；播放期间角色会切换到听歌动作。
@@ -61,9 +61,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-2.0.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.0.0.dmg)
+[一键下载最新版 `YuanGUI-2.1.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.1.0.dmg)
 
-1. 打开 `YuanGUI-2.0.0.dmg`。
+1. 打开 `YuanGUI-2.1.0.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -116,6 +116,7 @@ swift test
 5. 登录后点击侧边栏的“导入哔哩哔哩收藏夹”，可以选择自己创建或收藏的视频收藏夹并一键导入；应用会去重，并创建或更新同名本地歌单。
 6. 可以单独保存歌曲名或歌手而不影响现有歌词，也可以使用修改后的信息重新匹配，或直接导入本地 LRC 文件。
 7. 歌词偏移支持滑杆、0.1 秒步进和直接输入秒数，并按歌曲分别保存。
+8. “其他应用播放声音时自动暂停音乐”默认关闭；打开后，持续约 1 秒的外部音频会暂停当前音乐，外部声音稳定结束后才会在安全条件下恢复。
 
 播放列表、收藏、本地歌单、歌词、歌词偏移和播放进度都会保存在本机。切换播放来源不会删除已经匹配的歌词。
 
@@ -175,7 +176,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。产物位于：
 
 ```text
-dist/YuanGUI-2.0.0.dmg
+dist/YuanGUI-2.1.0.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

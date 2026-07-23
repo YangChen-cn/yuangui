@@ -16,6 +16,7 @@ struct SettingsView: View {
     @ObservedObject var loginItem: LoginItemStore
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedMusicFeature var music: MusicFeature
+    @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @ObservedObject var quickTools: QuickToolsController
     @ObservedObject var selection: SettingsSelectionModel
     @Environment(\.appActions) private var appActions
@@ -105,6 +106,19 @@ struct SettingsView: View {
                     supportsOpacity: true
                 )
                 Text("关闭轻量跟唱后，播放期间只显示轻量音乐状态；番茄钟专注时会自动隐藏桌宠歌词气泡。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("外部声音") {
+                Toggle("其他应用播放声音时暂停音乐", isOn: Binding(
+                    get: { externalAudioInterruption.isEnabled },
+                    set: externalAudioInterruption.setEnabled
+                ))
+                Toggle("外部声音结束后自动继续", isOn: Binding(
+                    get: { externalAudioInterruption.resumesAfterExternalAudio },
+                    set: externalAudioInterruption.setResumesAfterExternalAudio
+                ))
+                .disabled(!externalAudioInterruption.isEnabled)
+                Text("其他应用连续播放约 1 秒后才暂停；安静约 2.5 秒后才尝试恢复。系统提示音和短暂通知不会触发。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Apple Music") {

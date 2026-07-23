@@ -709,6 +709,30 @@ final class MusicTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(saveCount, 1)
     }
 
+    @MainActor
+    func testSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay() async {
+        let suiteName = "MusicSourceSwitchTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(MusicSource.appleMusic.rawValue, forKey: "musicSource")
+        let track = MusicTrack(
+            id: "last-bilibili-track", source: .bilibili, title: "上次 B 站歌曲", artist: "测试歌手",
+            album: nil, coverURL: nil, duration: 180, bilibili: nil, subtitleURL: nil
+        )
+        let library = StaticMusicLibraryCoordinator(snapshot: MusicLibrarySnapshot(
+            playlist: [track], currentTrackID: track.id, lastPosition: 42
+        ))
+        let feature = MusicFeature(defaults: defaults, bilibiliPlayer: RecordingBilibiliPlayer(), library: library)
+        for _ in 0..<8 { await Task.yield() }
+
+        feature.setSource(.bilibili)
+
+        XCTAssertEqual(feature.playback.source, .bilibili)
+        XCTAssertEqual(feature.playback.currentTrack?.id, track.id)
+        XCTAssertEqual(feature.playback.currentTrack?.title, "上次 B 站歌曲")
+        await feature.shutdown()
+    }
+
     private func makeQueueTracks(count: Int) -> [MusicTrack] {
         (0..<count).map { index in
             MusicTrack(
@@ -735,6 +759,18 @@ private actor RecordingMusicLibraryCoordinator: MusicLibraryCoordinating {
     }
 }
 
+private actor StaticMusicLibraryCoordinator: MusicLibraryCoordinating {
+    private let snapshot: MusicLibrarySnapshot
+
+    init(snapshot: MusicLibrarySnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func load() async throws -> MusicLibrarySnapshot { snapshot }
+    func scheduleSave(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {}
+    func saveNow(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {}
+}
+
 @MainActor
 private final class RecordingBilibiliPlayer: BilibiliPlaying {
     var onStateChange: ((MusicPlaybackState) -> Void)?
@@ -748,6 +784,7 @@ private final class RecordingBilibiliPlayer: BilibiliPlaying {
         hasLoadedItem = true
     }
 
+    func play() {}
     func playPause() {}
     func pause() {}
     func seek(to position: TimeInterval) {}

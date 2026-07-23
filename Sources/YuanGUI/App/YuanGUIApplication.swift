@@ -41,6 +41,7 @@ final class AppRuntime {
     lazy var chat = ChatStore(settings: aiSettings)
     lazy var maintenance = MaintenanceStore(pet: pet)
     lazy var music = MusicFeature()
+    lazy var externalAudioInterruption = ExternalAudioInterruptionController(music: music)
     lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
     private lazy var windows = WindowCoordinator(
         pet: pet,
@@ -50,6 +51,7 @@ final class AppRuntime {
         chat: chat,
         maintenance: maintenance,
         music: music,
+        externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
         terminateForUpdate: { [weak self] in self?.prepareToTerminateForUpdate() }
     )
@@ -60,9 +62,11 @@ final class AppRuntime {
     func start() {
         NSApp.setActivationPolicy(.accessory)
         windows.start()
+        externalAudioInterruption.start()
     }
 
     func stop() {
+        externalAudioInterruption.stop()
         windows.stop()
     }
 
@@ -75,6 +79,7 @@ final class AppRuntime {
                 sender.reply(toApplicationShouldTerminate: true)
                 return
             }
+            externalAudioInterruption.stop()
             await music.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
         }
@@ -89,6 +94,7 @@ final class AppRuntime {
                 NSApp.terminate(nil)
                 return
             }
+            externalAudioInterruption.stop()
             await music.shutdown()
             isUpdateTerminationReady = true
             isPreparingUpdateTermination = false
@@ -106,6 +112,7 @@ final class WindowCoordinator: NSObject {
     private let chat: ChatStore
     private let maintenance: MaintenanceStore
     private let music: MusicFeature
+    private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
     private let terminateForUpdate: () -> Void
     private var panelController: PetPanelController?
@@ -133,6 +140,7 @@ final class WindowCoordinator: NSObject {
         chat: ChatStore,
         maintenance: MaintenanceStore,
         music: MusicFeature,
+        externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
         terminateForUpdate: @escaping () -> Void
     ) {
@@ -143,6 +151,7 @@ final class WindowCoordinator: NSObject {
         self.chat = chat
         self.maintenance = maintenance
         self.music = music
+        self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
         self.terminateForUpdate = terminateForUpdate
     }
@@ -273,6 +282,7 @@ final class WindowCoordinator: NSObject {
             store: pet,
             focusTimer: focusTimer,
             music: music,
+            externalAudioInterruption: externalAudioInterruption,
             quickTools: quickTools,
             togglePet: { [weak self] in self?.panelController?.toggle() },
             showPet: { [weak self] in self?.panelController?.show() },
@@ -291,6 +301,7 @@ final class WindowCoordinator: NSObject {
                 loginItem: loginItem,
                 focusTimer: focusTimer,
                 music: music,
+                externalAudioInterruption: externalAudioInterruption,
                 quickTools: quickTools,
                 showPet: { [weak self] in self?.panelController?.show() },
                 appActions: actions

@@ -7,6 +7,7 @@ struct MenuBarDashboardView: View {
     @ObservedObject var store: PetStore
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedMusicFeature var music: MusicFeature
+    @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @ObservedObject var quickTools: QuickToolsController
     let dashboardWidth: CGFloat
     let dashboardHeight: CGFloat
@@ -69,7 +70,7 @@ struct MenuBarDashboardView: View {
                 WeatherStatusCard(weather: store.weather)
                 SystemStatusCard(monitor: store.monitor)
             } else if selectedSection == .music {
-                MusicStatusCard(music: music)
+                MusicStatusCard(music: music, externalAudioInterruption: externalAudioInterruption)
                     .frame(maxHeight: .infinity)
             } else {
                 toolsGrid
