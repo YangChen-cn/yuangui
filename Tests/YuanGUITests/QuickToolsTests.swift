@@ -17,11 +17,20 @@ final class QuickToolsTests: XCTestCase {
         )
 
         actions.open(.maintenance(tab: 2))
+        actions.open(.settings(.ai))
         actions.open(.music)
         actions.runQuickTool(.screenshotTranslation)
 
-        XCTAssertEqual(opened, [.maintenance(tab: 2), .music])
+        XCTAssertEqual(opened, [.maintenance(tab: 2), .settings(.ai), .music])
         XCTAssertEqual(tools, [.screenshotTranslation])
+    }
+
+    @MainActor
+    func testSettingsSelectionCanOpenDirectlyOnAIConfiguration() {
+        let selection = SettingsSelectionModel()
+        XCTAssertEqual(selection.selectedTab, .pet)
+        selection.selectedTab = .ai
+        XCTAssertEqual(selection.selectedTab, .ai)
     }
 
     func testHotKeyValidationAndRoundTrip() throws {
@@ -911,6 +920,17 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(
             TranslationTextFormatter.addingSemanticLineBreaks("First • Second • Third"),
             "First\n• Second\n• Third"
+        )
+    }
+
+    func testSimplifiedChineseTargetNormalizesTraditionalOutput() {
+        XCTAssertEqual(
+            TranslationTextFormatter.simplifiedChinese("繁體中文與流程說明", target: .simplifiedChinese),
+            "繁体中文与流程说明"
+        )
+        XCTAssertEqual(
+            TranslationTextFormatter.simplifiedChinese("繁體中文", target: .english),
+            "繁體中文"
         )
     }
 

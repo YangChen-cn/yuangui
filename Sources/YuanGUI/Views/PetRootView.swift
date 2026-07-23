@@ -8,6 +8,7 @@ struct PetRootView: View {
     @ObservedObject var maintenance: MaintenanceStore
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedMusicFeature var music: MusicFeature
+    @ObservedObject var auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
     @Environment(\.appActions) private var appActions
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
@@ -47,7 +48,7 @@ struct PetRootView: View {
                     PetReplyBubble(chat: chat, pet: store)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .frame(maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 291 * scale + 62)
+                        .padding(.bottom, 291 * scale + PetLayout.chatPetBottomInset + 4)
                         .zIndex(4)
                 }
             }
@@ -96,11 +97,10 @@ struct PetRootView: View {
             }
             .frame(maxWidth: .infinity)
             .offset(x: 35 * scale)
-            .padding(.bottom, chat.isPresented ? 58 : 0)
+            .padding(.bottom, chat.isPresented ? PetLayout.chatPetBottomInset : 0)
 
             if chat.isPresented && maintenance.quickMode == nil {
                 PetChatComposer(chat: chat, pet: store)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 3)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(5)
@@ -111,7 +111,7 @@ struct PetRootView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
-            if !store.isDropTargeted {
+            if !store.isDropTargeted && !chat.isPresented {
                 if showsInteractiveSideControls || hasActiveFocusCountdown {
                     if PetLayout.usesCompactControls(scale: store.petScale), !chat.isPresented {
                         compactSideControls
@@ -150,8 +150,13 @@ struct PetRootView: View {
                         music: music,
                         isMiniPlayerPresented: $isMiniPlayerPresented
                     )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, chat.isPresented ? 70 : 6)
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: placesToolbarAbovePet ? .top : .bottom
+                        )
+                        .padding(.top, placesToolbarAbovePet ? 6 : 0)
+                        .padding(.bottom, placesToolbarAbovePet ? 0 : 6)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -173,6 +178,11 @@ struct PetRootView: View {
 
     private var displayedPetAction: PetAction {
         store.resolvedAction(isMusicPlaying: music.playback.isPlaying)
+    }
+
+    private var placesToolbarAbovePet: Bool {
+        auxiliaryBubblePresentation.isVisible
+            && auxiliaryBubblePresentation.placement == .belowPet
     }
 
     private var roleControls: some View {
@@ -284,7 +294,7 @@ struct PetRootView: View {
     }
 
     private var showsInteractiveSideControls: Bool {
-        showsTransientSideControls && !store.interactionLocked
+        showsTransientSideControls && !store.interactionLocked && !chat.isPresented
     }
 
     private var hasActiveFocusCountdown: Bool {
@@ -436,7 +446,7 @@ struct PetRootView: View {
         Button(store.interactionLocked ? "解锁桌宠点击" : "锁定并允许点击穿透") {
             store.toggleInteractionLock()
         }
-        Button("设置…") { appActions.open(.settings) }
+        Button("设置…") { appActions.open(.settings(.pet)) }
         Divider()
         Button("打开废纸篓") { store.openTrash() }
         Button("清空废纸篓…") { store.confirmAndEmptyTrash() }

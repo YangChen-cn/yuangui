@@ -133,6 +133,6 @@ struct PetEdgePeekView: View {
             get: { store.smartReactionsEnabled },
             set: { store.setSmartReactionsEnabled($0) }
         ))
-        Button("设置…") { appActions.open(.settings) }
+        Button("设置…") { appActions.open(.settings(.pet)) }
     }
 }

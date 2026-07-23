@@ -462,40 +462,94 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(resizedVisual.minY, oldVisual.minY, accuracy: 0.001)
     }
 
+    func testChatResizeClampsWholePanelWhenPetIsParkedAtDisplayEdge() {
+        let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
+        let usable = PetLayout.usablePanelFrame(in: visible, showsChat: true)
+        let targetSize = PetLayout.panelSize(scale: 0.75, showsBubble: false, showsChat: true)
+        for x in [visible.minX, visible.maxX - 405] {
+            let resized = PetLayout.resizedPanelFrame(
+                from: CGRect(x: x, y: visible.minY, width: 405, height: 292.5),
+                targetSize: targetSize,
+                scale: 0.75,
+                oldShowsChat: false,
+                newShowsChat: true,
+                visibleFrame: usable
+            )
+            XCTAssertGreaterThanOrEqual(resized.minX, usable.minX)
+            XCTAssertLessThanOrEqual(resized.maxX, usable.maxX)
+            XCTAssertGreaterThanOrEqual(resized.minY, usable.minY)
+            XCTAssertLessThanOrEqual(resized.maxY, usable.maxY)
+        }
+    }
+
+    func testChatUsableFrameKeepsComposerAwayFromScreenEdges() {
+        let visible = CGRect(x: -600, y: 24, width: 600, height: 900)
+        let usable = PetLayout.usablePanelFrame(in: visible, showsChat: true)
+        XCTAssertEqual(usable.minX, visible.minX + PetLayout.chatScreenEdgeInset)
+        XCTAssertEqual(usable.minY, visible.minY + PetLayout.chatScreenEdgeInset)
+        XCTAssertEqual(usable.maxX, visible.maxX - PetLayout.chatScreenEdgeInset)
+        XCTAssertEqual(usable.maxY, visible.maxY - PetLayout.chatScreenEdgeInset)
+        XCTAssertEqual(PetLayout.usablePanelFrame(in: visible, showsChat: false), visible)
+    }
+
     func testAuxiliaryBubbleFlipsBelowPetNearTopEdge() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let pet = CGRect(x: 700, y: 500, width: 240, height: 280)
         let bubble = CGSize(width: 350, height: 120)
-        let origin = PetLayout.auxiliaryBubbleOrigin(
+        let layout = PetLayout.auxiliaryBubbleLayout(
             petVisualFrame: pet,
             bubbleSize: bubble,
             visibleFrame: visible
         )
 
-        XCTAssertLessThanOrEqual(
-            origin.y + bubble.height,
-            pet.minY - PetLayout.auxiliaryBubbleSpacing
+        XCTAssertEqual(layout.placement, .belowPet)
+        XCTAssertEqual(
+            layout.origin.y + bubble.height,
+            pet.minY + PetLayout.auxiliaryBubbleBelowOverlap,
+            accuracy: 0.001
         )
-        XCTAssertGreaterThanOrEqual(origin.x, visible.minX)
-        XCTAssertLessThanOrEqual(origin.x + bubble.width, visible.maxX)
+        XCTAssertGreaterThanOrEqual(layout.origin.x, visible.minX)
+        XCTAssertLessThanOrEqual(layout.origin.x + bubble.width, visible.maxX)
     }
 
-    func testAuxiliaryBubbleOverlapsOnlyTheSpritesTransparentTopInset() {
+    func testAuxiliaryBubbleUsesSmallTopOverlap() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 900)
         let pet = CGRect(x: 460, y: 160, width: 245, height: 245)
         let bubble = CGSize(width: 350, height: 120)
-        let origin = PetLayout.auxiliaryBubbleOrigin(
+        let layout = PetLayout.auxiliaryBubbleLayout(
             petVisualFrame: pet,
             bubbleSize: bubble,
             visibleFrame: visible
         )
 
+        XCTAssertEqual(layout.placement, .abovePet)
         XCTAssertEqual(
-            origin.y,
-            pet.maxY + PetLayout.auxiliaryBubbleSpacing,
+            layout.origin.y,
+            pet.maxY + PetLayout.auxiliaryBubbleAboveGap,
             accuracy: 0.001
         )
-        XCTAssertGreaterThan(origin.y + bubble.height, pet.maxY)
+        XCTAssertLessThanOrEqual(PetLayout.auxiliaryBubbleAboveGap, 4)
+        XCTAssertGreaterThan(layout.origin.y + bubble.height, pet.maxY)
+    }
+
+    func testVisiblePetFrameUsesCurrentSpritesOpaqueBounds() {
+        let sprite = CGRect(x: 100, y: 200, width: 326, height: 326)
+        let normalized = CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.55)
+        let visible = PetLayout.visiblePetFrame(
+            spriteFrame: sprite,
+            normalizedVisibleBounds: normalized
+        )
+        XCTAssertEqual(visible.minX, 165.2, accuracy: 0.001)
+        XCTAssertEqual(visible.minY, 232.6, accuracy: 0.001)
+        XCTAssertEqual(visible.width, 195.6, accuracy: 0.001)
+        XCTAssertEqual(visible.height, 179.3, accuracy: 0.001)
+    }
+
+    func testChatComposerReservesCharacterClearance() {
+        XCTAssertGreaterThanOrEqual(PetLayout.chatPetBottomInset, 100)
+        let panel = CGRect(x: 20, y: 30, width: 450, height: 506.5)
+        let visual = PetLayout.petVisualFrame(panelFrame: panel, scale: 0.75, showsChat: true)
+        XCTAssertEqual(visual.minY - panel.minY, PetLayout.chatPetBottomInset, accuracy: 0.001)
     }
 
     func testDefaultAndCompactControlScales() {

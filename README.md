@@ -152,7 +152,7 @@ swift test
 swift test
 ```
 
-当前项目包含 176 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
+当前项目包含 183 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换

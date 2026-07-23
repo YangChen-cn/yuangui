@@ -1378,6 +1378,7 @@ private struct LyricsSearchSheet: View {
 struct PetMusicLyricBubble: View {
     let text: String
     var alertText: String? = nil
+    var placement: PetAuxiliaryBubblePlacement = .abovePet
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "music.note").foregroundStyle(.pink).font(.headline)
@@ -1396,6 +1397,13 @@ struct PetMusicLyricBubble: View {
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.42), lineWidth: 0.8))
         .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         .frame(maxWidth: 350)
+        .overlay(alignment: placement == .abovePet ? .bottom : .top) {
+            PetBubbleTail()
+                .fill(.regularMaterial)
+                .frame(width: 20, height: 10)
+                .rotationEffect(.degrees(placement == .abovePet ? 0 : 180))
+                .offset(y: placement == .abovePet ? 8 : -8)
+        }
     }
 }
 

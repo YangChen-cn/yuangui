@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController {
     private let window: NSWindow
+    private let selection = SettingsSelectionModel()
 
     init(petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, music: MusicFeature, quickTools: QuickToolsController, showPet: @escaping () -> Void, appActions: AppActions = .disabled) {
         window = NSWindow(
@@ -24,13 +25,15 @@ final class SettingsWindowController {
                 focusTimer: focusTimer,
                 music: music,
                 quickTools: quickTools,
+                selection: selection,
                 showPet: showPet
             )
             .environment(\.appActions, appActions)
         )
     }
 
-    func show() {
+    func show(tab: SettingsTab) {
+        selection.selectedTab = tab
         NSApp.activate(ignoringOtherApps: true)
         window.center()
         window.makeKeyAndOrderFront(nil)

@@ -132,8 +132,10 @@ struct PetChatComposer: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(.pink).help("添加图片或文件")
 
-                TextField("直接和我们说话…", text: $draft)
+                TextField("直接和我们说话…", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
+                    .lineLimit(1...4)
+                    .frame(minHeight: 22, maxHeight: 76, alignment: .topLeading)
                     .focused($inputFocused)
                     .onSubmit(send)
                     .onPasteCommand(of: [.image]) { providers in
@@ -152,18 +154,35 @@ struct PetChatComposer: View {
                 .buttonStyle(.borderless).foregroundStyle(.pink)
                 .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || chat.isSending)
 
-                Divider().frame(height: 20)
-                Button { appActions.open(.chatHistory) } label: { Image(systemName: "clock.arrow.circlepath") }
-                    .buttonStyle(.borderless).help("对话历史")
-                Button { appActions.open(.settings) } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.borderless).help("AI 设置")
-                Button { chat.dismiss() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("收起对话")
+                Menu {
+                    Button { appActions.open(.chatHistory) } label: {
+                        Label("对话历史", systemImage: "clock.arrow.circlepath")
+                    }
+                    Button { appActions.open(.settings(.ai)) } label: {
+                        Label("AI 设置", systemImage: "gearshape")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("更多聊天选项")
+
+                Button { chat.dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(.secondary.opacity(0.82), in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("收起对话（Esc）")
             }
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 10)
-        .frame(width: 426)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(minWidth: 330, idealWidth: 388, maxWidth: 388)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
             LinearGradient(colors: [.white.opacity(0.38), .pink.opacity(0.11)], startPoint: .top, endPoint: .bottom),
@@ -172,6 +191,7 @@ struct PetChatComposer: View {
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.64), lineWidth: 0.8))
         .shadow(color: .black.opacity(0.13), radius: 13, y: 5)
         .onAppear { inputFocused = true }
+        .onExitCommand { chat.dismiss() }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleDrop)
         .alert("附件无法添加", isPresented: Binding(
             get: { attachmentError != nil },

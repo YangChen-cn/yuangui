@@ -4,11 +4,13 @@ struct PetStatusBubble: View {
     @ObservedObject private var store: PetStore
     @ObservedObject private var monitor: SystemMonitor
     @ObservedObject private var weather: WeatherService
+    let placement: PetAuxiliaryBubblePlacement
 
-    init(store: PetStore) {
+    init(store: PetStore, placement: PetAuxiliaryBubblePlacement = .abovePet) {
         self.store = store
         self.monitor = store.monitor
         self.weather = store.weather
+        self.placement = placement
     }
 
     var body: some View {
@@ -59,12 +61,13 @@ struct PetStatusBubble: View {
         )
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20 * visualScale, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20 * visualScale).stroke(.white.opacity(0.82), lineWidth: 0.9))
-        .shadow(color: stateColor.opacity(0.18), radius: 14, y: 6)
-        .overlay(alignment: .bottom) {
+        .shadow(color: .black.opacity(0.11), radius: 8, y: 3)
+        .overlay(alignment: placement == .abovePet ? .bottom : .top) {
             PetBubbleTail()
                 .fill(.regularMaterial)
                 .frame(width: 20 * visualScale, height: 10 * visualScale)
-                .offset(y: 8 * visualScale)
+                .rotationEffect(.degrees(placement == .abovePet ? 0 : 180))
+                .offset(y: (placement == .abovePet ? 8 : -8) * visualScale)
         }
     }
 

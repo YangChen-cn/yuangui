@@ -1,9 +1,18 @@
 import SwiftUI
 
+enum SettingsTab: Int, CaseIterable, Equatable, Sendable {
+    case pet
+    case quickTools
+    case ai
+    case focus
+    case music
+    case about
+}
+
 enum AppRoute: Equatable, Sendable {
     case statusDashboard
     case chat
-    case settings
+    case settings(SettingsTab)
     case chatHistory
     case maintenance(tab: Int)
     case music

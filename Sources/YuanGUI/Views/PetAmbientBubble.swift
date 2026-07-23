@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PetAmbientBubble: View {
     @ObservedObject var store: PetStore
+    var placement: PetAuxiliaryBubblePlacement = .abovePet
     @State private var appeared = false
 
     var body: some View {
@@ -47,11 +48,12 @@ struct PetAmbientBubble: View {
         )
         .overlay(RoundedRectangle(cornerRadius: 22 * visualScale).stroke(.white.opacity(0.58), lineWidth: 0.9))
         .shadow(color: .black.opacity(0.12), radius: 7, y: 3)
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: placement == .abovePet ? .bottom : .top) {
             PetBubbleTail()
                 .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
                 .frame(width: 20 * visualScale, height: 10 * visualScale)
-                .offset(y: 8 * visualScale)
+                .rotationEffect(.degrees(placement == .abovePet ? 0 : 180))
+                .offset(y: (placement == .abovePet ? 8 : -8) * visualScale)
         }
         .opacity(appeared ? 1 : 0.9)
         .offset(y: appeared ? 0 : -4)

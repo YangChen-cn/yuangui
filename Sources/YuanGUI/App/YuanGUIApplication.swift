@@ -171,8 +171,11 @@ final class WindowCoordinator: NSObject {
         chat.$isPresented
             .removeDuplicates()
             .sink { [weak self] presented in
-                self?.pet.setChatting(presented)
-                if presented { self?.panelController?.focusForChatInput() }
+                Task { @MainActor [weak self] in
+                    guard let self, self.chat.isPresented == presented else { return }
+                    self.pet.setChatting(presented)
+                    if presented { self.panelController?.focusForChatInput() }
+                }
             }
             .store(in: &cancellables)
     }
@@ -192,8 +195,8 @@ final class WindowCoordinator: NSObject {
             dashboard().show(relativeTo: button)
         case .chat:
             chat.togglePresented()
-        case .settings:
-            showSettings()
+        case .settings(let tab):
+            showSettings(tab: tab)
         case .chatHistory:
             showChatHistory()
         case .maintenance(let tab):
@@ -273,14 +276,14 @@ final class WindowCoordinator: NSObject {
             quickTools: quickTools,
             togglePet: { [weak self] in self?.panelController?.toggle() },
             showPet: { [weak self] in self?.panelController?.show() },
-            openSettings: { [weak self] in self?.open(.settings) },
+            openSettings: { [weak self] in self?.open(.settings(.pet)) },
             appActions: actions
         )
         dashboardController = controller
         return controller
     }
 
-    private func showSettings() {
+    private func showSettings(tab: SettingsTab) {
         if settingsController == nil {
             settingsController = SettingsWindowController(
                 petStore: pet,
@@ -293,7 +296,7 @@ final class WindowCoordinator: NSObject {
                 appActions: actions
             )
         }
-        settingsController?.show()
+        settingsController?.show(tab: tab)
     }
 
     private func showChatHistory() {

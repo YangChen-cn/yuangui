@@ -152,7 +152,7 @@ final class TranslationEditorStore: ObservableObject {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard let result = results.first else { throw TranslationPipelineError.emptyResult }
             detectedSourceLanguage = result.detectedSourceLanguage
-            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result.translatedText)
+            translatedText = formattedTranslation(result.translatedText, target: requestedTarget)
             translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
@@ -199,7 +199,7 @@ final class TranslationEditorStore: ObservableObject {
             }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard let result = results.first else { throw TranslationPipelineError.emptyResult }
-            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result.translatedText)
+            translatedText = formattedTranslation(result.translatedText, target: requestedTarget)
             translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
@@ -236,7 +236,7 @@ final class TranslationEditorStore: ObservableObject {
             }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard let result = results.first else { throw TranslationPipelineError.emptyResult }
-            translatedText = TranslationTextFormatter.addingSemanticLineBreaks(result.translatedText)
+            translatedText = formattedTranslation(result.translatedText, target: requestedTarget)
             translatedLines = [translatedText]
             state = .ready
         } catch is CancellationError {
@@ -284,7 +284,7 @@ final class TranslationEditorStore: ObservableObject {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
             detectedSourceLanguage = results.compactMap(\.detectedSourceLanguage).first
-            applyLineTranslations(results.map(\.translatedText))
+            applyLineTranslations(results.map(\.translatedText), target: requestedTarget)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
@@ -326,7 +326,7 @@ final class TranslationEditorStore: ObservableObject {
             }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
-            applyLineTranslations(results.map(\.translatedText))
+            applyLineTranslations(results.map(\.translatedText), target: requestedTarget)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
@@ -369,7 +369,7 @@ final class TranslationEditorStore: ObservableObject {
             }
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
-            applyLineTranslations(results.map(\.translatedText))
+            applyLineTranslations(results.map(\.translatedText), target: requestedTarget)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
@@ -418,11 +418,16 @@ final class TranslationEditorStore: ObservableObject {
         message = nil
     }
 
-    private func applyLineTranslations(_ lines: [String]) {
-        let formatted = lines.map(TranslationTextFormatter.addingSemanticLineBreaks)
+    private func applyLineTranslations(_ lines: [String], target: QuickToolLanguage) {
+        let formatted = lines.map { formattedTranslation($0, target: target) }
         translatedLines = formatted
         translatedText = formatted.joined(separator: "\n")
         state = .ready
+    }
+
+    private func formattedTranslation(_ text: String, target: QuickToolLanguage) -> String {
+        let normalized = TranslationTextFormatter.simplifiedChinese(text, target: target)
+        return TranslationTextFormatter.addingSemanticLineBreaks(normalized)
     }
 
     private static func normalizedSourceLines(_ lines: [String]) -> [String] {

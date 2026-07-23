@@ -59,6 +59,7 @@ enum SpriteLoader {
 
     private final class CacheBox {
         let cache = NSCache<NSString, NSImage>()
+        let visibleBoundsCache = NSCache<NSString, NSValue>()
         private let pressureSource: DispatchSourceMemoryPressure
 
         init() {
@@ -127,6 +128,81 @@ enum SpriteLoader {
             return frames(mode: mode, action: action)
         }
         return image(mode: mode, action: action).map { [$0] } ?? []
+    }
+
+    /// Returns the non-transparent artwork bounds in normalized, bottom-left
+    /// sprite coordinates. Each action is cached because the source PNG never
+    /// changes while the app is running.
+    static func normalizedVisibleBounds(mode: PetMode, action: PetAction) -> CGRect {
+        let key = "bounds/\(mode.resourceFolder)/\(action.file)" as NSString
+        if let cached = box.visibleBoundsCache.object(forKey: key) {
+            return cached.rectValue
+        }
+        let actionFrames = frames(mode: mode, action: action)
+        guard !actionFrames.isEmpty else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        let bounds = actionFrames
+            .map(normalizedVisibleBounds(in:))
+            .reduce(CGRect.null) { $0.union($1) }
+        box.visibleBoundsCache.setObject(NSValue(rect: bounds), forKey: key)
+        return bounds
+    }
+
+    private static func normalizedVisibleBounds(in image: NSImage) -> CGRect {
+        var proposedRect = CGRect(origin: .zero, size: image.size)
+        guard let cgImage = image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil) else {
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
+        let sampleSize = 256
+        let bytesPerRow = sampleSize * 4
+        guard let context = CGContext(
+            data: nil,
+            width: sampleSize,
+            height: sampleSize,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ), let data = context.data else {
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
+
+        let imageAspect = CGFloat(cgImage.width) / CGFloat(max(cgImage.height, 1))
+        let drawRect: CGRect
+        if imageAspect >= 1 {
+            let height = CGFloat(sampleSize) / imageAspect
+            drawRect = CGRect(x: 0, y: (CGFloat(sampleSize) - height) / 2, width: CGFloat(sampleSize), height: height)
+        } else {
+            let width = CGFloat(sampleSize) * imageAspect
+            drawRect = CGRect(x: (CGFloat(sampleSize) - width) / 2, y: 0, width: width, height: CGFloat(sampleSize))
+        }
+        context.clear(CGRect(x: 0, y: 0, width: sampleSize, height: sampleSize))
+        context.draw(cgImage, in: drawRect)
+
+        let pixels = data.bindMemory(to: UInt8.self, capacity: bytesPerRow * sampleSize)
+        var minX = sampleSize
+        var minY = sampleSize
+        var maxX = -1
+        var maxY = -1
+        for y in 0..<sampleSize {
+            for x in 0..<sampleSize where pixels[y * bytesPerRow + x * 4 + 3] > 8 {
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= minX, maxY >= minY else {
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
+        let denominator = CGFloat(sampleSize)
+        return CGRect(
+            x: CGFloat(minX) / denominator,
+            // Bitmap memory rows are top-down while the pet/window geometry is
+            // bottom-up.
+            y: 1 - CGFloat(maxY + 1) / denominator,
+            width: CGFloat(maxX - minX + 1) / denominator,
+            height: CGFloat(maxY - minY + 1) / denominator
+        )
     }
 
     private static func renderedFrame(_ source: NSImage, scale: CGFloat, x: CGFloat, y: CGFloat) -> NSImage {

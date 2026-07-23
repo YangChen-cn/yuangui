@@ -1,6 +1,15 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+final class SettingsSelectionModel: ObservableObject {
+    @Published var selectedTab: SettingsTab
+
+    init(selectedTab: SettingsTab = .pet) {
+        self.selectedTab = selectedTab
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var pet: PetStore
     @ObservedObject var ai: AISettingsStore
@@ -8,36 +17,36 @@ struct SettingsView: View {
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedMusicFeature var music: MusicFeature
     @ObservedObject var quickTools: QuickToolsController
+    @ObservedObject var selection: SettingsSelectionModel
     @Environment(\.appActions) private var appActions
     let showPet: () -> Void
-    @State private var selectedTab = 0
     @State private var promptEditorState: PromptEditorState?
     @State private var isBilibiliLoginPresented = false
 
     var body: some View {
         HStack(spacing: 0) {
-            List(selection: $selectedTab) {
-                Label("桌宠", systemImage: "pawprint.fill").tag(0)
-                Label("快捷工具", systemImage: "wand.and.stars").tag(1)
-                Label("AI 对话", systemImage: "message.fill").tag(2)
-                Label("专注", systemImage: "timer").tag(3)
-                Label("音乐", systemImage: "music.note").tag(4)
-                Label("关于", systemImage: "info.circle.fill").tag(5)
+            List(selection: $selection.selectedTab) {
+                Label("桌宠", systemImage: "pawprint.fill").tag(SettingsTab.pet)
+                Label("快捷工具", systemImage: "wand.and.stars").tag(SettingsTab.quickTools)
+                Label("AI 对话", systemImage: "message.fill").tag(SettingsTab.ai)
+                Label("专注", systemImage: "timer").tag(SettingsTab.focus)
+                Label("音乐", systemImage: "music.note").tag(SettingsTab.music)
+                Label("关于", systemImage: "info.circle.fill").tag(SettingsTab.about)
             }
             .listStyle(.sidebar)
             .frame(width: 170)
             Divider()
 
             Group {
-                if selectedTab == 0 {
+                if selection.selectedTab == .pet {
                     ScrollView { petSettings.padding(.bottom, 8) }
-                } else if selectedTab == 1 {
+                } else if selection.selectedTab == .quickTools {
                     QuickToolsSettingsView(controller: quickTools, settings: quickTools.settings)
-                } else if selectedTab == 2 {
+                } else if selection.selectedTab == .ai {
                     aiSettings
-                } else if selectedTab == 3 {
+                } else if selection.selectedTab == .focus {
                     focusSettings
-                } else if selectedTab == 4 {
+                } else if selection.selectedTab == .music {
                     musicSettings
                 } else {
                     AboutUpdateView()

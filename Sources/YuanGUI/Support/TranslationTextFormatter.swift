@@ -1,6 +1,13 @@
 import Foundation
 
 enum TranslationTextFormatter {
+    /// Apple Translate and Shortcuts can occasionally return a Traditional
+    /// Chinese glyph even when the requested locale is `zh-Hans`.
+    static func simplifiedChinese(_ text: String, target: QuickToolLanguage) -> String {
+        guard target == .simplifiedChinese else { return text }
+        return text.applyingTransform(StringTransform("Traditional-Simplified"), reverse: false) ?? text
+    }
+
     static func addingSemanticLineBreaks(_ text: String) -> String {
         var value = text
             .replacingOccurrences(of: "\r\n", with: "\n")

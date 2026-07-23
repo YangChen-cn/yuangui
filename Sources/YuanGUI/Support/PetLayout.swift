@@ -7,6 +7,16 @@ enum PetDockEdge: String, CaseIterable {
     case bottom
 }
 
+enum PetAuxiliaryBubblePlacement: Equatable {
+    case abovePet
+    case belowPet
+}
+
+struct PetAuxiliaryBubbleLayout: Equatable {
+    let origin: CGPoint
+    let placement: PetAuxiliaryBubblePlacement
+}
+
 enum PetLayout {
     static let minimumScale = 0.50
     static let maximumScale = 1.40
@@ -27,11 +37,12 @@ enum PetLayout {
     static let bottomToolbarPanelPadding: CGFloat = 6
     static let bottomToolbarNormalBottomPadding: CGFloat = 6
     static let bottomToolbarChatBottomPadding: CGFloat = 70
+    static let chatScreenEdgeInset: CGFloat = 12
+    /// Keeps the growing chat composer clear of the character's lower body.
+    static let chatPetBottomInset: CGFloat = 104
     static let lockedControlPanelSize = CGSize(width: 48, height: 48)
-    // The sprite artwork contains transparent pixels above the character.
-    // Slightly overlap that transparent area so the bubble appears attached
-    // to the visible character instead of floating far above it.
-    static let auxiliaryBubbleSpacing: CGFloat = -32
+    static let auxiliaryBubbleAboveGap: CGFloat = 2
+    static let auxiliaryBubbleBelowOverlap: CGFloat = 30
     static let compactSideControlsWidth: CGFloat = 48
     static let compactSideControlsInset: CGFloat = 8
     static var bottomToolbarPanelSize: CGSize {
@@ -103,7 +114,7 @@ enum PetLayout {
         let petSize = 326 * scale
         return CGRect(
             x: panelFrame.minX + (panelFrame.width - petSize) / 2 + 35 * scale,
-            y: panelFrame.minY + (showsChat ? 58 : 0),
+            y: panelFrame.minY + (showsChat ? chatPetBottomInset : 0),
             width: petSize,
             height: petSize
         )
@@ -118,7 +129,85 @@ enum PetLayout {
         let petSize = 326 * scale
         return CGPoint(
             x: visualFrame.minX - (targetPanelSize.width - petSize) / 2 - 35 * scale,
-            y: visualFrame.minY - (showsChat ? 58 : 0)
+            y: visualFrame.minY - (showsChat ? chatPetBottomInset : 0)
+        )
+    }
+
+    /// Resize the panel around the character anchor, then clamp the complete
+    /// result to the display's usable frame. This is important when opening the
+    /// chat composer from a pet parked against a screen edge.
+    static func resizedPanelFrame(
+        from oldPanelFrame: CGRect,
+        targetSize: CGSize,
+        scale: Double,
+        oldShowsChat: Bool,
+        newShowsChat: Bool,
+        visibleFrame: CGRect
+    ) -> CGRect {
+        let visualFrame = petVisualFrame(
+            panelFrame: oldPanelFrame,
+            scale: scale,
+            showsChat: oldShowsChat
+        )
+        let proposedOrigin = panelOrigin(
+            preservingPetVisualFrame: visualFrame,
+            targetPanelSize: targetSize,
+            scale: scale,
+            showsChat: newShowsChat
+        )
+        let constrained = constrainedOrigin(
+            proposedOrigin,
+            panelSize: targetSize,
+            visibleFrame: visibleFrame,
+            allowedTopOverflow: newShowsChat ? 0 : compactTopTransparentInset * scale
+        )
+        return CGRect(origin: constrained, size: targetSize)
+    }
+
+    static func usablePanelFrame(in visibleFrame: CGRect, showsChat: Bool) -> CGRect {
+        guard showsChat else { return visibleFrame }
+        return visibleFrame.insetBy(dx: chatScreenEdgeInset, dy: chatScreenEdgeInset)
+    }
+
+    static func visiblePetFrame(
+        spriteFrame: CGRect,
+        normalizedVisibleBounds: CGRect
+    ) -> CGRect {
+        CGRect(
+            x: spriteFrame.minX + normalizedVisibleBounds.minX * spriteFrame.width,
+            y: spriteFrame.minY + normalizedVisibleBounds.minY * spriteFrame.height,
+            width: normalizedVisibleBounds.width * spriteFrame.width,
+            height: normalizedVisibleBounds.height * spriteFrame.height
+        )
+    }
+
+    static func auxiliaryBubbleLayout(
+        petVisualFrame: CGRect,
+        bubbleSize: CGSize,
+        visibleFrame: CGRect
+    ) -> PetAuxiliaryBubbleLayout {
+        let proposedX = petVisualFrame.midX - bubbleSize.width / 2
+        let x = min(
+            max(proposedX, visibleFrame.minX),
+            max(visibleFrame.minX, visibleFrame.maxX - bubbleSize.width)
+        )
+        let aboveY = petVisualFrame.maxY + auxiliaryBubbleAboveGap
+        if aboveY + bubbleSize.height <= visibleFrame.maxY {
+            return PetAuxiliaryBubbleLayout(
+                origin: CGPoint(x: x, y: aboveY),
+                placement: .abovePet
+            )
+        }
+        let belowY = petVisualFrame.minY + auxiliaryBubbleBelowOverlap - bubbleSize.height
+        return PetAuxiliaryBubbleLayout(
+            origin: CGPoint(
+                x: x,
+                y: min(
+                    max(belowY, visibleFrame.minY),
+                    max(visibleFrame.minY, visibleFrame.maxY - bubbleSize.height)
+                )
+            ),
+            placement: .belowPet
         )
     }
 
@@ -127,23 +216,11 @@ enum PetLayout {
         bubbleSize: CGSize,
         visibleFrame: CGRect
     ) -> CGPoint {
-        let proposedX = petVisualFrame.midX - bubbleSize.width / 2
-        let x = min(
-            max(proposedX, visibleFrame.minX),
-            max(visibleFrame.minX, visibleFrame.maxX - bubbleSize.width)
-        )
-        let aboveY = petVisualFrame.maxY + auxiliaryBubbleSpacing
-        if aboveY + bubbleSize.height <= visibleFrame.maxY {
-            return CGPoint(x: x, y: aboveY)
-        }
-        let belowY = petVisualFrame.minY - auxiliaryBubbleSpacing - bubbleSize.height
-        return CGPoint(
-            x: x,
-            y: min(
-                max(belowY, visibleFrame.minY),
-                max(visibleFrame.minY, visibleFrame.maxY - bubbleSize.height)
-            )
-        )
+        auxiliaryBubbleLayout(
+            petVisualFrame: petVisualFrame,
+            bubbleSize: bubbleSize,
+            visibleFrame: visibleFrame
+        ).origin
     }
 
     static func dockingEdge(for petVisualFrame: CGRect, in visibleFrame: CGRect) -> PetDockEdge? {

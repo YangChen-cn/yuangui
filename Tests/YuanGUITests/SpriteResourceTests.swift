@@ -61,4 +61,22 @@ final class SpriteResourceTests: XCTestCase {
             }
         }
     }
+
+    func testVisibleBoundsFollowEachActionsOpaqueArtwork() {
+        let yuanGui = SpriteLoader.normalizedVisibleBounds(
+            mode: .yuanGui,
+            action: PetMode.yuanGui.actions[0]
+        )
+        let vcc = SpriteLoader.normalizedVisibleBounds(
+            mode: .vcc,
+            action: PetMode.vcc.actions[0]
+        )
+
+        XCTAssertGreaterThanOrEqual(yuanGui.minY, 0)
+        XCTAssertLessThanOrEqual(yuanGui.maxY, 1)
+        XCTAssertGreaterThanOrEqual(vcc.minY, 0)
+        XCTAssertLessThanOrEqual(vcc.maxY, 1)
+        XCTAssertLessThan(vcc.height, yuanGui.height)
+        XCTAssertNotEqual(vcc, yuanGui)
+    }
 }
