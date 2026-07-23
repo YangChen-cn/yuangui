@@ -31,6 +31,7 @@ final class MusicStore: ObservableObject {
     @Published private(set) var currentTrack: MusicTrack?
     @Published private(set) var volume: Double
     @Published private(set) var playlist: [MusicTrack] = []
+    @Published private(set) var upcomingTrackIDs: [String] = []
     @Published private(set) var playMode: MusicPlayMode = .sequential
     @Published private(set) var favoriteTrackIDs: Set<String> = []
     @Published private(set) var savedPlaylists: [SavedMusicPlaylist] = []
@@ -95,6 +96,7 @@ final class MusicStore: ObservableObject {
     private var persistenceRevision: UInt64 = 0
     private var lyricLoadRevision: UInt64 = 0
     private var lastAppleClockTime: TimeInterval?
+    private var bilibiliPlaybackQueue = BilibiliPlaybackQueue()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -305,7 +307,12 @@ final class MusicStore: ObservableObject {
         }
     }
 
-    func setPlayMode(_ mode: MusicPlayMode) { playMode = mode; persistLibrary() }
+    func setPlayMode(_ mode: MusicPlayMode) {
+        guard playMode != mode else { return }
+        playMode = mode
+        rebuildBilibiliPlaybackQueue()
+        persistLibrary()
+    }
 
     func importBilibili() {
         let input = importText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -321,6 +328,7 @@ final class MusicStore: ObservableObject {
                 for track in tracks where !playlist.contains(where: { $0.id == track.id }) {
                     playlist.append(track); added.append(track)
                 }
+                if !added.isEmpty { rebuildBilibiliPlaybackQueue() }
                 importText = ""
                 setSource(.bilibili)
                 persistLibrary()
@@ -436,6 +444,7 @@ final class MusicStore: ObservableObject {
                 let existingIDs = Set(playlist.map(\.id))
                 let added = tracks.filter { !existingIDs.contains($0.id) }
                 playlist.append(contentsOf: added)
+                if !added.isEmpty { rebuildBilibiliPlaybackQueue() }
                 updateLocalPlaylist(named: folder.title, with: tracks)
                 setSource(.bilibili)
                 persistLibrary()
@@ -554,10 +563,19 @@ final class MusicStore: ObservableObject {
     }
 
     func play(_ track: MusicTrack, at savedPosition: TimeInterval = 0) {
+        playBilibiliTrack(track, at: savedPosition, rebuildQueue: true)
+    }
+
+    private func playBilibiliTrack(
+        _ track: MusicTrack,
+        at savedPosition: TimeInterval = 0,
+        rebuildQueue: Bool
+    ) {
         guard track.source == .bilibili else { return }
         activatePlaybackSource(.bilibili)
         currentTrack = track
         currentTrackID = track.id
+        if rebuildQueue { rebuildBilibiliPlaybackQueue() }
         lastBilibiliPosition = savedPosition
         playbackProgress.reset(position: savedPosition, duration: track.duration)
         playbackState = .loading
@@ -601,6 +619,7 @@ final class MusicStore: ObservableObject {
             playbackProgress.reset(); cancelLyricLoad()
             lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
         }
+        rebuildBilibiliPlaybackQueue()
         persistLibrary()
     }
 
@@ -615,6 +634,7 @@ final class MusicStore: ObservableObject {
             playbackProgress.reset(); cancelLyricLoad()
             lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
         }
+        rebuildBilibiliPlaybackQueue()
         persistLibrary()
     }
 
@@ -660,6 +680,10 @@ final class MusicStore: ObservableObject {
     }
 
     var favoriteTracks: [MusicTrack] { playlist.filter { favoriteTrackIDs.contains($0.id) } }
+    var upcomingTracks: [MusicTrack] {
+        let tracksByID = Dictionary(playlist.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+        return upcomingTrackIDs.compactMap { tracksByID[$0] }
+    }
 
     func toggleLyricsVisible() {
         lyricsVisible.toggle()
@@ -929,15 +953,16 @@ final class MusicStore: ObservableObject {
             return
         }
         guard !playlist.isEmpty else { return }
-        if playMode == .shuffle {
-            let choices = playlist.filter { $0.id != currentTrack?.id }
-            if let track = (choices.isEmpty ? playlist : choices).randomElement() { play(track) }
-            return
-        }
-        let current = playlist.firstIndex(where: { $0.id == currentTrack?.id }) ?? 0
-        let target = current + delta
-        if playlist.indices.contains(target) { play(playlist[target]) }
-        else if playMode == .repeatAll { play(delta < 0 ? playlist.last! : playlist.first!) }
+        let targetID = delta < 0
+            ? bilibiliPlaybackQueue.previousTrackID(
+                playlist: playlist, currentTrackID: currentTrack?.id, mode: playMode
+            )
+            : bilibiliPlaybackQueue.nextTrackID(
+                playlist: playlist, currentTrackID: currentTrack?.id, mode: playMode
+            )
+        publishUpcomingTracks()
+        guard let targetID, let track = playlist.first(where: { $0.id == targetID }) else { return }
+        playBilibiliTrack(track, rebuildQueue: false)
     }
 
     private func handleTrackFinished() {
@@ -1106,6 +1131,7 @@ final class MusicStore: ObservableObject {
         lyricOffsets = snapshot.lyricOffsets
         lyricsByTrackID = snapshot.lyricsByTrackID
         currentTrackID = snapshot.currentTrackID
+        rebuildBilibiliPlaybackQueue()
         lastBilibiliPosition = snapshot.lastPosition
         if browsingSource == .bilibili { restoreBilibiliSelection(position: snapshot.lastPosition) }
         else if let currentTrack { loadLyrics(for: currentTrack) }
@@ -1135,6 +1161,20 @@ final class MusicStore: ObservableObject {
         let revision = persistenceRevision
         let snapshot = librarySnapshot()
         Task { await library.scheduleSave(snapshot, revision: revision) }
+    }
+
+    private func rebuildBilibiliPlaybackQueue() {
+        bilibiliPlaybackQueue.rebuild(
+            playlist: playlist,
+            currentTrackID: currentTrackID,
+            mode: playMode
+        )
+        publishUpcomingTracks()
+    }
+
+    private func publishUpcomingTracks() {
+        let ids = bilibiliPlaybackQueue.upcomingTrackIDs
+        if upcomingTrackIDs != ids { upcomingTrackIDs = ids }
     }
 
     private func librarySnapshot() -> MusicLibrarySnapshot {

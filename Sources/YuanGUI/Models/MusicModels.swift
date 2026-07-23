@@ -44,6 +44,91 @@ enum MusicPlayMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+struct BilibiliPlaybackQueue: Equatable {
+    private(set) var upcomingTrackIDs: [String] = []
+    private(set) var historyTrackIDs: [String] = []
+
+    mutating func rebuild(
+        playlist: [MusicTrack],
+        currentTrackID: String?,
+        mode: MusicPlayMode
+    ) {
+        historyTrackIDs = []
+        rebuildUpcoming(playlist: playlist, currentTrackID: currentTrackID, mode: mode)
+    }
+
+    private mutating func rebuildUpcoming(
+        playlist: [MusicTrack],
+        currentTrackID: String?,
+        mode: MusicPlayMode
+    ) {
+        let trackIDs = playlist.map(\.id)
+        guard let currentTrackID, let currentIndex = trackIDs.firstIndex(of: currentTrackID) else {
+            upcomingTrackIDs = mode == .shuffle ? trackIDs.shuffled() : trackIDs
+            return
+        }
+
+        switch mode {
+        case .sequential:
+            upcomingTrackIDs = Array(trackIDs.dropFirst(currentIndex + 1))
+        case .repeatOne:
+            upcomingTrackIDs = [currentTrackID]
+        case .repeatAll:
+            upcomingTrackIDs = Array(trackIDs.dropFirst(currentIndex + 1)) + Array(trackIDs.prefix(currentIndex))
+            if upcomingTrackIDs.isEmpty { upcomingTrackIDs = [currentTrackID] }
+        case .shuffle:
+            upcomingTrackIDs = trackIDs.filter { $0 != currentTrackID }.shuffled()
+            if upcomingTrackIDs.isEmpty { upcomingTrackIDs = [currentTrackID] }
+        }
+    }
+
+    mutating func nextTrackID(
+        playlist: [MusicTrack],
+        currentTrackID: String?,
+        mode: MusicPlayMode
+    ) -> String? {
+        if mode == .repeatOne { return currentTrackID }
+        if upcomingTrackIDs.isEmpty, mode == .repeatAll || mode == .shuffle {
+            rebuildUpcoming(playlist: playlist, currentTrackID: currentTrackID, mode: mode)
+        }
+        guard !upcomingTrackIDs.isEmpty else { return nil }
+        let nextTrackID = upcomingTrackIDs.removeFirst()
+        if let currentTrackID, currentTrackID != nextTrackID {
+            historyTrackIDs.append(currentTrackID)
+        }
+        if upcomingTrackIDs.isEmpty, mode == .repeatAll || mode == .shuffle {
+            rebuildUpcoming(playlist: playlist, currentTrackID: nextTrackID, mode: mode)
+        }
+        return nextTrackID
+    }
+
+    mutating func previousTrackID(
+        playlist: [MusicTrack],
+        currentTrackID: String?,
+        mode: MusicPlayMode
+    ) -> String? {
+        if mode == .repeatOne { return currentTrackID }
+        if let previousTrackID = historyTrackIDs.popLast() {
+            upcomingTrackIDs.removeAll { $0 == previousTrackID }
+            if let currentTrackID, currentTrackID != previousTrackID {
+                upcomingTrackIDs.insert(currentTrackID, at: 0)
+            }
+            return previousTrackID
+        }
+
+        guard mode != .shuffle,
+              let currentTrackID,
+              let currentIndex = playlist.firstIndex(where: { $0.id == currentTrackID }) else { return nil }
+        let previousTrackID: String?
+        if currentIndex > 0 { previousTrackID = playlist[currentIndex - 1].id }
+        else { previousTrackID = mode == .repeatAll ? playlist.last?.id : nil }
+        guard let previousTrackID else { return nil }
+        upcomingTrackIDs.removeAll { $0 == previousTrackID }
+        upcomingTrackIDs.insert(currentTrackID, at: 0)
+        return previousTrackID
+    }
+}
+
 enum LyricsFontStyle: String, CaseIterable, Identifiable {
     case rounded
     case system

@@ -509,6 +509,24 @@ struct MusicStatusCard: View {
                 Label("Bilibili 资料库", systemImage: "music.note.list")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                 Spacer()
+                Menu {
+                    ForEach(MusicPlayMode.allCases) { mode in
+                        Button {
+                            music.setPlayMode(mode)
+                        } label: {
+                            Label(mode.title, systemImage: mode == music.playMode ? "checkmark" : mode.systemImage)
+                        }
+                    }
+                } label: {
+                    Label(music.playMode.title, systemImage: music.playMode.systemImage)
+                        .font(.system(size: 9, weight: .semibold))
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(.primary.opacity(0.055), in: Capsule())
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("修改播放模式")
                 if let track = music.currentTrack, track.source == .bilibili {
                     Menu {
                         if music.savedPlaylists.isEmpty { Text("尚未创建歌单") }
@@ -524,7 +542,7 @@ struct MusicStatusCard: View {
                 }
             }
             Menu {
-                Button("当前播放列表（\(music.playlist.count)）") { selectedLibraryID = "queue" }
+                Button("接下来播放（\(music.upcomingTracks.count)）") { selectedLibraryID = "queue" }
                 Button("收藏歌曲（\(music.favoriteTracks.count)）") { selectedLibraryID = "favorites" }
                 if !music.savedPlaylists.isEmpty { Divider() }
                 ForEach(music.savedPlaylists) { playlist in
@@ -546,7 +564,7 @@ struct MusicStatusCard: View {
             .menuStyle(.borderlessButton)
 
             if selectedLibraryTracks.isEmpty {
-                Text("这个列表里还没有歌曲")
+                Text(selectedLibraryID == "queue" ? "当前模式下没有待播放歌曲" : "这个列表里还没有歌曲")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -617,7 +635,7 @@ struct MusicStatusCard: View {
            let playlist = music.savedPlaylists.first(where: { $0.id == id }) {
             return music.tracks(in: playlist)
         }
-        return music.playlist
+        return music.upcomingTracks
     }
 
     private var selectedLibraryTitle: String {
@@ -627,7 +645,7 @@ struct MusicStatusCard: View {
            let playlist = music.savedPlaylists.first(where: { $0.id == id }) {
             return "\(playlist.name)（\(music.tracks(in: playlist).count)）"
         }
-        return "当前播放列表（\(music.playlist.count)）"
+        return "接下来播放（\(music.upcomingTracks.count)）"
     }
 
     private func syncSearchFields() {

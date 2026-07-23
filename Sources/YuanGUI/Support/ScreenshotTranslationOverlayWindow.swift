@@ -73,7 +73,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     private var comparisonWindow: ScreenshotTranslationOverlayPanel?
     private var standardFrame: CGRect
     private var escapeMonitor: Any?
-    private var toolbarDragStart: (mouse: CGPoint, window: CGRect)?
+    private var overlayDragStart: (mouse: CGPoint, window: CGRect)?
     private var didClose = false
 
     init(
@@ -112,15 +112,21 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         super.init()
         configure(panel: window, title: "截图翻译图文覆盖层", shadow: true)
         configure(panel: toolbarWindow, title: "截图翻译工具栏", shadow: true)
-        window.isMovableByWindowBackground = true
+        // SwiftUI owns direct image dragging. Enabling AppKit background dragging here
+        // would move the same panel twice for one mouse gesture and causes edge jitter.
+        window.isMovableByWindowBackground = false
         window.delegate = self
         window.onEscape = { [weak self] in self?.close() }
         toolbarWindow.onEscape = { [weak self] in self?.close() }
-        window.contentView = NSHostingView(rootView: ScreenshotTranslationOverlayView(model: model, store: store))
-        toolbarWindow.contentView = NSHostingView(rootView: ScreenshotTranslationToolbarView(
+        window.contentView = ScreenshotTranslationFirstMouseHostingView(rootView: ScreenshotTranslationOverlayView(
             model: model,
             store: store,
-            dragToPointer: { [weak self] ended in self?.dragToolbarToPointer(ended: ended) },
+            dragToPointer: { [weak self] ended in self?.dragOverlayToPointer(ended: ended) }
+        ))
+        toolbarWindow.contentView = ScreenshotTranslationFirstMouseHostingView(rootView: ScreenshotTranslationToolbarView(
+            model: model,
+            store: store,
+            dragToPointer: { [weak self] ended in self?.dragOverlayToPointer(ended: ended) },
             zoomOut: { [weak self] in self?.resizeOverlay(by: 0.82) },
             zoomIn: { [weak self] in self?.resizeOverlay(by: 1.22) },
             toggleComparison: { [weak self] in self?.toggleComparison() },
@@ -198,8 +204,14 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         let y: CGFloat
         if contentFrame.maxY + spacing + toolbarSize.height <= visibleFrame.maxY {
             y = contentFrame.maxY + spacing
+        } else if contentFrame.minY - spacing - toolbarSize.height >= visibleFrame.minY {
+            y = contentFrame.minY - spacing - toolbarSize.height
+        } else if visibleFrame.maxY - contentFrame.maxY >= contentFrame.minY - visibleFrame.minY {
+            // Neither side currently fits. Keep the toolbar outside the image and let
+            // the group constraint move both windows together after dragging ends.
+            y = contentFrame.maxY + spacing
         } else {
-            y = max(visibleFrame.minY, contentFrame.minY - spacing - toolbarSize.height)
+            y = contentFrame.minY - spacing - toolbarSize.height
         }
         return CGRect(origin: CGPoint(x: x, y: y), size: toolbarSize)
     }
@@ -519,19 +531,20 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         ), display: true)
     }
 
-    private func dragToolbarToPointer(ended: Bool) {
+    private func dragOverlayToPointer(ended: Bool) {
         let mouse = NSEvent.mouseLocation
-        if toolbarDragStart == nil {
-            toolbarDragStart = (mouse, window.frame)
+        if overlayDragStart == nil {
+            overlayDragStart = (mouse, window.frame)
         }
-        guard let start = toolbarDragStart else { return }
+        guard let start = overlayDragStart else { return }
         let offset = CGSize(width: mouse.x - start.mouse.x, height: mouse.y - start.mouse.y)
         window.setFrameOrigin(CGPoint(
             x: start.window.minX + offset.width,
             y: start.window.minY + offset.height
         ))
         if ended {
-            toolbarDragStart = nil
+            overlayDragStart = nil
+            positionToolbar()
             constrainWindowGroupToVisibleFrame()
         }
     }
@@ -626,6 +639,12 @@ private final class ScreenshotTranslationOverlayPanel: NSPanel {
     }
 }
 
+private final class ScreenshotTranslationFirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+}
+
 private struct ScreenshotOriginalImageView: View {
     let image: CGImage
 
@@ -640,6 +659,7 @@ private struct ScreenshotOriginalImageView: View {
 struct ScreenshotTranslationOverlayView: View {
     @ObservedObject var model: ScreenshotTranslationOverlayModel
     @ObservedObject var store: TranslationEditorStore
+    let dragToPointer: (Bool) -> Void
     @State private var configuration: TranslationSession.Configuration?
 
     var body: some View {
@@ -654,6 +674,12 @@ struct ScreenshotTranslationOverlayView: View {
                 translationLayer(size: proxy.size)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 3, coordinateSpace: .global)
+                    .onChanged { _ in dragToPointer(false) }
+                    .onEnded { _ in dragToPointer(true) }
+            )
         }
         .task(id: translationRequestID) {
             guard !store.editableSourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -779,15 +805,25 @@ private struct ScreenshotTranslationToolbarView: View {
     let zoomIn: () -> Void
     let toggleComparison: () -> Void
     let close: () -> Void
+    @GestureState private var isDragging = false
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-                .help("拖动截图翻译窗口")
+                .foregroundStyle(isDragging ? Color.accentColor : Color.secondary)
+                .padding(5)
+                .background(
+                    isDragging ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.055),
+                    in: Circle()
+                )
+                .scaleEffect(isDragging ? 0.94 : 1)
+                .animation(.easeOut(duration: 0.12), value: isDragging)
+                .help(isDragging ? "正在移动截图翻译窗口" : "按住拖动截图翻译窗口")
                 .contentShape(Rectangle())
                 .gesture(DragGesture()
                     .onChanged { _ in dragToPointer(false) }
-                    .onEnded { _ in dragToPointer(true) })
+                    .onEnded { _ in dragToPointer(true) }
+                    .updating($isDragging) { _, state, _ in state = true })
             Button(action: zoomOut) {
                 Image(systemName: "minus.magnifyingglass")
             }

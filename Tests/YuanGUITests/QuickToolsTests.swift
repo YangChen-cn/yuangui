@@ -173,6 +173,13 @@ final class QuickToolsTests: XCTestCase {
         )
         XCTAssertEqual(nearTop.maxY, 384)
         XCTAssertFalse(nearTop.intersects(CGRect(x: 100, y: 390, width: 500, height: 300)))
+
+        let crowded = ScreenshotTranslationOverlayWindowController.toolbarFrame(
+            for: CGRect(x: 40, y: 5, width: 900, height: 690),
+            toolbarSize: toolbarSize,
+            visibleFrame: screen
+        )
+        XCTAssertFalse(crowded.intersects(CGRect(x: 40, y: 5, width: 900, height: 690)))
     }
 
     func testScreenshotTranslationComparisonUsesEqualSizedSideBySideFrames() {

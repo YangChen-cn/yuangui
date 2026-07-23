@@ -597,6 +597,93 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(MusicSource.allCases.map(\.title), ["Apple Music", "哔哩哔哩"])
         XCTAssertEqual(LyricsFontStyle.allCases.map(\.title), ["圆体", "系统字体", "衬线体", "等宽体"])
     }
+
+    func testSequentialPlaybackQueueOnlyContainsTracksAfterCurrent() throws {
+        let tracks = makeQueueTracks(count: 4)
+        var queue = BilibiliPlaybackQueue()
+        queue.rebuild(playlist: tracks, currentTrackID: tracks[1].id, mode: .sequential)
+
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[2].id, tracks[3].id])
+        XCTAssertEqual(queue.nextTrackID(playlist: tracks, currentTrackID: tracks[1].id, mode: .sequential), tracks[2].id)
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[3].id])
+    }
+
+    func testRepeatOneQueueOnlyContainsCurrentTrack() {
+        let tracks = makeQueueTracks(count: 3)
+        var queue = BilibiliPlaybackQueue()
+        queue.rebuild(playlist: tracks, currentTrackID: tracks[1].id, mode: .repeatOne)
+
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id])
+        XCTAssertEqual(queue.nextTrackID(playlist: tracks, currentTrackID: tracks[1].id, mode: .repeatOne), tracks[1].id)
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id])
+    }
+
+    func testRepeatAllQueueWrapsAndShrinksAsTracksPlay() {
+        let tracks = makeQueueTracks(count: 4)
+        var queue = BilibiliPlaybackQueue()
+        queue.rebuild(playlist: tracks, currentTrackID: tracks[2].id, mode: .repeatAll)
+
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[3].id, tracks[0].id, tracks[1].id])
+        XCTAssertEqual(queue.nextTrackID(playlist: tracks, currentTrackID: tracks[2].id, mode: .repeatAll), tracks[3].id)
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[0].id, tracks[1].id])
+    }
+
+    func testRepeatAllQueuePreparesTheNextCycleBeforeCurrentCycleEnds() throws {
+        let tracks = makeQueueTracks(count: 3)
+        var queue = BilibiliPlaybackQueue()
+        queue.rebuild(playlist: tracks, currentTrackID: tracks[0].id, mode: .repeatAll)
+
+        let second = try XCTUnwrap(queue.nextTrackID(
+            playlist: tracks, currentTrackID: tracks[0].id, mode: .repeatAll
+        ))
+        let third = try XCTUnwrap(queue.nextTrackID(
+            playlist: tracks, currentTrackID: second, mode: .repeatAll
+        ))
+
+        XCTAssertEqual(second, tracks[1].id)
+        XCTAssertEqual(third, tracks[2].id)
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[0].id, tracks[1].id])
+    }
+
+    func testShuffleQueueIsStableAndDrivesActualNextTrack() throws {
+        let tracks = makeQueueTracks(count: 6)
+        var queue = BilibiliPlaybackQueue()
+        queue.rebuild(playlist: tracks, currentTrackID: tracks[2].id, mode: .shuffle)
+        let scheduled = queue.upcomingTrackIDs
+
+        XCTAssertEqual(scheduled.count, tracks.count - 1)
+        XCTAssertEqual(Set(scheduled), Set(tracks.map(\.id)).subtracting([tracks[2].id]))
+        XCTAssertEqual(
+            queue.nextTrackID(playlist: tracks, currentTrackID: tracks[2].id, mode: .shuffle),
+            scheduled.first
+        )
+        XCTAssertEqual(queue.upcomingTrackIDs, Array(scheduled.dropFirst()))
+    }
+
+    func testPlaybackQueuePreviousRestoresConsumedTrack() throws {
+        let tracks = makeQueueTracks(count: 3)
+        var queue = BilibiliPlaybackQueue()
+        queue.rebuild(playlist: tracks, currentTrackID: tracks[0].id, mode: .sequential)
+        let next = try XCTUnwrap(queue.nextTrackID(
+            playlist: tracks, currentTrackID: tracks[0].id, mode: .sequential
+        ))
+
+        XCTAssertEqual(next, tracks[1].id)
+        XCTAssertEqual(
+            queue.previousTrackID(playlist: tracks, currentTrackID: next, mode: .sequential),
+            tracks[0].id
+        )
+        XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id, tracks[2].id])
+    }
+
+    private func makeQueueTracks(count: Int) -> [MusicTrack] {
+        (0..<count).map { index in
+            MusicTrack(
+                id: "queue-\(index)", source: .bilibili, title: "歌曲 \(index)", artist: "歌手",
+                album: nil, coverURL: nil, duration: 180, bilibili: nil, subtitleURL: nil
+            )
+        }
+    }
 }
 
 private final class LyricsURLProtocol: URLProtocol {
