@@ -9,6 +9,18 @@ struct AppleMusicSnapshot: Equatable, Sendable {
     var volume: Double
 }
 
+protocol AppleMusicProviding: Sendable {
+    func isRunning() async -> Bool
+    func requestSnapshot() async throws -> AppleMusicSnapshot
+    func artworkURL(for trackID: String) async -> URL?
+    func playPause() async
+    func pause() async
+    func previous() async
+    func next() async
+    func seek(to position: TimeInterval) async
+    func setVolume(_ volume: Double) async
+}
+
 enum AppleMusicControlError: LocalizedError {
     case notRunning
     case automationDenied
@@ -23,7 +35,7 @@ enum AppleMusicControlError: LocalizedError {
     }
 }
 
-actor AppleMusicController {
+actor AppleMusicController: AppleMusicProviding {
     private var cachedArtworkTrackID: String?
     private var cachedArtworkURL: URL?
 

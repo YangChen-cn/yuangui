@@ -31,7 +31,7 @@ enum PetStatusMessageResolver {
         }
 
         if let memory = snapshot.memory,
-           memory.pressure != .normal || memory.fractionUsed >= 0.82 {
+           memory.pressure == .critical || memory.fractionUsed >= 0.90 {
             return "现在内存占用有些高（\(MetricFormatting.percent(memory.fractionUsed))），我在帮你看着～"
         }
 

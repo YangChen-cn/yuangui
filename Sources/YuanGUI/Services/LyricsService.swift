@@ -1,5 +1,10 @@
 import Foundation
 
+protocol LyricsProviding: Sendable {
+    func lyrics(for track: MusicTrack) async -> LyricsDocument?
+    func search(title: String, artist: String, duration: TimeInterval) async throws -> LyricsDocument?
+}
+
 enum LyricsParser {
     static func parseLRC(_ text: String, source: String = "本地 LRC") -> LyricsDocument {
         let timestamp = try! NSRegularExpression(pattern: #"\[(\d{1,3}):(\d{2})(?:[\.:](\d{1,3}))?\]"#)
@@ -44,7 +49,7 @@ enum LyricsParser {
     }
 }
 
-actor LyricsService {
+actor LyricsService: LyricsProviding {
     private let session: URLSession
     private let requestTimeout: TimeInterval
 

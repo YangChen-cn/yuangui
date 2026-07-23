@@ -14,7 +14,7 @@
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.1.2.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.0.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -27,7 +27,7 @@
 
 - **三种角色模式**：元圭、VCC、元圭与 VCC 一起。
 - **轻量动作效果**：每个普通动作和状态动作都带有短暂的位移、缩放、摆动或弹跳效果；低电量模式和“减少动态效果”下会自动静止。
-- **智能状态反应**：支持低电量、充电、内存压力、下雨和睡觉时间等状态动作。
+- **智能状态反应**：支持低电量、充电、内存压力、下雨和睡觉时间等状态动作；持续天气等非紧急状态短暂展示后会恢复听歌或当前活动，内存达到 90% 或系统报告严重压力时提醒。
 - **系统状态面板**：查看 CPU、内存、磁盘、网络、电池和运行时间。
 - **本地天气**：经用户授权后获取大致位置，并通过 Open-Meteo 获取天气，无需天气 API Key。
 - **主动对白**：可设置 1–120 分钟的日常对白间隔，并在天气刷新后进行角色化播报。
@@ -40,10 +40,10 @@
 - **应用内更新**：设置中显示当前版本和更新内容，可读取 GitHub Release 更新日志并一键下载安装新版本。
 - **清理屋**：提供保守的空间清理、软件卸载、白名单、操作记录和路径安全检查。
 - **废纸篓互动**：把文件拖到桌宠上即可移入废纸篓，也可以打开或确认清空废纸篓。
-- **桌面交互**：支持拖动、四边贴靠、迷你露头、尺寸调节、交互锁定与鼠标穿透，也可一键隐藏或显示 Finder 桌面图标。
+- **桌面交互**：支持拖动、四边贴靠、迷你露头、尺寸调节、交互锁定与鼠标穿透；锁定后悬停只显示一个紧凑解锁按钮，也可一键隐藏或显示 Finder 桌面图标。
 - **菜单栏入口与登录启动**：桌宠隐藏后仍可通过菜单栏恢复；状态栏“工具”页集中提供 AI 对话、清理屋、软件卸载、截图、翻译、废纸篓和设置入口，并可选择登录时自动启动。
 - **区域截图与标注**：按 `Control-A` 选区截图，添加画笔、文字、箭头、形状、高亮和马赛克，并复制或保存 PNG。
-- **截图翻译（OCR）**：按 `Control-Shift-A` 选区截图，通过 Vision 在本机完成结构化 OCR，再按语义句子批量翻译。可以使用紧凑翻译窗口，也可以把译文按原文位置覆盖到截图上；覆盖层支持自适应字号与换行、缩放、中英对照、复制、拖动和 `Esc` 关闭。
+- **截图翻译（OCR）**：按 `Control-Shift-A` 选区截图，通过 Vision 在本机完成结构化 OCR，再按语义句子批量翻译。可以使用紧凑翻译窗口，也可以把译文按原文位置覆盖到截图上；覆盖层支持独立原文遮盖补片、完整文本逻辑画布、以指针为锚点的触控板捏合、窗口与译图同步缩放、安全扩展窄文本宽度、同步中英对照、复制、拖动和 `Esc` 关闭。
 - **划词与手动翻译**：按 `Control-Z` 翻译网页或应用选区；没有选中文字时仍会打开窗口，可直接输入原文。翻译窗口保持单实例，新窗口会自动关闭上一个；支持修正原文后重新翻译、复制译文，并在可编辑输入框中校验后替换原选区。
 - **可选翻译引擎**：默认通过系统快捷指令免费调用 Apple 翻译，也可手动选择 Apple 本地翻译或在线 AI。在线 AI 只有在用户明确选择并完成配置后才会调用。
 
@@ -61,9 +61,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-1.1.2.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-1.1.2.dmg)
+[一键下载最新版 `YuanGUI-2.0.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.0.0.dmg)
 
-1. 打开 `YuanGUI-1.1.2.dmg`。
+1. 打开 `YuanGUI-2.0.0.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -137,6 +137,8 @@ swift test
 
 应用按界面可见状态动态切换监控频率：桌宠隐藏时暂停监控，普通陪伴状态只保留必要的低频电池与内存读取，打开完整状态面板或迷你状态时才启用实时指标。
 
+音乐状态按播放、资料库、歌词、歌词呈现、Bilibili 账号和导入分别发布，播放进度不会牵连整个资料库重绘。Apple Music 结合应用启停事件与使用期间轮询，未作为当前播放来源时不执行常驻查询。截图译文布局按内容和逻辑画布尺寸缓存；窗口缩放时按新的可视尺寸排版，任何因 OCR 框过窄而发生非必要换行的文本都会优先利用同一行的安全空白。
+
 当前 Release 版本在开发设备上的安静窗口实测约为：
 
 - 60 秒 CPU 中位数 `0%`，平均约 `0.32%`
@@ -150,7 +152,7 @@ swift test
 swift test
 ```
 
-当前项目包含 160 项测试；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
+当前项目包含 176 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -162,6 +164,7 @@ swift test
 - 清理、卸载与路径安全
 - 桌宠布局、贴边和设置持久化
 - 截图 OCR 分组、译文对齐、覆盖层排版、缓存与翻译窗口生命周期
+- 类型安全窗口路由、桌宠动作仲裁、辅助气泡定位和音乐子 Store 关闭流程
 
 ## 打包 DMG
 
@@ -172,7 +175,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。产物位于：
 
 ```text
-dist/YuanGUI-1.1.2.dmg
+dist/YuanGUI-2.0.0.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：
@@ -205,6 +208,8 @@ YuanGUI/
 ## 开发说明
 
 - 主体为 SwiftPM macOS 可执行产品，没有依赖第三方 Swift Package。
+- `AppRuntime` 负责依赖组装，`WindowCoordinator` 负责单实例窗口和类型安全 `AppRoute`；业务 Store 不发送应用自定义全局通知。
+- 音乐由非 Observable 的 `MusicFeature` 组合六个可观察子 Store，网络、播放器、歌词和持久化依赖通过协议注入。
 - 桌宠窗口由 AppKit `NSPanel` 承载，内容使用 SwiftUI 构建。
 - 系统状态读取通过 macOS 原生接口完成。
 - 角色动作图片按需加载并使用有上限的内存缓存。

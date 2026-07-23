@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AboutUpdateView: View {
     @StateObject private var updater = AppUpdateStore()
+    @Environment(\.appActions) private var appActions
 
     var body: some View {
         ScrollView {
@@ -76,6 +77,9 @@ struct AboutUpdateView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.bottom, 8)
+        }
+        .onAppear {
+            updater.setTerminationHandler(appActions.terminateForUpdate)
         }
     }
 

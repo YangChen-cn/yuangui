@@ -24,57 +24,20 @@ final class MusicPlaybackProgress: ObservableObject {
 }
 
 @MainActor
-final class MusicStore: ObservableObject {
-    @Published private(set) var browsingSource: MusicSource
-    @Published private(set) var activePlaybackSource: MusicSource? = nil
-    @Published private(set) var playbackState: MusicPlaybackState = .stopped
-    @Published private(set) var currentTrack: MusicTrack?
-    @Published private(set) var volume: Double
-    @Published private(set) var playlist: [MusicTrack] = []
-    @Published private(set) var upcomingTrackIDs: [String] = []
-    @Published private(set) var playMode: MusicPlayMode = .sequential
-    @Published private(set) var favoriteTrackIDs: Set<String> = []
-    @Published private(set) var savedPlaylists: [SavedMusicPlaylist] = []
-    @Published private(set) var lyrics: LyricsDocument?
-    @Published private(set) var currentLyric: TimedLyricLine?
-    @Published private(set) var nextLyric: TimedLyricLine?
-    @Published private(set) var currentLyricIndex: Int?
-    @Published private(set) var isLoadingLyrics = false
-    @Published private(set) var appleMusicRunning = false
-    @Published private(set) var isImporting = false
-    @Published private(set) var bilibiliImportMessage: String?
-    @Published var importText = ""
-    @Published var errorMessage: String?
-    @Published private(set) var lyricsVisible: Bool
-    @Published private(set) var lightSingAlongEnabled: Bool
-    @Published private(set) var lyricsPanelLocked: Bool
-    @Published private(set) var lyricsFontSize: Double
-    @Published private(set) var lyricsFontStyle: LyricsFontStyle
-    @Published private(set) var lyricsColor: NSColor
-    @Published private(set) var lyricsShadowEnabled: Bool
-    @Published private(set) var lyricsBackgroundVisible: Bool
-    @Published private(set) var lyricOffsets: [String: TimeInterval] = [:]
-    @Published private(set) var isSearchingLyrics = false
-    @Published private(set) var lyricsSearchMessage: String?
-    @Published private(set) var bilibiliAccount: BilibiliAccount?
-    @Published private(set) var bilibiliLoginPhase: BilibiliLoginPhase = .loggedOut
-    @Published private(set) var bilibiliQRCodeURL: String?
-    @Published private(set) var bilibiliFavoriteFolders: [BilibiliFavoriteFolder] = []
-    @Published private(set) var isLoadingBilibiliFavoriteFolders = false
-    @Published private(set) var isImportingBilibiliFavoriteFolder = false
-    @Published private(set) var bilibiliFavoriteImportCompleted = 0
-    @Published private(set) var bilibiliFavoriteImportTotal = 0
-    @Published private(set) var bilibiliFavoriteMessage: String?
-    @Published var isMiniPlayerPresented = false
-
-    let playbackProgress = MusicPlaybackProgress()
-    private let appleMusic = AppleMusicController()
-    private let bilibili = BilibiliClient()
+final class MusicFeature {
+    let playback: MusicPlaybackStore
+    let libraryStore: MusicLibraryStore
+    let lyricsStore: LyricsStore
+    let lyricsPresentation: LyricsPresentationStore
+    let bilibiliAccountStore: BilibiliAccountStore
+    let bilibiliImportStore: BilibiliImportStore
+    private let appleMusic: any AppleMusicProviding
+    private let bilibili: any BilibiliMusicProviding
     private let bilibiliAccountService = BilibiliAccountService()
     private let bilibiliFavoritesService = BilibiliFavoritesService()
-    private let bilibiliPlayer = BilibiliPlayerEngine()
-    private let lyricsService = LyricsService()
-    private let library = MusicLibraryActor()
+    private let bilibiliPlayer: any BilibiliPlaying
+    private let lyricsService: any LyricsProviding
+    private let library: any MusicLibraryCoordinating
     private let defaults: UserDefaults
     private var syncTask: Task<Void, Never>?
     private var appleClockTask: Task<Void, Never>?
@@ -97,29 +60,37 @@ final class MusicStore: ObservableObject {
     private var lyricLoadRevision: UInt64 = 0
     private var lastAppleClockTime: TimeInterval?
     private var bilibiliPlaybackQueue = BilibiliPlaybackQueue()
+    private var appleMusicWorkspaceObservers: [NSObjectProtocol] = []
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        self.browsingSource = MusicSource(rawValue: defaults.string(forKey: "musicSource") ?? "") ?? .appleMusic
+    init(
+        defaults: UserDefaults = .standard,
+        appleMusic: any AppleMusicProviding = AppleMusicController(),
+        bilibili: any BilibiliMusicProviding = BilibiliClient(),
+        bilibiliPlayer: (any BilibiliPlaying)? = nil,
+        lyricsService: any LyricsProviding = LyricsService(),
+        library: any MusicLibraryCoordinating = MusicLibraryActor()
+    ) {
+        let source = MusicSource(rawValue: defaults.string(forKey: "musicSource") ?? "") ?? .appleMusic
         let savedBilibiliVolume = defaults.object(forKey: "bilibiliMusicVolume") as? Double ?? 0.8
-        self.volume = savedBilibiliVolume
+        self.defaults = defaults
+        self.appleMusic = appleMusic
+        self.bilibili = bilibili
+        self.bilibiliPlayer = bilibiliPlayer ?? BilibiliPlayerEngine()
+        self.lyricsService = lyricsService
+        self.library = library
+        playback = MusicPlaybackStore(source: source, volume: savedBilibiliVolume)
+        libraryStore = MusicLibraryStore()
+        lyricsStore = LyricsStore()
+        lyricsPresentation = LyricsPresentationStore(defaults: defaults)
+        bilibiliAccountStore = BilibiliAccountStore()
+        bilibiliImportStore = BilibiliImportStore()
         self.bilibiliVolume = savedBilibiliVolume
-        self.lyricsVisible = defaults.bool(forKey: "musicLyricsVisible")
-        self.lightSingAlongEnabled = defaults.object(forKey: "musicLightSingAlong") == nil ? true : defaults.bool(forKey: "musicLightSingAlong")
-        self.lyricsPanelLocked = defaults.bool(forKey: "musicLyricsPanelLocked")
-        self.lyricsFontSize = min(max(defaults.object(forKey: "musicLyricsFontSize") as? Double ?? 21, 14), 42)
-        self.lyricsFontStyle = LyricsFontStyle(rawValue: defaults.string(forKey: "musicLyricsFontStyle") ?? "") ?? .rounded
-        self.lyricsColor = Self.decodeColor(defaults.string(forKey: "musicLyricsColor")) ?? .white
-        self.lyricsShadowEnabled = defaults.object(forKey: "musicLyricsShadowEnabled") == nil
-            ? true
-            : defaults.bool(forKey: "musicLyricsShadowEnabled")
-        self.lyricsBackgroundVisible = defaults.bool(forKey: "musicLyricsBackgroundVisible")
-        bilibiliPlayer.setVolume(volume)
-        bilibiliPlayer.onStateChange = { [weak self] state in
+        self.bilibiliPlayer.setVolume(volume)
+        self.bilibiliPlayer.onStateChange = { [weak self] state in
             guard let self, self.activePlaybackSource == .bilibili else { return }
             if self.playbackState != state { self.playbackState = state }
         }
-        bilibiliPlayer.onProgress = { [weak self] position, duration in
+        self.bilibiliPlayer.onProgress = { [weak self] position, duration in
             guard let self, self.activePlaybackSource == .bilibili else { return }
             self.playbackProgress.setPosition(position)
             self.lastBilibiliPosition = position
@@ -127,8 +98,9 @@ final class MusicStore: ObservableObject {
             self.updateLyric()
             self.persistProgressIfNeeded()
         }
-        bilibiliPlayer.onFinished = { [weak self] in self?.handleTrackFinished() }
-        bilibiliPlayer.onFailure = { [weak self] error in self?.handleBilibiliFailure(error) }
+        self.bilibiliPlayer.onFinished = { [weak self] in self?.handleTrackFinished() }
+        self.bilibiliPlayer.onFailure = { [weak self] error in self?.handleBilibiliFailure(error) }
+        installAppleMusicWorkspaceObservers()
         refreshBilibiliAccount()
         syncTask = Task { [weak self] in
             await self?.restoreLibrary()
@@ -139,7 +111,169 @@ final class MusicStore: ObservableObject {
         }
     }
 
-    var progress: Double { duration > 0 ? min(max(position / duration, 0), 1) : 0 }
+    private var browsingSource: MusicSource {
+        get { playback.browsingSource }
+        set { playback.browsingSource = newValue }
+    }
+    private var activePlaybackSource: MusicSource? {
+        get { playback.activePlaybackSource }
+        set { playback.activePlaybackSource = newValue }
+    }
+    private var playbackState: MusicPlaybackState {
+        get { playback.state }
+        set { playback.state = newValue }
+    }
+    private var currentTrack: MusicTrack? {
+        get { playback.currentTrack }
+        set { playback.currentTrack = newValue }
+    }
+    private var volume: Double {
+        get { playback.volume }
+        set { playback.volume = newValue }
+    }
+    private var upcomingTrackIDs: [String] {
+        get { playback.upcomingTrackIDs }
+        set { playback.upcomingTrackIDs = newValue }
+    }
+    private var playMode: MusicPlayMode {
+        get { playback.playMode }
+        set { playback.playMode = newValue }
+    }
+    private var appleMusicRunning: Bool {
+        get { playback.appleMusicRunning }
+        set { playback.appleMusicRunning = newValue }
+    }
+    private var playbackProgress: MusicPlaybackProgress { playback.progress }
+    private var playlist: [MusicTrack] {
+        get { libraryStore.playlist }
+        set { libraryStore.playlist = newValue }
+    }
+    private var favoriteTrackIDs: Set<String> {
+        get { libraryStore.favoriteTrackIDs }
+        set { libraryStore.favoriteTrackIDs = newValue }
+    }
+    private var savedPlaylists: [SavedMusicPlaylist] {
+        get { libraryStore.savedPlaylists }
+        set { libraryStore.savedPlaylists = newValue }
+    }
+    private var lyrics: LyricsDocument? {
+        get { lyricsStore.document }
+        set { lyricsStore.document = newValue }
+    }
+    private var currentLyric: TimedLyricLine? {
+        get { lyricsStore.currentLine }
+        set { lyricsStore.currentLine = newValue }
+    }
+    private var nextLyric: TimedLyricLine? {
+        get { lyricsStore.nextLine }
+        set { lyricsStore.nextLine = newValue }
+    }
+    private var currentLyricIndex: Int? {
+        get { lyricsStore.currentLineIndex }
+        set { lyricsStore.currentLineIndex = newValue }
+    }
+    private var isLoadingLyrics: Bool {
+        get { lyricsStore.isLoading }
+        set { lyricsStore.isLoading = newValue }
+    }
+    private var lyricOffsets: [String: TimeInterval] {
+        get { lyricsStore.offsets }
+        set { lyricsStore.offsets = newValue }
+    }
+    private var isSearchingLyrics: Bool {
+        get { lyricsStore.isSearching }
+        set { lyricsStore.isSearching = newValue }
+    }
+    private var lyricsSearchMessage: String? {
+        get { lyricsStore.searchMessage }
+        set { lyricsStore.searchMessage = newValue }
+    }
+    private var lyricsVisible: Bool {
+        get { lyricsPresentation.isVisible }
+        set { lyricsPresentation.isVisible = newValue }
+    }
+    private var lightSingAlongEnabled: Bool {
+        get { lyricsPresentation.lightSingAlongEnabled }
+        set { lyricsPresentation.lightSingAlongEnabled = newValue }
+    }
+    private var lyricsPanelLocked: Bool {
+        get { lyricsPresentation.isPanelLocked }
+        set { lyricsPresentation.isPanelLocked = newValue }
+    }
+    private var lyricsFontSize: Double {
+        get { lyricsPresentation.fontSize }
+        set { lyricsPresentation.fontSize = newValue }
+    }
+    private var lyricsFontStyle: LyricsFontStyle {
+        get { lyricsPresentation.fontStyle }
+        set { lyricsPresentation.fontStyle = newValue }
+    }
+    private var lyricsColor: NSColor {
+        get { lyricsPresentation.color }
+        set { lyricsPresentation.color = newValue }
+    }
+    private var lyricsShadowEnabled: Bool {
+        get { lyricsPresentation.shadowEnabled }
+        set { lyricsPresentation.shadowEnabled = newValue }
+    }
+    private var lyricsBackgroundVisible: Bool {
+        get { lyricsPresentation.backgroundVisible }
+        set { lyricsPresentation.backgroundVisible = newValue }
+    }
+    private var bilibiliAccount: BilibiliAccount? {
+        get { bilibiliAccountStore.account }
+        set { bilibiliAccountStore.account = newValue }
+    }
+    private var bilibiliLoginPhase: BilibiliLoginPhase {
+        get { bilibiliAccountStore.loginPhase }
+        set { bilibiliAccountStore.loginPhase = newValue }
+    }
+    private var bilibiliQRCodeURL: String? {
+        get { bilibiliAccountStore.qrCodeURL }
+        set { bilibiliAccountStore.qrCodeURL = newValue }
+    }
+    private var importText: String {
+        get { bilibiliImportStore.input }
+        set { bilibiliImportStore.input = newValue }
+    }
+    private var isImporting: Bool {
+        get { bilibiliImportStore.isImporting }
+        set { bilibiliImportStore.isImporting = newValue }
+    }
+    private var bilibiliImportMessage: String? {
+        get { bilibiliImportStore.importMessage }
+        set { bilibiliImportStore.importMessage = newValue }
+    }
+    private var errorMessage: String? {
+        get { bilibiliImportStore.errorMessage }
+        set { bilibiliImportStore.errorMessage = newValue }
+    }
+    private var bilibiliFavoriteFolders: [BilibiliFavoriteFolder] {
+        get { bilibiliImportStore.favoriteFolders }
+        set { bilibiliImportStore.favoriteFolders = newValue }
+    }
+    private var isLoadingBilibiliFavoriteFolders: Bool {
+        get { bilibiliImportStore.isLoadingFavoriteFolders }
+        set { bilibiliImportStore.isLoadingFavoriteFolders = newValue }
+    }
+    private var isImportingBilibiliFavoriteFolder: Bool {
+        get { bilibiliImportStore.isImportingFavoriteFolder }
+        set { bilibiliImportStore.isImportingFavoriteFolder = newValue }
+    }
+    private var bilibiliFavoriteImportCompleted: Int {
+        get { bilibiliImportStore.completedCount }
+        set { bilibiliImportStore.completedCount = newValue }
+    }
+    private var bilibiliFavoriteImportTotal: Int {
+        get { bilibiliImportStore.totalCount }
+        set { bilibiliImportStore.totalCount = newValue }
+    }
+    private var bilibiliFavoriteMessage: String? {
+        get { bilibiliImportStore.favoriteMessage }
+        set { bilibiliImportStore.favoriteMessage = newValue }
+    }
+
+    var progress: Double { playback.fractionComplete }
     var position: TimeInterval { playbackProgress.position }
     var duration: TimeInterval { playbackProgress.duration }
     var source: MusicSource { browsingSource }
@@ -595,7 +729,12 @@ final class MusicStore: ObservableObject {
                 guard !Task.isCancelled,
                       activePlaybackSource == .bilibili,
                       currentTrack?.id == track.id else { return }
-                bilibiliPlayer.load(urls: location.candidates, headers: headers, position: savedPosition)
+                bilibiliPlayer.load(
+                    urls: location.candidates,
+                    headers: headers,
+                    position: savedPosition,
+                    autoplay: true
+                )
                 persistLibrary()
             } catch {
                 guard !Task.isCancelled, activePlaybackSource == .bilibili else { return }
@@ -688,7 +827,7 @@ final class MusicStore: ObservableObject {
     func toggleLyricsVisible() {
         lyricsVisible.toggle()
         defaults.set(lyricsVisible, forKey: "musicLyricsVisible")
-        NotificationCenter.default.post(name: .musicLyricsVisibilityChanged, object: nil)
+        lyricsPresentation.onVisibilityChanged?()
     }
 
     func setLightSingAlongEnabled(_ enabled: Bool) {
@@ -699,7 +838,7 @@ final class MusicStore: ObservableObject {
     func setLyricsPanelLocked(_ locked: Bool) {
         lyricsPanelLocked = locked
         defaults.set(locked, forKey: "musicLyricsPanelLocked")
-        NotificationCenter.default.post(name: .musicLyricsLockChanged, object: nil)
+        lyricsPresentation.onLockChanged?()
     }
 
     func setLyricsFontSize(_ size: Double) {
@@ -819,7 +958,7 @@ final class MusicStore: ObservableObject {
         )
     }
 
-    private static func decodeColor(_ value: String?) -> NSColor? {
+    static func decodeLyricsColor(_ value: String?) -> NSColor? {
         guard let value else { return nil }
         let hex = value.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         guard hex.count == 6 || hex.count == 8, let raw = UInt64(hex, radix: 16) else { return nil }
@@ -847,24 +986,19 @@ final class MusicStore: ObservableObject {
         updateLyric()
     }
 
-    func showFullPlayer() {
-        // A SwiftUI popover is hosted by a non-activating panel. Let it close before
-        // asking the regular player window to become key, otherwise the panel can
-        // reclaim focus at the end of the current mouse event.
-        isMiniPlayerPresented = false
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .showYuanGUIMusic, object: nil)
-        }
-    }
-
     func shutdown() async {
         syncTask?.cancel(); appleClockTask?.cancel(); appleRefreshTask?.cancel(); appleArtworkTask?.cancel(); bilibiliImportResultTask?.cancel()
         lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliFavoriteTask?.cancel(); bilibiliPlayer.stop()
+        appleMusicWorkspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
+        appleMusicWorkspaceObservers.removeAll()
         persistenceRevision &+= 1
         await library.saveNow(librarySnapshot(), revision: persistenceRevision)
     }
 
     private func refreshAppleMusic() async {
+        guard activePlaybackSource == .appleMusic else { return }
+        let performanceStart = RuntimePerformance.start()
+        defer { RuntimePerformance.record("music.apple.sync", since: performanceStart) }
         let running = await appleMusic.isRunning()
         if appleMusicRunning != running { appleMusicRunning = running }
         guard appleMusicRunning else {
@@ -872,7 +1006,6 @@ final class MusicStore: ObservableObject {
             lastAppleClockTime = nil
             return
         }
-        guard activePlaybackSource == .appleMusic else { return }
         do {
             let snapshot = try await appleMusic.requestSnapshot()
             guard activePlaybackSource == .appleMusic else { return }
@@ -897,9 +1030,35 @@ final class MusicStore: ObservableObject {
 
     private func runSyncLoop() async {
         while !Task.isCancelled {
-            await refreshAppleMusic()
-            let delay: Duration = activePlaybackSource == .appleMusic ? .milliseconds(2500) : .seconds(15)
+            let isActivelyUsingAppleMusic = activePlaybackSource == .appleMusic
+            if isActivelyUsingAppleMusic {
+                await refreshAppleMusic()
+            }
+            let delay: Duration = isActivelyUsingAppleMusic ? .milliseconds(2500) : .seconds(30)
             do { try await Task.sleep(for: delay) } catch { return }
+        }
+    }
+
+    private func installAppleMusicWorkspaceObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                            as? NSRunningApplication,
+                          application.bundleIdentifier == "com.apple.Music" else { return }
+                    let isRunning = name == NSWorkspace.didLaunchApplicationNotification
+                    self.appleMusicRunning = isRunning
+                    if isRunning {
+                        self.scheduleAppleRefresh()
+                    } else if self.activePlaybackSource == .appleMusic {
+                        self.playbackState = .stopped
+                        self.lastAppleClockTime = nil
+                    }
+                }
+            }
+            appleMusicWorkspaceObservers.append(observer)
         }
     }
 
@@ -984,6 +1143,8 @@ final class MusicStore: ObservableObject {
     }
 
     private func loadLyrics(for track: MusicTrack) {
+        let performanceStart = RuntimePerformance.start()
+        defer { RuntimePerformance.record("music.lyrics.schedule", since: performanceStart) }
         lyricsSearchTask?.cancel()
         lyricsSearchTask = nil
         cancelLyricLoad()
@@ -999,6 +1160,8 @@ final class MusicStore: ObservableObject {
         updateLyric()
         isLoadingLyrics = true
         lyricLoadTask = Task { [weak self] in
+            let loadPerformanceStart = RuntimePerformance.start()
+            defer { RuntimePerformance.record("music.lyrics.load", since: loadPerformanceStart) }
             guard let self else { return }
             var resolvedTrack = track
             var cached = cachedLyrics(for: track)

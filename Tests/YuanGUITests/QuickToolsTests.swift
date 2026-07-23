@@ -6,6 +6,24 @@ import XCTest
 @testable import YuanGUI
 
 final class QuickToolsTests: XCTestCase {
+    @MainActor
+    func testTypedAppRoutingPreservesRouteParameters() {
+        var opened: [AppRoute] = []
+        var tools: [QuickToolRoute] = []
+        let actions = AppActions(
+            open: { opened.append($0) },
+            runQuickTool: { tools.append($0) },
+            terminateForUpdate: {}
+        )
+
+        actions.open(.maintenance(tab: 2))
+        actions.open(.music)
+        actions.runQuickTool(.screenshotTranslation)
+
+        XCTAssertEqual(opened, [.maintenance(tab: 2), .music])
+        XCTAssertEqual(tools, [.screenshotTranslation])
+    }
+
     func testHotKeyValidationAndRoundTrip() throws {
         XCTAssertNil(HotKeyBinding.screenshotDefault.validationMessage)
         XCTAssertEqual(HotKeyBinding.screenshotDefault.displayText, "⌃A")
@@ -217,20 +235,20 @@ final class QuickToolsTests: XCTestCase {
                 backgroundColor: .white
             )
         ]
-        let display = ScreenshotTranslationOverlayWindowController.displayBlocks(
+        let layout = ScreenshotTranslationOverlayWindowController.displayLayout(
             from: blocks,
             in: CGSize(width: 500, height: 260)
         )
+        let display = layout.blocks
 
         XCTAssertEqual(display.count, 2)
         for (index, block) in display.enumerated() {
             let anchor = ScreenshotTranslationOverlayView.displayRect(
                 for: blocks[index].normalizedRect,
-                in: CGSize(width: 500, height: 260)
+                in: layout.canvasSize
             )
             XCTAssertEqual(block.frame.minX, anchor.minX, accuracy: 0.0001)
-            XCTAssertEqual(block.frame.width, anchor.width, accuracy: 0.0001)
-            XCTAssertTrue(block.frame.intersects(anchor))
+            XCTAssertGreaterThanOrEqual(block.frame.width, anchor.width)
             XCTAssertGreaterThanOrEqual(
                 block.fontSize,
                 ScreenshotTranslationLayoutEngine.minimumInPlaceFontSize
@@ -248,11 +266,13 @@ final class QuickToolsTests: XCTestCase {
             text: "Readable translation",
             backgroundColor: .white
         )
-        let isolated = ScreenshotTranslationOverlayWindowController.displayBlocks(
+        let viewport = CGSize(width: 500, height: 260)
+        let isolatedLayout = ScreenshotTranslationOverlayWindowController.displayLayout(
             from: [target],
-            in: CGSize(width: 500, height: 260)
-        )[0]
-        let dense = ScreenshotTranslationOverlayWindowController.displayBlocks(
+            in: viewport
+        )
+        let isolated = isolatedLayout.blocks[0]
+        let denseLayout = ScreenshotTranslationOverlayWindowController.displayLayout(
             from: [
                 ScreenshotTranslationBlock(
                     id: 0,
@@ -268,13 +288,30 @@ final class QuickToolsTests: XCTestCase {
                     backgroundColor: .white
                 )
             ],
-            in: CGSize(width: 500, height: 260)
-        ).first { $0.id == target.id }!
+            in: viewport
+        )
+        let dense = denseLayout.blocks.first { $0.id == target.id }!
 
-        XCTAssertEqual(isolated.frame.minX, dense.frame.minX)
-        XCTAssertEqual(isolated.frame.width, dense.frame.width)
-        XCTAssertGreaterThan(isolated.frame.height, dense.frame.height)
-        XCTAssertGreaterThan(isolated.fontSize, dense.fontSize)
+        XCTAssertEqual(
+            isolated.frame.minX / isolatedLayout.canvasSize.width,
+            dense.frame.minX / denseLayout.canvasSize.width,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            isolated.frame.width / isolatedLayout.canvasSize.width,
+            dense.frame.width / denseLayout.canvasSize.width,
+            accuracy: 0.0001
+        )
+        XCTAssertGreaterThan(
+            isolated.frame.height,
+            ScreenshotTranslationOverlayView.displayRect(for: target.normalizedRect, in: viewport).height
+        )
+        for first in denseLayout.blocks.indices {
+            for second in denseLayout.blocks.indices where second > first {
+                XCTAssertFalse(denseLayout.blocks[first].frame.intersects(denseLayout.blocks[second].frame))
+            }
+        }
+        XCTAssertTrue(ScreenshotTranslationLayoutEngine.textFits(dense))
     }
 
     @MainActor
@@ -307,7 +344,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(display.count, 3)
         for block in display {
             XCTAssertEqual(block.frame.minX, 57.6, accuracy: 0.0001)
-            XCTAssertEqual(block.frame.width, 561.6, accuracy: 0.0001)
+            XCTAssertGreaterThanOrEqual(block.frame.width, 561.6)
         }
         for pair in zip(display, display.dropFirst()) {
             XCTAssertLessThanOrEqual(pair.0.frame.maxY, pair.1.frame.minY)
@@ -405,6 +442,104 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertGreaterThan(enlarged.width, original.width)
         XCTAssertEqual(enlarged.width / enlarged.height, original.width / original.height, accuracy: 0.0001)
         XCTAssertTrue(visible.contains(enlarged))
+    }
+
+    func testScreenshotTranslationWindowScalingKeepsPointerAnchorStable() {
+        let visible = CGRect(x: 0, y: 0, width: 1_600, height: 1_000)
+        let original = CGRect(x: 300, y: 240, width: 500, height: 250)
+        let focal = CGPoint(x: 425, y: 290)
+        let normalizedBefore = CGPoint(
+            x: (focal.x - original.minX) / original.width,
+            y: (focal.y - original.minY) / original.height
+        )
+        let enlarged = ScreenshotTranslationOverlayWindowController.scaledFrame(
+            for: original,
+            by: 1.4,
+            visibleFrame: visible,
+            focalPoint: focal
+        )
+        let normalizedAfter = CGPoint(
+            x: (focal.x - enlarged.minX) / enlarged.width,
+            y: (focal.y - enlarged.minY) / enlarged.height
+        )
+
+        XCTAssertEqual(normalizedAfter.x, normalizedBefore.x, accuracy: 0.0001)
+        XCTAssertEqual(normalizedAfter.y, normalizedBefore.y, accuracy: 0.0001)
+    }
+
+    @MainActor
+    func testScreenshotLayoutExpandsShortHeadingsIntoSameRowWhitespace() {
+        let blocks = [
+            ScreenshotTranslationBlock(
+                id: 0,
+                normalizedRect: CGRect(x: 0.29, y: 0.78, width: 0.035, height: 0.12),
+                text: "Work",
+                backgroundColor: .white,
+                sourceFontScale: 0.12
+            ),
+            ScreenshotTranslationBlock(
+                id: 1,
+                normalizedRect: CGRect(x: 0.65, y: 0.78, width: 0.045, height: 0.12),
+                text: "Reason",
+                backgroundColor: .white,
+                sourceFontScale: 0.12
+            )
+        ]
+        let size = CGSize(width: 1_200, height: 300)
+        let layout = ScreenshotTranslationOverlayWindowController.displayLayout(
+            from: blocks,
+            in: size
+        )
+
+        for (index, display) in layout.blocks.enumerated() {
+            let originalAnchor = ScreenshotTranslationOverlayView.displayRect(
+                for: blocks[index].normalizedRect,
+                in: layout.canvasSize
+            )
+            XCTAssertEqual(display.frame.minX, originalAnchor.minX, accuracy: 0.001)
+            XCTAssertGreaterThan(display.frame.width, originalAnchor.width)
+            XCTAssertLessThan(display.frame.height, display.fontSize * 1.8)
+            XCTAssertTrue(ScreenshotTranslationLayoutEngine.textFits(display))
+        }
+        XCTAssertLessThanOrEqual(layout.blocks[0].frame.maxX, layout.blocks[1].frame.minX)
+    }
+
+    @MainActor
+    func testScreenshotLayoutKeepsExpandedSourceCoverageAtOriginalAnchor() {
+        let blocks = [
+            ScreenshotTranslationBlock(
+                id: 0,
+                normalizedRect: CGRect(x: 0.28, y: 0.72, width: 0.08, height: 0.08),
+                text: "A translated sentence that needs more vertical space",
+                backgroundColor: .white
+            ),
+            ScreenshotTranslationBlock(
+                id: 1,
+                normalizedRect: CGRect(x: 0.62, y: 0.72, width: 0.12, height: 0.08),
+                text: "Reason",
+                backgroundColor: .white
+            )
+        ]
+        let size = CGSize(width: 1_000, height: 500)
+        let layout = ScreenshotTranslationOverlayWindowController.displayLayout(
+            from: blocks,
+            in: size
+        )
+
+        for (index, display) in layout.blocks.enumerated() {
+            let original = ScreenshotTranslationOverlayView.displayRect(
+                for: blocks[index].normalizedRect,
+                in: layout.canvasSize
+            )
+            XCTAssertTrue(display.coverageFrame.contains(original))
+            XCTAssertLessThan(display.coverageFrame.minX, original.minX)
+            XCTAssertGreaterThan(display.coverageFrame.maxX, original.maxX)
+            XCTAssertEqual(display.coverageFrame.midY, original.midY, accuracy: 0.001)
+        }
+        XCTAssertLessThanOrEqual(
+            layout.blocks[0].coverageFrame.maxX,
+            layout.blocks[1].coverageFrame.minX
+        )
     }
 
     func testOCRLayoutAnalyzerDeduplicatesAndAssignsStableReadingOrder() {
@@ -621,7 +756,11 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertFalse(result.blocks[0].usesOverflowCard)
         XCTAssertTrue(result.overflowBlocks.isEmpty)
         XCTAssertEqual(result.blocks[0].text, block.text)
-        XCTAssertTrue(CGRect(origin: .zero, size: CGSize(width: 120, height: 40)).contains(result.blocks[0].frame))
+        XCTAssertGreaterThan(result.requiredScale, 1)
+        XCTAssertGreaterThan(result.canvasSize.width, 120)
+        XCTAssertGreaterThan(result.canvasSize.height, 40)
+        XCTAssertTrue(CGRect(origin: .zero, size: result.canvasSize).contains(result.blocks[0].frame))
+        XCTAssertTrue(ScreenshotTranslationLayoutEngine.textFits(result.blocks[0]))
     }
 
     func testScreenshotLayoutFixturesHaveNoOverlapTruncationOrMarkerLeak() throws {
@@ -708,7 +847,10 @@ final class QuickToolsTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -0.01, dy: -0.01)
+        XCTAssertGreaterThanOrEqual(layout.canvasSize.width, size.width, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(layout.canvasSize.height, size.height, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(layout.requiredScale, 1, file: file, line: line)
+        let bounds = CGRect(origin: .zero, size: layout.canvasSize).insetBy(dx: -0.01, dy: -0.01)
         for block in layout.blocks {
             XCTAssertTrue(bounds.contains(block.frame), "\(context): frame escaped bounds", file: file, line: line)
             XCTAssertGreaterThanOrEqual(
@@ -721,10 +863,9 @@ final class QuickToolsTests: XCTestCase {
             XCTAssertFalse(block.text.contains("…"), "\(context): ellipsis leaked", file: file, line: line)
             XCTAssertFalse(block.text.contains("YGUI"), "\(context): internal marker leaked", file: file, line: line)
             XCTAssertFalse(block.usesOverflowCard, "\(context): translation escaped into a separate card", file: file, line: line)
-            let consumesAllAvailableHeight = abs(block.frame.height - size.height) <= 0.01
             XCTAssertTrue(
-                ScreenshotTranslationLayoutEngine.textFits(block) || consumesAllAvailableHeight,
-                "\(context): text neither fits nor uses the full in-place fallback region \(block)",
+                ScreenshotTranslationLayoutEngine.textFits(block),
+                "\(context): translated text does not fit its logical-canvas frame \(block)",
                 file: file,
                 line: line
             )
@@ -747,6 +888,14 @@ final class QuickToolsTests: XCTestCase {
         let behavior = ScreenshotTranslationOverlayWindowController.panelCollectionBehavior
         XCTAssertFalse(behavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(behavior.contains(.moveToActiveSpace))
+        XCTAssertFalse(
+            ScreenshotTranslationOverlayWindowController.overlayStyleMask
+                .contains(.nonactivatingPanel)
+        )
+        XCTAssertFalse(
+            ScreenshotTranslationOverlayWindowController.auxiliaryOverlayStyleMask
+                .contains(.nonactivatingPanel)
+        )
     }
 
     func testTranslationTextFormatterRestoresFlattenedListLineBreaksWithoutSplittingNames() {

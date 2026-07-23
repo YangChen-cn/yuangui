@@ -5,6 +5,12 @@ protocol MusicLibraryPersisting: Sendable {
     func save(_ snapshot: MusicLibrarySnapshot) throws
 }
 
+protocol MusicLibraryCoordinating: Sendable {
+    func load() async throws -> MusicLibrarySnapshot
+    func scheduleSave(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async
+    func saveNow(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async
+}
+
 struct MusicLibraryFileStore: MusicLibraryPersisting {
     let fileURL: URL
 
@@ -26,7 +32,7 @@ struct MusicLibraryFileStore: MusicLibraryPersisting {
     }
 }
 
-actor MusicLibraryActor {
+actor MusicLibraryActor: MusicLibraryCoordinating {
     private let store: MusicLibraryPersisting
     private var pending: MusicLibrarySnapshot?
     private var saveTask: Task<Void, Never>?

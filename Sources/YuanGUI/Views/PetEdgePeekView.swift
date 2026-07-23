@@ -5,6 +5,7 @@ struct PetEdgePeekView: View {
     @ObservedObject private var monitor: SystemMonitor
     let edge: PetDockEdge
     let expand: () -> Void
+    @Environment(\.appActions) private var appActions
     @State private var hovering = false
 
     init(store: PetStore, edge: PetDockEdge, expand: @escaping () -> Void) {
@@ -114,8 +115,8 @@ struct PetEdgePeekView: View {
         Button(store.shouldShowPetBubble ? "隐藏迷你监控" : "显示迷你监控") {
             store.toggleSystemStatus()
         }
-        Button("打开完整监控") { store.showFullDashboard() }
-        Button("和元圭、VCC 聊天…") { store.showChat() }
+        Button("打开完整监控") { appActions.open(.statusDashboard) }
+        Button("和元圭、VCC 聊天…") { appActions.open(.chat) }
         Menu("切换角色") {
             ForEach(PetMode.allCases) { mode in
                 Button(mode.title) { store.setMode(mode) }
@@ -132,6 +133,6 @@ struct PetEdgePeekView: View {
             get: { store.smartReactionsEnabled },
             set: { store.setSmartReactionsEnabled($0) }
         ))
-        Button("设置…") { store.showSettings() }
+        Button("设置…") { appActions.open(.settings) }
     }
 }

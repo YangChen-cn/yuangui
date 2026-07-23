@@ -5,6 +5,8 @@ MODE="${1:-run}"
 APP_NAME="YuanGUI"
 BUNDLE_ID="com.yang.yuangui"
 MIN_SYSTEM_VERSION="15.0"
+APP_VERSION="2.0.0"
+APP_BUILD="11"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -56,9 +58,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.1.2</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>10</string>
+  <string>$APP_BUILD</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>

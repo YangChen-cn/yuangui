@@ -24,6 +24,13 @@ struct BilibiliAudioLocation {
     let candidates: [URL]
 }
 
+protocol BilibiliMusicProviding: Sendable {
+    func resolveTracks(from input: String) async throws -> [MusicTrack]
+    func audioLocation(for track: MusicTrack) async throws -> BilibiliAudioLocation
+    func subtitleURL(for track: MusicTrack) async -> URL?
+    func playbackHeaders() async -> [String: String]
+}
+
 enum BilibiliInputParser {
     static func extractBVID(from value: String) -> String? {
         guard let match = value.range(of: #"BV[0-9A-Za-z]{10}"#, options: .regularExpression) else { return nil }
@@ -36,7 +43,7 @@ enum BilibiliInputParser {
     }
 }
 
-actor BilibiliClient {
+actor BilibiliClient: BilibiliMusicProviding {
     private let session: URLSession
     private var cachedMixinKey: String?
     private var verifiedSubtitleTrackIDs: [String: String] = [:]

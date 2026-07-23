@@ -1,12 +1,27 @@
 import AVFoundation
 import Foundation
 
+@MainActor
+protocol BilibiliPlaying: AnyObject {
+    var onStateChange: ((MusicPlaybackState) -> Void)? { get set }
+    var onProgress: ((TimeInterval, TimeInterval) -> Void)? { get set }
+    var onFinished: (() -> Void)? { get set }
+    var onFailure: ((Error) -> Void)? { get set }
+    var hasLoadedItem: Bool { get }
+    func load(urls: [URL], headers: [String: String], position: TimeInterval, autoplay: Bool)
+    func playPause()
+    func pause()
+    func seek(to position: TimeInterval)
+    func setVolume(_ volume: Double)
+    func stop()
+}
+
 private struct BilibiliPlaybackTimeoutError: LocalizedError {
     var errorDescription: String? { "Bilibili 音频线路连接超时" }
 }
 
 @MainActor
-final class BilibiliPlayerEngine: MusicPlaybackControlling {
+final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
     private(set) var player = AVPlayer()
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?

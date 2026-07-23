@@ -6,7 +6,7 @@ struct MenuBarDashboardView: View {
 
     @ObservedObject var store: PetStore
     @ObservedObject var focusTimer: FocusTimerStore
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @ObservedObject var quickTools: QuickToolsController
     let dashboardWidth: CGFloat
     let dashboardHeight: CGFloat
@@ -14,6 +14,7 @@ struct MenuBarDashboardView: View {
     let showPet: () -> Void
     let openSettings: () -> Void
     let dismiss: () -> Void
+    @Environment(\.appActions) private var appActions
     @StateObject private var updater = AppUpdateStore()
     @State private var showsFocusPopover = false
     @State private var showsUpdatePopover = false
@@ -98,7 +99,7 @@ struct MenuBarDashboardView: View {
                     .help(store.interactionLocked ? "解锁桌宠点击" : "锁定桌宠并允许点击穿透")
                     Button {
                         dismiss()
-                        store.showMaintenance()
+                        appActions.open(.maintenance(tab: 0))
                     } label: {
                         Image(systemName: "house.fill")
                     }
@@ -130,6 +131,7 @@ struct MenuBarDashboardView: View {
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.35), lineWidth: 0.8))
         .preferredColorScheme(store.dashboardStyle == .midnight ? .dark : nil)
         .onAppear {
+            updater.setTerminationHandler(appActions.terminateForUpdate)
             store.refreshDesktopIconVisibility()
             store.monitor.refresh()
         }
@@ -149,13 +151,13 @@ struct MenuBarDashboardView: View {
     private var toolsGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 2), spacing: 9) {
             toolButton("AI 对话", subtitle: "和元圭、VCC 聊天", systemImage: "message.fill", tint: .pink) {
-                launchTool { store.showChat() }
+                launchTool { appActions.open(.chat) }
             }
             toolButton("清理屋", subtitle: "扫描缓存与残留", systemImage: "sparkles", tint: .mint) {
-                launchTool { store.showMaintenance(tab: 0) }
+                launchTool { appActions.open(.maintenance(tab: 0)) }
             }
             toolButton("软件卸载", subtitle: "应用与关联残留", systemImage: "shippingbox.fill", tint: .orange) {
-                launchTool { store.showMaintenance(tab: 1) }
+                launchTool { appActions.open(.maintenance(tab: 1)) }
             }
             toolButton("区域截图", subtitle: quickTools.settings.screenshotHotKey.displayText, systemImage: "viewfinder", tint: .blue) {
                 launchTool { quickTools.beginRegionScreenshot() }

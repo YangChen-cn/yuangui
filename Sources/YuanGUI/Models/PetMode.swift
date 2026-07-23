@@ -119,11 +119,6 @@ enum SmartPetState: String, Equatable {
            (battery.chargeFraction ?? 1) <= 0.20 {
             states.append(.lowBattery)
         }
-        if let memory = snapshot.memory,
-           (memory.pressure == .warning || memory.fractionUsed >= 0.82),
-           !states.contains(.memoryPressure) {
-            states.append(.memoryPressure)
-        }
         if weather?.isRainy == true {
             states.append(.rainy)
         }

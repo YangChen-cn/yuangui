@@ -121,7 +121,6 @@ final class ChatStore: ObservableObject {
         Task { try? await history.clear() }
     }
 
-    func showHistory() { NotificationCenter.default.post(name: .showYuanGUIChatHistory, object: nil) }
     func togglePresented() { isPresented.toggle() }
     func present() { isPresented = true }
     func dismiss() { isPresented = false }

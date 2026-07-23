@@ -6,8 +6,9 @@ struct SettingsView: View {
     @ObservedObject var ai: AISettingsStore
     @ObservedObject var loginItem: LoginItemStore
     @ObservedObject var focusTimer: FocusTimerStore
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @ObservedObject var quickTools: QuickToolsController
+    @Environment(\.appActions) private var appActions
     let showPet: () -> Void
     @State private var selectedTab = 0
     @State private var promptEditorState: PromptEditorState?
@@ -55,33 +56,33 @@ struct SettingsView: View {
     private var musicSettings: some View {
         Form {
             Section("播放器") {
-                Picker("默认播放来源", selection: Binding(get: { music.source }, set: music.setSource)) {
+                Picker("默认播放来源", selection: Binding(get: { music.playback.source }, set: music.setSource)) {
                     ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
                 }
-                Toggle("显示桌面悬浮歌词", isOn: Binding(get: { music.lyricsVisible }, set: { _ in music.toggleLyricsVisible() }))
-                Toggle("轻量跟唱（歌词气泡与轻微律动）", isOn: Binding(get: { music.lightSingAlongEnabled }, set: music.setLightSingAlongEnabled))
-                Toggle("锁定悬浮歌词并允许点击穿透", isOn: Binding(get: { music.lyricsPanelLocked }, set: music.setLyricsPanelLocked))
+                Toggle("显示桌面悬浮歌词", isOn: Binding(get: { music.lyricsPresentation.isVisible }, set: { _ in music.toggleLyricsVisible() }))
+                Toggle("轻量跟唱（歌词气泡与轻微律动）", isOn: Binding(get: { music.lyricsPresentation.lightSingAlongEnabled }, set: music.setLightSingAlongEnabled))
+                Toggle("锁定悬浮歌词并允许点击穿透", isOn: Binding(get: { music.lyricsPresentation.isPanelLocked }, set: music.setLyricsPanelLocked))
                 Toggle("显示桌面歌词文字阴影", isOn: Binding(
-                    get: { music.lyricsShadowEnabled },
+                    get: { music.lyricsPresentation.shadowEnabled },
                     set: music.setLyricsShadowEnabled
                 ))
                 Toggle("显示桌面歌词半透明背景长条", isOn: Binding(
-                    get: { music.lyricsBackgroundVisible },
+                    get: { music.lyricsPresentation.backgroundVisible },
                     set: music.setLyricsBackgroundVisible
                 ))
                 HStack {
                     Text("桌面歌词字号")
                     Slider(
-                        value: Binding(get: { music.lyricsFontSize }, set: music.setLyricsFontSize),
+                        value: Binding(get: { music.lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
                         in: 14...42,
                         step: 1
                     )
-                    Text("\(Int(music.lyricsFontSize))")
+                    Text("\(Int(music.lyricsPresentation.fontSize))")
                         .font(.system(.body, design: .monospaced))
                         .frame(width: 28, alignment: .trailing)
                 }
                 Picker("桌面歌词字体", selection: Binding(
-                    get: { music.lyricsFontStyle },
+                    get: { music.lyricsPresentation.fontStyle },
                     set: music.setLyricsFontStyle
                 )) {
                     ForEach(LyricsFontStyle.allCases) { style in Text(style.title).tag(style) }
@@ -89,7 +90,7 @@ struct SettingsView: View {
                 ColorPicker(
                     "桌面歌词颜色",
                     selection: Binding(
-                        get: { Color(nsColor: music.lyricsColor) },
+                        get: { Color(nsColor: music.lyricsPresentation.color) },
                         set: { music.setLyricsColor(NSColor($0)) }
                     ),
                     supportsOpacity: true
@@ -99,7 +100,7 @@ struct SettingsView: View {
             }
             Section("Apple Music") {
                 HStack {
-                    Text(music.appleMusicRunning ? "Music App 正在运行" : "Music App 尚未运行")
+                    Text(music.playback.appleMusicRunning ? "Music App 正在运行" : "Music App 尚未运行")
                     Spacer()
                     Button("连接") { music.connectAppleMusic() }
                     Button("权限设置") { music.openAutomationSettings() }
@@ -110,18 +111,18 @@ struct SettingsView: View {
             Section("哔哩哔哩") {
                 HStack {
                     Label(
-                        music.bilibiliAccount.map { "已登录：\($0.name)" } ?? "未登录",
-                        systemImage: music.bilibiliAccount == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark"
+                        music.bilibiliAccountStore.account.map { "已登录：\($0.name)" } ?? "未登录",
+                        systemImage: music.bilibiliAccountStore.account == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark"
                     )
                     Spacer()
-                    Button(music.bilibiliAccount == nil ? "扫码登录" : "账号管理") {
+                    Button(music.bilibiliAccountStore.account == nil ? "扫码登录" : "账号管理") {
                         isBilibiliLoginPresented = true
                     }
                 }
                 Text("登录后可读取账号有权访问的播放器字幕。登录 Cookie 与刷新令牌仅保存在本机应用数据中，不会读取账号密码。")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Button("打开完整音乐播放器") { music.showFullPlayer() }
+            Button("打开完整音乐播放器") { appActions.open(.music) }
                 .buttonStyle(.borderedProminent)
         }
         .formStyle(.grouped)
@@ -216,6 +217,9 @@ struct SettingsView: View {
                     get: { pet.memoryPressureAlertsEnabled },
                     set: pet.setMemoryPressureAlertsEnabled
                 ))
+                Text("内存占用达到 90%，或系统报告严重内存压力时提醒。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 if pet.lowBatteryAlertsEnabled || pet.memoryPressureAlertsEnabled {
                     Picker("紧急状态提醒方式", selection: Binding(
                         get: { pet.urgentReminderMode },

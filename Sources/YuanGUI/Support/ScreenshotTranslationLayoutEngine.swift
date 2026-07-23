@@ -4,6 +4,8 @@ import Foundation
 
 struct ScreenshotTranslationLayout: Equatable, Sendable {
     let blocks: [ScreenshotTranslationDisplayBlock]
+    let canvasSize: CGSize
+    let requiredScale: CGFloat
 
     var overflowBlocks: [ScreenshotTranslationDisplayBlock] {
         blocks.filter(\.usesOverflowCard)
@@ -11,114 +13,90 @@ struct ScreenshotTranslationLayout: Equatable, Sendable {
 }
 
 enum ScreenshotTranslationLayoutEngine {
-    static let minimumReadableFontSize: CGFloat = 11
-    static let minimumInPlaceFontSize: CGFloat = 7
+    static let minimumReadableFontSize: CGFloat = 7
+    static let minimumInPlaceFontSize = minimumReadableFontSize
+    private static let maximumCanvasScale: CGFloat = 64
+    private static let cache = ScreenshotLayoutCache()
 
-    /// Layout used by the live screenshot overlay. The horizontal anchor is immutable. A sentence
-    /// may use free vertical space in its own text column, but it can never move sideways, cross a
-    /// neighboring OCR sentence, or merge with another translation.
-    static func inPlaceLayout(
-        blocks: [ScreenshotTranslationBlock],
-        in size: CGSize
-    ) -> ScreenshotTranslationLayout {
-        guard size.width > 0, size.height > 0 else { return ScreenshotTranslationLayout(blocks: []) }
-        let bounds = CGRect(origin: .zero, size: size)
-        let anchors = blocks.map { clampedDisplayRect(for: $0.normalizedRect, in: size, bounds: bounds) }
-        let displayBlocks = blocks.enumerated().map { index, block in
-            let anchor = anchors[index]
-            let availableFrame = readableFrame(for: index, anchors: anchors, bounds: bounds)
-            let preferredMaximum = min(
-                40,
-                max(16, block.sourceFontScale * size.height * 1.05)
-            )
-            let fitting = fittingFontSize(
-                for: block.text,
-                in: availableFrame.size,
-                minimum: minimumInPlaceFontSize,
-                maximum: preferredMaximum
-            )
-            let fontSize = fitting.fontSize
-            let requiredHeight = measuredSize(
-                block.text,
-                fontSize: fontSize,
-                width: max(1, availableFrame.width - 8)
-            ).height + 4
-            let frame = tightenedFrame(
-                availableFrame,
-                around: anchor.midY,
-                requiredHeight: max(anchor.height, requiredHeight)
-            )
-            return displayBlock(
-                source: block,
-                frame: frame,
-                fontSize: fontSize,
-                usesOverflowCard: false
-            )
-        }
-        return ScreenshotTranslationLayout(blocks: displayBlocks)
-    }
-
+    /// The only screenshot-translation layout path used by production and tests.
+    /// Horizontal OCR anchors remain immutable. If the text cannot fit at 7 pt,
+    /// the logical canvas grows uniformly until every independent block fits.
     static func layout(
         blocks: [ScreenshotTranslationBlock],
-        in size: CGSize
+        in viewportSize: CGSize
     ) -> ScreenshotTranslationLayout {
-        guard size.width > 0, size.height > 0 else { return ScreenshotTranslationLayout(blocks: []) }
-        let bounds = CGRect(origin: .zero, size: size)
-        let anchors = blocks.map { clampedDisplayRect(for: $0.normalizedRect, in: size, bounds: bounds) }
-        let displayBlocks = blocks.enumerated().map { index, block in
-            var frame = readableFrame(for: index, anchors: anchors, bounds: bounds)
-            let preferredMaximum = min(
-                40,
-                max(16, block.sourceFontScale * size.height * 0.94)
-            )
-            let fitting = fittingFontSize(
-                for: block.text,
-                in: frame.size,
-                minimum: minimumReadableFontSize,
-                maximum: preferredMaximum
-            )
-            var fontSize = fitting.fontSize
-            var candidate = displayBlock(
-                source: block,
-                frame: frame,
-                fontSize: fontSize,
-                usesOverflowCard: false
-            )
-            while fontSize > minimumReadableFontSize, !textFits(candidate) {
-                fontSize = max(minimumReadableFontSize, floor((fontSize - 0.5) * 10) / 10)
-                candidate = displayBlock(
-                    source: block,
-                    frame: frame,
-                    fontSize: fontSize,
-                    usesOverflowCard: false
-                )
-            }
-            let fitsCurrentSlot = textFits(candidate)
-            let requiredHeight = measuredSize(
-                block.text,
-                fontSize: fitsCurrentSlot ? fontSize : minimumReadableFontSize,
-                width: max(1, frame.width - 8)
-            ).height + 4
-            if fitsCurrentSlot {
-                frame = tightenedFrame(frame, around: anchors[index].midY, requiredHeight: requiredHeight)
-            } else {
-                frame = expandedFrame(
-                    frame,
-                    around: anchors[index].midY,
-                    requiredHeight: requiredHeight,
-                    bounds: bounds
-                )
-                fontSize = minimumReadableFontSize
-            }
-            return displayBlock(
-                source: block,
-                frame: frame,
-                fontSize: fontSize,
-                usesOverflowCard: false
+        let key = ScreenshotLayoutCache.Key(blocks: blocks, viewportSize: viewportSize)
+        if let cached = cache.value(for: key) { return cached }
+        let result = calculateLayout(blocks: blocks, in: viewportSize)
+        cache.insert(result, for: key)
+        return result
+    }
+
+    private static func calculateLayout(
+        blocks: [ScreenshotTranslationBlock],
+        in viewportSize: CGSize
+    ) -> ScreenshotTranslationLayout {
+        guard viewportSize.width > 0, viewportSize.height > 0 else {
+            return ScreenshotTranslationLayout(
+                blocks: [],
+                canvasSize: .zero,
+                requiredScale: 1
             )
         }
-        let resolved = resolveOverlaps(displayBlocks, bounds: bounds)
-        return ScreenshotTranslationLayout(blocks: mergeResidualOverlaps(resolved, bounds: bounds))
+        guard !blocks.isEmpty else {
+            return ScreenshotTranslationLayout(
+                blocks: [],
+                canvasSize: viewportSize,
+                requiredScale: 1
+            )
+        }
+
+        let initial = makeLayout(blocks: blocks, canvasSize: viewportSize)
+        if isValid(initial) {
+            return ScreenshotTranslationLayout(
+                blocks: initial,
+                canvasSize: viewportSize,
+                requiredScale: 1
+            )
+        }
+
+        var lower: CGFloat = 1
+        var upper: CGFloat = 1.5
+        var upperLayout = makeLayout(
+            blocks: blocks,
+            canvasSize: scaled(viewportSize, by: upper)
+        )
+        while upper < maximumCanvasScale, !isValid(upperLayout) {
+            lower = upper
+            upper = min(maximumCanvasScale, upper * 1.5)
+            upperLayout = makeLayout(
+                blocks: blocks,
+                canvasSize: scaled(viewportSize, by: upper)
+            )
+        }
+
+        if isValid(upperLayout) {
+            for _ in 0..<7 {
+                let candidate = (lower + upper) / 2
+                let candidateLayout = makeLayout(
+                    blocks: blocks,
+                    canvasSize: scaled(viewportSize, by: candidate)
+                )
+                if isValid(candidateLayout) {
+                    upper = candidate
+                    upperLayout = candidateLayout
+                } else {
+                    lower = candidate
+                }
+            }
+        }
+
+        let canvasSize = scaled(viewportSize, by: upper)
+        return ScreenshotTranslationLayout(
+            blocks: upperLayout,
+            canvasSize: canvasSize,
+            requiredScale: upper
+        )
     }
 
     static func textFits(_ block: ScreenshotTranslationDisplayBlock) -> Bool {
@@ -129,33 +107,77 @@ enum ScreenshotTranslationLayoutEngine {
         ).height <= max(1, block.frame.height - 4)
     }
 
-    private static func displayBlock(
-        source: ScreenshotTranslationBlock,
-        frame: CGRect,
-        fontSize: CGFloat,
-        usesOverflowCard: Bool
-    ) -> ScreenshotTranslationDisplayBlock {
-        ScreenshotTranslationDisplayBlock(
-            id: source.id,
-            frame: frame,
-            text: source.text,
-            fontSize: fontSize,
-            backgroundColor: source.backgroundColor,
-            lineSpacing: 0,
-            usesOverflowCard: usesOverflowCard
+    private static func makeLayout(
+        blocks: [ScreenshotTranslationBlock],
+        canvasSize: CGSize
+    ) -> [ScreenshotTranslationDisplayBlock] {
+        let bounds = CGRect(origin: .zero, size: canvasSize)
+        let originalAnchors = blocks.map {
+            clampedDisplayRect(for: $0.normalizedRect, in: canvasSize, bounds: bounds)
+        }
+        let anchors = horizontallyExpandedAnchors(
+            blocks: blocks,
+            anchors: originalAnchors,
+            bounds: bounds
         )
+        let coverageFrames = sourceCoverageFrames(
+            for: originalAnchors,
+            bounds: bounds
+        )
+        let readableFrames = readableFrames(for: anchors, bounds: bounds)
+        return blocks.enumerated().map { index, block in
+            let anchor = anchors[index]
+            let availableFrame = readableFrames[index]
+            let preferredMaximum = min(
+                40,
+                max(16, block.sourceFontScale * canvasSize.height * 1.05)
+            )
+            let fitting = fittingFontSize(
+                for: block.text,
+                in: availableFrame.size,
+                minimum: minimumReadableFontSize,
+                maximum: preferredMaximum
+            )
+            let requiredHeight = measuredSize(
+                block.text,
+                fontSize: fitting.fontSize,
+                width: max(1, availableFrame.width - 8)
+            ).height + 4
+            let frame = tightenedFrame(
+                availableFrame,
+                around: anchor.midY,
+                requiredHeight: max(anchor.height, requiredHeight)
+            )
+            return ScreenshotTranslationDisplayBlock(
+                id: block.id,
+                frame: frame,
+                coverageFrame: coverageFrames[index],
+                text: block.text,
+                fontSize: fitting.fontSize,
+                backgroundColor: block.backgroundColor,
+                lineSpacing: 0,
+                usesOverflowCard: false
+            )
+        }
     }
 
-    private static func expandedFrame(
-        _ frame: CGRect,
-        around anchorY: CGFloat,
-        requiredHeight: CGFloat,
-        bounds: CGRect
-    ) -> CGRect {
-        let height = min(bounds.height, max(frame.height, requiredHeight))
-        let proposedY = anchorY - height / 2
-        let y = min(max(proposedY, bounds.minY), bounds.maxY - height)
-        return CGRect(x: frame.minX, y: y, width: frame.width, height: height)
+    private static func isValid(_ blocks: [ScreenshotTranslationDisplayBlock]) -> Bool {
+        guard blocks.allSatisfy(textFits) else { return false }
+        for first in blocks.indices {
+            for second in blocks.indices where second > first {
+                let intersection = blocks[first].frame.intersection(blocks[second].frame)
+                if !intersection.isNull,
+                   intersection.width > 0.01,
+                   intersection.height > 0.01 {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    private static func scaled(_ size: CGSize, by scale: CGFloat) -> CGSize {
+        CGSize(width: size.width * scale, height: size.height * scale)
     }
 
     private static func tightenedFrame(
@@ -166,126 +188,6 @@ enum ScreenshotTranslationLayoutEngine {
         let height = min(frame.height, max(1, requiredHeight))
         let y = min(max(anchorY - height / 2, frame.minY), frame.maxY - height)
         return CGRect(x: frame.minX, y: y, width: frame.width, height: height)
-    }
-
-    private static func resolveOverlaps(
-        _ blocks: [ScreenshotTranslationDisplayBlock],
-        bounds: CGRect
-    ) -> [ScreenshotTranslationDisplayBlock] {
-        var result = blocks
-        let spacing: CGFloat = 2
-        for _ in 0..<6 {
-            var changed = false
-            let order = result.indices.sorted { result[$0].frame.minY < result[$1].frame.minY }
-            for firstPosition in order.indices {
-                for secondPosition in order.indices where secondPosition > firstPosition {
-                    let firstIndex = order[firstPosition]
-                    let secondIndex = order[secondPosition]
-                    var first = result[firstIndex]
-                    var second = result[secondIndex]
-                    let horizontalOverlap = max(
-                        0,
-                        min(first.frame.maxX, second.frame.maxX) - max(first.frame.minX, second.frame.minX)
-                    )
-                    guard horizontalOverlap >= min(first.frame.width, second.frame.width) * 0.15 else { continue }
-                    var collision = first.frame.maxY + spacing - second.frame.minY
-                    guard collision > 0 else { continue }
-
-                    let moveDown = min(collision, max(0, bounds.maxY - second.frame.maxY))
-                    if moveDown > 0 {
-                        second = replacingFrame(second, second.frame.offsetBy(dx: 0, dy: moveDown))
-                        result[secondIndex] = second
-                        collision -= moveDown
-                        changed = true
-                    }
-                    let moveUp = min(collision, max(0, first.frame.minY - bounds.minY))
-                    if moveUp > 0 {
-                        first = replacingFrame(first, first.frame.offsetBy(dx: 0, dy: -moveUp))
-                        result[firstIndex] = first
-                        changed = true
-                    }
-                }
-            }
-            if !changed { break }
-        }
-        return result
-    }
-
-    /// Dense screenshots can be geometrically impossible to lay out as independent 11 pt boxes.
-    /// Keep every translation on the screenshot by folding only the boxes that still collide
-    /// after normal placement into one in-place multiline region. This replaces the old detached
-    /// overflow card without hiding translated content or drawing two text layers on top of each other.
-    private static func mergeResidualOverlaps(
-        _ blocks: [ScreenshotTranslationDisplayBlock],
-        bounds: CGRect
-    ) -> [ScreenshotTranslationDisplayBlock] {
-        var result = blocks
-        while let pair = firstOverlappingPair(in: result) {
-            let first = result[pair.0]
-            let second = result[pair.1]
-            var frame = first.frame.union(second.frame).intersection(bounds)
-            let text = [first.text, second.text]
-                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .joined(separator: "\n")
-            let requiredHeight = measuredSize(
-                text,
-                fontSize: minimumReadableFontSize,
-                width: max(1, frame.width - 8)
-            ).height + 4
-            frame = expandedFrame(
-                frame,
-                around: frame.midY,
-                requiredHeight: requiredHeight,
-                bounds: bounds
-            )
-            let merged = ScreenshotTranslationDisplayBlock(
-                id: min(first.id, second.id),
-                frame: frame,
-                text: text,
-                fontSize: minimumReadableFontSize,
-                backgroundColor: first.backgroundColor,
-                lineSpacing: 0,
-                usesOverflowCard: false
-            )
-            result.remove(at: pair.1)
-            result.remove(at: pair.0)
-            result.append(merged)
-            result = resolveOverlaps(result, bounds: bounds)
-        }
-        return result.sorted { lhs, rhs in
-            if abs(lhs.frame.minY - rhs.frame.minY) > 0.5 { return lhs.frame.minY < rhs.frame.minY }
-            return lhs.frame.minX < rhs.frame.minX
-        }
-    }
-
-    private static func firstOverlappingPair(
-        in blocks: [ScreenshotTranslationDisplayBlock]
-    ) -> (Int, Int)? {
-        guard blocks.count > 1 else { return nil }
-        for first in blocks.indices {
-            for second in blocks.indices where second > first {
-                let intersection = blocks[first].frame.intersection(blocks[second].frame)
-                if !intersection.isNull, intersection.width > 0.01, intersection.height > 0.01 {
-                    return (first, second)
-                }
-            }
-        }
-        return nil
-    }
-
-    private static func replacingFrame(
-        _ block: ScreenshotTranslationDisplayBlock,
-        _ frame: CGRect
-    ) -> ScreenshotTranslationDisplayBlock {
-        ScreenshotTranslationDisplayBlock(
-            id: block.id,
-            frame: frame,
-            text: block.text,
-            fontSize: block.fontSize,
-            backgroundColor: block.backgroundColor,
-            lineSpacing: block.lineSpacing,
-            usesOverflowCard: false
-        )
     }
 
     private static func fittingFontSize(
@@ -303,7 +205,7 @@ enum ScreenshotTranslationLayoutEngine {
         guard minimumHeight <= safeHeight else { return (minimum, false) }
         var lower = minimum
         var upper = maximum
-        for _ in 0..<12 {
+        for _ in 0..<7 {
             let candidate = (lower + upper) / 2
             if measuredSize(text, fontSize: candidate, width: available.width).height <= safeHeight {
                 lower = candidate
@@ -345,40 +247,226 @@ enum ScreenshotTranslationLayoutEngine {
         )
     }
 
-    private static func readableFrame(
-        for index: Int,
+    /// Vision often returns a tight glyph box for short headings. Preserve the
+    /// heading's left anchor, but let it use free space to the next item on the
+    /// same visual row so words such as “Work” and “Reason” do not stack one
+    /// character per line.
+    private static func horizontallyExpandedAnchors(
+        blocks: [ScreenshotTranslationBlock],
         anchors: [CGRect],
         bounds: CGRect
-    ) -> CGRect {
-        let anchor = anchors[index]
-        let relevant = anchors.enumerated().compactMap { candidateIndex, candidate -> (Int, CGRect)? in
-            guard candidateIndex != index else { return nil }
-            let overlap = max(0, min(anchor.maxX, candidate.maxX) - max(anchor.minX, candidate.minX))
-            guard overlap >= min(anchor.width, candidate.width) * 0.2 else { return nil }
-            return (candidateIndex, candidate)
+    ) -> [CGRect] {
+        let gap = max(6, bounds.width * 0.008)
+
+        return anchors.indices.map { index in
+            let block = blocks[index]
+            let anchor = anchors[index]
+            let preferredFontSize = min(
+                40,
+                max(16, block.sourceFontScale * bounds.height * 1.05)
+            )
+            let oneLineWidth = measuredSize(
+                block.text,
+                fontSize: preferredFontSize,
+                width: bounds.width
+            ).width + 8
+            // Expand only when the original OCR box would force avoidable
+            // wrapping. This also covers headings that OCR classified as body.
+            guard oneLineWidth > anchor.width + 1 else { return anchor }
+
+            let nextPeerX = anchors.indices
+                .filter { candidate in
+                    guard candidate != index,
+                          anchors[candidate].minX > anchor.minX else { return false }
+                    let verticalOverlap = max(
+                        0,
+                        min(anchor.maxY, anchors[candidate].maxY)
+                            - max(anchor.minY, anchors[candidate].minY)
+                    )
+                    return verticalOverlap >= min(anchor.height, anchors[candidate].height) * 0.25
+                }
+                .map { anchors[$0].minX }
+                .min()
+                ?? bounds.maxX
+            let availableWidth = max(anchor.width, nextPeerX - gap - anchor.minX)
+            let expandedWidth = min(availableWidth, max(anchor.width, oneLineWidth))
+            return CGRect(
+                x: anchor.minX,
+                y: anchor.minY,
+                width: min(expandedWidth, bounds.maxX - anchor.minX),
+                height: anchor.height
+            )
         }
-        let previous = relevant
-            .filter { candidateIndex, candidate in
-                candidate.midY < anchor.midY
-                    || (abs(candidate.midY - anchor.midY) < 0.5 && candidateIndex < index)
+    }
+
+    /// Keep erasing the source at its original OCR position even when the
+    /// translated frame moves. Vision boxes can be a little too tight around
+    /// the first or last glyph, so expand horizontally without crossing the
+    /// midpoint to another item on the same visual row.
+    private static func sourceCoverageFrames(
+        for anchors: [CGRect],
+        bounds: CGRect
+    ) -> [CGRect] {
+        anchors.indices.map { index in
+            let anchor = anchors[index]
+            let rowPeers = anchors.indices.filter { candidate in
+                guard candidate != index else { return false }
+                let verticalOverlap = max(
+                    0,
+                    min(anchor.maxY, anchors[candidate].maxY)
+                        - max(anchor.minY, anchors[candidate].minY)
+                )
+                return verticalOverlap >= min(anchor.height, anchors[candidate].height) * 0.25
             }
-            .max { $0.1.midY < $1.1.midY }
-        let next = relevant
-            .filter { candidateIndex, candidate in
-                candidate.midY > anchor.midY
-                    || (abs(candidate.midY - anchor.midY) < 0.5 && candidateIndex > index)
+            let previous = rowPeers
+                .map { anchors[$0] }
+                .filter { $0.maxX <= anchor.minX }
+                .max { $0.maxX < $1.maxX }
+            let next = rowPeers
+                .map { anchors[$0] }
+                .filter { $0.minX >= anchor.maxX }
+                .min { $0.minX < $1.minX }
+            let leftLimit = previous.map { ($0.maxX + anchor.minX) / 2 } ?? bounds.minX
+            let rightLimit = next.map { (anchor.maxX + $0.minX) / 2 } ?? bounds.maxX
+            let horizontalMargin = max(3, anchor.height * 1.35)
+            let verticalMargin = max(1, min(4, anchor.height * 0.12))
+            let minX = max(leftLimit, anchor.minX - horizontalMargin)
+            let maxX = min(rightLimit, anchor.maxX + horizontalMargin)
+            let minY = max(bounds.minY, anchor.minY - verticalMargin)
+            let maxY = min(bounds.maxY, anchor.maxY + verticalMargin)
+            return CGRect(
+                x: minX,
+                y: minY,
+                width: max(1, maxX - minX),
+                height: max(1, maxY - minY)
+            )
+        }
+    }
+
+    private static func readableFrames(for anchors: [CGRect], bounds: CGRect) -> [CGRect] {
+        var remaining = Set(anchors.indices)
+        var result = anchors
+
+        while let seed = remaining.first {
+            var component: [Int] = []
+            var pending = [seed]
+            remaining.remove(seed)
+            while let index = pending.popLast() {
+                component.append(index)
+                for candidate in Array(remaining)
+                where horizontallyRelated(anchors[index], anchors[candidate]) {
+                    remaining.remove(candidate)
+                    pending.append(candidate)
+                }
             }
-            .min { $0.1.midY < $1.1.midY }
-        let separation: CGFloat = 2
-        let slotTop = previous.map { ($0.1.midY + anchor.midY) / 2 + separation / 2 } ?? bounds.minY
-        let slotBottom = next.map { (anchor.midY + $0.1.midY) / 2 - separation / 2 } ?? bounds.maxY
-        let top = min(max(slotTop, bounds.minY), bounds.maxY - 1)
-        let bottom = max(min(slotBottom, bounds.maxY), top + 1)
-        return CGRect(
-            x: anchor.minX,
-            y: top,
-            width: anchor.width,
-            height: max(1, bottom - top)
-        ).intersection(bounds)
+
+            let ordered = component.sorted {
+                let difference = anchors[$0].midY - anchors[$1].midY
+                return abs(difference) > 0.5 ? difference < 0 : $0 < $1
+            }
+            let count = CGFloat(ordered.count)
+            let minimumCenterGap = bounds.height / max(2, count * 2)
+            var centers = Array(repeating: CGFloat.zero, count: ordered.count)
+            for position in ordered.indices {
+                let lower = bounds.minY + (CGFloat(position) + 0.5) * minimumCenterGap
+                let upper = bounds.maxY
+                    - (CGFloat(ordered.count - position) - 0.5) * minimumCenterGap
+                let previousMinimum = position == 0
+                    ? lower
+                    : centers[position - 1] + minimumCenterGap
+                centers[position] = min(
+                    max(anchors[ordered[position]].midY, previousMinimum),
+                    max(previousMinimum, upper)
+                )
+            }
+
+            for position in ordered.indices {
+                let index = ordered[position]
+                let top = position == 0
+                    ? bounds.minY
+                    : (centers[position - 1] + centers[position]) / 2 + 1
+                let bottom = position == ordered.count - 1
+                    ? bounds.maxY
+                    : (centers[position] + centers[position + 1]) / 2 - 1
+                result[index] = CGRect(
+                    x: anchors[index].minX,
+                    y: top,
+                    width: anchors[index].width,
+                    height: max(1, bottom - top)
+                ).intersection(bounds)
+            }
+        }
+        return result
+    }
+
+    private static func horizontallyRelated(_ first: CGRect, _ second: CGRect) -> Bool {
+        let overlap = max(0, min(first.maxX, second.maxX) - max(first.minX, second.minX))
+        return overlap >= min(first.width, second.width) * 0.2
+    }
+}
+
+private final class ScreenshotLayoutCache: @unchecked Sendable {
+    struct Key: Hashable {
+        struct Block: Hashable {
+            let id: Int
+            let x: CGFloat
+            let y: CGFloat
+            let width: CGFloat
+            let height: CGFloat
+            let text: String
+            let sourceFontScale: CGFloat
+            let role: String
+            let red: Double
+            let green: Double
+            let blue: Double
+            let variation: Double
+        }
+
+        let width: CGFloat
+        let height: CGFloat
+        let blocks: [Block]
+
+        init(blocks: [ScreenshotTranslationBlock], viewportSize: CGSize) {
+            width = viewportSize.width
+            height = viewportSize.height
+            self.blocks = blocks.map {
+                Block(
+                    id: $0.id,
+                    x: $0.normalizedRect.minX,
+                    y: $0.normalizedRect.minY,
+                    width: $0.normalizedRect.width,
+                    height: $0.normalizedRect.height,
+                    text: $0.text,
+                    sourceFontScale: $0.sourceFontScale,
+                    role: $0.role.rawValue,
+                    red: $0.backgroundColor.red,
+                    green: $0.backgroundColor.green,
+                    blue: $0.backgroundColor.blue,
+                    variation: $0.backgroundColor.variation
+                )
+            }
+        }
+    }
+
+    private let lock = NSLock()
+    private var values: [Key: ScreenshotTranslationLayout] = [:]
+    private var order: [Key] = []
+    private let capacity = 64
+
+    func value(for key: Key) -> ScreenshotTranslationLayout? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[key]
+    }
+
+    func insert(_ value: ScreenshotTranslationLayout, for key: Key) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard values[key] == nil else { return }
+        values[key] = value
+        order.append(key)
+        if order.count > capacity {
+            values.removeValue(forKey: order.removeFirst())
+        }
     }
 }

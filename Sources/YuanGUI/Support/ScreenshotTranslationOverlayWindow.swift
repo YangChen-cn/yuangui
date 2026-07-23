@@ -8,25 +8,31 @@ struct ScreenshotTranslationBlock: Equatable, Identifiable, Sendable {
     let text: String
     let backgroundColor: OCRBackgroundColor
     let sourceFontScale: CGFloat
+    let role: OCRTextRole
 
     init(
         id: Int,
         normalizedRect: CGRect,
         text: String,
         backgroundColor: OCRBackgroundColor,
-        sourceFontScale: CGFloat? = nil
+        sourceFontScale: CGFloat? = nil,
+        role: OCRTextRole = .body
     ) {
         self.id = id
         self.normalizedRect = normalizedRect
         self.text = text
         self.backgroundColor = backgroundColor
         self.sourceFontScale = sourceFontScale ?? normalizedRect.height
+        self.role = role
     }
 }
 
 struct ScreenshotTranslationDisplayBlock: Equatable, Identifiable, Sendable {
     let id: Int
     let frame: CGRect
+    /// The original OCR area that must be painted over even when the translated
+    /// text is moved vertically or uses a different width.
+    let coverageFrame: CGRect
     let text: String
     let fontSize: CGFloat
     let backgroundColor: OCRBackgroundColor
@@ -36,6 +42,7 @@ struct ScreenshotTranslationDisplayBlock: Equatable, Identifiable, Sendable {
     init(
         id: Int,
         frame: CGRect,
+        coverageFrame: CGRect,
         text: String,
         fontSize: CGFloat,
         backgroundColor: OCRBackgroundColor,
@@ -44,6 +51,7 @@ struct ScreenshotTranslationDisplayBlock: Equatable, Identifiable, Sendable {
     ) {
         self.id = id
         self.frame = frame
+        self.coverageFrame = coverageFrame
         self.text = text
         self.fontSize = fontSize
         self.backgroundColor = backgroundColor
@@ -73,6 +81,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     private var comparisonWindow: ScreenshotTranslationOverlayPanel?
     private var standardFrame: CGRect
     private var escapeMonitor: Any?
+    private var magnifyMonitor: Any?
     private var overlayDragStart: (mouse: CGPoint, window: CGRect)?
     private var didClose = false
 
@@ -91,13 +100,13 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         model = ScreenshotTranslationOverlayModel(image: image)
         window = ScreenshotTranslationOverlayPanel(
             contentRect: standardFrame,
-            styleMask: [.borderless, .nonactivatingPanel, .resizable],
+            styleMask: Self.overlayStyleMask,
             backing: .buffered,
             defer: false
         )
         toolbarWindow = ScreenshotTranslationOverlayPanel(
             contentRect: CGRect(origin: .zero, size: CGSize(width: 224, height: 40)),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: Self.auxiliaryOverlayStyleMask,
             backing: .buffered,
             defer: false
         )
@@ -127,8 +136,8 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             model: model,
             store: store,
             dragToPointer: { [weak self] ended in self?.dragOverlayToPointer(ended: ended) },
-            zoomOut: { [weak self] in self?.resizeOverlay(by: 0.82) },
-            zoomIn: { [weak self] in self?.resizeOverlay(by: 1.22) },
+            zoomOut: { [weak self] in self?.scaleOverlay(by: 0.82) },
+            zoomIn: { [weak self] in self?.scaleOverlay(by: 1.22) },
             toggleComparison: { [weak self] in self?.toggleComparison() },
             close: { [weak self] in self?.close() }
         ))
@@ -138,15 +147,16 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
 
     deinit {
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        if let magnifyMonitor { NSEvent.removeMonitor(magnifyMonitor) }
     }
 
     func show() {
         TranslationPerformance.measureSync(.presentation) {
-            window.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
             toolbarWindow.orderFrontRegardless()
-            window.makeKey()
         }
-        installEscapeMonitor()
+        installInputMonitors()
     }
 
     func close() {
@@ -171,6 +181,8 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         didClose = true
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
         escapeMonitor = nil
+        if let magnifyMonitor { NSEvent.removeMonitor(magnifyMonitor) }
+        magnifyMonitor = nil
         comparisonWindow?.orderOut(nil)
         if let comparisonWindow { window.removeChildWindow(comparisonWindow) }
         comparisonWindow = nil
@@ -192,6 +204,14 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
 
     nonisolated static var panelCollectionBehavior: NSWindow.CollectionBehavior {
         [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
+    }
+
+    nonisolated static var overlayStyleMask: NSWindow.StyleMask {
+        [.borderless, .resizable]
+    }
+
+    nonisolated static var auxiliaryOverlayStyleMask: NSWindow.StyleMask {
+        [.borderless]
     }
 
     nonisolated static func toolbarFrame(
@@ -220,6 +240,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         for frame: CGRect,
         by factor: CGFloat,
         visibleFrame: CGRect,
+        focalPoint: CGPoint? = nil,
         minimumWidth: CGFloat = 240
     ) -> CGRect {
         guard frame.width > 0, frame.height > 0, factor > 0 else { return frame }
@@ -232,9 +253,12 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             width *= scale
             height *= scale
         }
+        let focal = focalPoint ?? CGPoint(x: frame.midX, y: frame.midY)
+        let normalizedFocalX = min(1, max(0, (focal.x - frame.minX) / frame.width))
+        let normalizedFocalY = min(1, max(0, (focal.y - frame.minY) / frame.height))
         let proposed = CGRect(
-            x: frame.midX - width / 2,
-            y: frame.midY - height / 2,
+            x: focal.x - width * normalizedFocalX,
+            y: focal.y - height * normalizedFocalY,
             width: width,
             height: height
         )
@@ -438,7 +462,8 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             text: paragraphSourceText(group),
             normalizedRect: rect,
             backgroundColor: group.first?.backgroundColor ?? .white,
-            estimatedFontScale: group.map(\.estimatedFontScale).sorted()[group.count / 2]
+            estimatedFontScale: group.map(\.estimatedFontScale).sorted()[group.count / 2],
+            role: group.first?.role ?? .body
         )
     }
 
@@ -456,7 +481,8 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
                 normalizedRect: source.normalizedRect,
                 text: translation,
                 backgroundColor: source.backgroundColor,
-                sourceFontScale: source.estimatedFontScale
+                sourceFontScale: source.estimatedFontScale,
+                role: source.role
             )
         }
     }
@@ -465,8 +491,15 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         from blocks: [ScreenshotTranslationBlock],
         in size: CGSize
     ) -> [ScreenshotTranslationDisplayBlock] {
+        displayLayout(from: blocks, in: size).blocks
+    }
+
+    static func displayLayout(
+        from blocks: [ScreenshotTranslationBlock],
+        in size: CGSize
+    ) -> ScreenshotTranslationLayout {
         TranslationPerformance.measureSync(.layout) {
-            ScreenshotTranslationLayoutEngine.inPlaceLayout(blocks: blocks, in: size).blocks
+            ScreenshotTranslationLayoutEngine.layout(blocks: blocks, in: size)
         }
     }
 
@@ -516,6 +549,9 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         panel.hasShadow = shadow
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.ignoresMouseEvents = false
+        panel.acceptsMouseMovedEvents = true
         panel.collectionBehavior = Self.panelCollectionBehavior
     }
 
@@ -529,6 +565,34 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             toolbarSize: toolbarWindow.frame.size,
             visibleFrame: visibleFrame
         ), display: true)
+    }
+
+    private func scaleOverlay(by factor: CGFloat, around focalPoint: CGPoint? = nil) {
+        guard factor > 0 else { return }
+        let focal = focalPoint ?? CGPoint(x: window.frame.midX, y: window.frame.midY)
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(focal) })
+            ?? window.screen
+            ?? NSScreen.main
+        guard let visibleFrame = screen?.visibleFrame else { return }
+        let resizedFrame = Self.scaledFrame(
+            for: window.frame,
+            by: factor,
+            visibleFrame: visibleFrame,
+            focalPoint: focal
+        )
+
+        if let comparisonWindow {
+            let frames = Self.comparisonFrames(
+                for: resizedFrame,
+                visibleFrame: visibleFrame
+            )
+            comparisonWindow.setFrame(frames.original, display: true)
+            window.setFrame(frames.translated, display: true)
+        } else {
+            window.setFrame(resizedFrame, display: true)
+            standardFrame = resizedFrame
+        }
+        positionToolbar()
     }
 
     private func dragOverlayToPointer(ended: Bool) {
@@ -547,18 +611,6 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             positionToolbar()
             constrainWindowGroupToVisibleFrame()
         }
-    }
-
-    private func resizeOverlay(by factor: CGFloat) {
-        guard comparisonWindow == nil else { return }
-        let visibleFrame = window.screen?.visibleFrame
-            ?? NSScreen.screens.first(where: { $0.frame.intersects(window.frame) })?.visibleFrame
-            ?? NSScreen.main?.visibleFrame
-            ?? window.frame.insetBy(dx: -300, dy: -200)
-        let resized = Self.scaledFrame(for: window.frame, by: factor, visibleFrame: visibleFrame)
-        window.setFrame(resized, display: true, animate: true)
-        standardFrame = resized
-        positionToolbar()
     }
 
     private func constrainWindowGroupToVisibleFrame() {
@@ -593,13 +645,15 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         let frames = Self.comparisonFrames(for: window.frame, visibleFrame: visibleFrame)
         let original = ScreenshotTranslationOverlayPanel(
             contentRect: frames.original,
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: Self.auxiliaryOverlayStyleMask,
             backing: .buffered,
             defer: false
         )
         configure(panel: original, title: "截图翻译原文对照", shadow: true)
         original.onEscape = { [weak self] in self?.close() }
-        original.contentView = NSHostingView(rootView: ScreenshotOriginalImageView(image: model.image))
+        original.contentView = ScreenshotTranslationFirstMouseHostingView(
+            rootView: ScreenshotOriginalImageView(image: model.image)
+        )
         comparisonWindow = original
         model.comparisonEnabled = true
         window.setFrame(frames.translated, display: true)
@@ -611,11 +665,26 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         window.makeKey()
     }
 
-    private func installEscapeMonitor() {
+    private func installInputMonitors() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53, self?.window.isVisible == true else { return event }
             self?.close()
+            return nil
+        }
+        magnifyMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { [weak self] event in
+            guard let self,
+                  self.window.isVisible,
+                  let eventWindow = event.window,
+                  eventWindow === self.window || eventWindow === self.comparisonWindow else {
+                return event
+            }
+            self.overlayDragStart = nil
+            let screenPoint = eventWindow.convertPoint(toScreen: event.locationInWindow)
+            self.scaleOverlay(
+                by: max(0.1, 1 + event.magnification),
+                around: screenPoint
+            )
             return nil
         }
     }
@@ -649,10 +718,13 @@ private struct ScreenshotOriginalImageView: View {
     let image: CGImage
 
     var body: some View {
-        Image(decorative: image, scale: 1)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .clipped()
+        GeometryReader { proxy in
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
+        }
     }
 }
 
@@ -664,15 +736,7 @@ struct ScreenshotTranslationOverlayView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                Image(decorative: model.image, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .clipped()
-                    .allowsHitTesting(false)
-                translationLayer(size: proxy.size)
-            }
+            translationLayer(size: proxy.size)
             .frame(width: proxy.size.width, height: proxy.size.height)
             .contentShape(Rectangle())
             .simultaneousGesture(
@@ -716,42 +780,15 @@ struct ScreenshotTranslationOverlayView: View {
                 regions: model.regions,
                 translatedLines: store.translatedLines
             )
-            let blocks = ScreenshotTranslationOverlayWindowController.displayBlocks(from: sourceBlocks, in: size)
-            ZStack(alignment: .topLeading) {
-                ForEach(blocks) { block in translatedBlock(block) }
-            }
-            .frame(width: size.width, height: size.height, alignment: .topLeading)
-        }
-    }
-
-    private func translatedBlock(_ block: ScreenshotTranslationDisplayBlock) -> some View {
-        Text(block.text)
-            .font(.system(size: block.fontSize, weight: .regular))
-            .foregroundStyle(block.backgroundColor.isDark ? Color.white : Color.black)
-            .lineSpacing(block.lineSpacing)
-            .lineLimit(nil)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 4)
-            .frame(width: max(block.frame.width, 1), height: max(block.frame.height, 1), alignment: .leading)
-            .background(blockBackground(block.backgroundColor))
-            .shadow(color: block.backgroundColor.variation > 0.08 ? (block.backgroundColor.isDark ? .black.opacity(0.7) : .white.opacity(0.8)) : .clear, radius: 0.7)
-            .position(x: block.frame.midX, y: block.frame.midY)
-            .clipped()
-    }
-
-    @ViewBuilder
-    private func blockBackground(_ color: OCRBackgroundColor) -> some View {
-        if color.variation > 0.08 {
-            Rectangle()
-                .fill(.regularMaterial)
-                .overlay(
-                    Color(red: color.red, green: color.green, blue: color.blue)
-                        .opacity(0.58)
-                )
-        } else {
-            Color(red: color.red, green: color.green, blue: color.blue)
-                .opacity(1)
+            let layout = ScreenshotTranslationOverlayWindowController.displayLayout(
+                from: sourceBlocks,
+                in: size
+            )
+            ScreenshotTranslationCanvasView(
+                image: model.image,
+                layout: layout,
+                viewportSize: size
+            )
         }
     }
 
@@ -797,6 +834,88 @@ struct ScreenshotTranslationOverlayView: View {
     }
 }
 
+private struct ScreenshotTranslationCanvasView: View {
+    let image: CGImage
+    let layout: ScreenshotTranslationLayout
+    let viewportSize: CGSize
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: layout.canvasSize.width, height: layout.canvasSize.height)
+                .allowsHitTesting(false)
+
+            ForEach(layout.blocks) { block in
+                coveragePatch(block)
+            }
+
+            ForEach(layout.blocks) { block in
+                translatedBlock(block)
+            }
+        }
+        .frame(
+            width: layout.canvasSize.width,
+            height: layout.canvasSize.height,
+            alignment: .topLeading
+        )
+        .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
+        .clipped()
+    }
+
+    private func coveragePatch(_ block: ScreenshotTranslationDisplayBlock) -> some View {
+        blockBackground(block.backgroundColor)
+            .frame(
+                width: max(block.coverageFrame.width, 1),
+                height: max(block.coverageFrame.height, 1)
+            )
+            .position(
+                x: block.coverageFrame.midX,
+                y: block.coverageFrame.midY
+            )
+    }
+
+    private func translatedBlock(_ block: ScreenshotTranslationDisplayBlock) -> some View {
+        Text(block.text)
+            .font(.system(size: block.fontSize, weight: .regular))
+            .foregroundStyle(block.backgroundColor.isDark ? Color.white : Color.black)
+            .lineSpacing(block.lineSpacing)
+            .lineLimit(nil)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4)
+            .frame(
+                width: max(block.frame.width, 1),
+                height: max(block.frame.height, 1),
+                alignment: .leading
+            )
+            .background(blockBackground(block.backgroundColor))
+            .shadow(
+                color: block.backgroundColor.variation > 0.08
+                    ? (block.backgroundColor.isDark ? .black.opacity(0.7) : .white.opacity(0.8))
+                    : .clear,
+                radius: 0.7
+            )
+            .position(x: block.frame.midX, y: block.frame.midY)
+    }
+
+    @ViewBuilder
+    private func blockBackground(_ color: OCRBackgroundColor) -> some View {
+        if color.variation > 0.08 {
+            Rectangle()
+                .fill(.regularMaterial)
+                .overlay(
+                    Color(red: color.red, green: color.green, blue: color.blue)
+                        .opacity(0.58)
+                )
+        } else {
+            Color(red: color.red, green: color.green, blue: color.blue)
+                .opacity(1)
+        }
+    }
+}
+
 private struct ScreenshotTranslationToolbarView: View {
     @ObservedObject var model: ScreenshotTranslationOverlayModel
     @ObservedObject var store: TranslationEditorStore
@@ -828,14 +947,12 @@ private struct ScreenshotTranslationToolbarView: View {
                 Image(systemName: "minus.magnifyingglass")
             }
             .buttonStyle(.plain)
-            .disabled(model.comparisonEnabled)
-            .help("缩小翻译窗口")
+            .help("缩小译图内容")
             Button(action: zoomIn) {
                 Image(systemName: "plus.magnifyingglass")
             }
             .buttonStyle(.plain)
-            .disabled(model.comparisonEnabled)
-            .help("放大翻译窗口")
+            .help("放大译图内容")
             Button {
                 store.copyTranslation()
             } label: {

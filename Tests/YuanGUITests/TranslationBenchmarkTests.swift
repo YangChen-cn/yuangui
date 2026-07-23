@@ -61,8 +61,29 @@ final class TranslationBenchmarkTests: XCTestCase {
             )
         }
         var layoutSamples: [Double] = []
-        for _ in 0..<60 {
+        for sample in 0..<60 {
             layoutSamples.append(measureMilliseconds {
+                _ = ScreenshotTranslationLayoutEngine.layout(
+                    blocks: layoutBlocks.map {
+                        ScreenshotTranslationBlock(
+                            id: $0.id,
+                            normalizedRect: $0.normalizedRect,
+                            text: "\($0.text) \(sample)",
+                            backgroundColor: $0.backgroundColor,
+                            sourceFontScale: $0.sourceFontScale
+                        )
+                    },
+                    in: CGSize(width: 1_000, height: 500)
+                )
+            })
+        }
+        _ = ScreenshotTranslationLayoutEngine.layout(
+            blocks: layoutBlocks,
+            in: CGSize(width: 1_000, height: 500)
+        )
+        var cachedLayoutSamples: [Double] = []
+        for _ in 0..<30 {
+            cachedLayoutSamples.append(measureMilliseconds {
                 _ = ScreenshotTranslationLayoutEngine.layout(
                     blocks: layoutBlocks,
                     in: CGSize(width: 1_000, height: 500)
@@ -106,6 +127,7 @@ final class TranslationBenchmarkTests: XCTestCase {
                 "translation_cold": coldTranslation,
                 "translation_cached_p95": percentile95(cachedTranslationSamples),
                 "layout_p95": layoutP95,
+                "layout_cached_p95": percentile95(cachedLayoutSamples),
                 "background_p95": backgroundP95,
                 "presentation": NSNull()
             ],

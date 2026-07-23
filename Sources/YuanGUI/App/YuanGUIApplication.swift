@@ -17,14 +17,97 @@ enum YuanGUIApplication {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let store = PetStore()
-    private let aiSettings = AISettingsStore()
-    private let loginItemStore = LoginItemStore()
-    private lazy var focusTimer = FocusTimerStore(pet: store)
-    private lazy var chatStore = ChatStore(settings: aiSettings)
-    private lazy var maintenanceStore = MaintenanceStore(pet: store)
-    private lazy var musicStore = MusicStore()
-    private lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
+    private let runtime = AppRuntime()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        runtime.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        runtime.stop()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        runtime.applicationShouldTerminate(sender)
+    }
+}
+
+@MainActor
+final class AppRuntime {
+    let pet = PetStore()
+    let aiSettings = AISettingsStore()
+    let loginItem = LoginItemStore()
+    lazy var focusTimer = FocusTimerStore(pet: pet)
+    lazy var chat = ChatStore(settings: aiSettings)
+    lazy var maintenance = MaintenanceStore(pet: pet)
+    lazy var music = MusicFeature()
+    lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
+    private lazy var windows = WindowCoordinator(
+        pet: pet,
+        aiSettings: aiSettings,
+        loginItem: loginItem,
+        focusTimer: focusTimer,
+        chat: chat,
+        maintenance: maintenance,
+        music: music,
+        quickTools: quickTools,
+        terminateForUpdate: { [weak self] in self?.prepareToTerminateForUpdate() }
+    )
+    private var terminationTask: Task<Void, Never>?
+    private var isPreparingUpdateTermination = false
+    private var isUpdateTerminationReady = false
+
+    func start() {
+        NSApp.setActivationPolicy(.accessory)
+        windows.start()
+    }
+
+    func stop() {
+        windows.stop()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isUpdateTerminationReady { return .terminateNow }
+        if isPreparingUpdateTermination { return .terminateLater }
+        guard terminationTask == nil else { return .terminateLater }
+        terminationTask = Task { [weak self] in
+            guard let self else {
+                sender.reply(toApplicationShouldTerminate: true)
+                return
+            }
+            await music.shutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    private func prepareToTerminateForUpdate() {
+        guard !isPreparingUpdateTermination, !isUpdateTerminationReady else { return }
+        isPreparingUpdateTermination = true
+        terminationTask = Task { [weak self] in
+            guard let self else {
+                NSApp.terminate(nil)
+                return
+            }
+            await music.shutdown()
+            isUpdateTerminationReady = true
+            isPreparingUpdateTermination = false
+            NSApp.terminate(nil)
+        }
+    }
+}
+
+@MainActor
+final class WindowCoordinator: NSObject {
+    private let pet: PetStore
+    private let aiSettings: AISettingsStore
+    private let loginItem: LoginItemStore
+    private let focusTimer: FocusTimerStore
+    private let chat: ChatStore
+    private let maintenance: MaintenanceStore
+    private let music: MusicFeature
+    private let quickTools: QuickToolsController
+    private let terminateForUpdate: () -> Void
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardController: StatusDashboardPanelController?
@@ -34,41 +117,111 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var musicController: MusicWindowController?
     private var lyricsController: LyricsPanelController?
     private var weatherStartupTask: Task<Void, Never>?
-    private var terminationTask: Task<Void, Never>?
-    private var isPreparingUpdateTermination = false
-    private var isUpdateTerminationReady = false
     private var cancellables = Set<AnyCancellable>()
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+    private lazy var actions = AppActions(
+        open: { [weak self] route in self?.open(route) },
+        runQuickTool: { [weak self] route in self?.runQuickTool(route) },
+        terminateForUpdate: { [weak self] in self?.terminateForUpdate() }
+    )
+
+    init(
+        pet: PetStore,
+        aiSettings: AISettingsStore,
+        loginItem: LoginItemStore,
+        focusTimer: FocusTimerStore,
+        chat: ChatStore,
+        maintenance: MaintenanceStore,
+        music: MusicFeature,
+        quickTools: QuickToolsController,
+        terminateForUpdate: @escaping () -> Void
+    ) {
+        self.pet = pet
+        self.aiSettings = aiSettings
+        self.loginItem = loginItem
+        self.focusTimer = focusTimer
+        self.chat = chat
+        self.maintenance = maintenance
+        self.music = music
+        self.quickTools = quickTools
+        self.terminateForUpdate = terminateForUpdate
+    }
+
+    func start() {
         installMainMenu()
         quickTools.start()
-        panelController = PetPanelController(store: store, chat: chatStore, maintenance: maintenanceStore, focusTimer: focusTimer, music: musicStore)
+        panelController = PetPanelController(
+            store: pet,
+            chat: chat,
+            maintenance: maintenance,
+            focusTimer: focusTimer,
+            music: music,
+            appActions: actions
+        )
         panelController?.show()
-        lyrics().updateVisibility()
         installMenuBarItem()
+        lyrics().updateVisibility()
+        music.lyricsPresentation.onVisibilityChanged = { [weak self] in self?.lyrics().updateVisibility() }
+        music.lyricsPresentation.onLockChanged = { [weak self] in self?.lyrics().updateLock() }
         weatherStartupTask = Task { [weak self] in
-            // Give the pet panel and menu bar item a chance to render before
-            // Core Location presents its first-run permission dialog.
             try? await Task.sleep(for: .milliseconds(800))
             guard !Task.isCancelled else { return }
-            self?.store.weather.start()
+            self?.pet.weather.start()
         }
-        chatStore.$isPresented
+        chat.$isPresented
             .removeDuplicates()
             .sink { [weak self] presented in
-                self?.store.setChatting(presented)
+                self?.pet.setChatting(presented)
                 if presented { self?.panelController?.focusForChatInput() }
             }
             .store(in: &cancellables)
     }
 
+    func stop() {
+        weatherStartupTask?.cancel()
+        pet.monitor.stop()
+        quickTools.stop()
+        music.lyricsPresentation.onVisibilityChanged = nil
+        music.lyricsPresentation.onLockChanged = nil
+    }
+
+    func open(_ route: AppRoute) {
+        switch route {
+        case .statusDashboard:
+            guard let button = statusItem?.button else { return }
+            dashboard().show(relativeTo: button)
+        case .chat:
+            chat.togglePresented()
+        case .settings:
+            showSettings()
+        case .chatHistory:
+            showChatHistory()
+        case .maintenance(let tab):
+            maintenance.selectTab(tab)
+            showMaintenance()
+        case .music:
+            dashboardController?.hide()
+            DispatchQueue.main.async { [weak self] in self?.showMusic() }
+        }
+    }
+
+    private func runQuickTool(_ route: QuickToolRoute) {
+        switch route {
+        case .regionScreenshot: quickTools.beginRegionScreenshot()
+        case .screenshotTranslation: quickTools.beginScreenshotTranslation()
+        case .translateSelection: quickTools.translateSelection()
+        }
+    }
+
     private func installMainMenu() {
         let mainMenu = NSMenu(title: "主菜单")
-
         let applicationItem = NSMenuItem(title: "YuanGUI", action: nil, keyEquivalent: "")
         let applicationMenu = NSMenu(title: "YuanGUI")
-        applicationMenu.addItem(withTitle: "退出 YuanGUI", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationMenu.addItem(
+            withTitle: "退出 YuanGUI",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
         applicationItem.submenu = applicationMenu
         mainMenu.addItem(applicationItem)
 
@@ -88,31 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toolsMenu.addItem(withTitle: "区域截图", action: #selector(startRegionScreenshot), keyEquivalent: "")
         toolsMenu.addItem(withTitle: "截图翻译", action: #selector(startScreenshotTranslation), keyEquivalent: "")
         toolsMenu.addItem(withTitle: "翻译所选文字", action: #selector(translateSelection), keyEquivalent: "")
+        for item in toolsMenu.items { item.target = self }
         toolsItem.submenu = toolsMenu
         mainMenu.addItem(toolsItem)
-
         NSApp.mainMenu = mainMenu
-    }
-
-    func applicationWillTerminate(_ notification: Notification) {
-        weatherStartupTask?.cancel()
-        store.monitor.stop()
-        quickTools.stop()
-    }
-
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if isUpdateTerminationReady { return .terminateNow }
-        if isPreparingUpdateTermination { return .terminateLater }
-        guard terminationTask == nil else { return .terminateLater }
-        terminationTask = Task { [weak self] in
-            guard let self else {
-                sender.reply(toApplicationShouldTerminate: true)
-                return
-            }
-            await musicStore.shutdown()
-            sender.reply(toApplicationShouldTerminate: true)
-        }
-        return .terminateLater
     }
 
     private func installMenuBarItem() {
@@ -121,85 +253,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             systemSymbolName: "pawprint.fill",
             accessibilityDescription: "元圭与 VCC"
         )
-
         statusItem.button?.target = self
         statusItem.button?.action = #selector(toggleDashboard)
         statusItem.button?.sendAction(on: [.leftMouseUp])
-
-        NotificationCenter.default.publisher(for: .showYuanGUIDashboard)
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, let button = self.statusItem?.button else { return }
-                    self.dashboard().show(relativeTo: button)
-                }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .showYuanGUIChat)
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.chatStore.togglePresented()
-                }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .showYuanGUISettings)
-            .sink { [weak self] _ in
-                Task { @MainActor in self?.showSettings() }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .showYuanGUIChatHistory)
-            .sink { [weak self] _ in
-                Task { @MainActor in self?.showChatHistory() }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .showYuanGUIMaintenance)
-            .sink { [weak self] notification in
-                Task { @MainActor in
-                    self?.maintenanceStore.selectTab(notification.userInfo?["tab"] as? Int ?? 0)
-                    self?.showMaintenance()
-                }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .showYuanGUIMusic)
-            .sink { [weak self] _ in Task { @MainActor in self?.showMusic() } }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .musicLyricsVisibilityChanged)
-            .sink { [weak self] _ in Task { @MainActor in self?.lyrics().updateVisibility() } }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .musicLyricsLockChanged)
-            .sink { [weak self] _ in Task { @MainActor in self?.lyrics().updateLock() } }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .terminateYuanGUIForUpdate)
-            .sink { [weak self] _ in
-                Task { @MainActor in self?.prepareToTerminateForUpdate() }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .startYuanGUIRegionScreenshot)
-            .sink { [weak self] _ in
-                Task { @MainActor in self?.quickTools.beginRegionScreenshot() }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .translateYuanGUISelection)
-            .sink { [weak self] _ in
-                Task { @MainActor in self?.quickTools.translateSelection() }
-            }
-            .store(in: &cancellables)
         self.statusItem = statusItem
-    }
-
-    private func prepareToTerminateForUpdate() {
-        guard !isPreparingUpdateTermination, !isUpdateTerminationReady else { return }
-        isPreparingUpdateTermination = true
-        terminationTask = Task { [weak self] in
-            guard let self else {
-                NSApp.terminate(nil)
-                return
-            }
-            await musicStore.shutdown()
-            isUpdateTerminationReady = true
-            isPreparingUpdateTermination = false
-            NSApp.terminate(nil)
-        }
     }
 
     @objc private func toggleDashboard() {
@@ -210,13 +267,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func dashboard() -> StatusDashboardPanelController {
         if let dashboardController { return dashboardController }
         let controller = StatusDashboardPanelController(
-            store: store,
+            store: pet,
             focusTimer: focusTimer,
-            music: musicStore,
+            music: music,
             quickTools: quickTools,
             togglePet: { [weak self] in self?.panelController?.toggle() },
             showPet: { [weak self] in self?.panelController?.show() },
-            openSettings: { [weak self] in self?.showSettings() }
+            openSettings: { [weak self] in self?.open(.settings) },
+            appActions: actions
         )
         dashboardController = controller
         return controller
@@ -225,13 +283,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettings() {
         if settingsController == nil {
             settingsController = SettingsWindowController(
-                petStore: store,
+                petStore: pet,
                 aiSettings: aiSettings,
-                loginItem: loginItemStore,
+                loginItem: loginItem,
                 focusTimer: focusTimer,
-                music: musicStore,
+                music: music,
                 quickTools: quickTools,
-                showPet: { [weak self] in self?.panelController?.show() }
+                showPet: { [weak self] in self?.panelController?.show() },
+                appActions: actions
             )
         }
         settingsController?.show()
@@ -239,42 +298,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showChatHistory() {
         if chatHistoryController == nil {
-            chatHistoryController = ChatHistoryWindowController(chat: chatStore)
+            chatHistoryController = ChatHistoryWindowController(chat: chat)
         }
         chatHistoryController?.show()
     }
 
     private func showMaintenance() {
         if maintenanceController == nil {
-            maintenanceController = MaintenanceWindowController(store: maintenanceStore)
+            maintenanceController = MaintenanceWindowController(store: maintenance)
         }
         maintenanceController?.show()
     }
 
     private func showMusic() {
-        dashboardController?.hide()
-        musicStore.isMiniPlayerPresented = false
-        if musicController == nil { musicController = MusicWindowController(music: musicStore) }
+        if musicController == nil {
+            musicController = MusicWindowController(music: music, appActions: actions)
+        }
         musicController?.show()
     }
 
     private func lyrics() -> LyricsPanelController {
         if let lyricsController { return lyricsController }
-        let controller = LyricsPanelController(music: musicStore)
+        let controller = LyricsPanelController(music: music)
         lyricsController = controller
         return controller
     }
 
     @objc private func startRegionScreenshot() {
-        quickTools.beginRegionScreenshot()
+        runQuickTool(.regionScreenshot)
     }
 
     @objc private func translateSelection() {
-        quickTools.translateSelection()
+        runQuickTool(.translateSelection)
     }
 
     @objc private func startScreenshotTranslation() {
-        quickTools.beginScreenshotTranslation()
+        runQuickTool(.screenshotTranslation)
     }
-
 }

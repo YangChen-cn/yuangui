@@ -143,10 +143,10 @@ final class MusicTests: XCTestCase {
 
     func testLyricSeekPositionAppliesOffsetAndClampsToTrackBounds() {
         let line = TimedLyricLine(time: 10, text: "目标歌词")
-        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: 1.5, duration: 30), 11.5)
-        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: -12, duration: 30), 0)
-        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: 25, duration: 30), 30)
-        XCTAssertEqual(MusicStore.lyricSeekPosition(for: line, offset: 2, duration: 0), 12)
+        XCTAssertEqual(MusicFeature.lyricSeekPosition(for: line, offset: 1.5, duration: 30), 11.5)
+        XCTAssertEqual(MusicFeature.lyricSeekPosition(for: line, offset: -12, duration: 30), 0)
+        XCTAssertEqual(MusicFeature.lyricSeekPosition(for: line, offset: 25, duration: 30), 30)
+        XCTAssertEqual(MusicFeature.lyricSeekPosition(for: line, offset: 2, duration: 0), 12)
     }
 
     func testMusicLibraryFileStoreRoundTripsWithoutTemporaryStreamURLs() throws {
@@ -676,6 +676,39 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id, tracks[2].id])
     }
 
+    @MainActor
+    func testMusicFeatureComposesDedicatedStoresAndShutdownFlushesDependencies() async {
+        let suiteName = "MusicFeatureTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(MusicSource.bilibili.rawValue, forKey: "musicSource")
+        defaults.set(0.42, forKey: "bilibiliMusicVolume")
+        defaults.set(true, forKey: "musicLyricsVisible")
+        defaults.set(true, forKey: "musicLyricsPanelLocked")
+        let persistence = RecordingMusicLibraryCoordinator()
+        let player = RecordingBilibiliPlayer()
+        let feature = MusicFeature(
+            defaults: defaults,
+            bilibiliPlayer: player,
+            library: persistence
+        )
+
+        XCTAssertEqual(feature.playback.source, .bilibili)
+        XCTAssertEqual(feature.playback.volume, 0.42)
+        XCTAssertTrue(feature.lyricsPresentation.isVisible)
+        XCTAssertTrue(feature.lyricsPresentation.isPanelLocked)
+        XCTAssertTrue(feature.libraryStore.playlist.isEmpty)
+        XCTAssertNil(feature.lyricsStore.document)
+        XCTAssertNil(feature.bilibiliAccountStore.account)
+        XCTAssertTrue(feature.bilibiliImportStore.input.isEmpty)
+
+        await feature.shutdown()
+
+        XCTAssertEqual(player.stopCount, 1)
+        let saveCount = await persistence.saveCount
+        XCTAssertGreaterThanOrEqual(saveCount, 1)
+    }
+
     private func makeQueueTracks(count: Int) -> [MusicTrack] {
         (0..<count).map { index in
             MusicTrack(
@@ -684,6 +717,42 @@ final class MusicTests: XCTestCase {
             )
         }
     }
+}
+
+private actor RecordingMusicLibraryCoordinator: MusicLibraryCoordinating {
+    private(set) var saveCount = 0
+
+    func load() async throws -> MusicLibrarySnapshot {
+        MusicLibrarySnapshot()
+    }
+
+    func scheduleSave(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {
+        saveCount += 1
+    }
+
+    func saveNow(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {
+        saveCount += 1
+    }
+}
+
+@MainActor
+private final class RecordingBilibiliPlayer: BilibiliPlaying {
+    var onStateChange: ((MusicPlaybackState) -> Void)?
+    var onProgress: ((TimeInterval, TimeInterval) -> Void)?
+    var onFinished: (() -> Void)?
+    var onFailure: ((Error) -> Void)?
+    var hasLoadedItem = false
+    private(set) var stopCount = 0
+
+    func load(urls: [URL], headers: [String: String], position: TimeInterval, autoplay: Bool) {
+        hasLoadedItem = true
+    }
+
+    func playPause() {}
+    func pause() {}
+    func seek(to position: TimeInterval) {}
+    func setVolume(_ volume: Double) {}
+    func stop() { stopCount += 1 }
 }
 
 private final class LyricsURLProtocol: URLProtocol {

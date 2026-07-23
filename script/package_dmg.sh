@@ -4,7 +4,8 @@ set -euo pipefail
 APP_NAME="YuanGUI"
 DISPLAY_NAME="元圭与 VCC"
 BUNDLE_ID="com.yang.yuangui"
-VERSION="${VERSION:-1.1.2}"
+VERSION="${VERSION:-2.0.0}"
+BUILD="${BUILD:-11}"
 MIN_SYSTEM_VERSION="15.0"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
@@ -63,7 +64,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundleShortVersionString</key>
   <string>$VERSION</string>
   <key>CFBundleVersion</key>
-  <string>10</string>
+  <string>$BUILD</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>

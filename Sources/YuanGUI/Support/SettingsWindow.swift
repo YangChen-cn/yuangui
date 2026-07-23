@@ -5,7 +5,7 @@ import SwiftUI
 final class SettingsWindowController {
     private let window: NSWindow
 
-    init(petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, music: MusicStore, quickTools: QuickToolsController, showPet: @escaping () -> Void) {
+    init(petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, music: MusicFeature, quickTools: QuickToolsController, showPet: @escaping () -> Void, appActions: AppActions = .disabled) {
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .resizable],
@@ -16,15 +16,18 @@ final class SettingsWindowController {
         window.isReleasedWhenClosed = false
         window.center()
         window.contentMinSize = NSSize(width: 700, height: 520)
-        window.contentView = NSHostingView(rootView: SettingsView(
-            pet: petStore,
-            ai: aiSettings,
-            loginItem: loginItem,
-            focusTimer: focusTimer,
-            music: music,
-            quickTools: quickTools,
-            showPet: showPet
-        ))
+        window.contentView = NSHostingView(rootView:
+            SettingsView(
+                pet: petStore,
+                ai: aiSettings,
+                loginItem: loginItem,
+                focusTimer: focusTimer,
+                music: music,
+                quickTools: quickTools,
+                showPet: showPet
+            )
+            .environment(\.appActions, appActions)
+        )
     }
 
     func show() {

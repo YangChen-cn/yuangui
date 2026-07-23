@@ -430,6 +430,72 @@ final class PetStoreTests: XCTestCase {
     func testBottomToolbarPanelSizeMatchesItsFiveButtons() {
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 160)
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 70)
+        XCTAssertEqual(PetLayout.lockedControlPanelSize.width, 48)
+        XCTAssertEqual(PetLayout.lockedControlPanelSize.height, 48)
+    }
+
+    func testPanelResizePreservesPetVisualAnchor() {
+        let oldPanel = CGRect(x: 320, y: 180, width: 405, height: 292.5)
+        let oldVisual = PetLayout.petVisualFrame(
+            panelFrame: oldPanel,
+            scale: 0.75,
+            showsChat: false
+        )
+        let targetSize = PetLayout.panelSize(
+            scale: 0.75,
+            showsBubble: false,
+            showsChat: true
+        )
+        let origin = PetLayout.panelOrigin(
+            preservingPetVisualFrame: oldVisual,
+            targetPanelSize: targetSize,
+            scale: 0.75,
+            showsChat: true
+        )
+        let resizedVisual = PetLayout.petVisualFrame(
+            panelFrame: CGRect(origin: origin, size: targetSize),
+            scale: 0.75,
+            showsChat: true
+        )
+
+        XCTAssertEqual(resizedVisual.minX, oldVisual.minX, accuracy: 0.001)
+        XCTAssertEqual(resizedVisual.minY, oldVisual.minY, accuracy: 0.001)
+    }
+
+    func testAuxiliaryBubbleFlipsBelowPetNearTopEdge() {
+        let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
+        let pet = CGRect(x: 700, y: 500, width: 240, height: 280)
+        let bubble = CGSize(width: 350, height: 120)
+        let origin = PetLayout.auxiliaryBubbleOrigin(
+            petVisualFrame: pet,
+            bubbleSize: bubble,
+            visibleFrame: visible
+        )
+
+        XCTAssertLessThanOrEqual(
+            origin.y + bubble.height,
+            pet.minY - PetLayout.auxiliaryBubbleSpacing
+        )
+        XCTAssertGreaterThanOrEqual(origin.x, visible.minX)
+        XCTAssertLessThanOrEqual(origin.x + bubble.width, visible.maxX)
+    }
+
+    func testAuxiliaryBubbleOverlapsOnlyTheSpritesTransparentTopInset() {
+        let visible = CGRect(x: 0, y: 0, width: 1_200, height: 900)
+        let pet = CGRect(x: 460, y: 160, width: 245, height: 245)
+        let bubble = CGSize(width: 350, height: 120)
+        let origin = PetLayout.auxiliaryBubbleOrigin(
+            petVisualFrame: pet,
+            bubbleSize: bubble,
+            visibleFrame: visible
+        )
+
+        XCTAssertEqual(
+            origin.y,
+            pet.maxY + PetLayout.auxiliaryBubbleSpacing,
+            accuracy: 0.001
+        )
+        XCTAssertGreaterThan(origin.y + bubble.height, pet.maxY)
     }
 
     func testDefaultAndCompactControlScales() {
@@ -592,31 +658,125 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.currentAction.file, "11-charging")
     }
 
-    func testStatusMessageReflectsLiveSystemPressureEvenInNormalActionState() {
+    func testMemoryAlertStartsAtNinetyPercentOrCriticalPressure() {
         var snapshot = SystemSnapshot.empty
         snapshot.memory = MemoryMetrics(
             total: 100,
-            used: 86,
-            free: 14,
+            used: 89,
+            free: 11,
             active: 50,
             inactive: 10,
             wired: 20,
-            compressed: 6,
+            compressed: 9,
             cached: 0,
             swapUsed: 0,
             swapTotal: 0,
             pressure: .warning
         )
 
-        let memoryMessage = PetStatusMessageResolver.message(snapshot: snapshot, smartState: .normal)
-        XCTAssertTrue(memoryMessage.contains("内存占用有些高"))
-        XCTAssertTrue(memoryMessage.contains("86%"))
+        XCTAssertEqual(SmartPetState.resolve(from: snapshot), .normal)
+        XCTAssertFalse(
+            PetStatusMessageResolver.message(snapshot: snapshot, smartState: .normal)
+                .contains("内存占用有些高")
+        )
+
+        snapshot.memory = MemoryMetrics(
+            total: 100,
+            used: 90,
+            free: 10,
+            active: 50,
+            inactive: 10,
+            wired: 20,
+            compressed: 10,
+            cached: 0,
+            swapUsed: 0,
+            swapTotal: 0,
+            pressure: .warning
+        )
+        XCTAssertEqual(SmartPetState.resolve(from: snapshot), .memoryPressure)
+        XCTAssertTrue(
+            PetStatusMessageResolver.message(snapshot: snapshot, smartState: .normal)
+                .contains("90%")
+        )
+
+        snapshot.memory = MemoryMetrics(
+            total: 100,
+            used: 70,
+            free: 30,
+            active: 30,
+            inactive: 10,
+            wired: 20,
+            compressed: 10,
+            cached: 0,
+            swapUsed: 0,
+            swapTotal: 0,
+            pressure: .critical
+        )
+        XCTAssertEqual(SmartPetState.resolve(from: snapshot), .memoryPressure)
 
         snapshot.memory = nil
         snapshot.cpu = CPUMetrics(total: 0.91, user: 0.65, system: 0.26)
         let cpuMessage = PetStatusMessageResolver.message(snapshot: snapshot, smartState: .normal)
         XCTAssertTrue(cpuMessage.contains("CPU 现在有点忙"))
         XCTAssertTrue(cpuMessage.contains("91%"))
+    }
+
+    func testListeningOutranksPersistentNonUrgentStateAfterTransientPresentation() {
+        let mode = PetMode.duo
+        let listening = PetActionResolver.resolve(PetActionContext(
+            mode: mode,
+            taskState: .idle,
+            actionIndex: 0,
+            isChatting: false,
+            isFocusActive: false,
+            isFocusCelebrating: false,
+            isMusicPlaying: true,
+            petMotionEnabled: true,
+            ambientMessageVisible: false,
+            smartReactionsEnabled: true,
+            smartActionSuppressed: false,
+            smartState: .rainy,
+            transientSmartState: nil
+        ))
+        let transientRain = PetActionResolver.resolve(PetActionContext(
+            mode: mode,
+            taskState: .idle,
+            actionIndex: 0,
+            isChatting: false,
+            isFocusActive: false,
+            isFocusCelebrating: false,
+            isMusicPlaying: true,
+            petMotionEnabled: true,
+            ambientMessageVisible: false,
+            smartReactionsEnabled: true,
+            smartActionSuppressed: false,
+            smartState: .rainy,
+            transientSmartState: .rainy
+        ))
+
+        XCTAssertEqual(listening, mode.musicAction)
+        XCTAssertEqual(transientRain, mode.smartAction(for: .rainy))
+    }
+
+    func testUrgentStateAlwaysOutranksListening() {
+        let mode = PetMode.duo
+        let action = PetActionResolver.resolve(PetActionContext(
+            mode: mode,
+            taskState: .idle,
+            actionIndex: 0,
+            isChatting: false,
+            isFocusActive: false,
+            isFocusCelebrating: false,
+            isMusicPlaying: true,
+            petMotionEnabled: true,
+            ambientMessageVisible: false,
+            smartReactionsEnabled: true,
+            smartActionSuppressed: true,
+            smartState: .memoryPressure,
+            transientSmartState: nil
+        ))
+
+        XCTAssertEqual(action, mode.smartAction(for: .memoryPressure))
     }
 
     func testAmbientChatterUsesWeatherAndChargingEstimate() {

@@ -14,13 +14,14 @@ final class StatusDashboardPanelController {
 
     private let store: PetStore
     private let focusTimer: FocusTimerStore
-    private let music: MusicStore
+    private let music: MusicFeature
     private let quickTools: QuickToolsController
     private let togglePet: () -> Void
     private let showPet: () -> Void
     private let openSettings: () -> Void
+    private let appActions: AppActions
     private let panel: StatusDashboardPanel
-    private var hostingView: NSHostingView<MenuBarDashboardView>!
+    private var hostingView: NSHostingView<AnyView>!
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var anchorRect = NSRect.zero
@@ -28,11 +29,12 @@ final class StatusDashboardPanelController {
     init(
         store: PetStore,
         focusTimer: FocusTimerStore,
-        music: MusicStore,
+        music: MusicFeature,
         quickTools: QuickToolsController,
         togglePet: @escaping () -> Void,
         showPet: @escaping () -> Void,
-        openSettings: @escaping () -> Void
+        openSettings: @escaping () -> Void,
+        appActions: AppActions = .disabled
     ) {
         self.store = store
         self.focusTimer = focusTimer
@@ -41,6 +43,7 @@ final class StatusDashboardPanelController {
         self.togglePet = togglePet
         self.showPet = showPet
         self.openSettings = openSettings
+        self.appActions = appActions
         panel = StatusDashboardPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.preferredWidth, height: Self.preferredHeight),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -103,17 +106,20 @@ final class StatusDashboardPanelController {
     }
 
     private func installContent(width: CGFloat, height: CGFloat) {
-        let rootView = MenuBarDashboardView(
-            store: store,
-            focusTimer: focusTimer,
-            music: music,
-            quickTools: quickTools,
-            dashboardWidth: width,
-            dashboardHeight: height,
-            togglePet: togglePet,
-            showPet: showPet,
-            openSettings: openSettings,
-            dismiss: { [weak self] in self?.hide() }
+        let rootView = AnyView(
+            MenuBarDashboardView(
+                store: store,
+                focusTimer: focusTimer,
+                music: music,
+                quickTools: quickTools,
+                dashboardWidth: width,
+                dashboardHeight: height,
+                togglePet: togglePet,
+                showPet: showPet,
+                openSettings: openSettings,
+                dismiss: { [weak self] in self?.hide() }
+            )
+            .environment(\.appActions, appActions)
         )
         if hostingView == nil {
             hostingView = NSHostingView(rootView: rootView)

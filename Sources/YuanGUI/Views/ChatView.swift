@@ -95,6 +95,7 @@ struct PetReplyBubble: View {
 struct PetChatComposer: View {
     @ObservedObject var chat: ChatStore
     @ObservedObject var pet: PetStore
+    @Environment(\.appActions) private var appActions
     @State private var draft = ""
     @State private var attachments: [PreparedChatAttachment] = []
     @State private var attachmentError: String?
@@ -152,9 +153,9 @@ struct PetChatComposer: View {
                 .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || chat.isSending)
 
                 Divider().frame(height: 20)
-                Button { chat.showHistory() } label: { Image(systemName: "clock.arrow.circlepath") }
+                Button { appActions.open(.chatHistory) } label: { Image(systemName: "clock.arrow.circlepath") }
                     .buttonStyle(.borderless).help("对话历史")
-                Button { pet.showSettings() } label: { Image(systemName: "gearshape") }
+                Button { appActions.open(.settings) } label: { Image(systemName: "gearshape") }
                     .buttonStyle(.borderless).help("AI 设置")
                 Button { chat.dismiss() } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.borderless).foregroundStyle(.secondary).help("收起对话")

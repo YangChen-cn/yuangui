@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "1.1.2"
-    static let fallbackBuild = "10"
+    static let fallbackVersion = "2.0.0"
+    static let fallbackBuild = "11"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,6 +14,12 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
+        "元圭 2.0.0：桌宠锁定栏改为紧凑的单按钮，内存压力提醒阈值提高到 90%，播报、监控和歌词气泡不再改变桌宠主体位置。",
+        "桌宠辅助气泡会跟随拖动实时定位，动作状态统一仲裁，避免持续下雨等状态覆盖听歌、聊天或维护动作。",
+        "截图翻译覆盖层支持稳定的触控板捏合缩放，译图窗口、文字和原图同步缩放，并扩大原文覆盖区域以避免残留露字。",
+        "截图布局统一生产与测试算法；标题和大字体在同列安全空白中保持横向排版，逻辑画布可按内容扩展。",
+        "引入类型安全的窗口路由与 WindowCoordinator，拆分 MusicFeature 播放、资料库、歌词、账号和导入职责。",
+        "按需运行 Apple Music 与歌词同步任务，并为翻译布局、桌宠气泡定位和音乐同步增加轻量性能日志。",
         "截图翻译改为结构化 OCR 与语义句子批量翻译，稳定对应原文位置，并优化换行、字号、遮挡与复杂页面可读性。",
         "截图翻译覆盖层支持安全利用同列空白、最低 7pt 自适应字号、窗口缩放、中英对照和 Esc 一键关闭。",
         "翻译管线新增请求合并、任务取消和内存缓存；系统快捷指令继续作为默认免费翻译引擎。",
@@ -293,12 +299,17 @@ final class AppUpdateStore: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var latestRelease: GitHubRelease?
     private let service: AppUpdateService
+    private var terminateForUpdate: @MainActor () -> Void = {}
 
     init(service: AppUpdateService = AppUpdateService()) {
         self.service = service
     }
 
     var isBusy: Bool { state == .checking || state == .downloading || state == .installing }
+
+    func setTerminationHandler(_ handler: @escaping @MainActor () -> Void) {
+        terminateForUpdate = handler
+    }
 
     func check() {
         guard !isBusy else { return }
@@ -322,7 +333,7 @@ final class AppUpdateStore: ObservableObject {
                 let prepared = try await service.prepare(release)
                 state = .installing
                 try launchInstaller(for: prepared)
-                NotificationCenter.default.post(name: .terminateYuanGUIForUpdate, object: nil)
+                terminateForUpdate()
             } catch {
                 state = .failed(error.localizedDescription)
             }

@@ -34,6 +34,7 @@ final class PetStore: ObservableObject {
     @Published private(set) var desktopIconsVisible: Bool
     @Published private(set) var smartState: SmartPetState = .normal
     @Published private(set) var activeSmartStates: [SmartPetState] = []
+    @Published private(set) var transientSmartActionState: SmartPetState?
     @Published private(set) var isChatting = false
     @Published private var isSmartActionSuppressed = false
     @Published private(set) var automaticBubbleSuppressed = false
@@ -55,6 +56,7 @@ final class PetStore: ObservableObject {
     private var minuteTimer: AnyCancellable?
     private var smartRotationTimer: AnyCancellable?
     private var smartActionSuppressionTask: Task<Void, Never>?
+    private var transientSmartActionTask: Task<Void, Never>?
     private var idleActionResetTask: Task<Void, Never>?
     private var lockedControlsHideTask: Task<Void, Never>?
     private var ambientChatterTask: Task<Void, Never>?
@@ -66,31 +68,25 @@ final class PetStore: ObservableObject {
     private var lastAmbientMessage: String?
 
     var currentAction: PetAction {
-        if isFocusCelebrating {
-            return PetAction(file: "19-maintenance-success", label: "专注完成，好耶！")
-        }
-        switch taskState {
-        case .maintenance: return PetAction(file: "18-maintenance-scan", label: "正在扫描")
-        case .maintenanceSuccess: return PetAction(file: "19-maintenance-success", label: "清理完成")
-        case .recycling(let frame): return PetAction(file: "15-eat-trash-\(min(max(frame, 1), 3))", label: "把文件吃掉啦")
-        case .idle: break
-        }
-        if isChatting { return mode.chatAction }
-        if smartReactionsEnabled,
-           !isSmartActionSuppressed,
-           [.lowBattery, .memoryPressure, .charging].contains(smartState),
-           let action = mode.smartAction(for: smartState) {
-            return action
-        }
-        if ambientMessage != nil, petMotionEnabled { return mode.chatAction }
-        if smartReactionsEnabled,
-           !isSmartActionSuppressed,
-           let action = mode.smartAction(for: smartState) {
-            return action
-        }
-        let actions = mode.actions
-        if isFocusActive { return actions[0] }
-        return actions[min(actionIndex, actions.count - 1)]
+        resolvedAction(isMusicPlaying: false)
+    }
+
+    func resolvedAction(isMusicPlaying: Bool) -> PetAction {
+        PetActionResolver.resolve(PetActionContext(
+            mode: mode,
+            taskState: taskState,
+            actionIndex: actionIndex,
+            isChatting: isChatting,
+            isFocusActive: isFocusActive,
+            isFocusCelebrating: isFocusCelebrating,
+            isMusicPlaying: isMusicPlaying,
+            petMotionEnabled: petMotionEnabled,
+            ambientMessageVisible: ambientMessage != nil,
+            smartReactionsEnabled: smartReactionsEnabled,
+            smartActionSuppressed: isSmartActionSuppressed,
+            smartState: smartState,
+            transientSmartState: transientSmartActionState
+        ))
     }
 
     var shouldShowPetBubble: Bool {
@@ -306,6 +302,9 @@ final class PetStore: ObservableObject {
         if !enabled {
             activeSmartStates = []
             smartState = .normal
+            transientSmartActionTask?.cancel()
+            transientSmartActionTask = nil
+            transientSmartActionState = nil
             smartRotationTimer = nil
             urgentReminderTask?.cancel()
             urgentReminderTask = nil
@@ -382,14 +381,6 @@ final class PetStore: ObservableObject {
         }
     }
 
-    func showFullDashboard() {
-        NotificationCenter.default.post(name: .showYuanGUIDashboard, object: nil)
-    }
-
-    func showChat() {
-        NotificationCenter.default.post(name: .showYuanGUIChat, object: nil)
-    }
-
     func setChatting(_ chatting: Bool) {
         isChatting = chatting
         if chatting { dismissAmbientMessage() }
@@ -424,14 +415,6 @@ final class PetStore: ObservableObject {
             self?.isFocusCelebrating = false
             self?.focusCelebrationTask = nil
         }
-    }
-
-    func showSettings() {
-        NotificationCenter.default.post(name: .showYuanGUISettings, object: nil)
-    }
-
-    func showMaintenance(tab: Int = 0) {
-        NotificationCenter.default.post(name: .showYuanGUIMaintenance, object: nil, userInfo: ["tab": tab])
     }
 
     func beginMaintenance(message: String) {
@@ -605,11 +588,32 @@ final class PetStore: ObservableObject {
         } else {
             smartState = states.first ?? .normal
         }
+        if let transientSmartActionState,
+           !states.contains(transientSmartActionState) {
+            transientSmartActionTask?.cancel()
+            transientSmartActionTask = nil
+            self.transientSmartActionState = nil
+        }
+        if let newlyActivatedState = newlyActivatedStates.first(where: { !$0.isUrgent }) {
+            presentTransientSmartAction(newlyActivatedState)
+        }
         syncMiniMonitoringDemand()
         updateSmartRotationTimer()
         updateUrgentReminderSchedule(restart: states != previousStates)
         guard states != previousStates, smartState != .normal else { return }
         showSmartMessage(smartState)
+    }
+
+    private func presentTransientSmartAction(_ state: SmartPetState) {
+        transientSmartActionTask?.cancel()
+        transientSmartActionState = state
+        transientSmartActionTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(10)) }
+            catch { return }
+            guard !Task.isCancelled, let self, self.transientSmartActionState == state else { return }
+            self.transientSmartActionState = nil
+            self.transientSmartActionTask = nil
+        }
     }
 
     private func updateUrgentReminderSchedule(restart: Bool) {

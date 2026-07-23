@@ -7,6 +7,7 @@ final class PetPanel: NSPanel {
     var allowedTopOverflow: CGFloat = 0
     var isUserDragging = false
     var bypassScreenConstraint = false
+    var dragMovedAction: (() -> Void)?
     var dragEndedAction: (() -> Void)?
 
     override var canBecomeKey: Bool { true }
@@ -38,6 +39,11 @@ private final class PetLockedToolbarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+private final class PetAuxiliaryBubblePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 @MainActor
 final class PetPanelController {
     let panel: PetPanel
@@ -45,8 +51,10 @@ final class PetPanelController {
     private let chat: ChatStore
     private let maintenance: MaintenanceStore
     private let focusTimer: FocusTimerStore
-    private let music: MusicStore
+    private let music: MusicFeature
+    private let appActions: AppActions
     private let lockedToolbarPanel: PetLockedToolbarPanel
+    private let auxiliaryBubblePanel: PetAuxiliaryBubblePanel
     private let edgePeekPanel: PetEdgePeekPanel
     private var observers: [NSObjectProtocol] = []
     private var cancellables = Set<AnyCancellable>()
@@ -58,16 +66,29 @@ final class PetPanelController {
     private var lockedHoverFallbackTimer: DispatchSourceTimer?
     private var lastLockedPointerInside = false
     private var layoutUpdateScheduled = false
+    private var isApplyingProgrammaticLayout = false
+    private var lastLayoutScale: Double
+    private var lastLayoutShowsChat: Bool
 
-    init(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore, music: MusicStore) {
+    init(
+        store: PetStore,
+        chat: ChatStore,
+        maintenance: MaintenanceStore,
+        focusTimer: FocusTimerStore,
+        music: MusicFeature,
+        appActions: AppActions = .disabled
+    ) {
         self.store = store
         self.chat = chat
         self.maintenance = maintenance
         self.focusTimer = focusTimer
         self.music = music
+        self.appActions = appActions
+        lastLayoutScale = store.petScale
+        lastLayoutShowsChat = chat.isPresented
         let size = PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldReservePetBubbleSpace || Self.showsMusicLyric(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer, music: music),
+            showsBubble: false,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -78,7 +99,16 @@ final class PetPanelController {
             defer: false
         )
         lockedToolbarPanel = PetLockedToolbarPanel(
-            contentRect: NSRect(origin: .zero, size: PetLayout.bottomToolbarPanelSize),
+            contentRect: NSRect(origin: .zero, size: PetLayout.lockedControlPanelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        auxiliaryBubblePanel = PetAuxiliaryBubblePanel(
+            contentRect: NSRect(
+                origin: .zero,
+                size: PetLayout.auxiliaryBubblePanelSize(scale: store.petScale)
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -99,7 +129,10 @@ final class PetPanelController {
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: PetRootView(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer, music: music))
+        panel.contentView = NSHostingView(rootView:
+            PetRootView(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer, music: music)
+                .environment(\.appActions, appActions)
+        )
         panel.ignoresMouseEvents = store.interactionLocked
         updateAllowedTopOverflow()
         lockedToolbarPanel.isOpaque = false
@@ -109,7 +142,28 @@ final class PetPanelController {
         lockedToolbarPanel.hidesOnDeactivate = false
         lockedToolbarPanel.isReleasedWhenClosed = false
         lockedToolbarPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        lockedToolbarPanel.contentView = NSHostingView(rootView: PetBottomControlsView(store: store, chat: chat, music: music))
+        lockedToolbarPanel.contentView = NSHostingView(rootView:
+            PetUnlockControlView(store: store)
+                .environment(\.appActions, appActions)
+        )
+        auxiliaryBubblePanel.isOpaque = false
+        auxiliaryBubblePanel.backgroundColor = .clear
+        auxiliaryBubblePanel.hasShadow = false
+        auxiliaryBubblePanel.level = .floating
+        auxiliaryBubblePanel.hidesOnDeactivate = false
+        auxiliaryBubblePanel.isReleasedWhenClosed = false
+        auxiliaryBubblePanel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        auxiliaryBubblePanel.contentView = NSHostingView(rootView:
+            PetAuxiliaryBubbleView(
+                store: store,
+                chat: chat,
+                maintenance: maintenance,
+                focusTimer: focusTimer,
+                music: music
+            )
+            .environment(\.appActions, appActions)
+        )
+        panel.addChildWindow(auxiliaryBubblePanel, ordered: .above)
         edgePeekPanel.isOpaque = false
         edgePeekPanel.backgroundColor = .clear
         edgePeekPanel.hasShadow = false
@@ -117,20 +171,30 @@ final class PetPanelController {
         edgePeekPanel.hidesOnDeactivate = false
         edgePeekPanel.isReleasedWhenClosed = false
         edgePeekPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        edgePeekPanel.contentView = NSHostingView(rootView: PetEdgePeekView(store: store, edge: .left) { [weak peekPanel] in
-            peekPanel?.restoreAction?()
-        })
+        edgePeekPanel.contentView = NSHostingView(rootView:
+            PetEdgePeekView(store: store, edge: .left) { [weak peekPanel] in
+                peekPanel?.restoreAction?()
+            }
+            .environment(\.appActions, appActions)
+        )
 
         restoreOrPlaceWindow()
         lastExpandedOrigin = panel.frame.origin
         dockedEdge = UserDefaults.standard.string(forKey: "petDockedEdge").flatMap(PetDockEdge.init(rawValue:))
+        panel.dragMovedAction = { [weak self] in
+            self?.positionLockedToolbar()
+            self?.positionAuxiliaryBubble()
+        }
         panel.dragEndedAction = { [weak self] in self?.finishUserDrag() }
         edgePeekPanel.restoreAction = { [weak self] in self?.restoreFromEdge(animated: true) }
         installObservers()
         Publishers.CombineLatest4(store.$showsSystemStatus, store.$smartState, store.$petScale, chat.$isPresented)
             .dropFirst()
             .sink { [weak self] _, _, _, _ in
-                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
+                Task { @MainActor [weak self] in
+                    self?.scheduleLayoutUpdate()
+                    self?.updateAuxiliaryBubble()
+                }
             }
             .store(in: &cancellables)
         store.$interactionLocked
@@ -153,26 +217,33 @@ final class PetPanelController {
         maintenance.$quickMode
             .removeDuplicates()
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
+                Task { @MainActor [weak self] in
+                    self?.scheduleLayoutUpdate()
+                    self?.updateAuxiliaryBubble()
+                }
             }
             .store(in: &cancellables)
         store.$automaticBubbleSuppressed
             .removeDuplicates()
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
+                Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() }
             }
             .store(in: &cancellables)
         store.$ambientMessage
             .removeDuplicates()
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() }
+                Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() }
             }
             .store(in: &cancellables)
-        Publishers.CombineLatest3(music.$playbackState, music.$currentLyric, music.$lightSingAlongEnabled)
-            .sink { [weak self] _, _, _ in Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() } }
+        Publishers.CombineLatest3(
+            music.playback.$state,
+            music.lyricsStore.$currentLine,
+            music.lyricsPresentation.$lightSingAlongEnabled
+        )
+            .sink { [weak self] _, _, _ in Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() } }
             .store(in: &cancellables)
         focusTimer.$state
-            .sink { [weak self] _ in Task { @MainActor [weak self] in self?.scheduleLayoutUpdate() } }
+            .sink { [weak self] _ in Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() } }
             .store(in: &cancellables)
     }
 
@@ -195,8 +266,9 @@ final class PetPanelController {
             store.monitor.setPetVisible(true)
             return
         }
-        constrainToVisibleScreens()
+        constrainToVisibleScreens(persist: false)
         panel.orderFrontRegardless()
+        updateAuxiliaryBubble()
         updateInteractionLock(store.interactionLocked)
         store.setPetPresented(true)
         store.monitor.setPetVisible(true)
@@ -205,6 +277,7 @@ final class PetPanelController {
     func hide() {
         panel.orderOut(nil)
         lockedToolbarPanel.orderOut(nil)
+        auxiliaryBubblePanel.orderOut(nil)
         edgePeekPanel.orderOut(nil)
         stopLockedHoverTracking()
         store.setPetPresented(false)
@@ -232,12 +305,16 @@ final class PetPanelController {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                self.positionLockedToolbar()
+                if self.auxiliaryBubblePanel.isVisible {
+                    self.positionAuxiliaryBubble()
+                }
                 guard !self.panel.isUserDragging,
                       !self.isDockTransitioning,
+                      !self.isApplyingProgrammaticLayout,
                       self.dockedEdge == nil else { return }
                 self.lastExpandedOrigin = self.panel.frame.origin
                 self.persistExpandedOrigin()
-                self.positionLockedToolbar()
             }
         })
         observers.append(NotificationCenter.default.addObserver(
@@ -263,26 +340,48 @@ final class PetPanelController {
     private func resizeToCurrentLayout() {
         let targetSize = PetLayout.panelSize(
             scale: store.petScale,
-            showsBubble: store.shouldReservePetBubbleSpace || Self.showsMusicLyric(store: store, chat: chat, maintenance: maintenance, focusTimer: focusTimer, music: music),
+            showsBubble: false,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
         updateAllowedTopOverflow()
-        guard panel.frame.size != targetSize else { return }
+        guard panel.frame.size != targetSize else {
+            lastLayoutScale = store.petScale
+            lastLayoutShowsChat = chat.isPresented
+            updateAuxiliaryBubble()
+            return
+        }
+        let oldVisualFrame = PetLayout.petVisualFrame(
+            panelFrame: panel.frame,
+            scale: lastLayoutScale,
+            showsChat: lastLayoutShowsChat
+        )
         var frame = panel.frame
         frame.size = targetSize
+        frame.origin = PetLayout.panelOrigin(
+            preservingPetVisualFrame: oldVisualFrame,
+            targetPanelSize: targetSize,
+            scale: store.petScale,
+            showsChat: chat.isPresented
+        )
+        isApplyingProgrammaticLayout = true
         panel.setFrame(frame, display: true, animate: false)
+        lastLayoutScale = store.petScale
+        lastLayoutShowsChat = chat.isPresented
         if dockedEdge != nil {
             resizeEdgePeekPanel()
             positionEdgePeek()
+            isApplyingProgrammaticLayout = false
             return
         }
-        constrainToVisibleScreens()
+        constrainToVisibleScreens(persist: false)
         positionLockedToolbar()
+        updateAuxiliaryBubble()
+        isApplyingProgrammaticLayout = false
     }
 
-    private static func showsMusicLyric(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore, music: MusicStore) -> Bool {
-        music.isPlaying && music.lightSingAlongEnabled && music.currentLyric != nil
+    private static func showsMusicLyric(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore, music: MusicFeature) -> Bool {
+        music.playback.isPlaying && music.lyricsPresentation.lightSingAlongEnabled && music.lyricsStore.currentLine != nil
             && !chat.isPresented && maintenance.quickMode == nil
             && focusTimer.state != .running && focusTimer.state != .paused
     }
@@ -294,7 +393,7 @@ final class PetPanelController {
                 x: defaults.double(forKey: "petWindowX"),
                 y: defaults.double(forKey: "petWindowY")
             ))
-            constrainToVisibleScreens()
+            constrainToVisibleScreens(persist: false)
             return
         }
         guard let visible = NSScreen.main?.visibleFrame else {
@@ -307,7 +406,7 @@ final class PetPanelController {
         ))
     }
 
-    private func constrainToVisibleScreens() {
+    private func constrainToVisibleScreens(persist: Bool = true) {
         guard !NSScreen.screens.isEmpty else { return }
         if dockedEdge != nil {
             positionEdgePeek()
@@ -322,14 +421,19 @@ final class PetPanelController {
             visibleFrame: visible,
             allowedTopOverflow: panel.allowedTopOverflow
         )
+        let wasApplyingProgrammaticLayout = isApplyingProgrammaticLayout
+        if !persist { isApplyingProgrammaticLayout = true }
+        defer { isApplyingProgrammaticLayout = wasApplyingProgrammaticLayout }
         panel.setFrameOrigin(frame.origin)
         lastExpandedOrigin = frame.origin
-        persistExpandedOrigin()
+        if persist { persistExpandedOrigin() }
         positionLockedToolbar()
+        positionAuxiliaryBubble()
     }
 
     private func updateInteractionLock(_ locked: Bool) {
         panel.ignoresMouseEvents = locked
+        auxiliaryBubblePanel.ignoresMouseEvents = locked
         guard locked, panel.isVisible, dockedEdge == nil else {
             stopLockedHoverTracking()
             lockedToolbarPanel.orderOut(nil)
@@ -358,6 +462,51 @@ final class PetPanelController {
         lockedToolbarPanel.setFrameOrigin(NSPoint(
             x: panel.frame.midX - lockedToolbarPanel.frame.width / 2,
             y: panel.frame.minY + bottom
+        ))
+    }
+
+    private func updateAuxiliaryBubble() {
+        guard panel.isVisible, dockedEdge == nil, shouldShowAuxiliaryBubble else {
+            auxiliaryBubblePanel.orderOut(nil)
+            return
+        }
+        let size = PetLayout.auxiliaryBubblePanelSize(scale: store.petScale)
+        if auxiliaryBubblePanel.frame.size != size {
+            auxiliaryBubblePanel.setContentSize(size)
+        }
+        positionAuxiliaryBubble()
+        auxiliaryBubblePanel.orderFrontRegardless()
+    }
+
+    private var shouldShowAuxiliaryBubble: Bool {
+        guard maintenance.quickMode == nil, !chat.isPresented else { return false }
+        return store.ambientMessage != nil
+            || store.shouldShowPetBubble
+            || Self.showsMusicLyric(
+                store: store,
+                chat: chat,
+                maintenance: maintenance,
+                focusTimer: focusTimer,
+                music: music
+            )
+    }
+
+    private func positionAuxiliaryBubble() {
+        let performanceStart = RuntimePerformance.start()
+        defer { RuntimePerformance.record("pet.auxiliary.position", since: performanceStart) }
+        guard let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) })
+            ?? panel.screen
+            ?? screenForExpandedPet()
+            ?? NSScreen.main else { return }
+        let petFrame = PetLayout.petVisualFrame(
+            panelFrame: panel.frame,
+            scale: store.petScale,
+            showsChat: chat.isPresented
+        )
+        auxiliaryBubblePanel.setFrameOrigin(PetLayout.auxiliaryBubbleOrigin(
+            petVisualFrame: petFrame,
+            bubbleSize: auxiliaryBubblePanel.frame.size,
+            visibleFrame: screen.visibleFrame
         ))
     }
 
@@ -442,7 +591,7 @@ final class PetPanelController {
     private func updateAllowedTopOverflow() {
         panel.allowedTopOverflow = PetLayout.allowedTopOverflow(
             scale: store.petScale,
-            showsBubble: store.shouldReservePetBubbleSpace,
+            showsBubble: false,
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
@@ -481,6 +630,7 @@ final class PetPanelController {
         UserDefaults.standard.set(edge.rawValue, forKey: "petDockedEdge")
         persistExpandedOrigin()
         lockedToolbarPanel.orderOut(nil)
+        auxiliaryBubblePanel.orderOut(nil)
         refreshEdgePeekContent()
         resizeEdgePeekPanel()
         positionEdgePeek(on: screen)
@@ -584,9 +734,12 @@ final class PetPanelController {
 
     private func refreshEdgePeekContent() {
         guard let edge = dockedEdge else { return }
-        edgePeekPanel.contentView = NSHostingView(rootView: PetEdgePeekView(store: store, edge: edge) { [weak edgePeekPanel] in
-            edgePeekPanel?.restoreAction?()
-        })
+        edgePeekPanel.contentView = NSHostingView(rootView:
+            PetEdgePeekView(store: store, edge: edge) { [weak edgePeekPanel] in
+                edgePeekPanel?.restoreAction?()
+            }
+            .environment(\.appActions, appActions)
+        )
     }
 
     private func persistExpandedOrigin() {

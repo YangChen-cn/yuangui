@@ -3,7 +3,9 @@ import SwiftUI
 struct PetBottomControlsView: View {
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
+    @Binding var isMiniPlayerPresented: Bool
+    @Environment(\.appActions) private var appActions
     @State private var hoveredTip: String?
 
     var body: some View {
@@ -41,53 +43,45 @@ struct PetBottomControlsView: View {
             .buttonStyle(.plain)
             .onHover { setTip($0 ? (store.shouldShowPetBubble ? "隐藏迷你监控" : "显示迷你监控") : nil) }
             .help(store.shouldShowPetBubble ? "隐藏桌宠迷你监控" : "显示 CPU、内存和电量迷你监控")
-            .disabled(store.interactionLocked)
-            .opacity(store.interactionLocked ? 0.38 : 1)
 
             Button {
-                store.showChat()
+                appActions.open(.chat)
             } label: {
                 toolIcon("bubble.left.and.bubble.right", tint: .pink, selected: chat.isPresented)
             }
             .buttonStyle(.plain)
             .onHover { setTip($0 ? (chat.isPresented ? "收起 AI 对话" : "打开 AI 对话") : nil) }
             .help(chat.isPresented ? "收起 AI 输入框" : "和元圭、VCC 聊天，可粘贴图片或添加文件")
-            .disabled(store.interactionLocked)
-            .opacity(store.interactionLocked ? 0.38 : 1)
 
-            Button { music.isMiniPlayerPresented.toggle() } label: {
-                toolIcon("music.note", tint: .purple, selected: music.isPlaying)
+            Button { isMiniPlayerPresented.toggle() } label: {
+                toolIcon("music.note", tint: .purple, selected: music.playback.isPlaying)
             }
             .buttonStyle(.plain)
-            .onHover { setTip($0 ? (music.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
+            .onHover { setTip($0 ? (music.playback.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
             .help("YuanGUI 音乐播放器")
-            .popover(isPresented: $music.isMiniPlayerPresented, arrowEdge: .bottom) {
+            .popover(isPresented: $isMiniPlayerPresented, arrowEdge: .bottom) {
                 MiniMusicPlayerView(music: music)
             }
-            .disabled(store.interactionLocked)
-            .opacity(store.interactionLocked ? 0.38 : 1)
 
             Button {
-                NotificationCenter.default.post(name: .startYuanGUIRegionScreenshot, object: nil)
+                appActions.runQuickTool(.regionScreenshot)
             } label: {
                 toolIcon("scissors", tint: .blue)
             }
             .buttonStyle(.plain)
             .onHover { setTip($0 ? "区域截图" : nil) }
             .help("区域截图并编辑")
-            .disabled(store.interactionLocked)
-            .opacity(store.interactionLocked ? 0.38 : 1)
 
             Button { store.toggleInteractionLock() } label: {
                 toolIcon(
-                    store.interactionLocked ? "lock.fill" : "lock.open.fill",
+                    "lock.open.fill",
                     tint: .orange,
-                    selected: store.interactionLocked
+                    selected: false
                 )
             }
             .buttonStyle(.plain)
-            .onHover { setTip($0 ? (store.interactionLocked ? "解锁桌宠" : "锁定并允许穿透") : nil) }
-            .help(store.interactionLocked ? "解锁桌宠，恢复点击和拖动" : "锁定桌宠：主体允许点击穿透，悬停仍可唤出工具栏")
+            .onHover { setTip($0 ? "锁定并允许穿透" : nil) }
+            .help("锁定桌宠：主体允许点击穿透，悬停仍可唤出解锁按钮")
 
         }
         .padding(PetLayout.bottomToolbarPanelPadding)

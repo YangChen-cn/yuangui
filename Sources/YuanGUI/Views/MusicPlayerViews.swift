@@ -37,7 +37,7 @@ struct MusicArtworkView: View {
 }
 
 struct MusicTransportControls: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     var compact = false
 
     var body: some View {
@@ -46,13 +46,13 @@ struct MusicTransportControls: View {
                 .help("上一首")
                 .accessibilityLabel("上一首")
             Button(action: music.playPause) {
-                Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: music.playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: compact ? 15 : 20, weight: .bold))
                     .frame(width: compact ? 27 : 38, height: compact ? 27 : 38)
                     .background(.primary.opacity(0.10), in: Circle())
             }
-            .help(music.isPlaying ? "暂停" : "播放")
-            .accessibilityLabel(music.isPlaying ? "暂停" : "播放")
+            .help(music.playback.isPlaying ? "暂停" : "播放")
+            .accessibilityLabel(music.playback.isPlaying ? "暂停" : "播放")
             Button(action: music.next) { Image(systemName: "forward.fill") }
                 .help("下一首")
                 .accessibilityLabel("下一首")
@@ -63,14 +63,14 @@ struct MusicTransportControls: View {
 }
 
 struct MusicProgressView: View {
-    let music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @ObservedObject private var progress: MusicPlaybackProgress
     @State private var previewPosition: TimeInterval = 0
     @State private var isSeeking = false
 
-    init(music: MusicStore) {
-        self.music = music
-        _progress = ObservedObject(wrappedValue: music.playbackProgress)
+    init(music: MusicFeature) {
+        _music = ObservedMusicFeature(wrappedValue: music)
+        _progress = ObservedObject(wrappedValue: music.playback.progress)
     }
 
     var body: some View {
@@ -112,7 +112,7 @@ struct MusicProgressView: View {
 }
 
 private struct FullPlayerLyricsView: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @State private var previewLyricPosition: Double?
     @State private var isScrollFocused = false
     @State private var resumeFollowingTask: Task<Void, Never>?
@@ -123,7 +123,7 @@ private struct FullPlayerLyricsView: View {
                 Label("歌词", systemImage: "quote.bubble")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if let source = music.lyrics?.source, !source.isEmpty {
+                if let source = music.lyricsStore.document?.source, !source.isEmpty {
                     Text(source)
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -139,7 +139,7 @@ private struct FullPlayerLyricsView: View {
                 .stroke(Color.accentColor.opacity(isScrollFocused ? 0.65 : 0), lineWidth: 1.5)
         }
         .overlay(LyricsScrollWheelMonitor(
-            isEnabled: music.lyrics?.lines.isEmpty == false,
+            isEnabled: music.lyricsStore.document?.lines.isEmpty == false,
             isActive: isScrollFocused,
             onActivationChange: setScrollFocus,
             onScroll: previewLyrics
@@ -155,15 +155,15 @@ private struct FullPlayerLyricsView: View {
 
     @ViewBuilder
     private var lyricContent: some View {
-        if music.currentTrack == nil {
+        if music.playback.currentTrack == nil {
             lyricStatus("播放歌曲后显示歌词", systemImage: "music.note")
-        } else if music.isLoadingLyrics {
+        } else if music.lyricsStore.isLoading {
             VStack(spacing: 9) {
                 ProgressView().controlSize(.small)
                 Text("正在加载歌词").foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 264)
-        } else if let document = music.lyrics, !document.lines.isEmpty {
+        } else if let document = music.lyricsStore.document, !document.lines.isEmpty {
             lyricRows(document)
         } else {
             lyricStatus("暂无同步歌词", systemImage: "text.badge.xmark")
@@ -171,7 +171,7 @@ private struct FullPlayerLyricsView: View {
     }
 
     private func lyricRows(_ document: LyricsDocument) -> some View {
-        let currentPosition = previewLyricPosition ?? Double(music.currentLyricIndex ?? 0)
+        let currentPosition = previewLyricPosition ?? Double(music.lyricsStore.currentLineIndex ?? 0)
         let center = min(max(Int(currentPosition.rounded()), 0), document.lines.count - 1)
         let candidates = Array((center - 4)...(center + 4))
         let rowOffset = CGFloat(Double(center) - currentPosition) * 38
@@ -181,7 +181,7 @@ private struct FullPlayerLyricsView: View {
                     if document.lines.indices.contains(lineIndex) {
                         lyricButton(
                             document.lines[lineIndex],
-                            isCurrent: lineIndex == music.currentLyricIndex,
+                            isCurrent: lineIndex == music.lyricsStore.currentLineIndex,
                             distance: min(abs(lineIndex - center), 3)
                         )
                     } else {
@@ -227,8 +227,8 @@ private struct FullPlayerLyricsView: View {
     }
 
     private func previewLyrics(_ delta: CGFloat) {
-        guard let document = music.lyrics, !document.lines.isEmpty, abs(delta) > 0.01 else { return }
-        let current = previewLyricPosition ?? Double(music.currentLyricIndex ?? 0)
+        guard let document = music.lyricsStore.document, !document.lines.isEmpty, abs(delta) > 0.01 else { return }
+        let current = previewLyricPosition ?? Double(music.lyricsStore.currentLineIndex ?? 0)
         let target = min(max(current - Double(delta / 38), 0), Double(document.lines.count - 1))
         withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.88)) {
             previewLyricPosition = target
@@ -335,15 +335,16 @@ private struct LyricsScrollWheelMonitor: NSViewRepresentable {
 }
 
 struct MiniMusicPlayerView: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
+    @Environment(\.appActions) private var appActions
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                MusicArtworkView(track: music.currentTrack, size: 52)
+                MusicArtworkView(track: music.playback.currentTrack, size: 52)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(music.currentTrack?.title ?? "暂无播放内容").font(.headline).lineLimit(1)
-                    Text(music.currentTrack?.artist ?? music.playbackSource.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Label(music.playbackSource.title, systemImage: music.playbackSource.systemImage)
+                    Text(music.playback.currentTrack?.title ?? "暂无播放内容").font(.headline).lineLimit(1)
+                    Text(music.playback.currentTrack?.artist ?? music.playback.playbackSource.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Label(music.playback.playbackSource.title, systemImage: music.playback.playbackSource.systemImage)
                         .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -351,15 +352,15 @@ struct MiniMusicPlayerView: View {
             MusicProgressView(music: music)
             HStack {
                 Button { music.toggleLyricsVisible() } label: {
-                    Image(systemName: music.lyricsVisible ? "quote.bubble.fill" : "quote.bubble")
-                }.help(music.lyricsVisible ? "隐藏桌面歌词" : "显示桌面歌词")
-                Button { music.setLyricsPanelLocked(!music.lyricsPanelLocked) } label: {
-                    Image(systemName: music.lyricsPanelLocked ? "lock.fill" : "lock.open")
-                }.help(music.lyricsPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词")
+                    Image(systemName: music.lyricsPresentation.isVisible ? "quote.bubble.fill" : "quote.bubble")
+                }.help(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词")
+                Button { music.setLyricsPanelLocked(!music.lyricsPresentation.isPanelLocked) } label: {
+                    Image(systemName: music.lyricsPresentation.isPanelLocked ? "lock.fill" : "lock.open")
+                }.help(music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词")
                 Spacer()
                 MusicTransportControls(music: music, compact: true)
                 Spacer()
-                Button { music.showFullPlayer() } label: { Image(systemName: "list.bullet") }.help("打开完整播放器")
+                Button { appActions.open(.music) } label: { Image(systemName: "list.bullet") }.help("打开完整播放器")
             }.buttonStyle(.plain)
         }
         .padding(12)
@@ -368,7 +369,8 @@ struct MiniMusicPlayerView: View {
 }
 
 struct MusicStatusCard: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
+    @Environment(\.appActions) private var appActions
     @State private var searchTitle = ""
     @State private var searchArtist = ""
     @State private var selectedLibraryID = "queue"
@@ -377,7 +379,7 @@ struct MusicStatusCard: View {
         ScrollView {
             VStack(spacing: 10) {
                 nowPlayingSection
-                if music.source == .bilibili { bilibiliLibrarySection }
+                if music.playback.source == .bilibili { bilibiliLibrarySection }
                 else { appleMusicQueueSection }
                 playbackSettingsSection
             }
@@ -385,8 +387,8 @@ struct MusicStatusCard: View {
             .padding(.bottom, 2)
         }
         .onAppear(perform: syncSearchFields)
-        .onChange(of: music.currentTrack?.id) { _, _ in syncSearchFields() }
-        .onChange(of: music.source) { _, _ in
+        .onChange(of: music.playback.currentTrack?.id) { _, _ in syncSearchFields() }
+        .onChange(of: music.playback.source) { _, _ in
             selectedLibraryID = "queue"
             syncSearchFields()
         }
@@ -395,10 +397,10 @@ struct MusicStatusCard: View {
     private var nowPlayingSection: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Label(music.currentTrack == nil ? "音乐" : "正在播放", systemImage: music.playbackSource.systemImage)
+                Label(music.playback.currentTrack == nil ? "音乐" : "正在播放", systemImage: music.playback.playbackSource.systemImage)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                 Spacer()
-                if let track = music.currentTrack, track.source == .bilibili {
+                if let track = music.playback.currentTrack, track.source == .bilibili {
                     Button { music.toggleFavorite(track) } label: {
                         Image(systemName: music.isFavorite(track) ? "heart.fill" : "heart")
                     }
@@ -406,11 +408,11 @@ struct MusicStatusCard: View {
                     .foregroundStyle(music.isFavorite(track) ? .pink : .secondary)
                     .help(music.isFavorite(track) ? "取消收藏当前歌曲" : "收藏当前歌曲")
                 }
-                Button { music.showFullPlayer() } label: { Image(systemName: "arrow.up.right.square") }
+                Button { appActions.open(.music) } label: { Image(systemName: "arrow.up.right.square") }
                     .buttonStyle(.plain)
                     .help("打开完整播放器")
             }
-            if let track = music.currentTrack {
+            if let track = music.playback.currentTrack {
                 HStack(spacing: 11) {
                     MusicArtworkView(track: track, size: 54)
                     VStack(alignment: .leading, spacing: 3) {
@@ -432,7 +434,7 @@ struct MusicStatusCard: View {
                     MusicTransportControls(music: music, compact: true)
                     Spacer()
                     Toggle("桌面歌词", isOn: Binding(
-                        get: { music.lyricsVisible },
+                        get: { music.lyricsPresentation.isVisible },
                         set: { _ in music.toggleLyricsVisible() }
                     ))
                     .toggleStyle(.switch)
@@ -442,9 +444,9 @@ struct MusicStatusCard: View {
                 Text("暂无播放内容")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button(music.source == .appleMusic ? "打开 Apple Music" : "导入 B 站歌曲…") {
-                    if music.source == .appleMusic { music.connectAppleMusic() }
-                    else { music.showFullPlayer() }
+                Button(music.playback.source == .appleMusic ? "打开 Apple Music" : "导入 B 站歌曲…") {
+                    if music.playback.source == .appleMusic { music.connectAppleMusic() }
+                    else { appActions.open(.music) }
                 }
                 .controlSize(.small)
             }
@@ -456,7 +458,7 @@ struct MusicStatusCard: View {
         VStack(alignment: .leading, spacing: 9) {
             Label("播放与歌词", systemImage: "slider.horizontal.3")
                 .font(.system(size: 12, weight: .bold, design: .rounded))
-            Picker("浏览来源", selection: Binding(get: { music.source }, set: music.setSource)) {
+            Picker("浏览来源", selection: Binding(get: { music.playback.source }, set: music.setSource)) {
                 ForEach(MusicSource.allCases) { source in
                     Label(source.title, systemImage: source.systemImage).tag(source)
                 }
@@ -466,7 +468,7 @@ struct MusicStatusCard: View {
                 Text("歌词偏移").font(.caption)
                 LyricOffsetControl(music: music, compact: true)
             }
-            if music.source == .bilibili, music.currentTrack?.source == .bilibili {
+            if music.playback.source == .bilibili, music.playback.currentTrack?.source == .bilibili {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("歌曲信息与歌词匹配")
                         .font(.caption.weight(.semibold))
@@ -485,14 +487,14 @@ struct MusicStatusCard: View {
                         Button {
                             music.searchLyrics(title: searchTitle, artist: searchArtist)
                         } label: {
-                            if music.isSearchingLyrics { ProgressView().controlSize(.mini) }
+                            if music.lyricsStore.isSearching { ProgressView().controlSize(.mini) }
                             else { Label("匹配歌词并更新信息", systemImage: "text.magnifyingglass") }
                         }
-                        .disabled(music.isSearchingLyrics || searchTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(music.lyricsStore.isSearching || searchTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Spacer()
                     }
                     .controlSize(.small)
-                    if let message = music.lyricsSearchMessage {
+                    if let message = music.lyricsStore.searchMessage {
                         Text(message)
                             .font(.system(size: 9))
                             .foregroundStyle(message.hasPrefix("已") ? Color.green : Color.orange)
@@ -514,11 +516,11 @@ struct MusicStatusCard: View {
                         Button {
                             music.setPlayMode(mode)
                         } label: {
-                            Label(mode.title, systemImage: mode == music.playMode ? "checkmark" : mode.systemImage)
+                            Label(mode.title, systemImage: mode == music.playback.playMode ? "checkmark" : mode.systemImage)
                         }
                     }
                 } label: {
-                    Label(music.playMode.title, systemImage: music.playMode.systemImage)
+                    Label(music.playback.playMode.title, systemImage: music.playback.playMode.systemImage)
                         .font(.system(size: 9, weight: .semibold))
                         .padding(.horizontal, 7)
                         .frame(height: 22)
@@ -527,11 +529,11 @@ struct MusicStatusCard: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help("修改播放模式")
-                if let track = music.currentTrack, track.source == .bilibili {
+                if let track = music.playback.currentTrack, track.source == .bilibili {
                     Menu {
-                        if music.savedPlaylists.isEmpty { Text("尚未创建歌单") }
+                        if music.libraryStore.savedPlaylists.isEmpty { Text("尚未创建歌单") }
                         else {
-                            ForEach(music.savedPlaylists) { playlist in
+                            ForEach(music.libraryStore.savedPlaylists) { playlist in
                                 Button(playlist.name) { music.add(track, to: playlist) }
                             }
                         }
@@ -543,9 +545,9 @@ struct MusicStatusCard: View {
             }
             Menu {
                 Button("接下来播放（\(music.upcomingTracks.count)）") { selectedLibraryID = "queue" }
-                Button("收藏歌曲（\(music.favoriteTracks.count)）") { selectedLibraryID = "favorites" }
-                if !music.savedPlaylists.isEmpty { Divider() }
-                ForEach(music.savedPlaylists) { playlist in
+                Button("收藏歌曲（\(music.libraryStore.favoriteTracks.count)）") { selectedLibraryID = "favorites" }
+                if !music.libraryStore.savedPlaylists.isEmpty { Divider() }
+                ForEach(music.libraryStore.savedPlaylists) { playlist in
                     Button("\(playlist.name)（\(music.tracks(in: playlist).count)）") {
                         selectedLibraryID = "playlist:\(playlist.id.uuidString)"
                     }
@@ -582,9 +584,9 @@ struct MusicStatusCard: View {
                             Text(formatTime(track.duration))
                                 .font(.system(size: 8.5, design: .monospaced))
                                 .foregroundStyle(.tertiary)
-                            Image(systemName: music.currentTrack?.id == track.id && music.isPlaying ? "speaker.wave.2.fill" : "play.fill")
+                            Image(systemName: music.playback.currentTrack?.id == track.id && music.playback.isPlaying ? "speaker.wave.2.fill" : "play.fill")
                                 .font(.system(size: 9))
-                                .foregroundStyle(music.currentTrack?.id == track.id ? .pink : .secondary)
+                                .foregroundStyle(music.playback.currentTrack?.id == track.id ? .pink : .secondary)
                         }
                         .contentShape(Rectangle())
                     }
@@ -598,7 +600,7 @@ struct MusicStatusCard: View {
                         .padding(.top, 2)
                 }
             }
-            Button("打开完整资料库…") { music.showFullPlayer() }
+            Button("打开完整资料库…") { appActions.open(.music) }
                 .font(.caption)
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -629,28 +631,28 @@ struct MusicStatusCard: View {
     }
 
     private var selectedLibraryTracks: [MusicTrack] {
-        if selectedLibraryID == "favorites" { return music.favoriteTracks }
+        if selectedLibraryID == "favorites" { return music.libraryStore.favoriteTracks }
         if selectedLibraryID.hasPrefix("playlist:"),
            let id = UUID(uuidString: String(selectedLibraryID.dropFirst("playlist:".count))),
-           let playlist = music.savedPlaylists.first(where: { $0.id == id }) {
+           let playlist = music.libraryStore.savedPlaylists.first(where: { $0.id == id }) {
             return music.tracks(in: playlist)
         }
         return music.upcomingTracks
     }
 
     private var selectedLibraryTitle: String {
-        if selectedLibraryID == "favorites" { return "收藏歌曲（\(music.favoriteTracks.count)）" }
+        if selectedLibraryID == "favorites" { return "收藏歌曲（\(music.libraryStore.favoriteTracks.count)）" }
         if selectedLibraryID.hasPrefix("playlist:"),
            let id = UUID(uuidString: String(selectedLibraryID.dropFirst("playlist:".count))),
-           let playlist = music.savedPlaylists.first(where: { $0.id == id }) {
+           let playlist = music.libraryStore.savedPlaylists.first(where: { $0.id == id }) {
             return "\(playlist.name)（\(music.tracks(in: playlist).count)）"
         }
         return "接下来播放（\(music.upcomingTracks.count)）"
     }
 
     private func syncSearchFields() {
-        searchTitle = music.currentTrack?.title ?? ""
-        searchArtist = music.currentTrack?.artist ?? ""
+        searchTitle = music.playback.currentTrack?.title ?? ""
+        searchArtist = music.playback.currentTrack?.artist ?? ""
     }
 }
 
@@ -663,7 +665,7 @@ private extension View {
 }
 
 struct MusicPlayerView: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @State private var selectedTrackID: String?
     @State private var selectedCollectionID = "all"
     @State private var isCreatingPlaylist = false
@@ -676,7 +678,7 @@ struct MusicPlayerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("浏览来源", selection: Binding(get: { music.source }, set: music.setSource)) {
+            Picker("浏览来源", selection: Binding(get: { music.playback.source }, set: music.setSource)) {
                 ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
             }
             .pickerStyle(.segmented)
@@ -692,8 +694,8 @@ struct MusicPlayerView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 520)
-        .onAppear { selectedTrackID = music.currentTrack?.id }
-        .onChange(of: music.currentTrack?.id) { _, currentTrackID in
+        .onAppear { selectedTrackID = music.playback.currentTrack?.id }
+        .onChange(of: music.playback.currentTrack?.id) { _, currentTrackID in
             selectedTrackID = currentTrackID
         }
         .alert("新建歌单", isPresented: $isCreatingPlaylist) {
@@ -720,10 +722,10 @@ struct MusicPlayerView: View {
     }
 
     @ViewBuilder private var sidebar: some View {
-        if music.source == .appleMusic {
+        if music.playback.source == .appleMusic {
             List {
                 Section("Apple Music") {
-                    Label(music.appleMusicRunning ? "Music 正在运行" : "Music 尚未运行", systemImage: "music.note")
+                    Label(music.playback.appleMusicRunning ? "Music 正在运行" : "Music 尚未运行", systemImage: "music.note")
                     Button("连接并控制 Music App") { music.connectAppleMusic() }
                     Button("打开 Music App") { music.openAppleMusic() }
                 }
@@ -731,13 +733,19 @@ struct MusicPlayerView: View {
         } else {
             VStack(spacing: 0) {
                 HStack {
-                    TextField("粘贴 URL 或输入 BV 号", text: $music.importText)
+                    TextField(
+                        "粘贴 URL 或输入 BV 号",
+                        text: Binding(
+                            get: { music.bilibiliImportStore.input },
+                            set: { music.bilibiliImportStore.input = $0 }
+                        )
+                    )
                         .onSubmit(music.importBilibili)
                     Button { music.importBilibili() } label: {
-                        music.isImporting ? AnyView(ProgressView().controlSize(.small)) : AnyView(Image(systemName: "plus"))
-                    }.disabled(music.isImporting || music.importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        music.bilibiliImportStore.isImporting ? AnyView(ProgressView().controlSize(.small)) : AnyView(Image(systemName: "plus"))
+                    }.disabled(music.bilibiliImportStore.isImporting || music.bilibiliImportStore.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }.padding(10)
-                if let message = music.bilibiliImportMessage {
+                if let message = music.bilibiliImportStore.importMessage {
                     VStack(alignment: .leading, spacing: 7) {
                         Label(message, systemImage: "checkmark.circle.fill")
                             .font(.caption.weight(.semibold))
@@ -755,11 +763,11 @@ struct MusicPlayerView: View {
                 }
                 HStack {
                     Button {
-                        if music.bilibiliAccount == nil { isBilibiliLoginPresented = true }
+                        if music.bilibiliAccountStore.account == nil { isBilibiliLoginPresented = true }
                         else { isBilibiliFavoritesPresented = true }
                     } label: {
                         Label(
-                            music.bilibiliAccount == nil ? "登录后导入收藏夹" : "导入哔哩哔哩收藏夹",
+                            music.bilibiliAccountStore.account == nil ? "登录后导入收藏夹" : "导入哔哩哔哩收藏夹",
                             systemImage: "folder.badge.plus"
                         )
                     }
@@ -770,11 +778,11 @@ struct MusicPlayerView: View {
                 .padding(.bottom, 6)
                 List(selection: $selectedTrackID) {
                     Section("资料库") {
-                        collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: music.playlist.count)
-                        collectionButton("收藏", systemImage: "heart.fill", id: "favorites", count: music.favoriteTracks.count)
+                        collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: music.libraryStore.playlist.count)
+                        collectionButton("收藏", systemImage: "heart.fill", id: "favorites", count: music.libraryStore.favoriteTracks.count)
                     }
                     Section {
-                        ForEach(music.savedPlaylists) { savedPlaylist in
+                        ForEach(music.libraryStore.savedPlaylists) { savedPlaylist in
                             collectionButton(savedPlaylist.name, systemImage: "music.note.house", id: "playlist:\(savedPlaylist.id.uuidString)", count: music.tracks(in: savedPlaylist).count)
                                 .contextMenu {
                                     Button("删除歌单", role: .destructive) {
@@ -789,8 +797,8 @@ struct MusicPlayerView: View {
                     Section(collectionTitle) {
                     ForEach(displayedTracks) { track in
                         HStack(spacing: 8) {
-                            Image(systemName: music.currentTrack?.id == track.id && music.isPlaying ? "speaker.wave.2.fill" : "music.note")
-                                .foregroundStyle(music.currentTrack?.id == track.id ? .pink : .secondary).frame(width: 16)
+                            Image(systemName: music.playback.currentTrack?.id == track.id && music.playback.isPlaying ? "speaker.wave.2.fill" : "music.note")
+                                .foregroundStyle(music.playback.currentTrack?.id == track.id ? .pink : .secondary).frame(width: 16)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(track.title).lineLimit(1)
                                 Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -800,9 +808,9 @@ struct MusicPlayerView: View {
                         .contextMenu {
                             Button("播放") { music.play(track) }
                             Button(music.isFavorite(track) ? "取消收藏" : "收藏") { music.toggleFavorite(track) }
-                            if !music.savedPlaylists.isEmpty {
+                            if !music.libraryStore.savedPlaylists.isEmpty {
                                 Menu("加入歌单") {
-                                    ForEach(music.savedPlaylists) { savedPlaylist in
+                                    ForEach(music.libraryStore.savedPlaylists) { savedPlaylist in
                                         Button(savedPlaylist.name) { music.add(track, to: savedPlaylist) }
                                     }
                                 }
@@ -819,7 +827,7 @@ struct MusicPlayerView: View {
                 HStack {
                     Text("\(displayedTracks.count) 首").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    if selectedCollectionID == "all", !music.playlist.isEmpty {
+                    if selectedCollectionID == "all", !music.libraryStore.playlist.isEmpty {
                         Button("清空") { music.clearPlaylist() }.buttonStyle(.plain).foregroundStyle(.secondary)
                     }
                 }.padding(10)
@@ -831,21 +839,21 @@ struct MusicPlayerView: View {
         ScrollView {
             VStack(spacing: 16) {
                 ZStack(alignment: .topTrailing) {
-                    MusicArtworkView(track: music.currentTrack, size: 190)
+                    MusicArtworkView(track: music.playback.currentTrack, size: 190)
                         .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
                         .frame(maxWidth: .infinity)
-                    if music.source == .bilibili {
+                    if music.playback.source == .bilibili {
                         bilibiliAccountButton
                     }
                 }
                 VStack(spacing: 4) {
-                    Text(music.currentTrack?.title ?? emptyTitle).font(.system(size: 24, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
-                    Text(music.currentTrack?.artist ?? music.playbackSource.title).foregroundStyle(.secondary)
-                    if let album = music.currentTrack?.album, !album.isEmpty { Text(album).font(.caption).foregroundStyle(.tertiary) }
+                    Text(music.playback.currentTrack?.title ?? emptyTitle).font(.system(size: 24, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
+                    Text(music.playback.currentTrack?.artist ?? music.playback.playbackSource.title).foregroundStyle(.secondary)
+                    if let album = music.playback.currentTrack?.album, !album.isEmpty { Text(album).font(.caption).foregroundStyle(.tertiary) }
                 }
                 MusicProgressView(music: music).frame(maxWidth: 480)
                 MusicTransportControls(music: music)
-                if let track = music.currentTrack, track.source == .bilibili {
+                if let track = music.playback.currentTrack, track.source == .bilibili {
                     Button { music.toggleFavorite(track) } label: {
                         Label(music.isFavorite(track) ? "已收藏" : "收藏", systemImage: music.isFavorite(track) ? "heart.fill" : "heart")
                     }
@@ -854,9 +862,9 @@ struct MusicPlayerView: View {
                 }
                 HStack(spacing: 12) {
                     Image(systemName: "speaker.fill")
-                    Slider(value: Binding(get: { music.volume }, set: music.setVolume), in: 0...1).frame(width: 160)
-                    if music.source == .bilibili {
-                        Picker("播放模式", selection: Binding(get: { music.playMode }, set: music.setPlayMode)) {
+                    Slider(value: Binding(get: { music.playback.volume }, set: music.setVolume), in: 0...1).frame(width: 160)
+                    if music.playback.source == .bilibili {
+                        Picker("播放模式", selection: Binding(get: { music.playback.playMode }, set: music.setPlayMode)) {
                             ForEach(MusicPlayMode.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
                         }.labelsHidden().frame(width: 120)
                     }
@@ -867,9 +875,9 @@ struct MusicPlayerView: View {
                     VStack(alignment: .leading, spacing: 7) { lyricsActionButtons }
                 }
                 lyricsAdjustments
-                if let error = music.errorMessage {
+                if let error = music.bilibiliImportStore.errorMessage {
                     Text(error).font(.caption).foregroundStyle(.orange).multilineTextAlignment(.center)
-                    if music.playbackSource == .appleMusic { Button("打开自动化权限设置") { music.openAutomationSettings() } }
+                    if music.playback.playbackSource == .appleMusic { Button("打开自动化权限设置") { music.openAutomationSettings() } }
                 }
             }
             .padding(28).frame(maxWidth: .infinity)
@@ -879,7 +887,7 @@ struct MusicPlayerView: View {
     private var bilibiliAccountButton: some View {
         Button { isBilibiliLoginPresented = true } label: {
             HStack(spacing: 7) {
-                if let account = music.bilibiliAccount {
+                if let account = music.bilibiliAccountStore.account {
                     AsyncImage(url: account.avatarURL) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
@@ -910,21 +918,21 @@ struct MusicPlayerView: View {
                 }
             }
             .padding(.horizontal, 4)
-            .frame(width: music.bilibiliAccount == nil ? 148 : 175, alignment: .leading)
+            .frame(width: music.bilibiliAccountStore.account == nil ? 148 : 175, alignment: .leading)
             .frame(minHeight: 30)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.regular)
         .fixedSize(horizontal: true, vertical: true)
-        .offset(x: music.bilibiliAccount == nil ? 0 : 20)
-        .help(music.bilibiliAccount.map { "已登录：\($0.name)，点击管理账号" } ?? "扫码登录哔哩哔哩")
+        .offset(x: music.bilibiliAccountStore.account == nil ? 0 : 20)
+        .help(music.bilibiliAccountStore.account.map { "已登录：\($0.name)，点击管理账号" } ?? "扫码登录哔哩哔哩")
     }
 
-    private var emptyTitle: String { music.source == .appleMusic ? "连接 Apple Music" : "从左侧导入并选择歌曲" }
+    private var emptyTitle: String { music.playback.source == .appleMusic ? "连接 Apple Music" : "从左侧导入并选择歌曲" }
 
     @ViewBuilder
     private var lyricsActionButtons: some View {
-        Button(music.lyricsVisible ? "隐藏桌面歌词" : "显示桌面歌词") { music.toggleLyricsVisible() }
+        Button(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词") { music.toggleLyricsVisible() }
         Button("导入 LRC 文件") { chooseLRC() }
         Button("修改歌曲信息或匹配歌词") { prepareLyricsSearch() }
     }
@@ -941,16 +949,16 @@ struct MusicPlayerView: View {
             HStack(spacing: 12) {
                 Label("桌面歌词字号", systemImage: "textformat.size")
                 Slider(
-                    value: Binding(get: { music.lyricsFontSize }, set: music.setLyricsFontSize),
+                    value: Binding(get: { music.lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
                     in: 14...42,
                     step: 1
                 )
                 .frame(width: 150)
-                Text("\(Int(music.lyricsFontSize))")
+                Text("\(Int(music.lyricsPresentation.fontSize))")
                     .font(.system(.caption, design: .monospaced))
                     .frame(width: 24)
                 Picker("字体", selection: Binding(
-                    get: { music.lyricsFontStyle },
+                    get: { music.lyricsPresentation.fontStyle },
                     set: music.setLyricsFontStyle
                 )) {
                     ForEach(LyricsFontStyle.allCases) { style in Text(style.title).tag(style) }
@@ -960,14 +968,14 @@ struct MusicPlayerView: View {
                 ColorPicker(
                     "颜色",
                     selection: Binding(
-                        get: { Color(nsColor: music.lyricsColor) },
+                        get: { Color(nsColor: music.lyricsPresentation.color) },
                         set: { music.setLyricsColor(NSColor($0)) }
                     ),
                     supportsOpacity: true
                 )
                 .fixedSize()
                 Toggle("锁定并点击穿透", isOn: Binding(
-                    get: { music.lyricsPanelLocked },
+                    get: { music.lyricsPresentation.isPanelLocked },
                     set: music.setLyricsPanelLocked
                 ))
                 .toggleStyle(.switch)
@@ -981,13 +989,13 @@ struct MusicPlayerView: View {
     private var selectedSavedPlaylist: SavedMusicPlaylist? {
         guard selectedCollectionID.hasPrefix("playlist:"),
               let id = UUID(uuidString: String(selectedCollectionID.dropFirst("playlist:".count))) else { return nil }
-        return music.savedPlaylists.first { $0.id == id }
+        return music.libraryStore.savedPlaylists.first { $0.id == id }
     }
 
     private var displayedTracks: [MusicTrack] {
-        if selectedCollectionID == "favorites" { return music.favoriteTracks }
+        if selectedCollectionID == "favorites" { return music.libraryStore.favoriteTracks }
         if let selectedSavedPlaylist { return music.tracks(in: selectedSavedPlaylist) }
-        return music.playlist
+        return music.libraryStore.playlist
     }
 
     private var collectionTitle: String {
@@ -1022,14 +1030,14 @@ struct MusicPlayerView: View {
     }
 
     private func prepareLyricsSearch() {
-        lyricsSearchTitle = music.currentTrack?.title ?? ""
-        lyricsSearchArtist = music.currentTrack?.artist ?? ""
+        lyricsSearchTitle = music.playback.currentTrack?.title ?? ""
+        lyricsSearchArtist = music.playback.currentTrack?.artist ?? ""
         isSearchingLyrics = true
     }
 }
 
 struct BilibiliFavoriteImportSheet: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @Binding var isPresented: Bool
     @State private var selectedFolderID: Int64?
 
@@ -1039,7 +1047,7 @@ struct BilibiliFavoriteImportSheet: View {
                 Label("导入哔哩哔哩收藏夹", systemImage: "folder.badge.plus")
                     .font(.title2.bold())
                 Spacer()
-                if let account = music.bilibiliAccount {
+                if let account = music.bilibiliAccountStore.account {
                     Text(account.name)
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -1050,20 +1058,20 @@ struct BilibiliFavoriteImportSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if music.isLoadingBilibiliFavoriteFolders {
+            if music.bilibiliImportStore.isLoadingFavoriteFolders {
                 ProgressView("正在读取收藏夹…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if music.bilibiliFavoriteFolders.isEmpty {
+            } else if music.bilibiliImportStore.favoriteFolders.isEmpty {
                 ContentUnavailableView(
                     "没有可导入的收藏夹",
                     systemImage: "folder",
-                    description: Text(music.bilibiliFavoriteMessage ?? "请确认账号已登录，并尝试刷新。")
+                    description: Text(music.bilibiliImportStore.favoriteMessage ?? "请确认账号已登录，并尝试刷新。")
                 )
                 .frame(maxHeight: .infinity)
             } else {
                 List(selection: $selectedFolderID) {
                     ForEach(BilibiliFavoriteFolderKind.allCases, id: \.self) { kind in
-                        let folders = music.bilibiliFavoriteFolders.filter { $0.kind == kind }
+                        let folders = music.bilibiliImportStore.favoriteFolders.filter { $0.kind == kind }
                         if !folders.isEmpty {
                             Section(kind.title) {
                                 ForEach(folders) { folder in
@@ -1098,18 +1106,18 @@ struct BilibiliFavoriteImportSheet: View {
                 .listStyle(.inset)
             }
 
-            if music.isImportingBilibiliFavoriteFolder {
+            if music.bilibiliImportStore.isImportingFavoriteFolder {
                 VStack(alignment: .leading, spacing: 5) {
                     ProgressView(
-                        value: Double(music.bilibiliFavoriteImportCompleted),
-                        total: Double(max(music.bilibiliFavoriteImportTotal, 1))
+                        value: Double(music.bilibiliImportStore.completedCount),
+                        total: Double(max(music.bilibiliImportStore.totalCount, 1))
                     )
-                    Text("正在解析视频 \(music.bilibiliFavoriteImportCompleted)/\(music.bilibiliFavoriteImportTotal)…")
+                    Text("正在解析视频 \(music.bilibiliImportStore.completedCount)/\(music.bilibiliImportStore.totalCount)…")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            } else if let message = music.bilibiliFavoriteMessage,
-                      !music.bilibiliFavoriteFolders.isEmpty {
+            } else if let message = music.bilibiliImportStore.favoriteMessage,
+                      !music.bilibiliImportStore.favoriteFolders.isEmpty {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(message.hasPrefix("已从") ? Color.green : Color.orange)
@@ -1117,25 +1125,25 @@ struct BilibiliFavoriteImportSheet: View {
 
             HStack {
                 Button("刷新") { music.loadBilibiliFavoriteFolders() }
-                    .disabled(music.isLoadingBilibiliFavoriteFolders || music.isImportingBilibiliFavoriteFolder)
+                    .disabled(music.bilibiliImportStore.isLoadingFavoriteFolders || music.bilibiliImportStore.isImportingFavoriteFolder)
                 Spacer()
                 Button("完成") { isPresented = false }
-                    .disabled(music.isImportingBilibiliFavoriteFolder)
+                    .disabled(music.bilibiliImportStore.isImportingFavoriteFolder)
                 Button("一键导入") {
                     if let selectedFolder { music.importBilibiliFavoriteFolder(selectedFolder) }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedFolder == nil || music.isLoadingBilibiliFavoriteFolders || music.isImportingBilibiliFavoriteFolder)
+                .disabled(selectedFolder == nil || music.bilibiliImportStore.isLoadingFavoriteFolders || music.bilibiliImportStore.isImportingFavoriteFolder)
             }
         }
         .padding(20)
         .frame(width: 540, height: 500)
-        .interactiveDismissDisabled(music.isImportingBilibiliFavoriteFolder)
+        .interactiveDismissDisabled(music.bilibiliImportStore.isImportingFavoriteFolder)
         .onAppear {
-            if music.bilibiliFavoriteFolders.isEmpty { music.loadBilibiliFavoriteFolders() }
-            else { selectedFolderID = music.bilibiliFavoriteFolders.first?.id }
+            if music.bilibiliImportStore.favoriteFolders.isEmpty { music.loadBilibiliFavoriteFolders() }
+            else { selectedFolderID = music.bilibiliImportStore.favoriteFolders.first?.id }
         }
-        .onChange(of: music.bilibiliFavoriteFolders) { _, folders in
+        .onChange(of: music.bilibiliImportStore.favoriteFolders) { _, folders in
             if selectedFolderID == nil || !folders.contains(where: { $0.id == selectedFolderID }) {
                 selectedFolderID = folders.first?.id
             }
@@ -1144,12 +1152,12 @@ struct BilibiliFavoriteImportSheet: View {
 
     private var selectedFolder: BilibiliFavoriteFolder? {
         guard let selectedFolderID else { return nil }
-        return music.bilibiliFavoriteFolders.first { $0.id == selectedFolderID }
+        return music.bilibiliImportStore.favoriteFolders.first { $0.id == selectedFolderID }
     }
 }
 
 struct BilibiliLoginSheet: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @Binding var isPresented: Bool
 
     var body: some View {
@@ -1160,7 +1168,7 @@ struct BilibiliLoginSheet: View {
                 Spacer()
             }
 
-            if let account = music.bilibiliAccount {
+            if let account = music.bilibiliAccountStore.account {
                 VStack(spacing: 10) {
                     AsyncImage(url: account.avatarURL) { image in
                         image.resizable().scaledToFill()
@@ -1186,14 +1194,14 @@ struct BilibiliLoginSheet: View {
                 }
             } else {
                 Group {
-                    if let value = music.bilibiliQRCodeURL, let image = qrImage(from: value) {
+                    if let value = music.bilibiliAccountStore.qrCodeURL, let image = qrImage(from: value) {
                         Image(nsImage: image)
                             .interpolation(.none)
                             .resizable()
                             .frame(width: 190, height: 190)
                             .padding(10)
                             .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    } else if music.bilibiliLoginPhase == .requestingQRCode {
+                    } else if music.bilibiliAccountStore.loginPhase == .requestingQRCode {
                         ProgressView("正在生成二维码…")
                             .frame(width: 210, height: 210)
                     } else {
@@ -1216,10 +1224,10 @@ struct BilibiliLoginSheet: View {
                     Button("取消") { isPresented = false }
                         .keyboardShortcut(.cancelAction)
                     Spacer()
-                    Button(music.bilibiliQRCodeURL == nil ? "生成二维码" : "刷新二维码") {
+                    Button(music.bilibiliAccountStore.qrCodeURL == nil ? "生成二维码" : "刷新二维码") {
                         music.startBilibiliLogin()
                     }
-                    .disabled(music.bilibiliLoginPhase == .requestingQRCode)
+                    .disabled(music.bilibiliAccountStore.loginPhase == .requestingQRCode)
                     .keyboardShortcut(.defaultAction)
                 }
             }
@@ -1227,20 +1235,20 @@ struct BilibiliLoginSheet: View {
         .padding(24)
         .frame(width: 420)
         .onAppear {
-            if music.bilibiliAccount == nil,
-               music.bilibiliLoginPhase != .requestingQRCode,
-               music.bilibiliLoginPhase != .waitingForScan,
-               music.bilibiliLoginPhase != .waitingForConfirmation {
+            if music.bilibiliAccountStore.account == nil,
+               music.bilibiliAccountStore.loginPhase != .requestingQRCode,
+               music.bilibiliAccountStore.loginPhase != .waitingForScan,
+               music.bilibiliAccountStore.loginPhase != .waitingForConfirmation {
                 music.startBilibiliLogin()
             }
         }
         .onDisappear {
-            if music.bilibiliAccount == nil { music.cancelBilibiliLogin() }
+            if music.bilibiliAccountStore.account == nil { music.cancelBilibiliLogin() }
         }
     }
 
     private var loginStatusText: String {
-        switch music.bilibiliLoginPhase {
+        switch music.bilibiliAccountStore.loginPhase {
         case .loggedOut: return "尚未登录"
         case .requestingQRCode: return "正在连接哔哩哔哩…"
         case .waitingForScan: return "等待扫码"
@@ -1252,7 +1260,7 @@ struct BilibiliLoginSheet: View {
     }
 
     private var loginStatusColor: Color {
-        switch music.bilibiliLoginPhase {
+        switch music.bilibiliAccountStore.loginPhase {
         case .failed, .expired: return .orange
         case .waitingForConfirmation: return .blue
         default: return .secondary
@@ -1274,7 +1282,7 @@ struct BilibiliLoginSheet: View {
 }
 
 struct LyricOffsetControl: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     var compact = false
 
     private var offset: Binding<Double> {
@@ -1314,12 +1322,12 @@ struct LyricOffsetControl: View {
                     .disabled(abs(music.currentLyricOffset) < 0.001)
             }
         }
-        .disabled(music.currentTrack == nil)
+        .disabled(music.playback.currentTrack == nil)
     }
 }
 
 private struct LyricsSearchSheet: View {
-    @ObservedObject var music: MusicStore
+    @ObservedMusicFeature var music: MusicFeature
     @Binding var title: String
     @Binding var artist: String
     @Binding var isPresented: Bool
@@ -1336,7 +1344,7 @@ private struct LyricsSearchSheet: View {
                 TextField("歌手", text: $artist)
             }
             .formStyle(.grouped)
-            if let message = music.lyricsSearchMessage {
+            if let message = music.lyricsStore.searchMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(message.hasPrefix("已") ? .green : .orange)
@@ -1355,11 +1363,11 @@ private struct LyricsSearchSheet: View {
                 Button {
                     music.searchLyrics(title: title, artist: artist)
                 } label: {
-                    if music.isSearchingLyrics { ProgressView().controlSize(.small) }
+                    if music.lyricsStore.isSearching { ProgressView().controlSize(.small) }
                     else { Text("匹配并更新") }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(music.isSearchingLyrics || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(music.lyricsStore.isSearching || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(22)

@@ -27,6 +27,11 @@ enum PetLayout {
     static let bottomToolbarPanelPadding: CGFloat = 6
     static let bottomToolbarNormalBottomPadding: CGFloat = 6
     static let bottomToolbarChatBottomPadding: CGFloat = 70
+    static let lockedControlPanelSize = CGSize(width: 48, height: 48)
+    // The sprite artwork contains transparent pixels above the character.
+    // Slightly overlap that transparent area so the bubble appears attached
+    // to the visible character instead of floating far above it.
+    static let auxiliaryBubbleSpacing: CGFloat = -32
     static let compactSideControlsWidth: CGFloat = 48
     static let compactSideControlsInset: CGFloat = 8
     static var bottomToolbarPanelSize: CGSize {
@@ -35,6 +40,13 @@ enum PetLayout {
                 + bottomToolbarSpacing * CGFloat(bottomToolbarButtonCount - 1)
                 + bottomToolbarPanelPadding * 2,
             height: 70
+        )
+    }
+
+    static func auxiliaryBubblePanelSize(scale: Double) -> CGSize {
+        CGSize(
+            width: max(statusBubbleWidth(scale: scale), ambientBubbleWidth(scale: scale)),
+            height: bubbleHeight(scale: scale) + 18
         )
     }
     static let edgePeekSize = CGSize(width: 76, height: 76)
@@ -94,6 +106,43 @@ enum PetLayout {
             y: panelFrame.minY + (showsChat ? 58 : 0),
             width: petSize,
             height: petSize
+        )
+    }
+
+    static func panelOrigin(
+        preservingPetVisualFrame visualFrame: CGRect,
+        targetPanelSize: CGSize,
+        scale: Double,
+        showsChat: Bool
+    ) -> CGPoint {
+        let petSize = 326 * scale
+        return CGPoint(
+            x: visualFrame.minX - (targetPanelSize.width - petSize) / 2 - 35 * scale,
+            y: visualFrame.minY - (showsChat ? 58 : 0)
+        )
+    }
+
+    static func auxiliaryBubbleOrigin(
+        petVisualFrame: CGRect,
+        bubbleSize: CGSize,
+        visibleFrame: CGRect
+    ) -> CGPoint {
+        let proposedX = petVisualFrame.midX - bubbleSize.width / 2
+        let x = min(
+            max(proposedX, visibleFrame.minX),
+            max(visibleFrame.minX, visibleFrame.maxX - bubbleSize.width)
+        )
+        let aboveY = petVisualFrame.maxY + auxiliaryBubbleSpacing
+        if aboveY + bubbleSize.height <= visibleFrame.maxY {
+            return CGPoint(x: x, y: aboveY)
+        }
+        let belowY = petVisualFrame.minY - auxiliaryBubbleSpacing - bubbleSize.height
+        return CGPoint(
+            x: x,
+            y: min(
+                max(belowY, visibleFrame.minY),
+                max(visibleFrame.minY, visibleFrame.maxY - bubbleSize.height)
+            )
         )
     }
 

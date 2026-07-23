@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PetMaintenanceBubble: View {
     @ObservedObject var store: MaintenanceStore
+    @Environment(\.appActions) private var appActions
     @State private var expandedApplicationID: UUID?
 
     var body: some View {
@@ -20,7 +21,7 @@ struct PetMaintenanceBubble: View {
 
             if store.quickCompleted {
                 HStack {
-                    Button("查看操作记录") { store.openFullMaintenance(tab: 2) }
+                    Button("查看操作记录") { openMaintenance(tab: 2) }
                     Spacer()
                     Button("好呀～") { store.dismissQuick() }
                         .buttonStyle(.borderedProminent).tint(.pink)
@@ -84,7 +85,7 @@ struct PetMaintenanceBubble: View {
 
                 HStack {
                     Button("全选推荐") { store.selectRecommendedCleanup() }
-                    Button("打开完整清理屋") { store.openFullMaintenance(tab: 0) }
+                    Button("打开完整清理屋") { openMaintenance(tab: 0) }
                     Spacer()
                     Button("确认清理") { Task { await store.cleanSelected() } }
                         .buttonStyle(.borderedProminent).tint(.pink)
@@ -156,7 +157,7 @@ struct PetMaintenanceBubble: View {
                 .frame(maxHeight: 218)
 
                 HStack {
-                    Button("打开完整清理屋") { store.openFullMaintenance(tab: 1) }
+                    Button("打开完整清理屋") { openMaintenance(tab: 1) }
                     Spacer()
                     Button("确认移入废纸篓") { Task { await store.uninstallSelected() } }
                         .buttonStyle(.borderedProminent).tint(.pink)
@@ -250,7 +251,7 @@ struct PetMaintenanceBubble: View {
 
     private func emptyFooter(tab: Int) -> some View {
         HStack {
-            Button("打开完整清理屋") { store.openFullMaintenance(tab: tab) }
+            Button("打开完整清理屋") { openMaintenance(tab: tab) }
             Spacer()
             Button("关闭") { store.dismissQuick() }
         }
@@ -258,6 +259,11 @@ struct PetMaintenanceBubble: View {
 
     private func size(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func openMaintenance(tab: Int) {
+        store.dismissQuick()
+        appActions.open(.maintenance(tab: tab))
     }
 }
 
