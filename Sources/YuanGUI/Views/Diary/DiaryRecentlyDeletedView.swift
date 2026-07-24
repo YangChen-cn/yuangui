@@ -24,7 +24,7 @@ struct DiaryRecentlyDeletedView: View {
                         Button {
                             toggleSelectAll()
                         } label: {
-                            Image(systemName: allItemsSelected ? "list.bullet" : "checklist")
+                            Image(systemName: allItemsSelected ? "minus.square" : "checkmark.square")
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(width: 26, height: 22)
                         }

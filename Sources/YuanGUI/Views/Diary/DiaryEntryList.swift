@@ -92,7 +92,7 @@ struct DiaryEntryList: View {
                         Button {
                             toggleSelectAll()
                         } label: {
-                            Image(systemName: allVisibleEntriesSelected ? "list.bullet" : "checklist")
+                            Image(systemName: allVisibleEntriesSelected ? "minus.square" : "checkmark.square")
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(width: 26, height: 22)
                         }
