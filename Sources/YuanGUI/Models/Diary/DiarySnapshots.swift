@@ -11,6 +11,14 @@ enum DiaryMood: String, Codable, CaseIterable, Sendable {
     case anxious  // 😰 焦虑
     case excited  // 🤩 兴奋
     case neutral  // 😐 一般
+    case sweet    // 🥰 甜蜜
+    case touched  // 🥹 感动
+    case playful  // 😜 俏皮
+    case missing  // 🫶 想念
+    case tired    // 😴 疲惫
+    case surprised // 😮 惊喜
+    case confused // 😕 困惑
+    case wronged  // 🥺 委屈
 
     var emoji: String {
         switch self {
@@ -22,6 +30,14 @@ enum DiaryMood: String, Codable, CaseIterable, Sendable {
         case .anxious: "😰"
         case .excited: "🤩"
         case .neutral: "😐"
+        case .sweet: "🥰"
+        case .touched: "🥹"
+        case .playful: "😜"
+        case .missing: "🫶"
+        case .tired: "😴"
+        case .surprised: "😮"
+        case .confused: "😕"
+        case .wronged: "🥺"
         }
     }
 
@@ -35,6 +51,14 @@ enum DiaryMood: String, Codable, CaseIterable, Sendable {
         case .anxious: "焦虑"
         case .excited: "兴奋"
         case .neutral: "一般"
+        case .sweet: "甜蜜"
+        case .touched: "感动"
+        case .playful: "俏皮"
+        case .missing: "想念"
+        case .tired: "疲惫"
+        case .surprised: "惊喜"
+        case .confused: "困惑"
+        case .wronged: "委屈"
         }
     }
 }

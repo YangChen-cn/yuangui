@@ -22,10 +22,15 @@ struct DiaryEntryList: View {
             .padding(8)
 
             if store.filteredEntries.isEmpty {
-                ContentUnavailableView("没有日记", systemImage: "book.closed", description: Text("当前筛选条件下没有内容。"))
-                    .overlay(alignment: .bottom) {
-                        Button("记录这一刻", action: onCreateNew).buttonStyle(.borderedProminent).tint(.pink).padding(30)
-                    }
+                ContentUnavailableView {
+                    Label("还没有写下今天的故事", systemImage: "book.closed")
+                } description: {
+                    Text("记录一件刚刚发生的小事吧。")
+                } actions: {
+                    Button("记录这一刻", systemImage: "square.and.pencil", action: onCreateNew)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.pink)
+                }
             } else {
                 List(store.filteredEntries, selection: $store.selectedEntryID) { entry in
                     DiaryEntryRow(entry: entry)

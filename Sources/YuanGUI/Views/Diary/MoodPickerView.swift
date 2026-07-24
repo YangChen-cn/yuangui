@@ -5,32 +5,36 @@ struct MoodPickerView: View {
     @Binding var selectedMood: DiaryMood?
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(DiaryMood.allCases, id: \.self) { mood in
-                Button {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        selectedMood = selectedMood == mood ? nil : mood
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(DiaryMood.allCases, id: \.self) { mood in
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            selectedMood = selectedMood == mood ? nil : mood
+                        }
+                    } label: {
+                        Text(mood.emoji)
+                            .font(.system(size: selectedMood == mood ? 22 : 18))
+                            .frame(width: 32, height: 32)
+                            .background(
+                                selectedMood == mood
+                                    ? Color.pink.opacity(0.18)
+                                    : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(
+                                        selectedMood == mood ? Color.pink.opacity(0.5) : Color.clear,
+                                        lineWidth: 1.5
+                                    )
+                            )
                     }
-                } label: {
-                    Text(mood.emoji)
-                        .font(.system(size: selectedMood == mood ? 22 : 18))
-                        .frame(width: 32, height: 32)
-                        .background(
-                            selectedMood == mood
-                                ? Color.pink.opacity(0.18)
-                                : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(
-                                    selectedMood == mood ? Color.pink.opacity(0.5) : Color.clear,
-                                    lineWidth: 1.5
-                                )
-                        )
+                    .buttonStyle(.plain)
+                    .help(mood.title)
+                    .accessibilityLabel(mood.title)
+                    .accessibilityAddTraits(selectedMood == mood ? .isSelected : [])
                 }
-                .buttonStyle(.plain)
-                .help(mood.title)
             }
         }
     }

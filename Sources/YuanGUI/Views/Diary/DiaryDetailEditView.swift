@@ -199,11 +199,16 @@ struct DiaryAttachmentThumbnail: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Button(action: onOpen) {
-                Group {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.quaternary.opacity(0.45))
                     if let image {
-                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(4)
                     } else {
-                        Rectangle().fill(.quaternary).overlay(ProgressView().controlSize(.small))
+                        ProgressView().controlSize(.small)
                     }
                 }
                 .frame(width: 92, height: 92)

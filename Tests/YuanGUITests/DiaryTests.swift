@@ -90,6 +90,13 @@ final class DiaryEntryTests: XCTestCase {
 
 final class DiaryMoodTests: XCTestCase {
 
+    func testMoodSetProvidesBroadEverydayRange() {
+        XCTAssertGreaterThanOrEqual(DiaryMood.allCases.count, 16)
+        XCTAssertTrue(DiaryMood.allCases.contains(.sweet))
+        XCTAssertTrue(DiaryMood.allCases.contains(.tired))
+        XCTAssertTrue(DiaryMood.allCases.contains(.wronged))
+    }
+
     func testAllCasesHaveEmoji() {
         for mood in DiaryMood.allCases {
             XCTAssertFalse(mood.emoji.isEmpty, "\(mood) emoji 为空")
