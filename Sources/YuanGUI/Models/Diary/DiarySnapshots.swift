@@ -56,7 +56,11 @@ struct DiaryWeatherSnapshot: Codable, Equatable, Hashable, Sendable {
 struct DiaryMusicSnapshot: Codable, Equatable, Hashable, Sendable {
     let title: String
     let artist: String
-    /// 专辑封面文件名（可选）
-    let albumArt: String?
     let capturedAt: Date
+
+    init(title: String, artist: String, capturedAt: Date) {
+        self.title = title
+        self.artist = artist
+        self.capturedAt = capturedAt
+    }
 }

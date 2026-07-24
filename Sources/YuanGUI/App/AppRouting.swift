@@ -28,12 +28,12 @@ enum QuickToolRoute: Equatable, Sendable {
 struct AppActions: @unchecked Sendable {
     var open: @MainActor @Sendable (AppRoute) -> Void
     var runQuickTool: @MainActor @Sendable (QuickToolRoute) -> Void
-    var terminateForUpdate: @MainActor @Sendable () -> Void
+    var terminateForUpdate: @MainActor @Sendable () async -> Bool
 
     nonisolated static let disabled = AppActions(
         open: { _ in },
         runQuickTool: { _ in },
-        terminateForUpdate: {}
+        terminateForUpdate: { false }
     )
 }
 

@@ -1,102 +1,120 @@
 import SwiftUI
 
-/// 快速记录弹窗
 struct QuickDiaryEntryView: View {
     @ObservedObject var store: DiaryFeature
     let onSaved: () -> Void
-
-    @State private var entryBody: String = ""
-    @State private var mood: DiaryMood? = nil
-    @State private var tagText: String = ""
-    @State private var tags: [String] = []
     @Environment(\.dismiss) private var dismiss
+    @State private var bodyText = ""
+    @State private var mood: DiaryMood?
+    @State private var tagText = ""
+    @State private var tags: [String] = []
+    @State private var imageURLs: [URL] = []
+    @State private var clipboardImages: [DiaryImageDataSource] = []
+    @State private var failures: [DiaryImageImportFailure] = []
+    @State private var isSaving = false
+    @State private var entryID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 标题栏
             HStack {
-                Text("记录这一刻")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Text("记录这一刻").font(.headline)
                 Spacer()
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).disabled(isSaving)
             }
-
-            // 心情
             MoodPickerView(selectedMood: $mood)
-
-            // 正文
-            TextEditor(text: $entryBody)
+            TextEditor(text: $bodyText)
                 .font(.system(size: 13))
                 .scrollContentBackground(.hidden)
-                .frame(minHeight: 100)
-                .overlay(
-                    Group {
-                        if entryBody.isEmpty {
-                            Text("今天发生了什么…")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
-                                .allowsHitTesting(false)
-                        }
-                    },
-                    alignment: .topLeading
-                )
-
-            // 标签
-            HStack(spacing: 6) {
+                .frame(minHeight: 110)
+                .overlay(alignment: .topLeading) {
+                    if bodyText.isEmpty {
+                        Text("今天发生了什么…").foregroundStyle(.tertiary).padding(6).allowsHitTesting(false)
+                    }
+                }
+            FlowLayout(spacing: 6) {
                 ForEach(tags, id: \.self) { tag in
                     HStack(spacing: 3) {
-                        Text("#\(tag)")
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                        Button { tags.removeAll { $0 == tag } } label: {
-                            Image(systemName: "xmark").font(.system(size: 7, weight: .bold))
-                        }
-                        .buttonStyle(.plain)
+                        Text("#\(tag)").font(.caption)
+                        Button { tags.removeAll { $0 == tag } } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.pink.opacity(0.1), in: Capsule())
+                    .padding(.horizontal, 7).padding(.vertical, 3).background(.pink.opacity(0.1), in: Capsule())
                 }
-                TextField("标签", text: $tagText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11))
-                    .frame(width: 60)
-                    .onSubmit { addTag() }
+                TextField("标签", text: $tagText).textFieldStyle(.plain).frame(width: 70).onSubmit(addTag)
             }
-
-            // 保存按钮
             HStack {
+                Button { imageURLs.append(contentsOf: DiaryPanelService.chooseImages()) } label: {
+                    Label("照片", systemImage: "photo.badge.plus")
+                }
+                Button { pasteImage() } label: { Image(systemName: "doc.on.clipboard") }.help("从剪贴板添加")
+                if !imageURLs.isEmpty || !clipboardImages.isEmpty {
+                    Text("\(imageURLs.count + clipboardImages.count) 张待导入").font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
-                Button("保存") { save() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.pink)
-                    .disabled(entryBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(isSaving ? "保存中…" : "保存") { save() }
+                    .buttonStyle(.borderedProminent).tint(.pink)
+                    .disabled(isSaving || bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if !failures.isEmpty {
+                Text(failures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n"))
+                    .font(.caption).foregroundStyle(.orange)
             }
         }
         .padding(16)
-        .frame(width: 360, height: 320)
+        .frame(minWidth: 430, idealWidth: 430, maxWidth: 430, minHeight: 340)
+        .dropDestination(for: URL.self) { urls, _ in
+            imageURLs.append(contentsOf: urls)
+            return !urls.isEmpty
+        }
     }
 
     private func addTag() {
-        let tag = tagText.trimmingCharacters(in: .whitespaces)
-        guard !tag.isEmpty, !tags.contains(tag) else { return }
-        tags.append(tag)
+        let value = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        tags.append(value)
         tagText = ""
     }
 
+    private func pasteImage() {
+        guard let image = DiaryPanelService.clipboardImage() else {
+            failures = [DiaryImageImportFailure(name: "剪贴板", message: "没有可用图片")]
+            return
+        }
+        clipboardImages.append(image)
+    }
+
     private func save() {
-        var entry = store.createEntry()
-        entry.body = entryBody
-        entry.mood = mood
-        entry.tags = tags
-        store.updateEntry(entry)
-        onSaved()
-        dismiss()
+        isSaving = true
+        Task {
+            let entry: DiaryEntry
+            if let entryID, let existing = store.entries.first(where: { $0.id == entryID }) {
+                entry = existing
+            } else {
+                let created = store.createEntry()
+                entryID = created.id
+                entry = created
+            }
+            var draft = DiaryDraft(entry: entry)
+            draft.body = bodyText
+            draft.mood = mood
+            draft.tags = tags
+            store.updateDraft(draft)
+            var importFailures = await store.addImages(to: entry.id, urls: imageURLs)
+            importFailures += await store.addImageDataSources(to: entry.id, sources: clipboardImages)
+            imageURLs.removeAll()
+            clipboardImages.removeAll()
+            failures = importFailures
+            let didSave = await store.flush()
+            if didSave {
+                if !importFailures.isEmpty {
+                    store.operationError = importFailures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n")
+                }
+                onSaved()
+                dismiss()
+            } else {
+                failures.insert(DiaryImageImportFailure(name: "日记", message: "保存失败，请重试"), at: 0)
+                isSaving = false
+            }
+        }
     }
 }

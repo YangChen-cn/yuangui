@@ -13,7 +13,7 @@ final class QuickToolsTests: XCTestCase {
         let actions = AppActions(
             open: { opened.append($0) },
             runQuickTool: { tools.append($0) },
-            terminateForUpdate: {}
+            terminateForUpdate: { true }
         )
 
         actions.open(.maintenance(tab: 2))

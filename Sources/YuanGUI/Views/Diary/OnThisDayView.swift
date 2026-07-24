@@ -12,7 +12,7 @@ struct OnThisDayView: View {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 36))
                     .foregroundStyle(.tertiary)
-                Text("还没有去年的回忆哦～")
+                Text("还没有往年的今日回忆")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                 Text("一年后的今天，这里会显示你今天写下的日记")
@@ -36,7 +36,7 @@ struct OnThisDayView: View {
 
                     ForEach(entries) { entry in
                         OnThisDayCard(entry: entry) {
-                            store.selectedEntryID = entry.id
+                            store.navigate(to: entry.id)
                         }
                     }
                 }
@@ -77,8 +77,8 @@ private struct OnThisDayCard: View {
                     .multilineTextAlignment(.leading)
             }
             .padding(14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.pink.opacity(0.15), lineWidth: 1))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.pink.opacity(0.15), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -86,6 +86,7 @@ private struct OnThisDayCard: View {
     private var dateText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy年M月d日"
-        return formatter.string(from: entry.occurredAt)
+        let years = max(Calendar.current.dateComponents([.year], from: entry.occurredAt, to: Date()).year ?? 1, 1)
+        return "\(years) 年前 · \(formatter.string(from: entry.occurredAt))"
     }
 }

@@ -81,9 +81,7 @@ struct DiaryCalendarView: View {
     }
 
     private func selectDate(_ date: Date) {
-        if let entry = store.entries.first(where: { calendar.isDate($0.occurredAt, inSameDayAs: date) }) {
-            store.selectedEntryID = entry.id
-        }
+        store.selectDay(date)
     }
 
     private func changeMonth(_ offset: Int) {

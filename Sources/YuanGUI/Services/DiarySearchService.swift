@@ -1,17 +1,23 @@
 import Foundation
 
-/// 日记搜索与过滤服务（无状态，纯函数）
-struct DiarySearchService: Sendable {
+@MainActor
+final class DiarySearchService {
+    private struct CachedText {
+        let updatedAt: Date
+        let value: String
+    }
+
+    private var normalizedTextByEntryID: [UUID: CachedText] = [:]
 
     /// 全文搜索（标题 + 正文 + 标签）
     func search(query: String, in entries: [DiaryEntry]) -> [DiaryEntry] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return entries }
         let lowercased = trimmed.lowercased()
+        let currentIDs = Set(entries.map(\.id))
+        normalizedTextByEntryID = normalizedTextByEntryID.filter { currentIDs.contains($0.key) }
         return entries.filter { entry in
-            (entry.title?.lowercased().contains(lowercased) ?? false)
-                || entry.body.lowercased().contains(lowercased)
-                || entry.tags.contains(where: { $0.lowercased().contains(lowercased) })
+            normalizedText(for: entry).contains(lowercased)
         }
     }
 
@@ -57,6 +63,17 @@ struct DiarySearchService: Sendable {
             result = favorites(in: result)
         }
         return result
+    }
+
+    private func normalizedText(for entry: DiaryEntry) -> String {
+        if let cached = normalizedTextByEntryID[entry.id], cached.updatedAt == entry.updatedAt {
+            return cached.value
+        }
+        let value = [entry.title ?? "", entry.body, entry.tags.joined(separator: " ")]
+            .joined(separator: "\n")
+            .lowercased()
+        normalizedTextByEntryID[entry.id] = CachedText(updatedAt: entry.updatedAt, value: value)
+        return value
     }
 }
 

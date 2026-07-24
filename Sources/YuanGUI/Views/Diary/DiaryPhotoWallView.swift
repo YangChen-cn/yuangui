@@ -1,85 +1,71 @@
 import SwiftUI
 
-/// 照片墙视图
 struct DiaryPhotoWallView: View {
     @ObservedObject var store: DiaryFeature
-    private let columns = Array(repeating: GridItem(.adaptive(minimum: 120, maximum: 180), spacing: 8), count: 3)
+    @State private var selected: PhotoSelection?
+    private let columns = [GridItem(.adaptive(minimum: 130, maximum: 210), spacing: 10)]
+
+    private var photos: [PhotoSelection] {
+        store.entries.sorted { $0.occurredAt > $1.occurredAt }.flatMap { entry in
+            entry.attachments.map { PhotoSelection(entry: entry, attachment: $0) }
+        }
+    }
 
     var body: some View {
-        let allAttachments = store.entries
-            .sorted { $0.occurredAt > $1.occurredAt }
-            .flatMap { entry in entry.attachments.map { (entry, $0) } }
-
-        if allAttachments.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "photo.on.rectangle")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.tertiary)
-                Text("还没有照片")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Text("在日记中添加图片后会显示在这里")
-                    .font(.system(size: 12, design: .rounded))
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if photos.isEmpty {
+            ContentUnavailableView("还没有照片", systemImage: "photo.on.rectangle", description: Text("在日记中添加图片后会显示在这里。"))
         } else {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(allAttachments, id: \.1.id) { entry, attachment in
-                        PhotoCell(attachment: attachment, date: entry.occurredAt)
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(photos) { photo in
+                        Button { selected = photo } label: {
+                            PhotoCell(store: store, photo: photo)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(16)
+            }
+            .sheet(item: $selected) { photo in
+                DiaryAttachmentViewer(store: store, entry: photo.entry, attachment: photo.attachment) {
+                    store.navigate(to: photo.entry.id)
+                }
             }
         }
     }
 }
 
-private struct PhotoCell: View {
+private struct PhotoSelection: Identifiable {
+    let entry: DiaryEntry
     let attachment: DiaryAttachment
-    let date: Date
+    var id: UUID { attachment.id }
+}
+
+private struct PhotoCell: View {
+    let store: DiaryFeature
+    let photo: PhotoSelection
     @State private var image: NSImage?
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(minHeight: 120, maxHeight: 180)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            } else {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(.quaternary)
-                    .frame(height: 120)
-                    .overlay(ProgressView().controlSize(.mini))
+            Group {
+                if let image {
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    Rectangle().fill(.quaternary).overlay(ProgressView().controlSize(.small))
+                }
             }
-
-            // 日期水印
-            Text(dateWatermark)
-                .font(.system(size: 9, weight: .medium, design: .rounded))
+            .frame(height: 150)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            Text(photo.entry.occurredAt.formatted(.dateTime.month().day()))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 4))
-                .padding(6)
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
+                .padding(7)
         }
-        .onAppear { load() }
-    }
-
-    private var dateWatermark: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M/d"
-        return formatter.string(from: date)
-    }
-
-    private func load() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let thumbURL = appSupport
-            .appendingPathComponent("YuanGUI/Diary/Attachments/Thumbnails")
-            .appendingPathComponent(attachment.thumbnailFilename)
-        if let data = try? Data(contentsOf: thumbURL) {
+        .task(id: photo.id) {
+            guard let data = await store.thumbnailData(for: photo.attachment) else { return }
             image = NSImage(data: data)
         }
     }

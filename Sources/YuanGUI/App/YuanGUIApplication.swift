@@ -58,30 +58,48 @@ final class AppRuntime {
         diary: diary,
         externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
-        terminateForUpdate: { [weak self] in self?.prepareToTerminateForUpdate() }
+        terminateForUpdate: { [weak self] in
+            guard let self else { return false }
+            return await self.prepareToTerminateForUpdate()
+        }
     )
     private var terminationTask: Task<Void, Never>?
-    private var isPreparingUpdateTermination = false
-    private var isUpdateTerminationReady = false
+    private var workspaceObservers: [NSObjectProtocol] = []
 
     func start() {
         NSApp.setActivationPolicy(.accessory)
         windows.start()
         externalAudioInterruption.start()
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers = [
+            center.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in _ = await self?.diary.flush() }
+            },
+            center.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in _ = await self?.diary.flush() }
+            }
+        ]
     }
 
     func stop() {
         externalAudioInterruption.stop()
         windows.stop()
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach(center.removeObserver)
+        workspaceObservers.removeAll()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if isUpdateTerminationReady { return .terminateNow }
-        if isPreparingUpdateTermination { return .terminateLater }
         guard terminationTask == nil else { return .terminateLater }
         terminationTask = Task { [weak self] in
             guard let self else {
                 sender.reply(toApplicationShouldTerminate: true)
+                return
+            }
+            guard await diary.flush() else {
+                diary.operationError = "日记保存失败，已取消退出"
+                terminationTask = nil
+                sender.reply(toApplicationShouldTerminate: false)
                 return
             }
             externalAudioInterruption.stop()
@@ -91,20 +109,10 @@ final class AppRuntime {
         return .terminateLater
     }
 
-    private func prepareToTerminateForUpdate() {
-        guard !isPreparingUpdateTermination, !isUpdateTerminationReady else { return }
-        isPreparingUpdateTermination = true
-        terminationTask = Task { [weak self] in
-            guard let self else {
-                NSApp.terminate(nil)
-                return
-            }
-            externalAudioInterruption.stop()
-            await music.shutdown()
-            isUpdateTerminationReady = true
-            isPreparingUpdateTermination = false
-            NSApp.terminate(nil)
-        }
+    private func prepareToTerminateForUpdate() async -> Bool {
+        let saved = await diary.flush()
+        if !saved { diary.operationError = "日记保存失败，更新安装已取消" }
+        return saved
     }
 }
 
@@ -120,7 +128,7 @@ final class WindowCoordinator: NSObject {
     private let diary: DiaryFeature
     private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
-    private let terminateForUpdate: () -> Void
+    private let terminateForUpdate: () async -> Bool
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardController: StatusDashboardPanelController?
@@ -136,7 +144,10 @@ final class WindowCoordinator: NSObject {
     private lazy var actions = AppActions(
         open: { [weak self] route in self?.open(route) },
         runQuickTool: { [weak self] route in self?.runQuickTool(route) },
-        terminateForUpdate: { [weak self] in self?.terminateForUpdate() }
+        terminateForUpdate: { [weak self] in
+            guard let self else { return false }
+            return await self.terminateForUpdate()
+        }
     )
 
     init(
@@ -150,7 +161,7 @@ final class WindowCoordinator: NSObject {
         diary: DiaryFeature,
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
-        terminateForUpdate: @escaping () -> Void
+        terminateForUpdate: @escaping () async -> Bool
     ) {
         self.pet = pet
         self.aiSettings = aiSettings
@@ -226,8 +237,8 @@ final class WindowCoordinator: NSObject {
             DispatchQueue.main.async { [weak self] in self?.showMusic() }
         case .diary:
             dashboardController?.hide()
-            diary.loadFromDisk()
             showDiary()
+            Task { await diary.loadIfNeeded() }
         }
     }
 
@@ -253,7 +264,7 @@ final class WindowCoordinator: NSObject {
 
         let editItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
         let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "撤销", action: #selector(UndoManager.undo), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")

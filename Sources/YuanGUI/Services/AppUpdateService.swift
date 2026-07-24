@@ -237,6 +237,11 @@ actor AppUpdateService {
         return PreparedAppUpdate(sourceApp: sourceApp, targetApp: targetApp, mountPoint: mountPoint, dmgURL: dmgURL)
     }
 
+    func discard(_ update: PreparedAppUpdate) {
+        try? detach(update.mountPoint)
+        try? fileManager.removeItem(at: update.dmgURL.deletingLastPathComponent())
+    }
+
     private func installationTarget() -> URL {
         let current = Bundle.main.bundleURL
         if current.pathExtension.lowercased() == "app" { return current }
@@ -285,7 +290,7 @@ final class AppUpdateStore: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var latestRelease: GitHubRelease?
     private let service: AppUpdateService
-    private var terminateForUpdate: @MainActor () -> Void = {}
+    private var terminateForUpdate: @MainActor () async -> Bool = { false }
 
     init(service: AppUpdateService = AppUpdateService()) {
         self.service = service
@@ -293,7 +298,7 @@ final class AppUpdateStore: ObservableObject {
 
     var isBusy: Bool { state == .checking || state == .downloading || state == .installing }
 
-    func setTerminationHandler(_ handler: @escaping @MainActor () -> Void) {
+    func setTerminationHandler(_ handler: @escaping @MainActor () async -> Bool) {
         terminateForUpdate = handler
     }
 
@@ -318,8 +323,18 @@ final class AppUpdateStore: ObservableObject {
             do {
                 let prepared = try await service.prepare(release)
                 state = .installing
-                try launchInstaller(for: prepared)
-                terminateForUpdate()
+                guard await terminateForUpdate() else {
+                    await service.discard(prepared)
+                    state = .failed("日记保存失败，更新安装已取消。")
+                    return
+                }
+                do {
+                    try launchInstaller(for: prepared)
+                } catch {
+                    await service.discard(prepared)
+                    throw error
+                }
+                NSApp.terminate(nil)
             } catch {
                 state = .failed(error.localizedDescription)
             }

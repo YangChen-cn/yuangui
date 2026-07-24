@@ -1,20 +1,38 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// 导出视图
 struct DiaryExportView: View {
     @ObservedObject var store: DiaryFeature
     @Environment(\.dismiss) private var dismiss
-
-    @State private var exportFormat: ExportFormat = .markdown
-    @State private var exportScope: ExportScope = .all
-    @State private var isExporting = false
-    @State private var exportResult: ExportResult?
+    @State private var format: ExportFormat = .markdown
+    @State private var scope: ExportScope = .all
+    @State private var isWorking = false
+    @State private var resultURL: URL?
     @State private var errorMessage: String?
+    @State private var showRestoreConfirmation = false
+    @State private var restoreURL: URL?
 
     private enum ExportFormat: String, CaseIterable {
-        case markdown = "Markdown"
-        case json = "JSON"
-        case zip = "ZIP（含附件）"
+        case markdown = "Markdown 阅读版"
+        case json = "JSON 数据版"
+        case zip = "ZIP 完整导出"
+        case backup = "完整备份"
+
+        var fileExtension: String {
+            switch self {
+            case .markdown: "md"
+            case .json: "json"
+            case .zip, .backup: "zip"
+            }
+        }
+
+        var contentType: UTType {
+            switch self {
+            case .markdown: UTType(filenameExtension: "md") ?? .plainText
+            case .json: .json
+            case .zip, .backup: .zip
+            }
+        }
     }
 
     private enum ExportScope: String, CaseIterable {
@@ -24,88 +42,92 @@ struct DiaryExportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("导出手账")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-
-            // 格式选择
-            Picker("格式", selection: $exportFormat) {
+            Text("导出、备份与恢复").font(.headline)
+            Picker("格式", selection: $format) {
                 ForEach(ExportFormat.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            .pickerStyle(.segmented)
-
-            // 范围选择
-            Picker("范围", selection: $exportScope) {
-                ForEach(ExportScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            if format != .backup {
+                Picker("范围", selection: $scope) {
+                    ForEach(ExportScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
-
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(.orange)
             }
-
-            if let result = exportResult {
+            if let resultURL {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("导出成功", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.green)
-                    Text(result.url.path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    Button("在 Finder 中显示") {
-                        NSWorkspace.shared.activateFileViewerSelecting([result.url])
-                    }
-                    .controlSize(.small)
+                    Label("操作完成", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(resultURL.path).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
+                    Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([resultURL]) }
                 }
-                .padding(10)
-                .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
-
+            Divider()
             HStack {
+                Button("恢复备份…") {
+                    restoreURL = DiaryPanelService.chooseBackup()
+                    showRestoreConfirmation = restoreURL != nil
+                }
+                .disabled(isWorking)
                 Spacer()
-                Button("取消") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button(isExporting ? "导出中…" : "导出") { performExport() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.pink)
-                    .disabled(isExporting)
-                    .keyboardShortcut(.defaultAction)
+                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(isWorking ? "处理中…" : "选择位置并导出") { chooseAndExport() }
+                    .buttonStyle(.borderedProminent).tint(.pink).disabled(isWorking)
             }
         }
         .padding(20)
-        .frame(width: 400)
+        .frame(width: 480)
+        .confirmationDialog("恢复会替换当前手账数据", isPresented: $showRestoreConfirmation) {
+            Button("验证并恢复", role: .destructive) { restore() }
+            Button("取消", role: .cancel) { restoreURL = nil }
+        } message: {
+            Text("恢复前会完整验证备份；失败时自动回滚当前数据。")
+        }
     }
 
-    private func performExport() {
-        isExporting = true
+    private func chooseAndExport() {
+        let prefix = format == .backup ? "恋爱手账备份" : "恋爱手账"
+        let name = "\(prefix)-\(dateStamp()).\(format.fileExtension)"
+        guard let url = DiaryPanelService.saveDestination(suggestedName: name, contentType: format.contentType) else { return }
+        isWorking = true
         errorMessage = nil
-        exportResult = nil
-
+        resultURL = nil
         Task {
-            let entries = exportScope == .all ? store.entries : store.entries.filter(\.isFavorite)
-            let exportService = store.exportService()
-
             do {
-                let url: URL
-                switch exportFormat {
-                case .markdown:
-                    url = try exportService.exportMarkdown(entries: entries)
-                case .json:
-                    url = try exportService.exportJSON(entries: entries)
-                case .zip:
-                    url = try exportService.exportZIP(entries: entries)
+                let entries = scope == .all ? store.entries : store.entries.filter(\.isFavorite)
+                let result: URL
+                switch format {
+                case .markdown: result = try await store.exportMarkdown(to: url, entries: entries)
+                case .json: result = try await store.exportJSON(to: url, entries: entries)
+                case .zip: result = try await store.exportZIP(to: url, entries: entries)
+                case .backup: result = try await store.backup(to: url)
                 }
-                exportResult = ExportResult(url: url)
+                resultURL = result
             } catch {
                 errorMessage = "导出失败：\(error.localizedDescription)"
             }
-            isExporting = false
+            isWorking = false
         }
     }
-}
 
-private struct ExportResult {
-    let url: URL
+    private func restore() {
+        guard let restoreURL else { return }
+        isWorking = true
+        errorMessage = nil
+        Task {
+            do {
+                try await store.restoreBackup(from: restoreURL)
+                resultURL = restoreURL
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isWorking = false
+            self.restoreURL = nil
+        }
+    }
+
+    private func dateStamp() -> String {
+        Date().formatted(.iso8601.year().month().day().dateSeparator(.omitted))
+    }
 }
