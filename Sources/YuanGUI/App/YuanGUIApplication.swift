@@ -41,6 +41,10 @@ final class AppRuntime {
     lazy var chat = ChatStore(settings: aiSettings)
     lazy var maintenance = MaintenanceStore(pet: pet)
     lazy var music = MusicFeature()
+    lazy var diary = DiaryFeature(
+        weatherService: pet.weather,
+        musicFeature: music
+    )
     lazy var externalAudioInterruption = ExternalAudioInterruptionController(music: music)
     lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
     private lazy var windows = WindowCoordinator(
@@ -51,6 +55,7 @@ final class AppRuntime {
         chat: chat,
         maintenance: maintenance,
         music: music,
+        diary: diary,
         externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
         terminateForUpdate: { [weak self] in self?.prepareToTerminateForUpdate() }
@@ -112,6 +117,7 @@ final class WindowCoordinator: NSObject {
     private let chat: ChatStore
     private let maintenance: MaintenanceStore
     private let music: MusicFeature
+    private let diary: DiaryFeature
     private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
     private let terminateForUpdate: () -> Void
@@ -122,6 +128,7 @@ final class WindowCoordinator: NSObject {
     private var chatHistoryController: ChatHistoryWindowController?
     private var maintenanceController: MaintenanceWindowController?
     private var musicController: MusicWindowController?
+    private var diaryController: DiaryWindowController?
     private var lyricsController: LyricsPanelController?
     private var weatherStartupTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
@@ -140,6 +147,7 @@ final class WindowCoordinator: NSObject {
         chat: ChatStore,
         maintenance: MaintenanceStore,
         music: MusicFeature,
+        diary: DiaryFeature,
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
         terminateForUpdate: @escaping () -> Void
@@ -151,6 +159,7 @@ final class WindowCoordinator: NSObject {
         self.chat = chat
         self.maintenance = maintenance
         self.music = music
+        self.diary = diary
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
         self.terminateForUpdate = terminateForUpdate
@@ -177,6 +186,7 @@ final class WindowCoordinator: NSObject {
             guard !Task.isCancelled else { return }
             self?.pet.weather.start()
         }
+        diary.onSaved = { [weak self] in self?.pet.showDiarySavedMessage() }
         chat.$isPresented
             .removeDuplicates()
             .sink { [weak self] presented in
@@ -214,6 +224,10 @@ final class WindowCoordinator: NSObject {
         case .music:
             dashboardController?.hide()
             DispatchQueue.main.async { [weak self] in self?.showMusic() }
+        case .diary:
+            dashboardController?.hide()
+            diary.loadFromDisk()
+            showDiary()
         }
     }
 
@@ -253,6 +267,9 @@ final class WindowCoordinator: NSObject {
         toolsMenu.addItem(withTitle: "区域截图", action: #selector(startRegionScreenshot), keyEquivalent: "")
         toolsMenu.addItem(withTitle: "截图翻译", action: #selector(startScreenshotTranslation), keyEquivalent: "")
         toolsMenu.addItem(withTitle: "翻译所选文字", action: #selector(translateSelection), keyEquivalent: "")
+        toolsMenu.addItem(NSMenuItem.separator())
+        let diaryItem = toolsMenu.addItem(withTitle: "恋爱手账", action: #selector(showDiaryFromMenu), keyEquivalent: "d")
+        diaryItem.keyEquivalentModifierMask = [.command]
         for item in toolsMenu.items { item.target = self }
         toolsItem.submenu = toolsMenu
         mainMenu.addItem(toolsItem)
@@ -331,6 +348,13 @@ final class WindowCoordinator: NSObject {
         musicController?.show()
     }
 
+    private func showDiary() {
+        if diaryController == nil {
+            diaryController = DiaryWindowController(store: diary)
+        }
+        diaryController?.show()
+    }
+
     private func lyrics() -> LyricsPanelController {
         if let lyricsController { return lyricsController }
         let controller = LyricsPanelController(music: music)
@@ -348,5 +372,9 @@ final class WindowCoordinator: NSObject {
 
     @objc private func startScreenshotTranslation() {
         runQuickTool(.screenshotTranslation)
+    }
+
+    @objc private func showDiaryFromMenu() {
+        open(.diary)
     }
 }

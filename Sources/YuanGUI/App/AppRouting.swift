@@ -16,6 +16,7 @@ enum AppRoute: Equatable, Sendable {
     case chatHistory
     case maintenance(tab: Int)
     case music
+    case diary
 }
 
 enum QuickToolRoute: Equatable, Sendable {

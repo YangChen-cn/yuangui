@@ -64,13 +64,13 @@ struct PetBottomControlsView: View {
             }
 
             Button {
-                appActions.runQuickTool(.regionScreenshot)
+                appActions.open(.diary)
             } label: {
-                toolIcon("scissors", tint: .blue)
+                toolIcon("book.closed.fill", tint: .pink)
             }
             .buttonStyle(.plain)
-            .onHover { setTip($0 ? "区域截图" : nil) }
-            .help("区域截图并编辑")
+            .onHover { setTip($0 ? "恋爱手账" : nil) }
+            .help("打开恋爱手账")
 
             Button { store.toggleInteractionLock() } label: {
                 toolIcon(

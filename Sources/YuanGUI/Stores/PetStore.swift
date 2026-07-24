@@ -719,6 +719,18 @@ final class PetStore: ObservableObject {
         }
     }
 
+    /// 日记保存成功后的桌宠反馈
+    func showDiarySavedMessage() {
+        let messages = [
+            "这段回忆已经替你收好啦 💕",
+            "今天的日记写好了，开心！",
+            "又留下了一段美好的回忆～",
+            "记忆已珍藏 ✨",
+            "元圭帮你把日记收好了～"
+        ]
+        showAmbientMessage(messages.randomElement() ?? messages[0], duration: 6)
+    }
+
     private func scheduleNextAmbientChatter(initial: Bool = false) {
         guard taskAnimationsEnabled, ambientChatterEnabled, isPetPresented else { return }
         ambientChatterTask?.cancel()

@@ -178,7 +178,6 @@ NOTARY_PROFILE="your-notary-profile" \
 ```text
 YuanGUI/
 ├── .github/workflows/ # GitHub Actions 自动测试
-├── LICENSE            # GNU GPL v3 许可证全文
 ├── Package.swift
 ├── Sources/YuanGUI/
 │   ├── App/          # 应用入口与菜单栏
