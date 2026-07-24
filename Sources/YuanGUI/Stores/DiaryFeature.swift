@@ -299,6 +299,17 @@ final class DiaryFeature: ObservableObject {
         }
     }
 
+    @discardableResult
+    func deleteEntries(ids: Set<UUID>) async -> [DiaryDeletedItem] {
+        var deletedItems: [DiaryDeletedItem] = []
+        for id in ids {
+            if let deleted = await deleteEntry(id: id) {
+                deletedItems.append(deleted)
+            }
+        }
+        return deletedItems
+    }
+
     func restoreDeleted(id: UUID) async {
         do {
             let entry = try await repository.restoreDeleted(id: id)
@@ -311,6 +322,19 @@ final class DiaryFeature: ObservableObject {
         }
     }
 
+    @discardableResult
+    func restoreDeleted(ids: Set<UUID>) async -> Set<UUID> {
+        var restoredIDs = Set<UUID>()
+        for id in ids {
+            let wasPresent = recentlyDeletedItems.contains { $0.id == id }
+            await restoreDeleted(id: id)
+            if wasPresent, !recentlyDeletedItems.contains(where: { $0.id == id }) {
+                restoredIDs.insert(id)
+            }
+        }
+        return restoredIDs
+    }
+
     func permanentlyDelete(id: UUID) async {
         do {
             try await repository.permanentlyDelete(id: id)
@@ -318,6 +342,19 @@ final class DiaryFeature: ObservableObject {
         } catch {
             operationError = "彻底删除失败：\(error.localizedDescription)"
         }
+    }
+
+    @discardableResult
+    func permanentlyDelete(ids: Set<UUID>) async -> Set<UUID> {
+        var deletedIDs = Set<UUID>()
+        for id in ids {
+            let wasPresent = recentlyDeletedItems.contains { $0.id == id }
+            await permanentlyDelete(id: id)
+            if wasPresent, !recentlyDeletedItems.contains(where: { $0.id == id }) {
+                deletedIDs.insert(id)
+            }
+        }
+        return deletedIDs
     }
 
     func navigate(to id: UUID) {

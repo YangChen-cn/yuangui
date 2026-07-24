@@ -91,7 +91,7 @@ struct DiaryExportView: View {
     }
 
     private func chooseAndExport() {
-        let prefix = format == .backup ? "恋爱手账备份" : "恋爱手账"
+        let prefix = format == .backup ? "手帐本备份" : "手帐本"
         let name = "\(prefix)-\(dateStamp()).\(format.fileExtension)"
         guard let url = DiaryPanelService.saveDestination(suggestedName: name, contentType: format.contentType) else { return }
         isWorking = true

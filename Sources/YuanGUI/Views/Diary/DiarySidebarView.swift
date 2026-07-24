@@ -69,7 +69,7 @@ struct DiarySidebarView: View {
                 .font(.title2)
                 .foregroundStyle(Color.diaryAccent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("元圭恋爱手账")
+                Text("手帐本")
                     .font(.headline)
                 Text("珍藏属于我们的日常")
                     .font(.caption)

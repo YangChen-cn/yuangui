@@ -30,7 +30,7 @@ actor DiaryExportService {
         let resourceName = "\(destination.deletingPathExtension().lastPathComponent)-attachments"
         let resourceURL = work.appendingPathComponent(resourceName, isDirectory: true)
         try fileManager.createDirectory(at: resourceURL, withIntermediateDirectories: true)
-        var markdown = "# 元圭恋爱手账\n\n"
+        var markdown = "# 手帐本\n\n"
         markdown += "导出时间：\(DateFormatter.localizedString(from: Date(), dateStyle: .long, timeStyle: .short))\n\n"
         markdown += "共 \(entries.count) 条日记\n\n---\n\n"
         let formatter = DateFormatter()

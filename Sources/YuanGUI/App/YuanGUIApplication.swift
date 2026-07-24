@@ -286,7 +286,7 @@ final class WindowCoordinator: NSObject {
         toolsMenu.addItem(withTitle: "截图翻译", action: #selector(startScreenshotTranslation), keyEquivalent: "")
         toolsMenu.addItem(withTitle: "翻译所选文字", action: #selector(translateSelection), keyEquivalent: "")
         toolsMenu.addItem(NSMenuItem.separator())
-        let diaryItem = toolsMenu.addItem(withTitle: "恋爱手账", action: #selector(showDiaryFromMenu), keyEquivalent: "d")
+        let diaryItem = toolsMenu.addItem(withTitle: "手帐本", action: #selector(showDiaryFromMenu), keyEquivalent: "d")
         diaryItem.keyEquivalentModifierMask = [.command]
         for item in toolsMenu.items { item.target = self }
         toolsItem.submenu = toolsMenu

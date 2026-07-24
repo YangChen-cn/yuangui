@@ -177,7 +177,7 @@ struct MenuBarDashboardView: View {
             ) {
                 store.toggleDesktopIcons()
             }
-            toolButton("恋爱手账", subtitle: "记录恋爱日常", systemImage: "book.closed.fill", tint: .pink) {
+            toolButton("手帐本", subtitle: "记录恋爱日常", systemImage: "book.closed.fill", tint: .pink) {
                 launchTool { appActions.open(.diary) }
             }
             toolButton("设置", subtitle: "快捷键与偏好", systemImage: "gearshape.fill", tint: .secondary) {

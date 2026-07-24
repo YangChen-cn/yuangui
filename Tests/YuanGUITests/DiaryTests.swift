@@ -557,6 +557,33 @@ final class DiaryFeatureTests: XCTestCase {
         XCTAssertEqual(feature.entries.first?.id, entry.id)
     }
 
+    func testBatchDeleteRestoreAndPermanentDelete() async {
+        var first = feature.createEntry()
+        first.body = "第一篇"
+        feature.updateEntry(first)
+        var second = feature.createEntry()
+        second.body = "第二篇"
+        feature.updateEntry(second)
+        var third = feature.createEntry()
+        third.body = "第三篇"
+        feature.updateEntry(third)
+
+        let batchIDs = Set([first.id, second.id])
+        let deleted = await feature.deleteEntries(ids: batchIDs)
+        XCTAssertEqual(Set(deleted.map(\.id)), batchIDs)
+        XCTAssertEqual(feature.entries.map(\.id), [third.id])
+        XCTAssertEqual(Set(feature.recentlyDeletedItems.map(\.id)), batchIDs)
+
+        let restored = await feature.restoreDeleted(ids: batchIDs)
+        XCTAssertEqual(restored, batchIDs)
+        XCTAssertEqual(Set(feature.entries.map(\.id)), Set([first.id, second.id, third.id]))
+
+        _ = await feature.deleteEntries(ids: Set([third.id]))
+        let permanentlyDeleted = await feature.permanentlyDelete(ids: Set([third.id]))
+        XCTAssertEqual(permanentlyDeleted, Set([third.id]))
+        XCTAssertFalse(feature.recentlyDeletedItems.contains { $0.id == third.id })
+    }
+
     func testUndoManagerRestoresDeletedEntry() async throws {
         var entry = feature.createEntry()
         entry.body = "可撤销"

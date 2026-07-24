@@ -6,6 +6,10 @@ struct DiaryEntryList: View {
     @Environment(\.undoManager) private var undoManager
     @FocusState private var searchIsFocused: Bool
     @State private var pendingDelete: DiaryEntry?
+    @State private var pendingDeleteIDs = Set<UUID>()
+    @State private var selectedEntryIDs = Set<UUID>()
+    @State private var showBatchDeleteConfirmation = false
+    @State private var isSelectionMode = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +30,28 @@ struct DiaryEntryList: View {
         .confirmationDialog("将这篇日记移到最近删除？", item: $pendingDelete) { entry in
             Button("移到最近删除", role: .destructive) { delete(entry) }
             Button("取消", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "将 \(pendingDeleteIDs.count) 篇日记移到最近删除？",
+            isPresented: $showBatchDeleteConfirmation
+        ) {
+            Button("移到最近删除", role: .destructive) { deleteSelected() }
+            Button("取消", role: .cancel) {}
+        }
+        .onChange(of: selectedEntryIDs) { _, ids in
+            guard isSelectionMode else { return }
+            synchronizeStoreSelection(ids)
+        }
+        .onChange(of: visibleEntryIDs) { _, ids in
+            selectedEntryIDs.formIntersection(ids)
+        }
+        .onChange(of: store.selectedEntryID) { _, id in
+            guard !isSelectionMode, let id else { return }
+            selectedEntryIDs = [id]
+        }
+        .onChange(of: isSelectionMode) { _, enabled in
+            selectedEntryIDs.removeAll()
+            if enabled { pendingDeleteIDs.removeAll() }
         }
         .background {
             Button("") { searchIsFocused = true }
@@ -61,6 +87,37 @@ struct DiaryEntryList: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
+                if isSelectionMode {
+                    if !store.filteredEntries.isEmpty {
+                        Button {
+                            toggleSelectAll()
+                        } label: {
+                            Image(systemName: allVisibleEntriesSelected ? "list.bullet" : "checklist")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(width: 26, height: 22)
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help(allVisibleEntriesSelected ? "取消选择当前列表" : "选择当前列表")
+                        .accessibilityLabel(allVisibleEntriesSelected ? "反全选" : "全选")
+                    }
+                    if !selectedEntryIDs.isEmpty {
+                        Text("已选 \(selectedEntryIDs.count)")
+                            .foregroundStyle(.tertiary)
+                    }
+                    Button("完成") {
+                        isSelectionMode = false
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                } else {
+                    Button("选择", systemImage: "checklist") {
+                        isSelectionMode = true
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("选择多篇日记")
+                }
                 Text("\(store.filteredEntries.count) 篇")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.tertiary)
@@ -70,25 +127,69 @@ struct DiaryEntryList: View {
         .padding(.vertical, 9)
     }
 
+    @ViewBuilder
     private var timelineList: some View {
-        List(selection: $store.selectedEntryID) {
-            ForEach(groupedEntries) { section in
-                Section(section.title) {
-                    ForEach(section.entries) { entry in
-                        DiaryEntryRow(store: store, entry: entry)
-                            .tag(entry.id)
-                            .contextMenu {
-                                Button(entry.isFavorite ? "取消收藏" : "收藏") {
-                                    store.toggleFavorite(id: entry.id)
-                                }
-                                Divider()
-                                Button("删除…", role: .destructive) { pendingDelete = entry }
-                            }
+        if isSelectionMode {
+            List {
+                ForEach(groupedEntries) { section in
+                    Section(section.title) {
+                        ForEach(section.entries) { entry in
+                            selectionRow(entry)
+                        }
                     }
                 }
             }
+            .listStyle(.inset)
+            .contextMenu {
+                if !selectedEntryIDs.isEmpty {
+                    Button(allEntriesFavorited(selectedEntryIDs) ? "取消收藏所选" : "收藏所选") {
+                        toggleFavorite(for: selectedEntryIDs)
+                    }
+                    Divider()
+                    Button(selectedEntryIDs.count > 1 ? "删除所选…" : "删除…", role: .destructive) {
+                        pendingDeleteIDs = selectedEntryIDs
+                        showBatchDeleteConfirmation = true
+                    }
+                }
+            }
+        } else {
+            List(selection: $store.selectedEntryID) {
+                ForEach(groupedEntries) { section in
+                    Section(section.title) {
+                        ForEach(section.entries) { entry in
+                            DiaryEntryRow(store: store, entry: entry)
+                                .tag(entry.id)
+                                .contextMenu {
+                                    Button(entry.isFavorite ? "取消收藏" : "收藏") {
+                                        store.toggleFavorite(id: entry.id)
+                                    }
+                                    Divider()
+                                    Button("删除…", role: .destructive) { pendingDelete = entry }
+                                }
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
         }
-        .listStyle(.inset)
+    }
+
+    private func selectionRow(_ entry: DiaryEntry) -> some View {
+        let isSelected = selectedEntryIDs.contains(entry.id)
+        return HStack(spacing: 8) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isSelected ? Color.diaryAccent : .secondary)
+                .font(.title3)
+                .accessibilityHidden(true)
+            DiaryEntryRow(store: store, entry: entry)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { toggleEntrySelection(entry.id) }
+        .listRowBackground(isSelected ? Color.diarySelection : Color.clear)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { toggleEntrySelection(entry.id) }
+        .accessibilityLabel(entry.displayTitle.isEmpty ? "未命名日记" : entry.displayTitle)
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
     }
 
     private var groupedEntries: [DiaryTimelineGroup] {
@@ -110,6 +211,14 @@ struct DiaryEntryList: View {
         return "时间线"
     }
 
+    private var visibleEntryIDs: [UUID] {
+        store.filteredEntries.map(\.id)
+    }
+
+    private var allVisibleEntriesSelected: Bool {
+        !visibleEntryIDs.isEmpty && Set(visibleEntryIDs).isSubset(of: selectedEntryIDs)
+    }
+
     private var emptyTitle: String {
         store.searchText.isEmpty ? "还没有写下今天的故事" : "没有找到相关日记"
     }
@@ -121,8 +230,63 @@ struct DiaryEntryList: View {
     private func delete(_ entry: DiaryEntry) {
         Task {
             guard let deleted = await store.deleteEntry(id: entry.id) else { return }
+            selectedEntryIDs.remove(entry.id)
             undoManager?.registerUndo(withTarget: store) { target in
                 Task { await target.restoreDeleted(id: deleted.id) }
+            }
+            undoManager?.setActionName("恢复日记")
+        }
+    }
+
+    private func toggleSelectAll() {
+        let visibleIDs = Set(visibleEntryIDs)
+        if allVisibleEntriesSelected {
+            selectedEntryIDs.subtract(visibleIDs)
+        } else {
+            selectedEntryIDs.formUnion(visibleIDs)
+        }
+    }
+
+    private func toggleEntrySelection(_ id: UUID) {
+        if selectedEntryIDs.contains(id) {
+            selectedEntryIDs.remove(id)
+        } else {
+            selectedEntryIDs.insert(id)
+        }
+    }
+
+    private func allEntriesFavorited(_ ids: Set<UUID>) -> Bool {
+        !ids.isEmpty && ids.allSatisfy { id in
+            store.entries.first(where: { $0.id == id })?.isFavorite == true
+        }
+    }
+
+    private func toggleFavorite(for ids: Set<UUID>) {
+        let shouldFavorite = !allEntriesFavorited(ids)
+        for id in ids {
+            guard let entry = store.entries.first(where: { $0.id == id }),
+                  entry.isFavorite != shouldFavorite else { continue }
+            store.toggleFavorite(id: id)
+        }
+    }
+
+    private func synchronizeStoreSelection(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        if let current = store.selectedEntryID, ids.contains(current) { return }
+        store.selectedEntryID = ids.first
+    }
+
+    private func deleteSelected() {
+        let ids = pendingDeleteIDs
+        pendingDeleteIDs.removeAll()
+        guard !ids.isEmpty else { return }
+        Task {
+            let deletedItems = await store.deleteEntries(ids: ids)
+            guard !deletedItems.isEmpty else { return }
+            let deletedIDs = Set(deletedItems.map(\.id))
+            selectedEntryIDs.subtract(deletedIDs)
+            undoManager?.registerUndo(withTarget: store) { target in
+                Task { _ = await target.restoreDeleted(ids: deletedIDs) }
             }
             undoManager?.setActionName("恢复日记")
         }
