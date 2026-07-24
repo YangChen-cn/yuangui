@@ -10,6 +10,7 @@ private final class DiaryWindow: NSWindow {
 final class DiaryWindowController: NSObject, NSWindowDelegate {
     private let store: DiaryFeature
     private var window: NSWindow?
+    private var quickEntryWindow: NSWindow?
     private var allowClose = false
     private var closeTask: Task<Void, Never>?
 
@@ -48,12 +49,49 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         self.window = window
     }
 
+    func showQuickEntry() {
+        if let quickEntryWindow {
+            quickEntryWindow.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let window = DiaryWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 560),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "快速记录"
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 460, height: 470)
+        window.maxSize = NSSize(width: 620, height: 760)
+        window.setFrameAutosaveName("YuanGUI.QuickDiaryWindow")
+        if !window.setFrameUsingName("YuanGUI.QuickDiaryWindow") { window.center() }
+        window.delegate = self
+        window.contentView = NSHostingView(
+            rootView: QuickDiaryEntryView(
+                store: store,
+                onSaved: { [weak self] in self?.closeQuickEntry() },
+                onCancel: { [weak self] in self?.closeQuickEntry() },
+                onOpenFullDiary: { [weak self] in
+                    self?.closeQuickEntry()
+                    self?.show()
+                }
+            )
+        )
+        quickEntryWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if sender === quickEntryWindow { return true }
         if allowClose { return true }
         guard closeTask == nil else { return false }
         closeTask = Task { [weak self, weak sender] in
             guard let self, let sender else { return }
-            let saved = await store.flush()
+            let saved = await store.completeCurrentEditingSession()
             if saved {
                 finishClosing(sender)
             } else {
@@ -62,6 +100,12 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
             closeTask = nil
         }
         return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closedWindow = notification.object as? NSWindow,
+              closedWindow === quickEntryWindow else { return }
+        quickEntryWindow = nil
     }
 
     private func handleSaveFailure(window: NSWindow) async {
@@ -83,5 +127,12 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         allowClose = true
         window.performClose(nil)
         allowClose = false
+    }
+
+    private func closeQuickEntry() {
+        guard let quickEntryWindow else { return }
+        quickEntryWindow.delegate = nil
+        quickEntryWindow.close()
+        self.quickEntryWindow = nil
     }
 }

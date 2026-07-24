@@ -4,6 +4,10 @@ struct DiaryMetadataSection: View {
     let weather: DiaryWeatherSnapshot?
     let music: DiaryMusicSnapshot?
     @Binding var locationName: String
+    let onUseCurrentLocation: () async -> String?
+
+    @State private var isLocating = false
+    @State private var locationError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -27,6 +31,22 @@ struct DiaryMetadataSection: View {
                         .foregroundStyle(.secondary)
                     TextField("记录地点", text: $locationName)
                         .textFieldStyle(.plain)
+                    Button { useCurrentLocation() } label: {
+                        if isLocating {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "location.fill")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLocating)
+                    .help("使用当前位置")
+                    .accessibilityLabel("使用当前位置")
+                }
+                if let locationError {
+                    Label(locationError, systemImage: "location.slash")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
             .font(.subheadline)
@@ -44,5 +64,18 @@ struct DiaryMetadataSection: View {
                 .frame(width: 16)
         }
         .foregroundStyle(.secondary)
+    }
+
+    private func useCurrentLocation() {
+        isLocating = true
+        locationError = nil
+        Task {
+            if let resolved = await onUseCurrentLocation() {
+                locationName = resolved
+            } else {
+                locationError = "无法获取当前位置"
+            }
+            isLocating = false
+        }
     }
 }

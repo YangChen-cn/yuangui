@@ -35,8 +35,9 @@ final class DiaryFeature: ObservableObject {
     private var autoSaveTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var debouncedSearchText = ""
+    private var feedbackPendingEntryIDs = Set<UUID>()
 
-    var onSaved: (() -> Void)?
+    var onEntryCompleted: (() -> Void)?
 
     init(
         repository: DiaryRepository,
@@ -82,6 +83,29 @@ final class DiaryFeature: ObservableObject {
     var selectedEntry: DiaryEntry? {
         guard let selectedEntryID else { return nil }
         return entries.first { $0.id == selectedEntryID }
+    }
+
+    var currentWeatherSnapshot: DiaryWeatherSnapshot? {
+        guard let weather = weatherService?.snapshot,
+              weather.temperature > -50,
+              weather.temperature < 60 else { return nil }
+        return DiaryWeatherSnapshot(
+            temperature: weather.temperature,
+            condition: weather.condition.title,
+            icon: weather.condition.symbol,
+            capturedAt: Date()
+        )
+    }
+
+    var currentMusicSnapshot: DiaryMusicSnapshot? {
+        Self.diaryMusicSnapshot(
+            track: musicFeature?.playback.currentTrack,
+            isPlaying: musicFeature?.playback.isPlaying == true
+        )
+    }
+
+    var currentLocationName: String? {
+        normalizedLocationName(weatherService?.locationName)
     }
 
     var filteredEntries: [DiaryEntry] {
@@ -134,20 +158,37 @@ final class DiaryFeature: ObservableObject {
 
     func createEntry(occurredAt: Date = Date()) -> DiaryEntry {
         var entry = DiaryEntry(occurredAt: occurredAt)
-        if let weather = weatherService?.snapshot, weather.temperature > -50, weather.temperature < 60 {
-            entry.weather = DiaryWeatherSnapshot(
-                temperature: weather.temperature,
-                condition: weather.condition.title,
-                icon: weather.condition.symbol,
-                capturedAt: Date()
-            )
-        }
-        if let track = musicFeature?.playback.currentTrack, !track.title.isEmpty {
-            entry.music = DiaryMusicSnapshot(title: track.title, artist: track.artist, capturedAt: Date())
-        }
+        entry.weather = currentWeatherSnapshot
+        entry.music = currentMusicSnapshot
         entries.insert(entry, at: 0)
         selectedEntryID = entry.id
         return entry
+    }
+
+    func requestCurrentLocationName() async -> String? {
+        guard let weatherService else { return nil }
+        if let locationName = normalizedLocationName(weatherService.locationName) {
+            return locationName
+        }
+        weatherService.start()
+        weatherService.refresh()
+        for _ in 0..<24 {
+            if case .locationDenied = weatherService.status { return nil }
+            try? await Task.sleep(for: .milliseconds(250))
+            if let locationName = normalizedLocationName(weatherService.locationName) {
+                return locationName
+            }
+        }
+        return nil
+    }
+
+    static func diaryMusicSnapshot(
+        track: MusicTrack?,
+        isPlaying: Bool,
+        capturedAt: Date = Date()
+    ) -> DiaryMusicSnapshot? {
+        guard isPlaying, let track, !track.title.isEmpty else { return nil }
+        return DiaryMusicSnapshot(title: track.title, artist: track.artist, capturedAt: capturedAt)
     }
 
     func updateEntry(_ entry: DiaryEntry) {
@@ -248,6 +289,7 @@ final class DiaryFeature: ObservableObject {
             let deleted = try await repository.moveToRecentlyDeleted(entry)
             entries.removeAll { $0.id == id }
             dirtyEntryIDs.remove(id)
+            feedbackPendingEntryIDs.remove(id)
             if selectedEntryID == id { selectedEntryID = filteredEntries.first?.id ?? entries.first?.id }
             recentlyDeletedItems.insert(deleted, at: 0)
             return deleted
@@ -330,6 +372,28 @@ final class DiaryFeature: ObservableObject {
         return await saveDirtyEntries(ids: dirtyEntryIDs)
     }
 
+    @discardableResult
+    func completeEditingSession(id: UUID) async -> Bool {
+        let shouldPresentFeedback = feedbackPendingEntryIDs.remove(id) != nil
+        let didSave = await flush()
+        guard didSave else {
+            if shouldPresentFeedback { feedbackPendingEntryIDs.insert(id) }
+            return false
+        }
+        if shouldPresentFeedback,
+           let entry = entries.first(where: { $0.id == id }),
+           entry.hasPersistableContent {
+            onEntryCompleted?()
+        }
+        return true
+    }
+
+    @discardableResult
+    func completeCurrentEditingSession() async -> Bool {
+        guard let selectedEntryID else { return await flush() }
+        return await completeEditingSession(id: selectedEntryID)
+    }
+
     func exportMarkdown(to url: URL, entries: [DiaryEntry]) async throws -> URL {
         try await exportService.exportMarkdown(entries: entries, to: url)
     }
@@ -376,11 +440,13 @@ final class DiaryFeature: ObservableObject {
             .sorted { $0.occurredAt > $1.occurredAt }
         recoveredFiles = report.recoveredFiles
         dirtyEntryIDs.removeAll()
+        feedbackPendingEntryIDs.removeAll()
         selectedEntryID = entries.first?.id
     }
 
     private func markDirty(_ id: UUID, schedule: Bool = true) {
         dirtyEntryIDs.insert(id)
+        feedbackPendingEntryIDs.insert(id)
         if schedule { scheduleAutoSave() }
     }
 
@@ -418,7 +484,6 @@ final class DiaryFeature: ObservableObject {
         dirtyEntryIDs.subtract(report.savedIDs)
         if report.succeeded {
             saveState = .saved(Date())
-            onSaved?()
             return true
         }
         saveState = .failed(report.failures.map { $0.message }.joined(separator: "\n"))
@@ -437,6 +502,12 @@ final class DiaryFeature: ObservableObject {
             if result.count == 20 { break }
         }
         return result
+    }
+
+    private func normalizedLocationName(_ value: String?) -> String? {
+        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let normalized, !normalized.isEmpty else { return nil }
+        return normalized
     }
 }
 

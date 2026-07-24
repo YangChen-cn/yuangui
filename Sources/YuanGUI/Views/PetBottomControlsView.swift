@@ -64,13 +64,13 @@ struct PetBottomControlsView: View {
             }
 
             Button {
-                appActions.open(.diary)
+                appActions.open(.quickDiary)
             } label: {
-                toolIcon("book.closed.fill", tint: .pink)
+                toolIcon("square.and.pencil", tint: .pink)
             }
             .buttonStyle(.plain)
-            .onHover { setTip($0 ? "恋爱手账" : nil) }
-            .help("打开恋爱手账")
+            .onHover { setTip($0 ? "快速记录" : nil) }
+            .help("快速记录这一刻")
 
             Button { store.toggleInteractionLock() } label: {
                 toolIcon(

@@ -34,6 +34,12 @@ struct DiaryDetailEditView: View {
             VStack(alignment: .leading, spacing: DiaryDesign.sectionSpacing) {
                 pageHeader
                 Divider().opacity(0.65)
+                DiaryMetadataSection(
+                    weather: entry.weather,
+                    music: entry.music,
+                    locationName: $draft.locationName,
+                    onUseCurrentLocation: { await store.requestCurrentLocationName() }
+                )
                 titleEditor
                 bodyEditor
                 DiaryPhotoGrid(
@@ -44,11 +50,6 @@ struct DiaryDetailEditView: View {
                     onRemove: { attachment in
                         Task { await store.removeAttachment(from: entry.id, attachmentID: attachment.id) }
                     }
-                )
-                DiaryMetadataSection(
-                    weather: entry.weather,
-                    music: entry.music,
-                    locationName: $draft.locationName
                 )
                 tagEditor
                 pageFooter
@@ -66,6 +67,9 @@ struct DiaryDetailEditView: View {
             return !urls.isEmpty
         }
         .onChange(of: draft) { _, value in store.updateDraft(value) }
+        .onDisappear {
+            Task { await store.completeEditingSession(id: entry.id) }
+        }
         .onExitCommand {
             if isFocusMode { onFocusModeChange(false) }
         }
@@ -81,7 +85,7 @@ struct DiaryDetailEditView: View {
     }
 
     private var pageHeader: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(draft.occurredAt.formatted(.dateTime.year().month(.wide).day()))
                     .font(.title2.weight(.semibold))
@@ -89,18 +93,17 @@ struct DiaryDetailEditView: View {
                     Text(draft.occurredAt.formatted(.dateTime.weekday(.wide)))
                         .foregroundStyle(.secondary)
                     Text("·").foregroundStyle(.tertiary)
-                    DatePicker(
-                        "日期与时间",
-                        selection: $draft.occurredAt,
-                        displayedComponents: [.date, .hourAndMinute]
-                    )
-                    .labelsHidden()
-                    .controlSize(.small)
+                    Text(draft.occurredAt.formatted(date: .omitted, time: .shortened))
+                        .foregroundStyle(.secondary)
                 }
                 .font(.subheadline)
             }
 
-            Spacer(minLength: 12)
+            MoodPickerView(selectedMood: $draft.mood)
+                .frame(minWidth: 120, maxWidth: 310)
+                .accessibilityLabel("心情")
+
+            Spacer(minLength: 0)
 
             HStack(spacing: 8) {
                 Button { changeEditorMode() } label: {

@@ -37,6 +37,19 @@ final class FakeDesktopIconManager: DesktopIconManaging {
 
 @MainActor
 final class PetStoreTests: XCTestCase {
+    func testDiarySavedMessagesAreDistinctForEveryPetMode() {
+        let yuanGuiMessages = Set(PetStore.diarySavedMessages(for: .yuanGui))
+        let vccMessages = Set(PetStore.diarySavedMessages(for: .vcc))
+        let duoMessages = Set(PetStore.diarySavedMessages(for: .duo))
+
+        XCTAssertFalse(yuanGuiMessages.isEmpty)
+        XCTAssertFalse(vccMessages.isEmpty)
+        XCTAssertFalse(duoMessages.isEmpty)
+        XCTAssertTrue(yuanGuiMessages.isDisjoint(with: vccMessages))
+        XCTAssertTrue(yuanGuiMessages.isDisjoint(with: duoMessages))
+        XCTAssertTrue(vccMessages.isDisjoint(with: duoMessages))
+    }
+
     func testFreshStoreDefaultsToDuo() {
         let fake = FakeTrashHandler()
         let suite = "PetStoreTests-\(UUID().uuidString)"

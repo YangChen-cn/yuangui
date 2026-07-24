@@ -197,7 +197,7 @@ final class WindowCoordinator: NSObject {
             guard !Task.isCancelled else { return }
             self?.pet.weather.start()
         }
-        diary.onSaved = { [weak self] in self?.pet.showDiarySavedMessage() }
+        diary.onEntryCompleted = { [weak self] in self?.pet.showDiarySavedMessage() }
         chat.$isPresented
             .removeDuplicates()
             .sink { [weak self] presented in
@@ -239,6 +239,13 @@ final class WindowCoordinator: NSObject {
             dashboardController?.hide()
             showDiary()
             Task { await diary.loadIfNeeded() }
+        case .quickDiary:
+            dashboardController?.hide()
+            Task { [weak self] in
+                guard let self else { return }
+                await diary.loadIfNeeded()
+                showQuickDiary()
+            }
         }
     }
 
@@ -364,6 +371,13 @@ final class WindowCoordinator: NSObject {
             diaryController = DiaryWindowController(store: diary)
         }
         diaryController?.show()
+    }
+
+    private func showQuickDiary() {
+        if diaryController == nil {
+            diaryController = DiaryWindowController(store: diary)
+        }
+        diaryController?.showQuickEntry()
     }
 
     private func lyrics() -> LyricsPanelController {

@@ -36,7 +36,12 @@ struct DiaryMainView: View {
         .tint(.diaryAccent)
         .toolbar { diaryToolbar }
         .sheet(isPresented: $showExport) { DiaryExportView(store: store) }
-        .sheet(isPresented: $showQuickEntry) { QuickDiaryEntryView(store: store) {} }
+        .sheet(isPresented: $showQuickEntry) {
+            QuickDiaryEntryView(
+                store: store,
+                onOpenFullDiary: { showQuickEntry = false }
+            )
+        }
         .task { await store.loadIfNeeded() }
         .alert("操作失败", isPresented: operationErrorBinding) {
             Button("好", role: .cancel) { store.operationError = nil }

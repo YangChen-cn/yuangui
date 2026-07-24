@@ -721,14 +721,31 @@ final class PetStore: ObservableObject {
 
     /// 日记保存成功后的桌宠反馈
     func showDiarySavedMessage() {
-        let messages = [
-            "这段回忆已经替你收好啦 💕",
-            "今天的日记写好了，开心！",
-            "又留下了一段美好的回忆～",
-            "记忆已珍藏 ✨",
-            "元圭帮你把日记收好了～"
-        ]
+        let messages = Self.diarySavedMessages(for: mode)
         showAmbientMessage(messages.randomElement() ?? messages[0], duration: 6)
+    }
+
+    static func diarySavedMessages(for mode: PetMode) -> [String] {
+        switch mode {
+        case .yuanGui:
+            [
+                "这一页我替你收好了。以后再翻开，也会记得今天。",
+                "写下来的心事，就不会轻易走丢啦。",
+                "今天的故事已经珍藏好啦，我会陪你记住它。"
+            ]
+        case .vcc:
+            [
+                "喵！VCC 已经在这一页盖好爪印啦！",
+                "日记收好啦，VCC 保证不拿它垫猫窝。",
+                "这一篇归档完毕，奖励你摸一下 VCC！"
+            ]
+        case .duo:
+            [
+                "这一段日常，我们一起替你珍藏好啦。",
+                "元圭收好文字，VCC 负责守住这份回忆。",
+                "今天的故事保存好啦，我们以后再一起翻看。"
+            ]
+        }
     }
 
     private func scheduleNextAmbientChatter(initial: Bool = false) {

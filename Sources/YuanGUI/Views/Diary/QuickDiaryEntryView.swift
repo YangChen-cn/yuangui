@@ -3,11 +3,17 @@ import SwiftUI
 struct QuickDiaryEntryView: View {
     @ObservedObject var store: DiaryFeature
     let onSaved: () -> Void
+    let onCancel: () -> Void
+    let onOpenFullDiary: () -> Void
+    private let recordedAt: Date
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var bodyIsFocused: Bool
     @State private var bodyText = ""
     @State private var mood: DiaryMood?
+    @State private var momentWeather: DiaryWeatherSnapshot?
+    @State private var momentMusic: DiaryMusicSnapshot?
+    @State private var locationName: String
     @State private var tagText = ""
     @State private var tags: [String] = []
     @State private var imageURLs: [URL] = []
@@ -16,35 +22,65 @@ struct QuickDiaryEntryView: View {
     @State private var isSaving = false
     @State private var entryID: UUID?
 
+    init(
+        store: DiaryFeature,
+        onSaved: @escaping () -> Void = {},
+        onCancel: @escaping () -> Void = {},
+        onOpenFullDiary: @escaping () -> Void = {}
+    ) {
+        let recordedAt = Date()
+        self.store = store
+        self.onSaved = onSaved
+        self.onCancel = onCancel
+        self.onOpenFullDiary = onOpenFullDiary
+        self.recordedAt = recordedAt
+        _momentWeather = State(initialValue: store.currentWeatherSnapshot)
+        _momentMusic = State(initialValue: store.currentMusicSnapshot)
+        _locationName = State(initialValue: store.currentLocationName ?? "")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-            VStack(alignment: .leading, spacing: 8) {
-                DiarySectionLabel(title: "心情", systemImage: "face.smiling")
-                MoodPickerView(selectedMood: $mood)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    VStack(alignment: .leading, spacing: 8) {
+                        DiarySectionLabel(title: "心情", systemImage: "face.smiling")
+                        MoodPickerView(selectedMood: $mood)
+                    }
+                    DiaryMetadataSection(
+                        weather: momentWeather,
+                        music: momentMusic,
+                        locationName: $locationName,
+                        onUseCurrentLocation: { await store.requestCurrentLocationName() }
+                    )
+                    bodyEditor
+                    tagsEditor
+                    photoActions
+                    if !failures.isEmpty {
+                        Label(
+                            failures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n"),
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    }
+                }
+                .padding(22)
             }
-            bodyEditor
-            tagsEditor
-            photoActions
-            if !failures.isEmpty {
-                Label(
-                    failures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n"),
-                    systemImage: "exclamationmark.triangle"
-                )
-                .font(.caption)
-                .foregroundStyle(.orange)
-            }
+            Divider()
             saveBar
+                .padding(.horizontal, 22)
+                .padding(.vertical, 14)
         }
-        .padding(22)
-        .frame(minWidth: 460, idealWidth: 500, maxWidth: 540, minHeight: 400)
+        .frame(minWidth: 460, idealWidth: 500, maxWidth: 540, minHeight: 470)
         .tint(.diaryAccent)
         .dropDestination(for: URL.self) { urls, _ in
             imageURLs.append(contentsOf: urls)
             return !urls.isEmpty
         }
         .onAppear { bodyIsFocused = true }
-        .onExitCommand { if !isSaving { dismiss() } }
+        .onExitCommand { if !isSaving { cancel() } }
     }
 
     private var header: some View {
@@ -53,12 +89,12 @@ struct QuickDiaryEntryView: View {
                 Label("记录这一刻", systemImage: "heart.text.square.fill")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(Color.diaryAccent)
-                Text(Date().formatted(.dateTime.month(.wide).day().weekday(.wide)))
+                Text(recordedAt.formatted(.dateTime.month(.wide).day().weekday(.wide).hour().minute()))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button { dismiss() } label: { Image(systemName: "xmark") }
+            Button { cancel() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .disabled(isSaving)
@@ -122,6 +158,8 @@ struct QuickDiaryEntryView: View {
 
     private var saveBar: some View {
         HStack {
+            Button("完整编辑", systemImage: "rectangle.split.3x1") { continueInFullDiary() }
+                .disabled(isSaving)
             Spacer()
             Button(isSaving ? "保存中…" : "保存这一刻", systemImage: "checkmark") { save() }
                 .buttonStyle(.borderedProminent)
@@ -150,25 +188,10 @@ struct QuickDiaryEntryView: View {
     private func save() {
         isSaving = true
         Task {
-            let entry: DiaryEntry
-            if let entryID, let existing = store.entries.first(where: { $0.id == entryID }) {
-                entry = existing
-            } else {
-                let created = store.createEntry()
-                entryID = created.id
-                entry = created
-            }
-            var draft = DiaryDraft(entry: entry)
-            draft.body = bodyText
-            draft.mood = mood
-            draft.tags = tags
-            store.updateDraft(draft)
-            var importFailures = await store.addImages(to: entry.id, urls: imageURLs)
-            importFailures += await store.addImageDataSources(to: entry.id, sources: clipboardImages)
-            imageURLs.removeAll()
-            clipboardImages.removeAll()
+            let entry = prepareEntry()
+            let importFailures = await importPendingImages(to: entry.id)
             failures = importFailures
-            let didSave = await store.flush()
+            let didSave = await store.completeEditingSession(id: entry.id)
             if didSave {
                 if !importFailures.isEmpty {
                     store.operationError = importFailures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n")
@@ -180,5 +203,52 @@ struct QuickDiaryEntryView: View {
                 isSaving = false
             }
         }
+    }
+
+    private func continueInFullDiary() {
+        isSaving = true
+        Task {
+            let entry = prepareEntry()
+            let importFailures = await importPendingImages(to: entry.id)
+            if !importFailures.isEmpty {
+                store.operationError = importFailures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n")
+            }
+            onOpenFullDiary()
+            dismiss()
+        }
+    }
+
+    private func prepareEntry() -> DiaryEntry {
+        let entry: DiaryEntry
+        if let entryID, let existing = store.entries.first(where: { $0.id == entryID }) {
+            entry = existing
+        } else {
+            var created = store.createEntry(occurredAt: recordedAt)
+            created.weather = momentWeather
+            created.music = momentMusic
+            store.updateEntry(created)
+            entryID = created.id
+            entry = created
+        }
+        var draft = DiaryDraft(entry: entry)
+        draft.body = bodyText
+        draft.mood = mood
+        draft.tags = tags
+        draft.locationName = locationName
+        store.updateDraft(draft)
+        return entry
+    }
+
+    private func importPendingImages(to entryID: UUID) async -> [DiaryImageImportFailure] {
+        var importFailures = await store.addImages(to: entryID, urls: imageURLs)
+        importFailures += await store.addImageDataSources(to: entryID, sources: clipboardImages)
+        imageURLs.removeAll()
+        clipboardImages.removeAll()
+        return importFailures
+    }
+
+    private func cancel() {
+        onCancel()
+        dismiss()
     }
 }

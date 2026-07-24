@@ -468,6 +468,41 @@ final class DiaryFeatureTests: XCTestCase {
         XCTAssertTrue(feature.entries.first?.isFavorite == true)
     }
 
+    func testMusicSnapshotRequiresActivePlayback() {
+        let track = MusicTrack.appleMusic(
+            title: "正在听的歌",
+            artist: "歌手",
+            album: nil,
+            duration: 180
+        )
+        let capturedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertNil(DiaryFeature.diaryMusicSnapshot(track: track, isPlaying: false, capturedAt: capturedAt))
+        let snapshot = DiaryFeature.diaryMusicSnapshot(track: track, isPlaying: true, capturedAt: capturedAt)
+        XCTAssertEqual(snapshot?.title, "正在听的歌")
+        XCTAssertEqual(snapshot?.artist, "歌手")
+        XCTAssertEqual(snapshot?.capturedAt, capturedAt)
+    }
+
+    func testAutoSaveWaitsForEditingCompletionBeforePresentingFeedback() async {
+        var feedbackCount = 0
+        feature.onEntryCompleted = { feedbackCount += 1 }
+        let entry = feature.createEntry()
+        var draft = DiaryDraft(entry: entry)
+        draft.body = "今天的故事"
+        feature.updateDraft(draft)
+
+        let autoSaved = await feature.flush()
+        XCTAssertTrue(autoSaved)
+        XCTAssertEqual(feedbackCount, 0)
+        let firstCompletion = await feature.completeEditingSession(id: entry.id)
+        XCTAssertTrue(firstCompletion)
+        XCTAssertEqual(feedbackCount, 1)
+        let repeatedCompletion = await feature.completeEditingSession(id: entry.id)
+        XCTAssertTrue(repeatedCompletion)
+        XCTAssertEqual(feedbackCount, 1)
+    }
+
     func testTagsAreNormalizedAndLimited() {
         let entry = feature.createEntry()
         var draft = DiaryDraft(entry: entry)
