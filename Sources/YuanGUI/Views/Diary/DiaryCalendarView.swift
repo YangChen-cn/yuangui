@@ -1,62 +1,71 @@
 import SwiftUI
 
-/// 日历浏览视图
 struct DiaryCalendarView: View {
     @ObservedObject var store: DiaryFeature
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedMonth = Date()
 
     private let calendar = Calendar.current
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 5), count: 7)
 
     var body: some View {
-        VStack(spacing: 12) {
-            // 月份导航
-            HStack {
-                Button { changeMonth(-1) } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
-                }.buttonStyle(.plain)
-                Spacer()
-                Text(monthTitle).font(.system(size: 15, weight: .bold, design: .rounded))
-                Spacer()
-                Button { changeMonth(1) } label: {
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
-                }.buttonStyle(.plain)
-            }
-
-            // 星期头
-            HStack {
-                ForEach(["日", "一", "二", "三", "四", "五", "六"], id: \.self) { day in
-                    Text(day)
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-
-            // 日期网格
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(daysInMonth, id: \.self) { date in
-                    if let date {
-                        DayCell(
-                            date: date,
-                            hasEntry: hasEntry(on: date),
-                            isToday: calendar.isDateInToday(date)
-                        ) {
-                            selectDate(date)
+        ScrollView {
+            VStack(spacing: 18) {
+                monthHeader
+                weekdayHeader
+                LazyVGrid(columns: columns, spacing: 5) {
+                    ForEach(Array(daysInMonth.enumerated()), id: \.offset) { _, date in
+                        if let date {
+                            DiaryCalendarDayCell(
+                                date: date,
+                                entries: entries(on: date),
+                                isToday: calendar.isDateInToday(date),
+                                action: { store.selectDay(date) }
+                            )
+                        } else {
+                            Color.clear.frame(minHeight: 72)
                         }
-                    } else {
-                        Color.clear.frame(height: 36)
                     }
                 }
+                .id(selectedMonth)
+                .transition(.opacity)
             }
+            .padding(DiaryDesign.pagePadding)
+            .frame(maxWidth: DiaryDesign.pageMaximumWidth)
+            .diaryPageStyle()
+            .padding(24)
+            .frame(maxWidth: .infinity)
         }
-        .padding(16)
+        .background(Color.secondary.opacity(0.025))
     }
 
-    private var monthTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月"
-        return formatter.string(from: selectedMonth)
+    private var monthHeader: some View {
+        HStack {
+            Button { changeMonth(-1) } label: { Image(systemName: "chevron.left") }
+                .help("上个月")
+                .accessibilityLabel("上个月")
+            Spacer()
+            VStack(spacing: 3) {
+                Text(selectedMonth.formatted(.dateTime.year().month(.wide)))
+                    .font(.title2.weight(.semibold))
+            }
+            Spacer()
+            Button { changeMonth(1) } label: { Image(systemName: "chevron.right") }
+                .help("下个月")
+                .accessibilityLabel("下个月")
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private var weekdayHeader: some View {
+        HStack {
+            ForEach(["日", "一", "二", "三", "四", "五", "六"], id: \.self) { day in
+                Text(day)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+            }
+        }
     }
 
     private var daysInMonth: [Date?] {
@@ -64,57 +73,69 @@ struct DiaryCalendarView: View {
               let firstDay = calendar.date(from: calendar.dateComponents([.year, .month], from: selectedMonth))
         else { return [] }
 
-        let weekday = calendar.component(.weekday, from: firstDay)
-        let leadingBlanks = weekday - 1
-
+        let leadingBlanks = calendar.component(.weekday, from: firstDay) - 1
         var days: [Date?] = Array(repeating: nil, count: leadingBlanks)
-        for day in range {
-            if let date = calendar.date(byAdding: .day, value: day - 1, to: firstDay) {
-                days.append(date)
-            }
-        }
+        days += range.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: firstDay) }
         return days
     }
 
-    private func hasEntry(on date: Date) -> Bool {
-        store.entries.contains { calendar.isDate($0.occurredAt, inSameDayAs: date) }
-    }
-
-    private func selectDate(_ date: Date) {
-        store.selectDay(date)
+    private func entries(on date: Date) -> [DiaryEntry] {
+        store.entries.filter { calendar.isDate($0.occurredAt, inSameDayAs: date) }
     }
 
     private func changeMonth(_ offset: Int) {
-        if let newDate = calendar.date(byAdding: .month, value: offset, to: selectedMonth) {
+        guard let newDate = calendar.date(byAdding: .month, value: offset, to: selectedMonth) else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: DiaryDesign.animationDuration)) {
             selectedMonth = newDate
         }
     }
 }
 
-private struct DayCell: View {
+private struct DiaryCalendarDayCell: View {
     let date: Date
-    let hasEntry: Bool
+    let entries: [DiaryEntry]
     let isToday: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text("\(Calendar.current.component(.day, from: date))")
-                .font(.system(size: 12, weight: isToday ? .bold : .medium, design: .rounded))
-                .foregroundStyle(isToday ? .white : .primary)
-                .frame(height: 36)
-                .frame(maxWidth: .infinity)
-                .background(
-                    isToday ? Color.pink : (hasEntry ? Color.pink.opacity(0.12) : Color.clear),
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
-                .overlay(
-                    hasEntry && !isToday
-                        ? Circle().fill(Color.pink).frame(width: 4, height: 4)
-                        : nil,
-                    alignment: .bottom
-                )
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("\(Calendar.current.component(.day, from: date))")
+                        .font(.subheadline.weight(isToday ? .bold : .medium))
+                    Spacer(minLength: 2)
+                    if let mood = entries.first?.mood {
+                        Text(mood.emoji).font(.caption)
+                    }
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 5) {
+                    if !entries.isEmpty {
+                        Text("\(entries.count) 篇")
+                    }
+                    if entries.contains(where: { !$0.attachments.isEmpty }) {
+                        Image(systemName: "photo.fill")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .padding(7)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
+            .background(entries.isEmpty ? Color.clear : Color.diarySelection)
+            .clipShape(RoundedRectangle(cornerRadius: DiaryDesign.smallCornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: DiaryDesign.smallCornerRadius)
+                    .stroke(isToday ? Color.diaryAccent : Color.diaryBorder, lineWidth: isToday ? 1.5 : 0.5)
+            }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        let dateText = date.formatted(.dateTime.month().day())
+        let moodText = entries.first?.mood?.title ?? ""
+        return "\(dateText)，\(entries.count) 篇日记\(moodText.isEmpty ? "" : "，心情\(moodText)")"
     }
 }

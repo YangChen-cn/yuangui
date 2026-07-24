@@ -4,69 +4,71 @@ import UniformTypeIdentifiers
 struct DiaryDetailEditView: View {
     @ObservedObject var store: DiaryFeature
     let entry: DiaryEntry
+    let isFocusMode: Bool
+    let onFocusModeChange: (Bool) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
     @State private var draft: DiaryDraft
+    @State private var editorMode: DiaryEditorMode = .edit
     @State private var newTag = ""
-    @State private var showPreview = false
     @State private var showDeleteConfirmation = false
     @State private var importFailures: [DiaryImageImportFailure] = []
     @State private var selectedAttachment: DiaryAttachment?
 
-    init(store: DiaryFeature, entry: DiaryEntry) {
+    init(
+        store: DiaryFeature,
+        entry: DiaryEntry,
+        isFocusMode: Bool = false,
+        onFocusModeChange: @escaping (Bool) -> Void = { _ in }
+    ) {
         self.store = store
         self.entry = entry
+        self.isFocusMode = isFocusMode
+        self.onFocusModeChange = onFocusModeChange
         _draft = State(initialValue: DiaryDraft(entry: entry))
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 10) {
-                        DatePicker("", selection: $draft.occurredAt, displayedComponents: [.date, .hourAndMinute])
-                            .labelsHidden()
-                        MoodPickerView(selectedMood: $draft.mood)
+        ScrollView {
+            VStack(alignment: .leading, spacing: DiaryDesign.sectionSpacing) {
+                pageHeader
+                Divider().opacity(0.65)
+                titleEditor
+                bodyEditor
+                DiaryPhotoGrid(
+                    store: store,
+                    attachments: entry.attachments,
+                    onAdd: chooseImages,
+                    onOpen: { selectedAttachment = $0 },
+                    onRemove: { attachment in
+                        Task { await store.removeAttachment(from: entry.id, attachmentID: attachment.id) }
                     }
-                    HStack(spacing: 8) {
-                        WeatherCardView(weather: entry.weather)
-                        MusicCardView(music: entry.music)
-                        Spacer()
-                    }
-                    TextField("标题（可选）", text: $draft.title)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
-                    Label {
-                        TextField("地点（可选）", text: $draft.locationName).textFieldStyle(.plain)
-                    } icon: {
-                        Image(systemName: "mappin.and.ellipse").foregroundStyle(.secondary)
-                    }
-                    tagEditor
-                    if showPreview {
-                        DiaryMarkdownPreview(markdown: draft.body).frame(minHeight: 260)
-                    } else {
-                        TextEditor(text: $draft.body)
-                            .font(.system(.body, design: .monospaced))
-                            .scrollContentBackground(.hidden)
-                            .frame(minHeight: 260)
-                    }
-                    attachmentSection
-                    if !importFailures.isEmpty {
-                        Label(importFailures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n"), systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                )
+                DiaryMetadataSection(
+                    weather: entry.weather,
+                    music: entry.music,
+                    locationName: $draft.locationName
+                )
+                tagEditor
+                pageFooter
             }
-            .dropDestination(for: URL.self) { urls, _ in
-                importImages(urls)
-                return !urls.isEmpty
-            }
+            .padding(DiaryDesign.pagePadding)
+            .frame(maxWidth: DiaryDesign.pageMaximumWidth, alignment: .leading)
+            .diaryPageStyle()
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity)
+        }
+        .background(Color.secondary.opacity(0.025))
+        .dropDestination(for: URL.self) { urls, _ in
+            importImages(urls)
+            return !urls.isEmpty
         }
         .onChange(of: draft) { _, value in store.updateDraft(value) }
+        .onExitCommand {
+            if isFocusMode { onFocusModeChange(false) }
+        }
         .confirmationDialog("将这篇日记移到最近删除？", isPresented: $showDeleteConfirmation) {
             Button("移到最近删除", role: .destructive) { deleteEntry() }
             Button("取消", role: .cancel) {}
@@ -78,79 +80,145 @@ struct DiaryDetailEditView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Text(entry.mood?.emoji ?? "📝")
-            Text(entry.displayTitle).font(.system(size: 13, weight: .semibold, design: .rounded)).lineLimit(1)
-            Spacer()
-            Button { chooseImages() } label: { Image(systemName: "photo.badge.plus") }
-                .help("添加照片")
-            Button { pasteImage() } label: { Image(systemName: "doc.on.clipboard") }
-                .help("从剪贴板添加照片")
-                .keyboardShortcut("v", modifiers: [.command, .shift])
-            Button { showPreview.toggle() } label: { Image(systemName: showPreview ? "pencil" : "eye") }
-                .help(showPreview ? "编辑" : "预览")
-            Button { store.toggleFavorite(id: entry.id) } label: {
-                Image(systemName: entry.isFavorite ? "star.fill" : "star")
-                    .foregroundStyle(entry.isFavorite ? .yellow : .secondary)
+    private var pageHeader: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(draft.occurredAt.formatted(.dateTime.year().month(.wide).day()))
+                    .font(.title2.weight(.semibold))
+                HStack(spacing: 6) {
+                    Text(draft.occurredAt.formatted(.dateTime.weekday(.wide)))
+                        .foregroundStyle(.secondary)
+                    Text("·").foregroundStyle(.tertiary)
+                    DatePicker(
+                        "日期与时间",
+                        selection: $draft.occurredAt,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .labelsHidden()
+                    .controlSize(.small)
+                }
+                .font(.subheadline)
             }
-            .help(entry.isFavorite ? "取消收藏" : "收藏")
-            Button { showDeleteConfirmation = true } label: { Image(systemName: "trash") }
-                .foregroundStyle(.secondary)
-                .help("删除")
+
+            Spacer(minLength: 12)
+
+            HStack(spacing: 8) {
+                Button { changeEditorMode() } label: {
+                    Image(systemName: editorMode == .edit ? "eye" : "pencil")
+                }
+                .help(editorMode == .edit ? "预览" : "编辑")
+                .accessibilityLabel(editorMode == .edit ? "预览日记" : "编辑日记")
+
+                Button { onFocusModeChange(!isFocusMode) } label: {
+                    Image(systemName: isFocusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                }
+                .help(isFocusMode ? "退出专注模式" : "进入专注模式")
+                .accessibilityLabel(isFocusMode ? "退出专注模式" : "进入专注模式")
+
+                Button { store.toggleFavorite(id: entry.id) } label: {
+                    Image(systemName: entry.isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(entry.isFavorite ? .yellow : .secondary)
+                }
+                .help(entry.isFavorite ? "取消收藏" : "收藏")
+                .accessibilityLabel(entry.isFavorite ? "取消收藏" : "收藏")
+
+                Menu {
+                    Button("添加照片…", systemImage: "photo.badge.plus", action: chooseImages)
+                    Button("从剪贴板添加", systemImage: "doc.on.clipboard", action: pasteImage)
+                        .keyboardShortcut("v", modifiers: [.command, .shift])
+                    Divider()
+                    Button("移到最近删除…", systemImage: "trash", role: .destructive) {
+                        showDeleteConfirmation = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("更多操作")
+                .accessibilityLabel("更多操作")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        .animation(reduceMotion ? nil : .easeInOut(duration: DiaryDesign.animationDuration), value: isFocusMode)
+    }
+
+    private var titleEditor: some View {
+        TextField("为这一刻写个标题（可选）", text: $draft.title)
+            .textFieldStyle(.plain)
+            .font(.title.weight(.semibold))
+            .accessibilityLabel("日记标题")
+    }
+
+    @ViewBuilder
+    private var bodyEditor: some View {
+        if editorMode == .preview {
+            DiaryMarkdownPreview(markdown: draft.body)
+                .frame(maxWidth: .infinity, minHeight: 340, alignment: .topLeading)
+                .transition(.opacity)
+        } else {
+            TextEditor(text: $draft.body)
+                .font(.body)
+                .lineSpacing(6)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 340)
+                .overlay(alignment: .topLeading) {
+                    if draft.body.isEmpty {
+                        Text("写下今天发生的事…")
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 7)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .transition(.opacity)
+                .accessibilityLabel("日记正文")
+        }
     }
 
     private var tagEditor: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(draft.tags, id: \.self) { tag in
-                HStack(spacing: 4) {
-                    Text("#\(tag)").font(.caption)
-                    Button { draft.tags.removeAll { $0 == tag } } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: DiaryDesign.compactSpacing) {
+            DiarySectionLabel(title: "标签", systemImage: "tag")
+            FlowLayout(spacing: 6) {
+                ForEach(draft.tags, id: \.self) { tag in
+                    DiaryTagChip(tag: tag) {
+                        draft.tags.removeAll { $0 == tag }
+                    }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.pink.opacity(0.1), in: Capsule())
+                TextField("添加标签", text: $newTag)
+                    .textFieldStyle(.plain)
+                    .frame(width: 90)
+                    .onSubmit(addTag)
             }
-            TextField("添加标签", text: $newTag)
-                .textFieldStyle(.plain)
-                .frame(width: 80)
-                .onSubmit { addTag() }
         }
     }
 
-    private var attachmentSection: some View {
+    private var pageFooter: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !importFailures.isEmpty {
+                Label(
+                    importFailures.map { "\($0.name)：\($0.message)" }.joined(separator: "\n"),
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
             HStack {
-                Text("照片").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("\(draft.body.count) 字")
+                    .foregroundStyle(.tertiary)
                 Spacer()
-                Text("\(entry.attachments.count)/\(DiaryAttachmentStore.maximumAttachmentsPerEntry)")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-            if entry.attachments.isEmpty {
-                Button { chooseImages() } label: {
-                    Label("添加照片，或从 Finder 拖到这里", systemImage: "photo.badge.plus")
-                        .frame(maxWidth: .infinity, minHeight: 70)
-                }
-                .buttonStyle(.bordered)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(entry.attachments) { attachment in
-                            DiaryAttachmentThumbnail(store: store, attachment: attachment) {
-                                selectedAttachment = attachment
-                            } onRemove: {
-                                Task { await store.removeAttachment(from: entry.id, attachmentID: attachment.id) }
-                            }
-                        }
-                    }
+                DiarySaveStatusView(state: store.saveState) {
+                    Task { _ = await store.flush() }
                 }
             }
+            .font(.caption)
+        }
+    }
+
+    private func changeEditorMode() {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: DiaryDesign.animationDuration)) {
+            editorMode = editorMode == .edit ? .preview : .edit
         }
     }
 
@@ -189,119 +257,7 @@ struct DiaryDetailEditView: View {
     }
 }
 
-struct DiaryAttachmentThumbnail: View {
-    let store: DiaryFeature
-    let attachment: DiaryAttachment
-    let onOpen: () -> Void
-    let onRemove: () -> Void
-    @State private var image: NSImage?
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button(action: onOpen) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.quaternary.opacity(0.45))
-                    if let image {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .padding(4)
-                    } else {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                .frame(width: 92, height: 92)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-            .buttonStyle(.plain)
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.55))
-            }
-            .buttonStyle(.plain)
-            .offset(x: 4, y: -4)
-        }
-        .task(id: attachment.id) {
-            guard let data = await store.thumbnailData(for: attachment) else { return }
-            image = NSImage(data: data)
-        }
-    }
-}
-
-struct DiaryAttachmentViewer: View {
-    let store: DiaryFeature
-    let entry: DiaryEntry
-    let attachment: DiaryAttachment
-    let onOpenEntry: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var image: NSImage?
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(entry.displayTitle).font(.headline)
-                    Text(entry.occurredAt.formatted(date: .long, time: .shortened)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
-            }
-            Group {
-                if let image {
-                    Image(nsImage: image).resizable().scaledToFit()
-                } else {
-                    ProgressView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Button("打开所属日记") {
-                onOpenEntry()
-                dismiss()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.pink)
-        }
-        .padding(16)
-        .frame(minWidth: 640, minHeight: 480)
-        .task {
-            guard let data = await store.attachmentData(for: attachment) else { return }
-            image = NSImage(data: data)
-        }
-    }
-}
-
-struct FlowLayout: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrange(proposal: proposal, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = arrange(proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews)
-        for (index, subview) in subviews.enumerated() {
-            subview.place(at: CGPoint(x: bounds.minX + result.offsets[index].x, y: bounds.minY + result.offsets[index].y), proposal: .unspecified)
-        }
-    }
-
-    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (offsets: [CGPoint], size: CGSize) {
-        let maxWidth = proposal.width ?? .infinity
-        var offsets: [CGPoint] = []
-        var cursor = CGPoint.zero
-        var lineHeight: CGFloat = 0
-        var width: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if cursor.x > 0, cursor.x + size.width > maxWidth {
-                cursor.x = 0
-                cursor.y += lineHeight + spacing
-                lineHeight = 0
-            }
-            offsets.append(cursor)
-            cursor.x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-            width = max(width, cursor.x - spacing)
-        }
-        return (offsets, CGSize(width: width, height: cursor.y + lineHeight))
-    }
+private enum DiaryEditorMode {
+    case edit
+    case preview
 }

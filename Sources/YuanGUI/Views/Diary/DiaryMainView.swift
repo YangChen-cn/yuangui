@@ -2,37 +2,39 @@ import SwiftUI
 
 struct DiaryMainView: View {
     @ObservedObject var store: DiaryFeature
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var previousColumnVisibility: NavigationSplitViewVisibility = .all
+    @State private var isFocusMode = false
     @State private var showExport = false
     @State private var showQuickEntry = false
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             DiarySidebarView(store: store)
-                .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
+                .navigationSplitViewColumnWidth(
+                    min: DiaryDesign.sidebarMinimumWidth,
+                    ideal: DiaryDesign.sidebarIdealWidth,
+                    max: DiaryDesign.sidebarMaximumWidth
+                )
         } content: {
-            DiaryEntryList(store: store) { _ = store.createEntry() }
-                .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 360)
+            DiaryEntryList(store: store) {
+                store.clearFilters()
+                _ = store.createEntry()
+            }
+                .navigationSplitViewColumnWidth(
+                    min: DiaryDesign.listMinimumWidth,
+                    ideal: DiaryDesign.listIdealWidth,
+                    max: DiaryDesign.listMaximumWidth
+                )
         } detail: {
             detail
+                .navigationSplitViewColumnWidth(
+                    min: DiaryDesign.editorMinimumWidth,
+                    ideal: DiaryDesign.pageMaximumWidth + 48
+                )
         }
-        .toolbar {
-            ToolbarItemGroup {
-                Button { _ = store.createEntry() } label: { Image(systemName: "plus") }
-                    .help("新建日记")
-                Button { showQuickEntry = true } label: { Image(systemName: "bolt") }
-                    .help("快速记录")
-                Picker("视图", selection: $store.viewMode) {
-                    ForEach(DiaryFeature.ViewMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 390)
-                saveStatus
-                Button { showExport = true } label: { Image(systemName: "square.and.arrow.up") }
-                    .help("导出与备份")
-            }
-        }
+        .tint(.diaryAccent)
+        .toolbar { diaryToolbar }
         .sheet(isPresented: $showExport) { DiaryExportView(store: store) }
         .sheet(isPresented: $showQuickEntry) { QuickDiaryEntryView(store: store) {} }
         .task { await store.loadIfNeeded() }
@@ -43,6 +45,35 @@ struct DiaryMainView: View {
         }
     }
 
+    @ToolbarContentBuilder
+    private var diaryToolbar: some ToolbarContent {
+        ToolbarItemGroup {
+            Button { _ = store.createEntry() } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .help("新建日记")
+            .accessibilityLabel("新建日记")
+            .keyboardShortcut("n", modifiers: .command)
+
+            Button { showQuickEntry = true } label: {
+                Image(systemName: "bolt")
+            }
+            .help("快速记录")
+            .accessibilityLabel("快速记录")
+
+            DiarySaveStatusView(state: store.saveState) {
+                Task { _ = await store.flush() }
+            }
+            .font(.caption)
+
+            Button { showExport = true } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .help("导出与备份")
+            .accessibilityLabel("导出与备份")
+        }
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch store.loadState {
@@ -50,63 +81,65 @@ struct DiaryMainView: View {
             ProgressView("正在加载手账…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
-            ContentUnavailableView("无法加载手账", systemImage: "exclamationmark.triangle", description: Text(message))
+            DiaryEmptyState(title: "无法加载手账", message: message, systemImage: "exclamationmark.triangle")
         case .loaded:
-            switch store.viewMode {
-            case .timeline:
-                if let entry = store.selectedEntry {
-                    DiaryDetailEditView(store: store, entry: entry)
-                        .id(entry.id)
-                } else {
-                    emptyDetail
-                }
-            case .calendar:
-                DiaryCalendarView(store: store)
-            case .photoWall:
-                DiaryPhotoWallView(store: store)
-            case .onThisDay:
-                OnThisDayView(store: store)
-            case .recentlyDeleted:
-                DiaryRecentlyDeletedView(store: store)
-            }
+            loadedDetail
         }
     }
 
     @ViewBuilder
-    private var saveStatus: some View {
-        switch store.saveState {
-        case .idle:
-            EmptyView()
-        case .saving:
-            ProgressView().controlSize(.small).help("正在保存")
-        case .saved:
-            Image(systemName: "checkmark.circle").foregroundStyle(.green).help("已保存")
-        case .failed(let message):
-            Button {
-                Task { _ = await store.flush() }
-            } label: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            }.help("保存失败，点按重试：\(message)")
+    private var loadedDetail: some View {
+        switch store.viewMode {
+        case .timeline:
+            if let entry = store.selectedEntry {
+                DiaryDetailEditView(
+                    store: store,
+                    entry: entry,
+                    isFocusMode: isFocusMode,
+                    onFocusModeChange: setFocusMode
+                )
+                .id(entry.id)
+            } else {
+                emptyDetail
+            }
+        case .calendar:
+            DiaryCalendarView(store: store)
+        case .photoWall:
+            DiaryPhotoWallView(store: store)
+        case .onThisDay:
+            OnThisDayView(store: store)
+        case .recentlyDeleted:
+            DiaryRecentlyDeletedView(store: store)
         }
     }
 
     private var emptyDetail: some View {
-        ContentUnavailableView {
-            Label("选择一篇日记", systemImage: "book.closed")
-        } description: {
-            if !store.recoveredFiles.isEmpty {
-                Text("已隔离 \(store.recoveredFiles.count) 个损坏文件，可在 Recovery 目录中恢复。")
-            } else {
-                Text("从列表选择日记，或记录这一刻。")
-            }
-        } actions: {
-            Button("记录这一刻") { _ = store.createEntry() }
-                .buttonStyle(.borderedProminent)
-                .tint(.pink)
+        DiaryEmptyState(
+            title: "选择一篇日记",
+            message: store.recoveredFiles.isEmpty
+                ? "从时间线选择一篇日记，或记录这一刻。"
+                : "已隔离 \(store.recoveredFiles.count) 个损坏文件，可在 Recovery 目录中恢复。",
+            systemImage: "book.closed",
+            actionTitle: "记录这一刻"
+        ) {
+            _ = store.createEntry()
         }
     }
 
     private var operationErrorBinding: Binding<Bool> {
-        Binding(get: { store.operationError != nil }, set: { if !$0 { store.operationError = nil } })
+        Binding(
+            get: { store.operationError != nil },
+            set: { if !$0 { store.operationError = nil } }
+        )
+    }
+
+    private func setFocusMode(_ enabled: Bool) {
+        if enabled {
+            previousColumnVisibility = columnVisibility
+            columnVisibility = .detailOnly
+        } else {
+            columnVisibility = previousColumnVisibility
+        }
+        isFocusMode = enabled
     }
 }

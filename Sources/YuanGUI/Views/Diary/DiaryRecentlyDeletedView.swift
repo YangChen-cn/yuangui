@@ -6,20 +6,44 @@ struct DiaryRecentlyDeletedView: View {
 
     var body: some View {
         if store.recentlyDeletedItems.isEmpty {
-            ContentUnavailableView("最近删除为空", systemImage: "trash", description: Text("删除的日记会在这里保留 30 天。"))
+            DiaryEmptyState(
+                title: "最近删除为空",
+                message: "移除的日记会在这里保留 30 天。",
+                systemImage: "trash"
+            )
         } else {
-            List(store.recentlyDeletedItems) { item in
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(item.entry.displayTitle).font(.headline).lineLimit(1)
-                        Text("删除于 \(item.deletedAt.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("最近删除")
+                    .font(.title2.weight(.semibold))
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                List(store.recentlyDeletedItems) { item in
+                    HStack(spacing: 12) {
+                        Text(item.entry.mood?.emoji ?? "📝").font(.title3)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.entry.displayTitle.isEmpty ? "未命名日记" : item.entry.displayTitle)
+                                .font(.headline)
+                                .lineLimit(1)
+                            Text("删除于 \(item.deletedAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("恢复") { Task { await store.restoreDeleted(id: item.id) } }
+                        Menu {
+                            Button("彻底删除…", systemImage: "trash", role: .destructive) {
+                                pendingPermanentDelete = item
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("更多操作")
                     }
-                    Spacer()
-                    Button("恢复") { Task { await store.restoreDeleted(id: item.id) } }
-                    Button("彻底删除", role: .destructive) { pendingPermanentDelete = item }
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 4)
+                .listStyle(.inset)
             }
             .confirmationDialog("彻底删除后无法恢复", isPresented: Binding(
                 get: { pendingPermanentDelete != nil },

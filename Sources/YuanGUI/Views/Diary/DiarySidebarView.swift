@@ -4,73 +4,134 @@ struct DiarySidebarView: View {
     @ObservedObject var store: DiaryFeature
 
     var body: some View {
-        List {
-            Section {
-                HStack {
-                    Button { changeMonth(-1) } label: { Image(systemName: "chevron.left") }
-                    Spacer()
-                    Button(monthTitle) { store.selectMonth(displayedMonth) }
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    Spacer()
-                    Button { changeMonth(1) } label: { Image(systemName: "chevron.right") }
+        VStack(spacing: 0) {
+            brandHeader
+            List {
+                Section("回忆") {
+                    navigationButton("时间线", icon: "text.justify.left", active: isAllTimeline) {
+                        store.clearFilters()
+                        store.viewMode = .timeline
+                    }
+                    navigationButton("日历", icon: "calendar", active: store.viewMode == .calendar) {
+                        store.viewMode = .calendar
+                    }
+                    navigationButton("照片墙", icon: "photo.on.rectangle.angled", active: store.viewMode == .photoWall) {
+                        store.viewMode = .photoWall
+                    }
+                    navigationButton("那年今日", icon: "clock.arrow.circlepath", active: store.viewMode == .onThisDay) {
+                        store.viewMode = .onThisDay
+                    }
+                    navigationButton("收藏", icon: "star", active: store.viewMode == .timeline && store.filter.favoritesOnly) {
+                        store.filter = DiaryFilter(favoritesOnly: true)
+                        store.viewMode = .timeline
+                    }
+                    navigationButton("最近删除", icon: "trash", active: store.viewMode == .recentlyDeleted) {
+                        store.viewMode = .recentlyDeleted
+                    }
                 }
-                .buttonStyle(.plain)
-            }
 
-            Section {
-                sidebarButton("全部日记", icon: "book.fill", active: store.filter == DiaryFilter()) {
-                    store.clearFilters()
-                    store.viewMode = .timeline
+                Section("月份") {
+                    ForEach(availableMonths, id: \.self) { month in
+                        navigationButton(
+                            month.formatted(.dateTime.year().month(.wide)),
+                            icon: "calendar.day.timeline.left",
+                            active: isSelectedMonth(month)
+                        ) {
+                            store.selectMonth(month)
+                        }
+                    }
                 }
-                sidebarButton("收藏", icon: "star.fill", active: store.filter.favoritesOnly) {
-                    store.filter = DiaryFilter(favoritesOnly: true)
-                    store.viewMode = .timeline
-                }
-                sidebarButton("最近删除", icon: "trash", active: store.viewMode == .recentlyDeleted) {
-                    store.viewMode = .recentlyDeleted
-                }
-            }
 
-            if !store.allTags.isEmpty {
-                Section("标签") {
-                    ForEach(store.allTags, id: \.self) { tag in
-                        sidebarButton("#\(tag)", icon: "tag", active: store.filter.tag?.caseInsensitiveCompare(tag) == .orderedSame) {
-                            store.filter = DiaryFilter(tag: tag)
-                            store.viewMode = .timeline
+                if !store.allTags.isEmpty {
+                    Section("标签") {
+                        ForEach(store.allTags, id: \.self) { tag in
+                            navigationButton(
+                                "#\(tag)",
+                                icon: "tag",
+                                active: store.viewMode == .timeline
+                                    && store.filter.tag?.caseInsensitiveCompare(tag) == .orderedSame
+                            ) {
+                                store.filter = DiaryFilter(tag: tag)
+                                store.viewMode = .timeline
+                            }
                         }
                     }
                 }
             }
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
-            Text("\(store.entries.count) 条日记")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .listStyle(.sidebar)
+            sidebarFooter
         }
     }
 
-    private func sidebarButton(_ title: String, icon: String, active: Bool, action: @escaping () -> Void) -> some View {
+    private var brandHeader: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "heart.text.square.fill")
+                .font(.title2)
+                .foregroundStyle(Color.diaryAccent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("元圭恋爱手账")
+                    .font(.headline)
+                Text("珍藏属于我们的日常")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var sidebarFooter: some View {
+        HStack(spacing: 12) {
+            Label("\(store.entries.count)", systemImage: "book.closed")
+            Label("\(photoCount)", systemImage: "photo")
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel("\(store.entries.count) 条日记，\(photoCount) 张照片")
+    }
+
+    private var isAllTimeline: Bool {
+        store.viewMode == .timeline && store.filter == DiaryFilter()
+    }
+
+    private var photoCount: Int {
+        store.entries.reduce(0) { $0 + $1.attachments.count }
+    }
+
+    private var availableMonths: [Date] {
+        let calendar = Calendar.current
+        let entryMonths = store.entries.compactMap {
+            calendar.date(from: calendar.dateComponents([.year, .month], from: $0.occurredAt))
+        }
+        let currentMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) ?? Date()
+        return Array(Set(entryMonths + [currentMonth])).sorted(by: >)
+    }
+
+    private func isSelectedMonth(_ month: Date) -> Bool {
+        guard store.viewMode == .timeline, let selected = store.filter.month else { return false }
+        return Calendar.current.isDate(month, equalTo: selected, toGranularity: .month)
+    }
+
+    private func navigationButton(
+        _ title: String,
+        icon: String,
+        active: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
-                .foregroundStyle(active ? AnyShapeStyle(.pink) : AnyShapeStyle(.primary))
+                .foregroundStyle(active ? AnyShapeStyle(Color.diaryAccent) : AnyShapeStyle(.primary))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private var displayedMonth: Date { store.filter.month ?? Date() }
-
-    private var monthTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月"
-        return formatter.string(from: displayedMonth)
-    }
-
-    private func changeMonth(_ offset: Int) {
-        guard let month = Calendar.current.date(byAdding: .month, value: offset, to: displayedMonth) else { return }
-        store.selectMonth(month)
+        .listRowBackground(active ? Color.diarySelection : Color.clear)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }

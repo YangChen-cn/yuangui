@@ -34,7 +34,7 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         )
         window.title = "元圭恋爱手账"
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 760, height: 500)
+        window.minSize = NSSize(width: 700, height: 450)
         window.setFrameAutosaveName("YuanGUI.DiaryWindow")
         if !window.setFrameUsingName("YuanGUI.DiaryWindow") { window.center() }
         window.delegate = self

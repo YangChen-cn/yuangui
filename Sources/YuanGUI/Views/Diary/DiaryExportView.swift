@@ -42,10 +42,13 @@ struct DiaryExportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("导出、备份与恢复").font(.headline)
+            Label("导出、备份与恢复", systemImage: "square.and.arrow.up")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(Color.diaryAccent)
             Picker("格式", selection: $format) {
                 ForEach(ExportFormat.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
+            .pickerStyle(.menu)
             if format != .backup {
                 Picker("范围", selection: $scope) {
                     ForEach(ExportScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -73,11 +76,12 @@ struct DiaryExportView: View {
                 Spacer()
                 Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(isWorking ? "处理中…" : "选择位置并导出") { chooseAndExport() }
-                    .buttonStyle(.borderedProminent).tint(.pink).disabled(isWorking)
+                    .buttonStyle(.borderedProminent).disabled(isWorking)
             }
         }
         .padding(20)
         .frame(width: 480)
+        .tint(.diaryAccent)
         .confirmationDialog("恢复会替换当前手账数据", isPresented: $showRestoreConfirmation) {
             Button("验证并恢复", role: .destructive) { restore() }
             Button("取消", role: .cancel) { restoreURL = nil }
