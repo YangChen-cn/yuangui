@@ -37,8 +37,7 @@ struct MenuBarDashboardView: View {
             DashboardFooterView(
                 store: store,
                 togglePet: togglePet,
-                showPet: showPet,
-                openSettings: openSettings
+                showPet: showPet
             )
         }
         .padding(DashboardDesign.outerPadding)
@@ -60,10 +59,13 @@ struct MenuBarDashboardView: View {
         case .overview:
             DashboardOverviewView(store: store)
         case .music:
-            MusicStatusCard(music: music, externalAudioInterruption: externalAudioInterruption)
+            DashboardMusicView(
+                music: music,
+                externalAudioInterruption: externalAudioInterruption,
+                dismiss: dismiss
+            )
         case .tools:
-            DashboardToolsLegacyBridge(
-                store: store,
+            DashboardToolsView(
                 quickTools: quickTools,
                 updater: updater,
                 openSettings: openSettings,

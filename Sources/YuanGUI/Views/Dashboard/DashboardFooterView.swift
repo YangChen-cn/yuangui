@@ -5,7 +5,6 @@ struct DashboardFooterView: View {
     @ObservedObject var store: PetStore
     let togglePet: () -> Void
     let showPet: () -> Void
-    let openSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -34,11 +33,6 @@ struct DashboardFooterView: View {
                 action: toggleLock
             )
             Spacer(minLength: 4)
-            Button("设置", systemImage: "gearshape", action: openSettings)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .keyboardShortcut(",", modifiers: .command)
-                .help("设置（⌘,）")
             Menu("更多", systemImage: "ellipsis.circle") {
                 Button("打开废纸篓", systemImage: "trash") {
                     store.openTrash()
