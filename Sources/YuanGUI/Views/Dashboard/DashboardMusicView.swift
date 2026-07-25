@@ -42,13 +42,17 @@ struct DashboardMusicView: View {
                     }
                     Spacer(minLength: 4)
                     if track.source == .bilibili {
-                        Button(music.isFavorite(track) ? "取消收藏" : "收藏", systemImage: music.isFavorite(track) ? "heart.fill" : "heart") {
+                        Button {
                             music.toggleFavorite(track)
+                        } label: {
+                            Image(systemName: music.isFavorite(track) ? "heart.fill" : "heart")
+                                .frame(width: 28, height: 28)
+                                .contentShape(.rect)
                         }
-                        .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
                         .foregroundStyle(music.isFavorite(track) ? Color.pink : Color.secondary)
                         .help(music.isFavorite(track) ? "取消收藏当前歌曲" : "收藏当前歌曲")
+                        .accessibilityLabel(music.isFavorite(track) ? "取消收藏" : "收藏")
                     }
                 }
                 MusicProgressView(music: music)

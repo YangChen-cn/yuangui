@@ -1,4 +1,3 @@
-import SwiftUI
 import XCTest
 @testable import YuanGUI
 
@@ -7,6 +6,7 @@ final class DashboardTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(DashboardDesign.preferredWidth, 400)
         XCTAssertLessThanOrEqual(DashboardDesign.preferredWidth, 430)
         XCTAssertEqual(DashboardDesign.preferredHeight, 448, accuracy: 8)
+        XCTAssertEqual(DashboardDesign.expandedHeight, 520, accuracy: 8)
         XCTAssertLessThanOrEqual(DashboardDesign.minimumHeight, DashboardDesign.preferredHeight)
     }
 
@@ -53,10 +53,15 @@ final class DashboardTests: XCTestCase {
         XCTAssertFalse(identifiers.map(\.rawValue).contains("petLock"))
     }
 
-    @MainActor
-    func testDashboardHostingViewAcceptsTheFirstMouseClick() {
-        let hostingView = StatusDashboardHostingView(rootView: AnyView(EmptyView()))
-        XCTAssertTrue(hostingView.acceptsFirstMouse(for: nil))
+    func testDashboardUsesCompactOverviewAndExpandedMusicAndTools() {
+        XCTAssertEqual(DashboardDesign.preferredHeight(for: .overview), 448)
+        XCTAssertEqual(DashboardDesign.preferredHeight(for: .music), 520)
+        XCTAssertEqual(DashboardDesign.preferredHeight(for: .tools), 520)
+
+        let visible = CGRect(x: 0, y: 0, width: 1_000, height: 800)
+        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .overview).height, 448)
+        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .music).height, 520)
+        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .tools).height, 520)
     }
 
     func testAppleMusicSourceSelectionRequestsARealConnection() {

@@ -98,16 +98,19 @@ struct DashboardToggleButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        Button(title, systemImage: systemImage, action: action)
-            .labelStyle(.titleAndIcon)
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.titleAndIcon)
+                .font(.caption)
+                .padding(.horizontal, 9)
+                .frame(minHeight: 30)
+                .background(
+                    isOn ? Color.accentColor.opacity(0.16) : Color.primary.opacity(isHovering ? 0.08 : 0.035),
+                    in: .rect(cornerRadius: DashboardDesign.controlRadius)
+                )
+                .contentShape(.rect)
+        }
             .buttonStyle(.plain)
-            .font(.caption)
-            .padding(.horizontal, 9)
-            .frame(minHeight: 30)
-            .background(
-                isOn ? Color.accentColor.opacity(0.16) : Color.primary.opacity(isHovering ? 0.08 : 0.035),
-                in: .rect(cornerRadius: DashboardDesign.controlRadius)
-            )
             .onHover { isHovering = $0 }
             .help("\(title)：\(isOn ? "开" : "关")")
             .accessibilityValue(isOn ? "开" : "关")

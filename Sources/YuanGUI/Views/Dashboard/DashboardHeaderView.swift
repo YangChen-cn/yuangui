@@ -38,20 +38,23 @@ struct DashboardHeaderView: View {
     }
 
     private var focusButton: some View {
-        Button(focusButtonTitle, systemImage: "timer") {
+        Button {
             showsFocusPopover.toggle()
+        } label: {
+            Label(focusButtonTitle, systemImage: "timer")
+                .font(.caption)
+                .foregroundStyle(focusTimer.state == .running ? Color.accentColor : Color.secondary)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 25)
+                .background(
+                    focusTimer.state == .running
+                        ? Color.accentColor.opacity(0.12)
+                        : Color.primary.opacity(0.035),
+                    in: .capsule
+                )
+                .contentShape(.capsule)
         }
         .buttonStyle(.plain)
-        .font(.caption)
-        .foregroundStyle(focusTimer.state == .running ? Color.accentColor : Color.secondary)
-        .padding(.horizontal, 8)
-        .frame(minHeight: 25)
-        .background(
-            focusTimer.state == .running
-                ? Color.accentColor.opacity(0.12)
-                : Color.primary.opacity(0.035),
-            in: .capsule
-        )
         .help(focusTimer.state == .running ? "专注中：\(focusTimer.timeText)" : "打开番茄钟")
         .popover(isPresented: $showsFocusPopover, arrowEdge: .top) {
             FocusTimerControlView(timer: focusTimer, showPet: showPet)

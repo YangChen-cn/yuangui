@@ -8,17 +8,17 @@ struct MenuBarDashboardView: View {
     @ObservedMusicFeature var music: MusicFeature
     @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @ObservedObject var quickTools: QuickToolsController
+    @ObservedObject var panelState: DashboardPanelState
     let dashboardWidth: CGFloat
     let dashboardHeight: CGFloat
     let togglePet: () -> Void
     let showPet: () -> Void
     let openSettings: () -> Void
     let dismiss: () -> Void
+    let sectionDidChange: (DashboardSection) -> Void
 
     @Environment(\.appActions) private var appActions
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var updater = AppUpdateStore()
-    @State private var selectedSection = DashboardSection.overview
     @State private var showsFocusPopover = false
 
     private var palette: DashboardPalette {
@@ -33,7 +33,7 @@ struct MenuBarDashboardView: View {
                 showsFocusPopover: $showsFocusPopover,
                 showPet: showPet
             )
-            DashboardSectionPicker(selection: $selectedSection)
+            DashboardSectionPicker(selection: $panelState.selectedSection)
             pageContent
                 .frame(maxWidth: .infinity, alignment: .top)
             DashboardFooterView(
@@ -43,13 +43,22 @@ struct MenuBarDashboardView: View {
             )
         }
         .padding(DashboardDesign.outerPadding)
-        .frame(width: dashboardWidth, height: dashboardHeight)
+        .frame(
+            width: dashboardWidth,
+            height: DashboardPanelLayout.height(
+                for: panelState.selectedSection,
+                maximumHeight: dashboardHeight
+            )
+        )
         .background {
             DashboardAtmosphereBackground(palette: palette)
         }
         .tint(palette.accent)
         .preferredColorScheme(palette.preferredColorScheme)
         .onAppear(perform: prepareDashboard)
+        .onChange(of: panelState.selectedSection) { _, section in
+            sectionDidChange(section)
+        }
         .onExitCommand(perform: dismiss)
         .onMoveCommand(perform: moveSelection)
         .accessibilityElement(children: .contain)
@@ -58,7 +67,7 @@ struct MenuBarDashboardView: View {
 
     @ViewBuilder
     private var pageContent: some View {
-        switch selectedSection {
+        switch panelState.selectedSection {
         case .overview:
             DashboardOverviewView(store: store)
         case .music:
@@ -84,14 +93,8 @@ struct MenuBarDashboardView: View {
     }
 
     private func moveSelection(_ direction: MoveCommandDirection) {
-        let next = selectedSection.adjacent(direction)
-        guard next != selectedSection else { return }
-        if reduceMotion {
-            selectedSection = next
-        } else {
-            withAnimation(.easeInOut(duration: DashboardDesign.animationDuration)) {
-                selectedSection = next
-            }
-        }
+        let next = panelState.selectedSection.adjacent(direction)
+        guard next != panelState.selectedSection else { return }
+        panelState.selectedSection = next
     }
 }

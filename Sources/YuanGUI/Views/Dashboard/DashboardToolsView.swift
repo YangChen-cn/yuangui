@@ -123,6 +123,7 @@ struct DashboardQuickAction: View {
                 backgroundColor,
                 in: .rect(cornerRadius: DashboardDesign.sectionRadius)
             )
+            .contentShape(.rect(cornerRadius: DashboardDesign.sectionRadius))
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }

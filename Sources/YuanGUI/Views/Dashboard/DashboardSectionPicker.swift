@@ -3,8 +3,6 @@ import SwiftUI
 struct DashboardSectionPicker: View {
     @Binding var selection: DashboardSection
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         HStack(spacing: 3) {
             ForEach(DashboardSection.allCases) { section in
@@ -24,13 +22,7 @@ struct DashboardSectionPicker: View {
 
     private func select(_ section: DashboardSection) {
         guard section != selection else { return }
-        if reduceMotion {
-            selection = section
-        } else {
-            withAnimation(.easeInOut(duration: DashboardDesign.animationDuration)) {
-                selection = section
-            }
-        }
+        selection = section
     }
 }
 
@@ -42,13 +34,15 @@ private struct DashboardSectionButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        Button(section.title, systemImage: section.systemImage, action: select)
+        Button(action: select) {
+            Label(section.title, systemImage: section.systemImage)
+                .font(.callout)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .frame(maxWidth: .infinity, minHeight: 28)
+                .background(backgroundColor, in: .rect(cornerRadius: DashboardDesign.controlRadius - 1))
+                .contentShape(.rect)
+        }
             .buttonStyle(.plain)
-            .font(.callout)
-            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-            .frame(maxWidth: .infinity, minHeight: 28)
-            .background(backgroundColor, in: .rect(cornerRadius: DashboardDesign.controlRadius - 1))
-            .contentShape(.rect)
             .onHover { isHovering = $0 }
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .accessibilityValue(isSelected ? "当前页" : "")

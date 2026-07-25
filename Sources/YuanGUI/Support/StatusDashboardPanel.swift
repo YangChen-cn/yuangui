@@ -6,12 +6,6 @@ private final class StatusDashboardPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-final class StatusDashboardHostingView: NSHostingView<AnyView> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
-    }
-}
-
 @MainActor
 final class StatusDashboardPanelController {
     private static let preferredWidth = DashboardDesign.preferredWidth
@@ -26,12 +20,14 @@ final class StatusDashboardPanelController {
     private let showPet: () -> Void
     private let openSettings: () -> Void
     private let appActions: AppActions
+    private let dashboardState = DashboardPanelState()
     private let panel: StatusDashboardPanel
-    private var hostingView: StatusDashboardHostingView!
+    private var hostingView: NSHostingView<AnyView>!
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var localKeyMonitor: Any?
     private var anchorRect = NSRect.zero
+    private var visibleFrame = NSRect.zero
 
     init(
         store: PetStore,
@@ -68,7 +64,7 @@ final class StatusDashboardPanelController {
         panel.becomesKeyOnlyIfNeeded = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        installContent(width: Self.preferredWidth, height: Self.preferredHeight)
+        installContent(width: Self.preferredWidth, maximumHeight: DashboardDesign.expandedHeight)
     }
 
     func toggle(relativeTo button: NSStatusBarButton) {
@@ -88,10 +84,17 @@ final class StatusDashboardPanelController {
     func show(relativeTo button: NSStatusBarButton) {
         guard let screen = button.window?.screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
-        let size = DashboardPanelLayout.size(in: visible)
+        visibleFrame = visible
+        let size = DashboardPanelLayout.size(
+            in: visible,
+            section: dashboardState.selectedSection
+        )
         let width = size.width
         let height = size.height
-        installContent(width: width, height: height)
+        installContent(
+            width: width,
+            maximumHeight: max(visible.height - DashboardPanelLayout.screenInset * 2, 0)
+        )
         panel.setContentSize(NSSize(width: width, height: height))
 
         if let window = button.window {
@@ -116,7 +119,7 @@ final class StatusDashboardPanelController {
         installClickMonitors()
     }
 
-    private func installContent(width: CGFloat, height: CGFloat) {
+    private func installContent(width: CGFloat, maximumHeight: CGFloat) {
         let rootView = AnyView(
             MenuBarDashboardView(
                 store: store,
@@ -124,21 +127,37 @@ final class StatusDashboardPanelController {
                 music: music,
                 externalAudioInterruption: externalAudioInterruption,
                 quickTools: quickTools,
+                panelState: dashboardState,
                 dashboardWidth: width,
-                dashboardHeight: height,
+                dashboardHeight: maximumHeight,
                 togglePet: togglePet,
                 showPet: showPet,
                 openSettings: openSettings,
-                dismiss: { [weak self] in self?.hide() }
+                dismiss: { [weak self] in self?.hide() },
+                sectionDidChange: { [weak self] section in
+                    self?.resize(for: section)
+                }
             )
             .environment(\.appActions, appActions)
         )
         if hostingView == nil {
-            hostingView = StatusDashboardHostingView(rootView: rootView)
+            hostingView = NSHostingView(rootView: rootView)
             panel.contentView = hostingView
         } else {
             hostingView.rootView = rootView
         }
+    }
+
+    private func resize(for section: DashboardSection) {
+        guard panel.isVisible, !visibleFrame.isEmpty else { return }
+        let size = DashboardPanelLayout.size(in: visibleFrame, section: section)
+        let inset = DashboardPanelLayout.screenInset
+        let top = min(anchorRect.minY - 6, visibleFrame.maxY - inset)
+        let y = max(visibleFrame.minY + inset, top - size.height)
+        panel.setFrame(
+            NSRect(x: panel.frame.minX, y: y, width: size.width, height: size.height),
+            display: true
+        )
     }
 
     private func installClickMonitors() {
@@ -147,12 +166,7 @@ final class StatusDashboardPanelController {
             Task { @MainActor in self?.closeIfPointerIsOutside() }
         }
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self,
-                  event.window !== self.panel,
-                  event.window?.level != .popUpMenu else {
-                return event
-            }
-            Task { @MainActor in self.closeIfPointerIsOutside() }
+            Task { @MainActor in self?.closeIfPointerIsOutside() }
             return event
         }
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

@@ -61,11 +61,15 @@ struct DashboardWeatherSummaryContent: View {
                     Button("打开设置", action: onOpenLocationSettings)
                         .controlSize(.small)
                 }
-                Button("刷新天气", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
+                Button(action: onRefresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 28, height: 28)
+                        .contentShape(.rect)
+                }
                     .buttonStyle(.borderless)
                     .disabled(presentation.isRefreshing)
                     .help(presentation.isRefreshing ? "正在刷新天气" : "刷新天气")
+                    .accessibilityLabel("刷新天气")
             }
             .accessibilityElement(children: .contain)
         }
