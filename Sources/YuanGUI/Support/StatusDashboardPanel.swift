@@ -24,6 +24,7 @@ final class StatusDashboardPanelController {
     private var hostingView: NSHostingView<AnyView>!
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
+    private var localKeyMonitor: Any?
     private var anchorRect = NSRect.zero
 
     init(
@@ -143,6 +144,15 @@ final class StatusDashboardPanelController {
             Task { @MainActor in self?.closeIfPointerIsOutside() }
             return event
         }
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+                  event.charactersIgnoringModifiers == "," else { return event }
+            Task { @MainActor in
+                self?.hide()
+                self?.openSettings()
+            }
+            return nil
+        }
     }
 
     private func closeIfPointerIsOutside() {
@@ -154,7 +164,9 @@ final class StatusDashboardPanelController {
     private func removeClickMonitors() {
         if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
         if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let localKeyMonitor { NSEvent.removeMonitor(localKeyMonitor) }
         globalClickMonitor = nil
         localClickMonitor = nil
+        localKeyMonitor = nil
     }
 }

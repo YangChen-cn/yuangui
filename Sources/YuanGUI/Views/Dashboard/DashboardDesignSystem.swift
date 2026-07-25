@@ -10,7 +10,7 @@ enum DashboardDesign {
     static let compactSpacing: CGFloat = 8
     static let sectionRadius: CGFloat = 14
     static let controlRadius: CGFloat = 9
-    static let rowHeight: CGFloat = 40
+    static let rowHeight: CGFloat = 38
     static let queueLimit = 4
     static let animationDuration = 0.18
 
@@ -31,6 +31,18 @@ enum DashboardDesign {
         case .midnight: .indigo.opacity(0.10)
         }
     }
+}
+
+enum DashboardToolIdentifier: String, CaseIterable {
+    case chat
+    case diary
+    case regionScreenshot
+    case screenshotTranslation
+    case translateSelection
+    case cleanup
+    case uninstall
+    case settings
+    case update
 }
 
 enum DashboardSection: String, CaseIterable, Identifiable {

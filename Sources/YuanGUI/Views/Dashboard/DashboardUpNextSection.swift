@@ -23,11 +23,17 @@ struct DashboardUpNextSection: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 46)
             } else {
-                ForEach(tracks) { track in
-                    DashboardQueueRow(track: track, isPlaying: false) {
-                        onPlay(track)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(tracks) { track in
+                            DashboardQueueRow(track: track, isPlaying: false) {
+                                onPlay(track)
+                            }
+                        }
                     }
                 }
+                .frame(maxHeight: 128)
+                .scrollIndicators(.hidden)
             }
             HStack {
                 if remainingCount > 0 {

@@ -15,6 +15,8 @@ enum DashboardActionRole {
 }
 
 struct DashboardToolsView: View {
+    static let toolIdentifiers = DashboardToolIdentifier.allCases
+
     @ObservedObject var quickTools: QuickToolsController
     @ObservedObject var updater: AppUpdateStore
     let openSettings: () -> Void

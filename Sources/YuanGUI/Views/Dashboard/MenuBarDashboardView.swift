@@ -49,6 +49,10 @@ struct MenuBarDashboardView: View {
         .onAppear(perform: prepareDashboard)
         .onExitCommand(perform: dismiss)
         .onMoveCommand(perform: moveSelection)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: DashboardDesign.animationDuration),
+            value: selectedSection
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("元圭与 VCC 快速控制中心")
     }

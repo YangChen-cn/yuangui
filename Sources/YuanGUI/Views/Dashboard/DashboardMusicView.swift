@@ -76,12 +76,13 @@ struct DashboardMusicView: View {
     @ViewBuilder
     private var queueSection: some View {
         if music.playback.source == .bilibili {
-            let currentID = music.playback.currentTrack?.id
-            let upcoming = music.upcomingTracks.filter { $0.id != currentID }
-            let visible = Array(upcoming.prefix(DashboardDesign.queueLimit))
+            let presentation = DashboardQueuePresentation.resolve(
+                upcoming: music.upcomingTracks,
+                currentTrackID: music.playback.currentTrack?.id
+            )
             DashboardUpNextSection(
-                tracks: visible,
-                remainingCount: max(upcoming.count - visible.count, 0),
+                tracks: presentation.tracks,
+                remainingCount: presentation.remainingCount,
                 playMode: music.playback.playMode,
                 onPlay: { music.play($0) },
                 onChangePlayMode: music.setPlayMode,

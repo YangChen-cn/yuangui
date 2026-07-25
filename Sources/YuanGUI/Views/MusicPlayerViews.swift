@@ -15,7 +15,7 @@ struct MusicArtworkView: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: size * 0.18).stroke(.white.opacity(0.28), lineWidth: 0.7))
+        .overlay(RoundedRectangle(cornerRadius: size * 0.18).stroke(.primary.opacity(0.12), lineWidth: 0.7))
     }
 
     private var displayCoverURL: URL? {
