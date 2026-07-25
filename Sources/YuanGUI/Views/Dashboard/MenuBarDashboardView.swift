@@ -58,13 +58,7 @@ struct MenuBarDashboardView: View {
     private var pageContent: some View {
         switch selectedSection {
         case .overview:
-            ScrollView {
-                VStack(spacing: DashboardDesign.compactSpacing) {
-                    WeatherStatusCard(weather: store.weather)
-                    SystemStatusCard(monitor: store.monitor)
-                }
-            }
-            .scrollIndicators(.hidden)
+            DashboardOverviewView(store: store)
         case .music:
             MusicStatusCard(music: music, externalAudioInterruption: externalAudioInterruption)
         case .tools:
