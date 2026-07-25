@@ -8,9 +8,8 @@ private final class StatusDashboardPanel: NSPanel {
 
 @MainActor
 final class StatusDashboardPanelController {
-    private static let preferredWidth = MenuBarDashboardView.preferredWidth
-    private static let preferredHeight: CGFloat = 480
-    private static let screenInset: CGFloat = 8
+    private static let preferredWidth = DashboardDesign.preferredWidth
+    private static let preferredHeight = DashboardDesign.preferredHeight
 
     private let store: PetStore
     private let focusTimer: FocusTimerStore
@@ -82,8 +81,9 @@ final class StatusDashboardPanelController {
     func show(relativeTo button: NSStatusBarButton) {
         guard let screen = button.window?.screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
-        let width = min(Self.preferredWidth, visible.width - Self.screenInset * 2)
-        let height = min(Self.preferredHeight, visible.height - Self.screenInset * 2)
+        let size = DashboardPanelLayout.size(in: visible)
+        let width = size.width
+        let height = size.height
         installContent(width: width, height: height)
         panel.setContentSize(NSSize(width: width, height: height))
 
@@ -95,9 +95,10 @@ final class StatusDashboardPanelController {
         }
 
         let proposedX = anchorRect.midX - width / 2
-        let x = min(max(proposedX, visible.minX + Self.screenInset), visible.maxX - width - Self.screenInset)
-        let top = min(anchorRect.minY - 6, visible.maxY - Self.screenInset)
-        let y = max(visible.minY + Self.screenInset, top - height)
+        let inset = DashboardPanelLayout.screenInset
+        let x = min(max(proposedX, visible.minX + inset), visible.maxX - width - inset)
+        let top = min(anchorRect.minY - 6, visible.maxY - inset)
+        let y = max(visible.minY + inset, top - height)
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
 
         store.monitor.refresh()
