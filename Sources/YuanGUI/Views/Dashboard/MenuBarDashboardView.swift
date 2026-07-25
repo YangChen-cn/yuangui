@@ -39,7 +39,9 @@ struct MenuBarDashboardView: View {
             DashboardFooterView(
                 store: store,
                 togglePet: togglePet,
-                showPet: showPet
+                showPet: showPet,
+                openSettings: openSettings,
+                dismiss: dismiss
             )
         }
         .padding(DashboardDesign.outerPadding)
@@ -54,6 +56,7 @@ struct MenuBarDashboardView: View {
             DashboardAtmosphereBackground(palette: palette)
         }
         .tint(palette.accent)
+        .environment(\.dashboardVisualTreatment, palette.treatment)
         .preferredColorScheme(palette.preferredColorScheme)
         .onAppear(perform: prepareDashboard)
         .onChange(of: panelState.selectedSection) { _, section in

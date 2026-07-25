@@ -10,10 +10,40 @@ struct DashboardSectionSurface<Content: View>: View {
     var prominence: DashboardSurfaceProminence = .card
     @ViewBuilder let content: Content
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dashboardVisualTreatment) private var treatment
+
     var body: some View {
         content
             .padding(10)
-            .background(surfaceFill, in: .rect(cornerRadius: cornerRadius))
+            .background {
+                surfaceBackground
+            }
+    }
+
+    @ViewBuilder
+    private var surfaceBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if treatment == .liquidGlass {
+            shape
+                .fill(liquidSurfaceFill)
+                .overlay {
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(colorScheme == .dark ? 0.20 : 0.62),
+                                .white.opacity(0.04),
+                                Color.primary.opacity(0.06)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.6
+                    )
+                }
+        } else {
+            shape.fill(surfaceFill)
+        }
     }
 
     private var surfaceFill: AnyShapeStyle {
@@ -42,15 +72,41 @@ struct DashboardSectionSurface<Content: View>: View {
         case .card, .subtle: DashboardDesign.sectionRadius
         }
     }
+
+    private var liquidSurfaceFill: Color {
+        switch prominence {
+        case .hero:
+            Color.accentColor.opacity(colorScheme == .dark ? 0.10 : 0.07)
+        case .card:
+            Color.primary.opacity(colorScheme == .dark ? 0.045 : 0.028)
+        case .subtle:
+            Color.primary.opacity(colorScheme == .dark ? 0.025 : 0.014)
+        }
+    }
 }
 
 struct DashboardAtmosphereBackground: View {
     let palette: DashboardPalette
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 20)
                 .fill(.regularMaterial)
+            if palette.treatment == .liquidGlass {
+                liquidGlassAtmosphere
+            } else {
+                ambientGlow
+            }
+        }
+        .clipShape(.rect(cornerRadius: 20))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var ambientGlow: some View {
+        ZStack {
             LinearGradient(
                 colors: [
                     palette.topGlow.opacity(palette.ambientOpacity),
@@ -71,9 +127,36 @@ struct DashboardAtmosphereBackground: View {
                 .blur(radius: 52)
                 .offset(x: 150, y: 230)
         }
-        .clipShape(.rect(cornerRadius: 20))
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+    }
+
+    private var liquidGlassAtmosphere: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        .white.opacity(colorScheme == .dark ? 0.08 : 0.20),
+                        palette.bottomGlow.opacity(palette.ambientOpacity),
+                        .clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(colorScheme == .dark ? 0.35 : 0.72),
+                                .white.opacity(0.08),
+                                palette.bottomGlow.opacity(0.16)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.75
+                    )
+            }
     }
 }
 
@@ -96,6 +179,8 @@ struct DashboardToggleButton: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dashboardVisualTreatment) private var treatment
 
     var body: some View {
         Button(action: action) {
@@ -104,16 +189,34 @@ struct DashboardToggleButton: View {
                 .font(.caption)
                 .padding(.horizontal, 9)
                 .frame(minHeight: 30)
-                .background(
-                    isOn ? Color.accentColor.opacity(0.16) : Color.primary.opacity(isHovering ? 0.08 : 0.035),
-                    in: .rect(cornerRadius: DashboardDesign.controlRadius)
-                )
+                .background { toggleBackground }
                 .contentShape(.rect)
         }
             .buttonStyle(.plain)
             .onHover { isHovering = $0 }
             .help("\(title)：\(isOn ? "开" : "关")")
             .accessibilityValue(isOn ? "开" : "关")
+    }
+
+    @ViewBuilder
+    private var toggleBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: DashboardDesign.controlRadius, style: .continuous)
+        if treatment == .liquidGlass {
+            shape
+                .fill(isOn ? AnyShapeStyle(Color.accentColor.opacity(0.17)) : AnyShapeStyle(.thinMaterial))
+                .overlay {
+                    shape.strokeBorder(
+                        .white.opacity(colorScheme == .dark ? 0.16 : 0.48),
+                        lineWidth: 0.5
+                    )
+                }
+        } else {
+            shape.fill(
+                isOn
+                    ? Color.accentColor.opacity(0.16)
+                    : Color.primary.opacity(isHovering ? 0.08 : 0.035)
+            )
+        }
     }
 }
 

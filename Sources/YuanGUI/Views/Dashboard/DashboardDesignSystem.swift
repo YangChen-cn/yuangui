@@ -12,7 +12,7 @@ enum DashboardDesign {
     static let sectionRadius: CGFloat = 14
     static let controlRadius: CGFloat = 9
     static let rowHeight: CGFloat = 36
-    static let queueLimit = 4
+    static let queueLimit = 8
     static let animationDuration = 0.18
     static let heroRadius: CGFloat = 16
     static let avatarSize: CGFloat = 46
@@ -32,7 +32,8 @@ enum DashboardDesign {
                 topGlow: Color(red: 1.0, green: 0.72, blue: 0.52),
                 bottomGlow: Color(red: 0.48, green: 0.71, blue: 1.0),
                 ambientOpacity: 0.11,
-                preferredColorScheme: nil
+                preferredColorScheme: nil,
+                treatment: .ambient
             )
         case .sakura:
             DashboardPalette(
@@ -40,7 +41,8 @@ enum DashboardDesign {
                 topGlow: Color(red: 1.0, green: 0.55, blue: 0.68),
                 bottomGlow: Color(red: 0.96, green: 0.73, blue: 0.55),
                 ambientOpacity: 0.14,
-                preferredColorScheme: nil
+                preferredColorScheme: nil,
+                treatment: .ambient
             )
         case .mint:
             DashboardPalette(
@@ -48,7 +50,8 @@ enum DashboardDesign {
                 topGlow: Color(red: 0.35, green: 0.83, blue: 0.68),
                 bottomGlow: Color(red: 0.36, green: 0.66, blue: 0.82),
                 ambientOpacity: 0.12,
-                preferredColorScheme: nil
+                preferredColorScheme: nil,
+                treatment: .ambient
             )
         case .midnight:
             DashboardPalette(
@@ -56,10 +59,25 @@ enum DashboardDesign {
                 topGlow: Color(red: 0.46, green: 0.30, blue: 0.86),
                 bottomGlow: Color(red: 0.20, green: 0.46, blue: 0.82),
                 ambientOpacity: 0.20,
-                preferredColorScheme: .dark
+                preferredColorScheme: .dark,
+                treatment: .ambient
+            )
+        case .liquidGlass:
+            DashboardPalette(
+                accent: Color(red: 0.22, green: 0.52, blue: 0.96),
+                topGlow: .white,
+                bottomGlow: Color(red: 0.48, green: 0.74, blue: 1.0),
+                ambientOpacity: 0.07,
+                preferredColorScheme: nil,
+                treatment: .liquidGlass
             )
         }
     }
+}
+
+enum DashboardVisualTreatment: Equatable {
+    case ambient
+    case liquidGlass
 }
 
 struct DashboardPalette {
@@ -68,6 +86,18 @@ struct DashboardPalette {
     let bottomGlow: Color
     let ambientOpacity: Double
     let preferredColorScheme: ColorScheme?
+    let treatment: DashboardVisualTreatment
+}
+
+private struct DashboardVisualTreatmentKey: EnvironmentKey {
+    static let defaultValue = DashboardVisualTreatment.ambient
+}
+
+extension EnvironmentValues {
+    var dashboardVisualTreatment: DashboardVisualTreatment {
+        get { self[DashboardVisualTreatmentKey.self] }
+        set { self[DashboardVisualTreatmentKey.self] = newValue }
+    }
 }
 
 enum DashboardToolIdentifier: String, CaseIterable {

@@ -6,6 +6,22 @@ private final class StatusDashboardPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class StatusDashboardHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) ?? (bounds.contains(point) ? self : nil)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        // A child NSScrollView receives scrolling first. If it forwards an
+        // unhandled boundary event, terminate the responder chain here so the
+        // wheel gesture cannot reach a window beneath this borderless panel.
+    }
+}
+
 @MainActor
 final class StatusDashboardPanelController {
     private static let preferredWidth = DashboardDesign.preferredWidth
@@ -22,7 +38,7 @@ final class StatusDashboardPanelController {
     private let appActions: AppActions
     private let dashboardState = DashboardPanelState()
     private let panel: StatusDashboardPanel
-    private var hostingView: NSHostingView<AnyView>!
+    private var hostingView: StatusDashboardHostingView!
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var localKeyMonitor: Any?
@@ -62,6 +78,8 @@ final class StatusDashboardPanelController {
         panel.level = .statusBar
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
+        panel.acceptsMouseMovedEvents = true
+        panel.ignoresMouseEvents = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         installContent(width: Self.preferredWidth, maximumHeight: DashboardDesign.expandedHeight)
@@ -111,8 +129,8 @@ final class StatusDashboardPanelController {
         let y = max(visible.minY + inset, top - height)
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
 
-        store.monitor.refresh()
         store.monitor.setDashboardVisible(true)
+        store.monitor.refresh()
         store.weather.start()
         panel.orderFrontRegardless()
         panel.makeKey()
@@ -141,7 +159,7 @@ final class StatusDashboardPanelController {
             .environment(\.appActions, appActions)
         )
         if hostingView == nil {
-            hostingView = NSHostingView(rootView: rootView)
+            hostingView = StatusDashboardHostingView(rootView: rootView)
             panel.contentView = hostingView
         } else {
             hostingView.rootView = rootView
@@ -166,7 +184,12 @@ final class StatusDashboardPanelController {
             Task { @MainActor in self?.closeIfPointerIsOutside() }
         }
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            Task { @MainActor in self?.closeIfPointerIsOutside() }
+            guard let self,
+                  event.window !== self.panel,
+                  event.window?.level != .popUpMenu else {
+                return event
+            }
+            Task { @MainActor in self.closeIfPointerIsOutside() }
             return event
         }
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

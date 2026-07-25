@@ -5,6 +5,7 @@ enum DashboardStyle: Int, CaseIterable, Identifiable {
     case sakura
     case mint
     case midnight
+    case liquidGlass
 
     var id: Int { rawValue }
 
@@ -14,6 +15,7 @@ enum DashboardStyle: Int, CaseIterable, Identifiable {
         case .sakura: return "樱花"
         case .mint: return "薄荷"
         case .midnight: return "夜色"
+        case .liquidGlass: return "液态玻璃"
         }
     }
 }

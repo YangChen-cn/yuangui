@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import YuanGUI
 
@@ -28,6 +29,30 @@ final class DashboardTests: XCTestCase {
         XCTAssertEqual(DashboardSection.overview.adjacent(.left), .overview)
     }
 
+    func testDashboardStylesPreserveExistingRawValuesAndIncludeLiquidGlass() {
+        XCTAssertEqual(DashboardStyle.softGlass.rawValue, 0)
+        XCTAssertEqual(DashboardStyle.sakura.rawValue, 1)
+        XCTAssertEqual(DashboardStyle.mint.rawValue, 2)
+        XCTAssertEqual(DashboardStyle.midnight.rawValue, 3)
+        XCTAssertEqual(DashboardStyle.liquidGlass.rawValue, 4)
+        XCTAssertEqual(DashboardStyle.liquidGlass.title, "液态玻璃")
+        XCTAssertEqual(
+            DashboardDesign.palette(for: .liquidGlass).treatment,
+            .liquidGlass
+        )
+    }
+
+    func testDashboardUsesCompactOverviewAndExpandedMusicAndTools() {
+        XCTAssertEqual(DashboardDesign.preferredHeight(for: .overview), 448)
+        XCTAssertEqual(DashboardDesign.preferredHeight(for: .music), 520)
+        XCTAssertEqual(DashboardDesign.preferredHeight(for: .tools), 520)
+
+        let visible = CGRect(x: 0, y: 0, width: 1_000, height: 800)
+        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .overview).height, 448)
+        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .music).height, 520)
+        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .tools).height, 520)
+    }
+
     func testSmartStatePresentationHasMatchingTextAndIcon() {
         let expected: [(SmartPetState, String, String)] = [
             (.normal, "一切平稳", "checkmark.circle"),
@@ -53,15 +78,12 @@ final class DashboardTests: XCTestCase {
         XCTAssertFalse(identifiers.map(\.rawValue).contains("petLock"))
     }
 
-    func testDashboardUsesCompactOverviewAndExpandedMusicAndTools() {
-        XCTAssertEqual(DashboardDesign.preferredHeight(for: .overview), 448)
-        XCTAssertEqual(DashboardDesign.preferredHeight(for: .music), 520)
-        XCTAssertEqual(DashboardDesign.preferredHeight(for: .tools), 520)
-
-        let visible = CGRect(x: 0, y: 0, width: 1_000, height: 800)
-        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .overview).height, 448)
-        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .music).height, 520)
-        XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .tools).height, 520)
+    @MainActor
+    func testDashboardHostingViewAcceptsTheFirstMouseClick() {
+        let hostingView = StatusDashboardHostingView(rootView: AnyView(EmptyView()))
+        XCTAssertTrue(hostingView.acceptsFirstMouse(for: nil))
+        hostingView.frame = CGRect(x: 0, y: 0, width: 100, height: 100)
+        XCTAssertNotNil(hostingView.hitTest(CGPoint(x: 50, y: 50)))
     }
 
     func testAppleMusicSourceSelectionRequestsARealConnection() {
@@ -89,7 +111,7 @@ final class DashboardTests: XCTestCase {
     }
 
     func testQueueExcludesCurrentTrackAndReportsRemainingCount() {
-        let tracks = (0..<7).map { index in
+        let tracks = (0..<11).map { index in
             MusicTrack(
                 id: "\(index)",
                 source: .bilibili,
@@ -105,11 +127,11 @@ final class DashboardTests: XCTestCase {
 
         let result = DashboardQueuePresentation.resolve(
             upcoming: tracks,
-            currentTrackID: "1",
-            limit: 4
+            currentTrackID: "1"
         )
 
-        XCTAssertEqual(result.tracks.map(\.id), ["0", "2", "3", "4"])
+        XCTAssertEqual(DashboardDesign.queueLimit, 8)
+        XCTAssertEqual(result.tracks.map(\.id), ["0", "2", "3", "4", "5", "6", "7", "8"])
         XCTAssertEqual(result.remainingCount, 2)
     }
 

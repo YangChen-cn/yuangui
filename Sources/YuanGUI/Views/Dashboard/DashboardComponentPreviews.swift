@@ -61,6 +61,42 @@ private let previewTrack = MusicTrack(
     .tint(palette.accent)
 }
 
+#Preview("Liquid Glass 主题") {
+    let palette = DashboardDesign.palette(for: .liquidGlass)
+    VStack(spacing: DashboardDesign.sectionSpacing) {
+        HStack {
+            DashboardPetAvatarView(mode: .duo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("下午好")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("元圭和 VCC 都在")
+                    .font(.headline)
+                    .bold()
+            }
+            Spacer()
+            DashboardStatusLabel(presentation: .resolve(.normal))
+        }
+        DashboardSectionPicker(selection: .constant(.overview))
+        DashboardSectionSurface(prominence: .hero) {
+            Label("清透导航层与克制内容层", systemImage: "sparkles")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        HStack {
+            DashboardToggleButton(title: "桌宠显示", systemImage: "pawprint.fill", isOn: true, action: {})
+            DashboardToggleButton(title: "迷你状态", systemImage: "gauge.with.dots.needle.67percent", isOn: false, action: {})
+            Spacer()
+        }
+    }
+    .padding(DashboardDesign.outerPadding)
+    .frame(width: DashboardDesign.minimumWidth)
+    .background {
+        DashboardAtmosphereBackground(palette: palette)
+    }
+    .tint(palette.accent)
+    .environment(\.dashboardVisualTreatment, palette.treatment)
+}
+
 #Preview("天气正常") {
     DashboardPreviewFrame {
         DashboardWeatherSummaryContent(

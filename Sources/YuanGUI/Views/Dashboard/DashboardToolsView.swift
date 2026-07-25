@@ -69,6 +69,8 @@ struct DashboardToolsView: View {
             }
             .padding(.vertical, 1)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .contentShape(.rect)
         .scrollIndicators(.hidden)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("工具")

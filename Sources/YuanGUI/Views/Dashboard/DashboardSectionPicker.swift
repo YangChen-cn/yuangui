@@ -3,6 +3,9 @@ import SwiftUI
 struct DashboardSectionPicker: View {
     @Binding var selection: DashboardSection
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dashboardVisualTreatment) private var treatment
+
     var body: some View {
         HStack(spacing: 3) {
             ForEach(DashboardSection.allCases) { section in
@@ -14,10 +17,27 @@ struct DashboardSectionPicker: View {
             }
         }
         .padding(3)
-        .background(Color.primary.opacity(0.035), in: .rect(cornerRadius: DashboardDesign.controlRadius + 2))
+        .background { pickerBackground }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("页面")
         .accessibilityValue(selection.title)
+    }
+
+    @ViewBuilder
+    private var pickerBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: DashboardDesign.controlRadius + 2, style: .continuous)
+        if treatment == .liquidGlass {
+            shape
+                .fill(.thinMaterial)
+                .overlay {
+                    shape.strokeBorder(
+                        .white.opacity(colorScheme == .dark ? 0.18 : 0.52),
+                        lineWidth: 0.55
+                    )
+                }
+        } else {
+            shape.fill(Color.primary.opacity(0.035))
+        }
     }
 
     private func select(_ section: DashboardSection) {

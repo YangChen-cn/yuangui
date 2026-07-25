@@ -2,8 +2,14 @@ import SwiftUI
 
 struct DashboardOverviewView: View {
     @ObservedObject var store: PetStore
+    @ObservedObject private var monitor: SystemMonitor
 
-    private var snapshot: SystemSnapshot { store.monitor.snapshot }
+    private var snapshot: SystemSnapshot { monitor.snapshot }
+
+    init(store: PetStore) {
+        self.store = store
+        monitor = store.monitor
+    }
 
     var body: some View {
         ScrollView {
