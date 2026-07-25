@@ -16,8 +16,7 @@ struct DashboardPowerStatusRow: View {
                 .lineLimit(1)
         }
         .font(.caption)
-        .padding(.horizontal, 9)
-        .frame(minHeight: 32)
+        .frame(minHeight: DashboardDesign.rowHeight)
         .accessibilityElement(children: .combine)
     }
 

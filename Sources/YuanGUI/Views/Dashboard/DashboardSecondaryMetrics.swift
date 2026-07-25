@@ -23,6 +23,9 @@ struct DashboardSecondaryMetrics: View {
                 status: "",
                 severity: .informational
             )
+            Divider()
+                .padding(.leading, 27)
+            DashboardPowerStatusRow(snapshot: snapshot)
         }
         .padding(.horizontal, 9)
         .background(Color.primary.opacity(0.02), in: .rect(cornerRadius: DashboardDesign.sectionRadius))

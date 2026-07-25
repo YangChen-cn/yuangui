@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import YuanGUI
 
@@ -5,6 +6,8 @@ final class DashboardTests: XCTestCase {
     func testPreferredWidthFitsFooterControls() {
         XCTAssertGreaterThanOrEqual(DashboardDesign.preferredWidth, 400)
         XCTAssertLessThanOrEqual(DashboardDesign.preferredWidth, 430)
+        XCTAssertEqual(DashboardDesign.preferredHeight, 448, accuracy: 8)
+        XCTAssertLessThanOrEqual(DashboardDesign.minimumHeight, DashboardDesign.preferredHeight)
     }
 
     func testPanelSizeNeverExceedsVisibleScreen() {
@@ -45,9 +48,15 @@ final class DashboardTests: XCTestCase {
     func testToolIdentifiersAreUniqueAndDoNotContainFooterToggles() {
         let identifiers = DashboardToolsView.toolIdentifiers
         XCTAssertEqual(Set(identifiers.map(\.rawValue)).count, identifiers.count)
-        XCTAssertFalse(identifiers.map(\.rawValue).contains("settings"))
+        XCTAssertEqual(identifiers.filter { $0 == .settings }.count, 1)
         XCTAssertFalse(identifiers.map(\.rawValue).contains("desktopIcons"))
         XCTAssertFalse(identifiers.map(\.rawValue).contains("petLock"))
+    }
+
+    @MainActor
+    func testDashboardHostingViewAcceptsTheFirstMouseClick() {
+        let hostingView = StatusDashboardHostingView(rootView: AnyView(EmptyView()))
+        XCTAssertTrue(hostingView.acceptsFirstMouse(for: nil))
     }
 
     func testAppleMusicSourceSelectionRequestsARealConnection() {

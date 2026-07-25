@@ -19,6 +19,7 @@ struct DashboardToolsView: View {
 
     @ObservedObject var quickTools: QuickToolsController
     @ObservedObject var updater: AppUpdateStore
+    let openSettings: () -> Void
     let dismiss: () -> Void
 
     @Environment(\.appActions) private var appActions
@@ -36,7 +37,7 @@ struct DashboardToolsView: View {
                     DashboardQuickAction(title: "AI 对话", subtitle: "和元圭、VCC 聊聊", systemImage: "message.fill", role: .yuanGUI) {
                         launch { appActions.open(.chat) }
                     }
-                    DashboardQuickAction(title: "恋爱手账", subtitle: "记录今天的故事", systemImage: "book.closed.fill", role: .yuanGUI) {
+                    DashboardQuickAction(title: "手帐本", subtitle: "记录今天的故事", systemImage: "book.closed.fill", role: .yuanGUI) {
                         launch { appActions.open(.diary) }
                     }
                     DashboardQuickAction(title: "区域截图", subtitle: quickTools.settings.screenshotHotKey.displayText, systemImage: "viewfinder", role: .system) {
@@ -59,6 +60,9 @@ struct DashboardToolsView: View {
                     }
                     compact("软件卸载", "应用与关联残留", "shippingbox", .maintenance) {
                         launch { appActions.open(.maintenance(tab: 1)) }
+                    }
+                    compact("设置", "快捷键与偏好", "gearshape", .system) {
+                        launch(openSettings)
                     }
                     DashboardUpdateView(updater: updater)
                 }
@@ -86,7 +90,7 @@ struct DashboardToolsView: View {
     private func launch(_ action: @escaping () -> Void) {
         dismiss()
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))
+            await Task.yield()
             action()
         }
     }
@@ -100,8 +104,6 @@ struct DashboardQuickAction: View {
     let action: () -> Void
 
     @State private var isHovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
@@ -124,11 +126,6 @@ struct DashboardQuickAction: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .scaleEffect(reduceMotion || !isHovering ? 1 : 1.006)
-        .animation(
-            reduceMotion ? nil : .easeOut(duration: 0.14),
-            value: isHovering
-        )
         .accessibilityLabel("\(title)，\(subtitle)")
     }
 

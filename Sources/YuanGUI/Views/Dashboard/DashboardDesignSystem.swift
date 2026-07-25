@@ -2,9 +2,9 @@ import SwiftUI
 
 enum DashboardDesign {
     static let preferredWidth: CGFloat = 420
-    static let preferredHeight: CGFloat = 540
+    static let preferredHeight: CGFloat = 448
     static let minimumWidth: CGFloat = 390
-    static let minimumHeight: CGFloat = 460
+    static let minimumHeight: CGFloat = 420
     static let outerPadding: CGFloat = 14
     static let sectionSpacing: CGFloat = 10
     static let compactSpacing: CGFloat = 8
@@ -70,6 +70,7 @@ enum DashboardToolIdentifier: String, CaseIterable {
     case translateSelection
     case cleanup
     case uninstall
+    case settings
     case update
 }
 

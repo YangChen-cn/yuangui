@@ -35,14 +35,11 @@ struct MenuBarDashboardView: View {
             )
             DashboardSectionPicker(selection: $selectedSection)
             pageContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .clipped()
+                .frame(maxWidth: .infinity, alignment: .top)
             DashboardFooterView(
                 store: store,
                 togglePet: togglePet,
-                showPet: showPet,
-                openSettings: openSettings,
-                dismiss: dismiss
+                showPet: showPet
             )
         }
         .padding(DashboardDesign.outerPadding)
@@ -55,10 +52,6 @@ struct MenuBarDashboardView: View {
         .onAppear(perform: prepareDashboard)
         .onExitCommand(perform: dismiss)
         .onMoveCommand(perform: moveSelection)
-        .animation(
-            reduceMotion ? nil : .easeInOut(duration: DashboardDesign.animationDuration),
-            value: selectedSection
-        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("元圭与 VCC 快速控制中心")
     }
@@ -78,6 +71,7 @@ struct MenuBarDashboardView: View {
             DashboardToolsView(
                 quickTools: quickTools,
                 updater: updater,
+                openSettings: openSettings,
                 dismiss: dismiss
             )
         }

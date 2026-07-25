@@ -6,6 +6,12 @@ private final class StatusDashboardPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class StatusDashboardHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+}
+
 @MainActor
 final class StatusDashboardPanelController {
     private static let preferredWidth = DashboardDesign.preferredWidth
@@ -21,7 +27,7 @@ final class StatusDashboardPanelController {
     private let openSettings: () -> Void
     private let appActions: AppActions
     private let panel: StatusDashboardPanel
-    private var hostingView: NSHostingView<AnyView>!
+    private var hostingView: StatusDashboardHostingView!
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var localKeyMonitor: Any?
@@ -128,7 +134,7 @@ final class StatusDashboardPanelController {
             .environment(\.appActions, appActions)
         )
         if hostingView == nil {
-            hostingView = NSHostingView(rootView: rootView)
+            hostingView = StatusDashboardHostingView(rootView: rootView)
             panel.contentView = hostingView
         } else {
             hostingView.rootView = rootView
@@ -141,7 +147,12 @@ final class StatusDashboardPanelController {
             Task { @MainActor in self?.closeIfPointerIsOutside() }
         }
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            Task { @MainActor in self?.closeIfPointerIsOutside() }
+            guard let self,
+                  event.window !== self.panel,
+                  event.window?.level != .popUpMenu else {
+                return event
+            }
+            Task { @MainActor in self.closeIfPointerIsOutside() }
             return event
         }
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

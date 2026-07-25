@@ -20,7 +20,6 @@ struct DashboardOverviewView: View {
                     memoryTile
                 }
                 DashboardSecondaryMetrics(snapshot: snapshot)
-                DashboardPowerStatusRow(snapshot: snapshot)
             }
             .padding(.vertical, 1)
         }

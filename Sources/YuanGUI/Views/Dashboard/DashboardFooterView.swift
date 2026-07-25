@@ -5,8 +5,6 @@ struct DashboardFooterView: View {
     @ObservedObject var store: PetStore
     let togglePet: () -> Void
     let showPet: () -> Void
-    let openSettings: () -> Void
-    let dismiss: () -> Void
 
     var body: some View {
         VStack(spacing: 6) {
@@ -37,8 +35,6 @@ struct DashboardFooterView: View {
                         action: toggleLock
                     )
                     Divider()
-                    Button("设置", systemImage: "gearshape", action: openSettingsFromMenu)
-                    Divider()
                     Button("打开废纸篓", systemImage: "trash") {
                         store.openTrash()
                     }
@@ -67,13 +63,5 @@ struct DashboardFooterView: View {
     private func toggleLock() {
         store.toggleInteractionLock()
         showPet()
-    }
-
-    private func openSettingsFromMenu() {
-        dismiss()
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))
-            openSettings()
-        }
     }
 }
