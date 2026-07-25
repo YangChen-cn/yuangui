@@ -32,7 +32,7 @@ struct DashboardUpNextSection: View {
                         }
                     }
                 }
-                .frame(maxHeight: 128)
+                .frame(maxHeight: DashboardDesign.rowHeight * CGFloat(DashboardDesign.queueLimit))
                 .scrollIndicators(.hidden)
             }
             HStack {

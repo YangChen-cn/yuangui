@@ -27,7 +27,7 @@ final class DashboardTests: XCTestCase {
 
     func testSmartStatePresentationHasMatchingTextAndIcon() {
         let expected: [(SmartPetState, String, String)] = [
-            (.normal, "状态正常", "checkmark.circle.fill"),
+            (.normal, "一切平稳", "checkmark.circle"),
             (.lowBattery, "低电量", "battery.25percent"),
             (.memoryPressure, "内存紧张", "memorychip.fill"),
             (.charging, "充电中", "bolt.fill"),
@@ -45,9 +45,33 @@ final class DashboardTests: XCTestCase {
     func testToolIdentifiersAreUniqueAndDoNotContainFooterToggles() {
         let identifiers = DashboardToolsView.toolIdentifiers
         XCTAssertEqual(Set(identifiers.map(\.rawValue)).count, identifiers.count)
-        XCTAssertEqual(identifiers.filter { $0 == .settings }.count, 1)
+        XCTAssertFalse(identifiers.map(\.rawValue).contains("settings"))
         XCTAssertFalse(identifiers.map(\.rawValue).contains("desktopIcons"))
         XCTAssertFalse(identifiers.map(\.rawValue).contains("petLock"))
+    }
+
+    func testAppleMusicSourceSelectionRequestsARealConnection() {
+        XCTAssertEqual(
+            DashboardMusicSourceAction.resolve(.appleMusic),
+            .connectAppleMusic
+        )
+        XCTAssertEqual(
+            DashboardMusicSourceAction.resolve(.bilibili),
+            .selectBilibili
+        )
+    }
+
+    func testHeaderGreetingAndCompanionCopyAreDeterministic() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let morning = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 7, day: 25, hour: 8))
+        )
+
+        XCTAssertEqual(DashboardHeaderPresentation.greeting(at: morning, calendar: calendar), "早上好")
+        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .yuanGui), "元圭在这里")
+        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .vcc), "VCC 正在陪你")
+        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .duo), "元圭和 VCC 都在")
     }
 
     func testQueueExcludesCurrentTrackAndReportsRemainingCount() {

@@ -30,7 +30,7 @@ struct DashboardWeatherSummaryContent: View {
     let onOpenLocationSettings: () -> Void
 
     var body: some View {
-        DashboardSectionSurface {
+        DashboardSectionSurface(prominence: .hero) {
             HStack(spacing: 11) {
                 Image(systemName: presentation.icon)
                     .font(.title2)
@@ -53,7 +53,7 @@ struct DashboardWeatherSummaryContent: View {
                         .lineLimit(1)
                     Text(presentation.metadataText)
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)

@@ -21,6 +21,10 @@ struct MenuBarDashboardView: View {
     @State private var selectedSection = DashboardSection.overview
     @State private var showsFocusPopover = false
 
+    private var palette: DashboardPalette {
+        DashboardDesign.palette(for: store.dashboardStyle)
+    }
+
     var body: some View {
         VStack(spacing: DashboardDesign.sectionSpacing) {
             DashboardHeaderView(
@@ -33,19 +37,21 @@ struct MenuBarDashboardView: View {
             pageContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .clipped()
-            Divider()
             DashboardFooterView(
                 store: store,
                 togglePet: togglePet,
-                showPet: showPet
+                showPet: showPet,
+                openSettings: openSettings,
+                dismiss: dismiss
             )
         }
         .padding(DashboardDesign.outerPadding)
         .frame(width: dashboardWidth, height: dashboardHeight)
-        .background(.regularMaterial, in: .rect(cornerRadius: 20))
-        .background(DashboardDesign.atmosphere(for: store.dashboardStyle), in: .rect(cornerRadius: 20))
-        .tint(DashboardDesign.accent(for: store.dashboardStyle))
-        .preferredColorScheme(store.dashboardStyle == .midnight ? .dark : nil)
+        .background {
+            DashboardAtmosphereBackground(palette: palette)
+        }
+        .tint(palette.accent)
+        .preferredColorScheme(palette.preferredColorScheme)
         .onAppear(perform: prepareDashboard)
         .onExitCommand(perform: dismiss)
         .onMoveCommand(perform: moveSelection)
@@ -72,7 +78,6 @@ struct MenuBarDashboardView: View {
             DashboardToolsView(
                 quickTools: quickTools,
                 updater: updater,
-                openSettings: openSettings,
                 dismiss: dismiss
             )
         }

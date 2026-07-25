@@ -20,12 +20,45 @@ private let previewTrack = MusicTrack(
             systemImage: "cpu",
             primaryValue: "24%",
             detail: "用户 16%",
-            status: "正常",
+            status: "",
             severity: .normal,
             history: [0.12, 0.18, 0.15, 0.24],
             fixedMaximum: 1
         )
     }
+}
+
+#Preview("品牌层级与轻量页签") {
+    let palette = DashboardDesign.palette(for: .sakura)
+    VStack(spacing: DashboardDesign.sectionSpacing) {
+        HStack(spacing: 11) {
+            DashboardPetAvatarView(mode: .duo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("下午好")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("元圭和 VCC 都在")
+                    .font(.headline)
+                    .bold()
+                Text("7月25日 星期六")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            DashboardStatusLabel(presentation: .resolve(.normal))
+        }
+        DashboardSectionPicker(selection: .constant(.overview))
+        DashboardSectionSurface(prominence: .hero) {
+            Label("天气和重要状态在这里形成视觉主角", systemImage: "sun.max.fill")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    .padding(DashboardDesign.outerPadding)
+    .frame(width: DashboardDesign.minimumWidth)
+    .background {
+        DashboardAtmosphereBackground(palette: palette)
+    }
+    .tint(palette.accent)
 }
 
 #Preview("天气正常") {

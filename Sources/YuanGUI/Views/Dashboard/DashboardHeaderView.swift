@@ -11,32 +11,28 @@ struct DashboardHeaderView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: DashboardDesign.compactSpacing) {
-                Text("元圭与 VCC")
+        HStack(spacing: 11) {
+            DashboardPetAvatarView(mode: store.mode)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(DashboardHeaderPresentation.greeting(at: .now))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(DashboardHeaderPresentation.companionTitle(for: store.mode))
                     .font(.headline)
                     .bold()
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                Text(Date.now, format: .dateTime.month().day().weekday(.wide))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 7) {
                 focusButton
-            }
-            HStack(spacing: 6) {
-                Text(Date.now, format: .dateTime.weekday(.wide).month().day())
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
                 DashboardStatusLabel(presentation: smartState)
-            }
-            .font(.caption)
-            HStack(spacing: 5) {
-                Image(systemName: weatherIcon)
-                    .accessibilityHidden(true)
-                Text(weatherSummary)
                     .lineLimit(1)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityElement(children: .combine)
         }
+        .frame(minHeight: DashboardDesign.avatarSize)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("面板顶部")
     }
@@ -45,8 +41,17 @@ struct DashboardHeaderView: View {
         Button(focusButtonTitle, systemImage: "timer") {
             showsFocusPopover.toggle()
         }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
+        .buttonStyle(.plain)
+        .font(.caption)
+        .foregroundStyle(focusTimer.state == .running ? Color.accentColor : Color.secondary)
+        .padding(.horizontal, 8)
+        .frame(minHeight: 25)
+        .background(
+            focusTimer.state == .running
+                ? Color.accentColor.opacity(0.12)
+                : Color.primary.opacity(0.035),
+            in: .capsule
+        )
         .help(focusTimer.state == .running ? "专注中：\(focusTimer.timeText)" : "打开番茄钟")
         .popover(isPresented: $showsFocusPopover, arrowEdge: .top) {
             FocusTimerControlView(timer: focusTimer, showPet: showPet)
@@ -55,24 +60,5 @@ struct DashboardHeaderView: View {
 
     private var focusButtonTitle: String {
         focusTimer.state == .running ? focusTimer.timeText : "番茄钟"
-    }
-
-    private var weatherIcon: String {
-        if let snapshot = store.weather.snapshot { return snapshot.condition.symbol }
-        if store.weather.status == .locationDenied { return "location.slash" }
-        return "cloud"
-    }
-
-    private var weatherSummary: String {
-        if let snapshot = store.weather.snapshot {
-            return "\(store.weather.locationName ?? "当前位置") · \(snapshot.condition.title) \(Int(snapshot.temperature.rounded()))°"
-        }
-        return switch store.weather.status {
-        case .requestingLocation: "正在获取位置"
-        case .loading: "正在刷新天气"
-        case .locationDenied: "天气定位未授权"
-        case .unavailable: "天气暂不可用"
-        case .idle, .available: "当前位置天气"
-        }
     }
 }

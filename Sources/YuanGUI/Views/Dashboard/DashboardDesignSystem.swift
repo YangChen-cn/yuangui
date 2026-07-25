@@ -2,35 +2,64 @@ import SwiftUI
 
 enum DashboardDesign {
     static let preferredWidth: CGFloat = 420
-    static let preferredHeight: CGFloat = 520
+    static let preferredHeight: CGFloat = 540
     static let minimumWidth: CGFloat = 390
     static let minimumHeight: CGFloat = 460
     static let outerPadding: CGFloat = 14
-    static let sectionSpacing: CGFloat = 12
+    static let sectionSpacing: CGFloat = 10
     static let compactSpacing: CGFloat = 8
     static let sectionRadius: CGFloat = 14
     static let controlRadius: CGFloat = 9
-    static let rowHeight: CGFloat = 38
+    static let rowHeight: CGFloat = 36
     static let queueLimit = 4
     static let animationDuration = 0.18
+    static let heroRadius: CGFloat = 16
+    static let avatarSize: CGFloat = 46
 
-    static func accent(for style: DashboardStyle) -> Color {
+    static func palette(for style: DashboardStyle) -> DashboardPalette {
         switch style {
-        case .softGlass: .accentColor
-        case .sakura: .pink
-        case .mint: .mint
-        case .midnight: .indigo
+        case .softGlass:
+            DashboardPalette(
+                accent: .blue,
+                topGlow: Color(red: 1.0, green: 0.72, blue: 0.52),
+                bottomGlow: Color(red: 0.48, green: 0.71, blue: 1.0),
+                ambientOpacity: 0.11,
+                preferredColorScheme: nil
+            )
+        case .sakura:
+            DashboardPalette(
+                accent: Color(red: 0.88, green: 0.36, blue: 0.52),
+                topGlow: Color(red: 1.0, green: 0.55, blue: 0.68),
+                bottomGlow: Color(red: 0.96, green: 0.73, blue: 0.55),
+                ambientOpacity: 0.14,
+                preferredColorScheme: nil
+            )
+        case .mint:
+            DashboardPalette(
+                accent: Color(red: 0.12, green: 0.60, blue: 0.49),
+                topGlow: Color(red: 0.35, green: 0.83, blue: 0.68),
+                bottomGlow: Color(red: 0.36, green: 0.66, blue: 0.82),
+                ambientOpacity: 0.12,
+                preferredColorScheme: nil
+            )
+        case .midnight:
+            DashboardPalette(
+                accent: Color(red: 0.56, green: 0.62, blue: 1.0),
+                topGlow: Color(red: 0.46, green: 0.30, blue: 0.86),
+                bottomGlow: Color(red: 0.20, green: 0.46, blue: 0.82),
+                ambientOpacity: 0.20,
+                preferredColorScheme: .dark
+            )
         }
     }
+}
 
-    static func atmosphere(for style: DashboardStyle) -> Color {
-        switch style {
-        case .softGlass: .secondary.opacity(0.025)
-        case .sakura: .pink.opacity(0.055)
-        case .mint: .mint.opacity(0.055)
-        case .midnight: .indigo.opacity(0.10)
-        }
-    }
+struct DashboardPalette {
+    let accent: Color
+    let topGlow: Color
+    let bottomGlow: Color
+    let ambientOpacity: Double
+    let preferredColorScheme: ColorScheme?
 }
 
 enum DashboardToolIdentifier: String, CaseIterable {
@@ -41,7 +70,6 @@ enum DashboardToolIdentifier: String, CaseIterable {
     case translateSelection
     case cleanup
     case uninstall
-    case settings
     case update
 }
 
@@ -88,10 +116,10 @@ struct DashboardSmartStatePresentation: Equatable {
 
     static func resolve(_ state: SmartPetState) -> Self {
         switch state {
-        case .normal: .init(title: "状态正常", systemImage: "checkmark.circle.fill", severity: .normal)
+        case .normal: .init(title: "一切平稳", systemImage: "checkmark.circle", severity: .normal)
         case .lowBattery: .init(title: "低电量", systemImage: "battery.25percent", severity: .warning)
         case .memoryPressure: .init(title: "内存紧张", systemImage: "memorychip.fill", severity: .critical)
-        case .charging: .init(title: "充电中", systemImage: "bolt.fill", severity: .normal)
+        case .charging: .init(title: "充电中", systemImage: "bolt.fill", severity: .informational)
         case .rainy: .init(title: "下雨了", systemImage: "umbrella.fill", severity: .informational)
         case .bedtime: .init(title: "该休息了", systemImage: "moon.zzz.fill", severity: .informational)
         }
@@ -106,7 +134,7 @@ enum DashboardStatusSeverity: Equatable {
 
     var color: Color {
         switch self {
-        case .normal: .green
+        case .normal: .secondary
         case .informational: .accentColor
         case .warning: .orange
         case .critical: .red

@@ -9,7 +9,8 @@ struct DashboardMetricTile: View {
     let severity: DashboardStatusSeverity
     var history: [Double] = []
     var fixedMaximum: Double?
-    var progress: Double?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -21,27 +22,23 @@ struct DashboardMetricTile: View {
                     .font(.caption)
                     .bold()
                 Spacer(minLength: 4)
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(severity.color)
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(primaryValue)
-                    .font(.title3)
-                    .bold()
-                    .monospacedDigit()
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if let progress {
-                    Gauge(value: min(max(progress, 0), 1)) {
-                        EmptyView()
-                    }
-                    .gaugeStyle(.accessoryCircularCapacity)
-                    .tint(severity.color)
-                    .frame(width: 25, height: 25)
-                    .accessibilityHidden(true)
+                if !status.isEmpty {
+                    Label(status, systemImage: severityIcon)
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                        .foregroundStyle(severity.color)
                 }
             }
+            Text(primaryValue)
+                .font(.title2)
+                .bold()
+                .monospacedDigit()
+                .lineLimit(1)
+                .contentTransition(.numericText())
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.12),
+                    value: primaryValue
+                )
             HStack(spacing: 6) {
                 Text(detail)
                     .font(.caption)
@@ -49,7 +46,11 @@ struct DashboardMetricTile: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if !history.isEmpty {
-                    DashboardSparkline(values: history, fixedMaximum: fixedMaximum, color: severity.color)
+                    DashboardSparkline(
+                        values: history,
+                        fixedMaximum: fixedMaximum,
+                        color: severity == .normal ? Color.accentColor : severity.color
+                    )
                         .frame(width: 52, height: 13)
                 }
             }
@@ -59,5 +60,14 @@ struct DashboardMetricTile: View {
         .background(.primary.opacity(0.04), in: .rect(cornerRadius: DashboardDesign.sectionRadius))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title)，\(primaryValue)，\(detail)，\(status)")
+    }
+
+    private var severityIcon: String {
+        switch severity {
+        case .normal: "checkmark"
+        case .informational: "info.circle"
+        case .warning: "exclamationmark.triangle.fill"
+        case .critical: "exclamationmark.octagon.fill"
+        }
     }
 }

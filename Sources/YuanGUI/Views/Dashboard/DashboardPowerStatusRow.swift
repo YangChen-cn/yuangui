@@ -1,0 +1,46 @@
+import SwiftUI
+
+struct DashboardPowerStatusRow: View {
+    let snapshot: SystemSnapshot
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(severity.color)
+                .accessibilityHidden(true)
+            Text(powerText)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            Label("已运行 \(MetricFormatting.uptime(snapshot.uptime))", systemImage: "clock")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .font(.caption)
+        .padding(.horizontal, 9)
+        .frame(minHeight: 32)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var severity: DashboardStatusSeverity {
+        guard let battery = snapshot.battery, battery.isPresent, !battery.isCharging else { return .normal }
+        guard let fraction = battery.chargeFraction else { return .informational }
+        return fraction <= 0.1 ? .critical : (fraction <= 0.2 ? .warning : .normal)
+    }
+
+    private var icon: String {
+        guard let battery = snapshot.battery, battery.isPresent else { return "powerplug.fill" }
+        if battery.isCharging { return "battery.100percent.bolt" }
+        return "battery.75percent"
+    }
+
+    private var powerText: String {
+        guard snapshot.isAvailable(.battery), let battery = snapshot.battery else { return "电源暂不可用" }
+        guard battery.isPresent else { return "交流电源" }
+        var parts = [battery.chargeFraction.map(MetricFormatting.percent) ?? "电量未知"]
+        parts.append(battery.isCharging ? "充电中" : (battery.powerSource == .ac ? "已接电源" : "使用电池"))
+        if let minutes = battery.timeRemainingMinutes, minutes > 0 {
+            parts.append("约\(minutes / 60)小时\(minutes % 60)分")
+        }
+        return parts.joined(separator: " · ")
+    }
+}

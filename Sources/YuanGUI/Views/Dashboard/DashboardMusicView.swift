@@ -9,7 +9,6 @@ struct DashboardMusicView: View {
 
     var body: some View {
         VStack(spacing: 9) {
-            sourcePicker
             if let track = music.playback.currentTrack {
                 nowPlaying(track)
                 queueSection
@@ -23,51 +22,42 @@ struct DashboardMusicView: View {
         .accessibilityLabel("音乐")
     }
 
-    private var sourcePicker: some View {
-        Picker("音乐来源", selection: Binding(get: { music.playback.source }, set: music.setSource)) {
-            ForEach(MusicSource.allCases) { source in
-                Label(source.title, systemImage: source.systemImage).tag(source)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .accessibilityValue(music.playback.source.title)
-    }
-
     private func nowPlaying(_ track: MusicTrack) -> some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 11) {
-                MusicArtworkView(track: track, size: 54)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(track.artist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Label(track.source.title, systemImage: track.source.systemImage)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer(minLength: 4)
-                if track.source == .bilibili {
-                    Button(music.isFavorite(track) ? "取消收藏" : "收藏", systemImage: music.isFavorite(track) ? "heart.fill" : "heart") {
-                        music.toggleFavorite(track)
+        DashboardSectionSurface(prominence: .hero) {
+            VStack(spacing: 7) {
+                HStack(spacing: 12) {
+                    MusicArtworkView(track: track, size: 66)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(track.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text(track.artist)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        DashboardMusicSourceMenu(
+                            selection: music.playback.source,
+                            onSelect: switchSource
+                        )
                     }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(music.isFavorite(track) ? Color.pink : Color.secondary)
-                    .help(music.isFavorite(track) ? "取消收藏当前歌曲" : "收藏当前歌曲")
+                    Spacer(minLength: 4)
+                    if track.source == .bilibili {
+                        Button(music.isFavorite(track) ? "取消收藏" : "收藏", systemImage: music.isFavorite(track) ? "heart.fill" : "heart") {
+                            music.toggleFavorite(track)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(music.isFavorite(track) ? Color.pink : Color.secondary)
+                        .help(music.isFavorite(track) ? "取消收藏当前歌曲" : "收藏当前歌曲")
+                    }
+                }
+                MusicProgressView(music: music)
+                HStack(spacing: 14) {
+                    Spacer()
+                    MusicTransportControls(music: music, compact: true)
+                    MusicVolumeControl(music: music, compact: true)
                 }
             }
-            MusicProgressView(music: music)
-            HStack {
-                Spacer()
-                MusicTransportControls(music: music, compact: true)
-                Spacer()
-            }
-            MusicVolumeControl(music: music, compact: true)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("正在播放 \(track.title)，\(track.artist)，来源 \(track.source.title)")
@@ -89,23 +79,20 @@ struct DashboardMusicView: View {
                 onOpenFullQueue: openFullPlayer
             )
         } else {
-            DashboardSectionSurface {
-                HStack(spacing: 9) {
-                    Image(systemName: "music.note.list")
+            VStack(spacing: 5) {
+                Divider()
+                HStack(spacing: 8) {
+                    Label("播放队列由 Music App 管理", systemImage: "music.note.list")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("播放队列由 Music App 管理")
-                            .font(.caption)
-                            .bold()
-                        Text("YuanGUI 只读取当前歌曲，不抓取不稳定的系统队列。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
+                    Spacer(minLength: 6)
                     Button("打开 Music 队列", action: music.openAppleMusic)
-                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .font(.caption)
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Apple Music 播放队列由 Music App 管理")
         }
     }
 
@@ -116,6 +103,7 @@ struct DashboardMusicView: View {
                 set: externalAudioInterruption.setEnabled
             ))
             .help("其他应用持续播放声音时自动暂停音乐")
+            .accessibilityLabel("外部声音自动暂停")
             Toggle("桌面歌词", isOn: Binding(
                 get: { music.lyricsPresentation.isVisible },
                 set: { _ in music.toggleLyricsVisible() }
@@ -132,6 +120,16 @@ struct DashboardMusicView: View {
 
     private var emptyState: some View {
         VStack(spacing: 10) {
+            HStack {
+                Text("音乐")
+                    .font(.caption)
+                    .bold()
+                Spacer()
+                DashboardMusicSourceMenu(
+                    selection: music.playback.source,
+                    onSelect: switchSource
+                )
+            }
             DashboardEmptyState(
                 title: "暂无播放内容",
                 systemImage: "music.note",
@@ -154,5 +152,14 @@ struct DashboardMusicView: View {
     private func openFullPlayer() {
         dismiss()
         appActions.open(.music)
+    }
+
+    private func switchSource(_ source: MusicSource) {
+        switch DashboardMusicSourceAction.resolve(source) {
+        case .connectAppleMusic:
+            music.connectAppleMusic()
+        case .selectBilibili:
+            music.setSource(.bilibili)
+        }
     }
 }

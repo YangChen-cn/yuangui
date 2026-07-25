@@ -19,7 +19,6 @@ struct DashboardToolsView: View {
 
     @ObservedObject var quickTools: QuickToolsController
     @ObservedObject var updater: AppUpdateStore
-    let openSettings: () -> Void
     let dismiss: () -> Void
 
     @Environment(\.appActions) private var appActions
@@ -61,9 +60,6 @@ struct DashboardToolsView: View {
                     compact("软件卸载", "应用与关联残留", "shippingbox", .maintenance) {
                         launch { appActions.open(.maintenance(tab: 1)) }
                     }
-                    compact("设置", "快捷键与偏好", "gearshape", .system) {
-                        launch(openSettings)
-                    }
                     DashboardUpdateView(updater: updater)
                 }
             }
@@ -104,6 +100,7 @@ struct DashboardQuickAction: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -121,13 +118,27 @@ struct DashboardQuickAction: View {
             .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
             .padding(9)
             .background(
-                Color.primary.opacity(isHovering ? 0.075 : 0.04),
+                backgroundColor,
                 in: .rect(cornerRadius: DashboardDesign.sectionRadius)
             )
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .scaleEffect(reduceMotion || !isHovering ? 1 : 1.006)
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.14),
+            value: isHovering
+        )
         .accessibilityLabel("\(title)，\(subtitle)")
+    }
+
+    private var backgroundColor: Color {
+        switch role {
+        case .yuanGUI:
+            Color.accentColor.opacity(isHovering ? 0.15 : 0.10)
+        case .system, .maintenance:
+            Color.primary.opacity(isHovering ? 0.07 : 0.035)
+        }
     }
 }
 
