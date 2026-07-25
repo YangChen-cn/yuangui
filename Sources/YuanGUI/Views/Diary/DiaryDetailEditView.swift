@@ -66,6 +66,10 @@ struct DiaryDetailEditView: View {
             importImages(urls)
             return !urls.isEmpty
         }
+        .background {
+            DiaryImagePasteCommandMonitor(onPasteImage: pasteImageIfAvailable)
+                .allowsHitTesting(false)
+        }
         .onChange(of: draft) { _, value in store.updateDraft(value) }
         .onDisappear {
             Task { await store.completeEditingSession(id: entry.id) }
@@ -161,11 +165,7 @@ struct DiaryDetailEditView: View {
                 .frame(maxWidth: .infinity, minHeight: 340, alignment: .topLeading)
                 .transition(.opacity)
         } else {
-            TextEditor(text: $draft.body)
-                .font(.body)
-                .lineSpacing(6)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 340)
+            DiaryGrowingTextEditor(text: $draft.body, minimumHeight: 340)
                 .overlay(alignment: .topLeading) {
                     if draft.body.isEmpty {
                         Text("写下今天发生的事…")
@@ -242,11 +242,16 @@ struct DiaryDetailEditView: View {
     }
 
     private func pasteImage() {
-        guard let image = DiaryPanelService.clipboardImage() else {
+        guard pasteImageIfAvailable() else {
             importFailures = [DiaryImageImportFailure(name: "剪贴板", message: "没有可用图片")]
             return
         }
+    }
+
+    private func pasteImageIfAvailable() -> Bool {
+        guard let image = DiaryPanelService.clipboardImage() else { return false }
         Task { importFailures = await store.addImageDataSources(to: entry.id, sources: [image]) }
+        return true
     }
 
     private func deleteEntry() {
