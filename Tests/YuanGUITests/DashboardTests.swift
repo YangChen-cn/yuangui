@@ -8,6 +8,7 @@ final class DashboardTests: XCTestCase {
         XCTAssertLessThanOrEqual(DashboardDesign.preferredWidth, 430)
         XCTAssertEqual(DashboardDesign.preferredHeight, 448, accuracy: 8)
         XCTAssertEqual(DashboardDesign.expandedHeight, 520, accuracy: 8)
+        XCTAssertEqual(DashboardDesign.navigationAnimationDuration, 0.22, accuracy: 0.001)
         XCTAssertLessThanOrEqual(DashboardDesign.minimumHeight, DashboardDesign.preferredHeight)
     }
 
@@ -39,6 +40,10 @@ final class DashboardTests: XCTestCase {
         XCTAssertEqual(
             DashboardDesign.palette(for: .liquidGlass).treatment,
             .liquidGlass
+        )
+        XCTAssertLessThanOrEqual(
+            DashboardDesign.palette(for: .liquidGlass).ambientOpacity,
+            0.12
         )
     }
 

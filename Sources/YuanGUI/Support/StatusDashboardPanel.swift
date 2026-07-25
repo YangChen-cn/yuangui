@@ -24,6 +24,9 @@ final class StatusDashboardHostingView: NSHostingView<AnyView> {
 
 @MainActor
 final class StatusDashboardPanelController {
+    // Keep the AppKit boundary limited to behavior SwiftUI's MenuBarExtra does
+    // not expose: section-dependent sizing, status-item anchoring, cross-Space
+    // placement, and the existing outside-click monitoring contract.
     private static let preferredWidth = DashboardDesign.preferredWidth
     private static let preferredHeight = DashboardDesign.preferredHeight
 
@@ -76,11 +79,15 @@ final class StatusDashboardPanelController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = .statusBar
+        panel.animationBehavior = .utilityWindow
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.acceptsMouseMovedEvents = true
         panel.ignoresMouseEvents = false
+        panel.isExcludedFromWindowsMenu = true
+        panel.isMovable = false
         panel.isReleasedWhenClosed = false
+        panel.tabbingMode = .disallowed
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         installContent(width: Self.preferredWidth, maximumHeight: DashboardDesign.expandedHeight)
     }

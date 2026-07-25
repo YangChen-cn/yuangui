@@ -58,7 +58,7 @@ struct DashboardMusicView: View {
                 MusicProgressView(music: music)
                 HStack(spacing: 14) {
                     Spacer()
-                    MusicTransportControls(music: music, compact: true)
+                    DashboardMusicTransportControls(music: music)
                     MusicVolumeControl(music: music, compact: true)
                 }
             }

@@ -14,6 +14,7 @@ enum DashboardDesign {
     static let rowHeight: CGFloat = 36
     static let queueLimit = 8
     static let animationDuration = 0.18
+    static let navigationAnimationDuration = 0.22
     static let heroRadius: CGFloat = 16
     static let avatarSize: CGFloat = 46
 

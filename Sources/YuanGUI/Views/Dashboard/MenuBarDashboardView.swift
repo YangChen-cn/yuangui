@@ -18,6 +18,7 @@ struct MenuBarDashboardView: View {
     let sectionDidChange: (DashboardSection) -> Void
 
     @Environment(\.appActions) private var appActions
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var updater = AppUpdateStore()
     @State private var showsFocusPopover = false
 
@@ -53,7 +54,11 @@ struct MenuBarDashboardView: View {
             )
         )
         .background {
-            DashboardAtmosphereBackground(palette: palette)
+            DashboardAtmosphereBackground(
+                palette: palette,
+                mode: store.mode,
+                smartState: store.smartState
+            )
         }
         .tint(palette.accent)
         .environment(\.dashboardVisualTreatment, palette.treatment)
@@ -98,6 +103,10 @@ struct MenuBarDashboardView: View {
     private func moveSelection(_ direction: MoveCommandDirection) {
         let next = panelState.selectedSection.adjacent(direction)
         guard next != panelState.selectedSection else { return }
-        panelState.selectedSection = next
+        withAnimation(
+            reduceMotion ? nil : .snappy(duration: DashboardDesign.navigationAnimationDuration)
+        ) {
+            panelState.selectedSection = next
+        }
     }
 }

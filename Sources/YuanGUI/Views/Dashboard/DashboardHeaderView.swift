@@ -27,7 +27,14 @@ struct DashboardHeaderView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 7) {
-                focusButton
+                DashboardFocusButton(
+                    title: focusButtonTitle,
+                    isRunning: focusTimer.state == .running,
+                    action: toggleFocusPopover
+                )
+                .popover(isPresented: $showsFocusPopover, arrowEdge: .top) {
+                    FocusTimerControlView(timer: focusTimer, showPet: showPet)
+                }
                 DashboardStatusLabel(presentation: smartState)
                     .lineLimit(1)
             }
@@ -37,26 +44,11 @@ struct DashboardHeaderView: View {
         .accessibilityLabel("面板顶部")
     }
 
-    private var focusButton: some View {
-        Button {
-            showsFocusPopover.toggle()
-        } label: {
-            Label(focusButtonTitle, systemImage: "timer")
-                .font(.caption)
-                .foregroundStyle(focusTimer.state == .running ? Color.accentColor : Color.secondary)
-                .padding(.horizontal, 8)
-                .frame(minHeight: 25)
-                .dashboardCapsuleGlassSurface(isActive: focusTimer.state == .running)
-                .contentShape(.capsule)
-        }
-        .buttonStyle(.plain)
-        .help(focusTimer.state == .running ? "专注中：\(focusTimer.timeText)" : "打开番茄钟")
-        .popover(isPresented: $showsFocusPopover, arrowEdge: .top) {
-            FocusTimerControlView(timer: focusTimer, showPet: showPet)
-        }
-    }
-
     private var focusButtonTitle: String {
         focusTimer.state == .running ? focusTimer.timeText : "番茄钟"
+    }
+
+    private func toggleFocusPopover() {
+        showsFocusPopover.toggle()
     }
 }
