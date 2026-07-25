@@ -13,7 +13,7 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.1.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.5.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -22,7 +22,7 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-当前文档正在准备 `2.5.0`，该版本尚未发布；README 中的公开下载链接和可下载产物仍指向已发布的 `2.1.0`。
+当前稳定版本为 `2.5.0`。
 
 ## 主要功能
 
@@ -65,9 +65,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-2.1.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.1.0.dmg)
+[一键下载最新版 `YuanGUI-2.5.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.5.0.dmg)
 
-1. 打开 `YuanGUI-2.1.0.dmg`。
+1. 打开 `YuanGUI-2.5.0.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -168,7 +168,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
 
 ```text
-dist/YuanGUI-2.1.0.dmg
+dist/YuanGUI-2.5.0.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "2.1.0"
-    static let fallbackBuild = "12"
+    static let fallbackVersion = "2.5.0"
+    static let fallbackBuild = "13"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,11 +14,11 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
-        "元圭 2.1.0：新增其他应用音频自动暂停与安全恢复；该功能默认关闭，可在设置或状态栏音乐页开启。",
-        "Apple Music 和哔哩哔哩播放器都提供独立播放、暂停和音量控制；切换到哔哩哔哩会正确恢复上次选择的歌曲信息。",
-        "自动暂停只在外部声音持续约 1 秒后生效；仅恢复由此功能暂停的音乐，用户手动操作会立即取消恢复资格。",
-        "外部音频检测新增 Core Audio 与状态机诊断日志，便于定位应用保留输出流造成的恢复延迟。",
-        "延续桌宠交互、截图翻译和音乐资料库的稳定性改进。"
+        "元圭 2.5.0：新增原生 macOS 恋爱手账，支持快速记录、时间线、日历、照片、Markdown、搜索和完整备份。",
+        "手账数据采用版本化本地存储、损坏隔离、最近删除和可验证恢复流程，自动保存与桌宠反馈更加稳定。",
+        "状态栏面板重构为概览、音乐和工具三个轻量区域，保留实时系统状态、天气、播放队列和常用操作。",
+        "优化状态栏首击、滚动边界、不同页面高度和实时监控刷新；音乐队列可快速预览后续八首。",
+        "继续支持 Apple Music、哔哩哔哩播放、截图翻译、划词翻译、清理屋及应用内更新。"
     ]
 }
 
