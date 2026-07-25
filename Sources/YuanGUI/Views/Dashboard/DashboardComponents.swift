@@ -179,8 +179,6 @@ struct DashboardToggleButton: View {
     let action: () -> Void
 
     @State private var isHovering = false
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dashboardVisualTreatment) private var treatment
 
     var body: some View {
         Button(action: action) {
@@ -189,34 +187,16 @@ struct DashboardToggleButton: View {
                 .font(.caption)
                 .padding(.horizontal, 9)
                 .frame(minHeight: 30)
-                .background { toggleBackground }
+                .dashboardControlGlassSurface(
+                    isActive: isOn,
+                    isHovering: isHovering
+                )
                 .contentShape(.rect)
         }
             .buttonStyle(.plain)
             .onHover { isHovering = $0 }
             .help("\(title)：\(isOn ? "开" : "关")")
             .accessibilityValue(isOn ? "开" : "关")
-    }
-
-    @ViewBuilder
-    private var toggleBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: DashboardDesign.controlRadius, style: .continuous)
-        if treatment == .liquidGlass {
-            shape
-                .fill(isOn ? AnyShapeStyle(Color.accentColor.opacity(0.17)) : AnyShapeStyle(.thinMaterial))
-                .overlay {
-                    shape.strokeBorder(
-                        .white.opacity(colorScheme == .dark ? 0.16 : 0.48),
-                        lineWidth: 0.5
-                    )
-                }
-        } else {
-            shape.fill(
-                isOn
-                    ? Color.accentColor.opacity(0.16)
-                    : Color.primary.opacity(isHovering ? 0.08 : 0.035)
-            )
-        }
     }
 }
 

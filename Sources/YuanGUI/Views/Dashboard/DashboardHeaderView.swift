@@ -46,12 +46,7 @@ struct DashboardHeaderView: View {
                 .foregroundStyle(focusTimer.state == .running ? Color.accentColor : Color.secondary)
                 .padding(.horizontal, 8)
                 .frame(minHeight: 25)
-                .background(
-                    focusTimer.state == .running
-                        ? Color.accentColor.opacity(0.12)
-                        : Color.primary.opacity(0.035),
-                    in: .capsule
-                )
+                .dashboardCapsuleGlassSurface(isActive: focusTimer.state == .running)
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)

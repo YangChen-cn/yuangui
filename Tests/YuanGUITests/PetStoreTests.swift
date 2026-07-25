@@ -277,6 +277,21 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(defaults.bool(forKey: "petMotionEnabled"))
     }
 
+    func testFreshStoreDefaultsToLiquidGlassDashboardStyle() {
+        let suite = "PetStoreDashboardStyleTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+
+        XCTAssertEqual(store.dashboardStyle, .liquidGlass)
+        XCTAssertNil(defaults.object(forKey: "dashboardStyle"))
+    }
+
     func testHiddenPetSuppressesAmbientMessagesAndClearsVisibleMessage() {
         let suite = "PetStorePresentationTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
