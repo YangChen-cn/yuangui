@@ -55,6 +55,11 @@ private final class PetAuxiliaryBubblePanel: NSPanel {
 
 @MainActor
 final class PetPanelController {
+    static let auxiliaryBubbleCollectionBehavior: NSWindow.CollectionBehavior = [
+        .canJoinAllSpaces,
+        .fullScreenAuxiliary
+    ]
+
     let panel: PetPanel
     private let store: PetStore
     private let chat: ChatStore
@@ -169,7 +174,7 @@ final class PetPanelController {
         auxiliaryBubblePanel.level = .floating
         auxiliaryBubblePanel.hidesOnDeactivate = false
         auxiliaryBubblePanel.isReleasedWhenClosed = false
-        auxiliaryBubblePanel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        auxiliaryBubblePanel.collectionBehavior = Self.auxiliaryBubbleCollectionBehavior
         auxiliaryBubblePanel.contentView = NSHostingView(rootView:
             PetAuxiliaryBubbleView(
                 store: store,
