@@ -66,10 +66,6 @@ struct DiaryDetailEditView: View {
             importImages(urls)
             return !urls.isEmpty
         }
-        .background {
-            DiaryImagePasteCommandMonitor(onPasteImage: pasteImageIfAvailable)
-                .allowsHitTesting(false)
-        }
         .onChange(of: draft) { _, value in store.updateDraft(value) }
         .onDisappear {
             Task { await store.completeEditingSession(id: entry.id) }
@@ -165,7 +161,11 @@ struct DiaryDetailEditView: View {
                 .frame(maxWidth: .infinity, minHeight: 340, alignment: .topLeading)
                 .transition(.opacity)
         } else {
-            DiaryGrowingTextEditor(text: $draft.body, minimumHeight: 340)
+            DiaryGrowingTextEditor(
+                text: $draft.body,
+                minimumHeight: 340,
+                onPasteImage: pasteImageIfAvailable
+            )
                 .overlay(alignment: .topLeading) {
                     if draft.body.isEmpty {
                         Text("写下今天发生的事…")

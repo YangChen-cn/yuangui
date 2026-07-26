@@ -5,6 +5,20 @@ import XCTest
 
 final class DiaryEntryTests: XCTestCase {
 
+    @MainActor
+    func testDiaryTextViewHandlesImagePasteInsideTheBodyEditor() {
+        let textView = DiaryTextView()
+        var pasteCount = 0
+        textView.onPasteImage = {
+            pasteCount += 1
+            return true
+        }
+
+        textView.paste(nil)
+
+        XCTAssertEqual(pasteCount, 1)
+    }
+
     func testCodableRoundTrip() throws {
         let entry = DiaryEntry(
             occurredAt: Date(timeIntervalSince1970: 1_700_000_000),

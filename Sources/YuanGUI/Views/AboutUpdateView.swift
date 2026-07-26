@@ -8,6 +8,12 @@ struct AboutUpdateView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                SettingsPageHeader(
+                    title: "关于",
+                    subtitle: "版本信息、更新内容与应用更新",
+                    systemImage: "info.circle.fill",
+                    accent: .blue
+                )
                 HStack(spacing: 14) {
                     Image(nsImage: NSImage(named: NSImage.applicationIconName) ?? NSImage())
                         .resizable()

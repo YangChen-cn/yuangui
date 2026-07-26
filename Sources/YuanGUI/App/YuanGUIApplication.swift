@@ -336,6 +336,7 @@ final class WindowCoordinator: NSObject {
                 loginItem: loginItem,
                 focusTimer: focusTimer,
                 music: music,
+                diary: diary,
                 externalAudioInterruption: externalAudioInterruption,
                 quickTools: quickTools,
                 showPet: { [weak self] in self?.panelController?.show() },

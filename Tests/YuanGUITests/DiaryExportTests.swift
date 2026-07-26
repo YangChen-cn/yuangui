@@ -68,6 +68,44 @@ final class DiaryExportTests: XCTestCase {
         XCTAssertFalse(listing.contains(where: { $0.contains("Exports") || $0.contains("old.zip") }))
     }
 
+    func testAutomaticBackupRunsOncePerDayAndPrunesDailyAndWeeklyArchives() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let manager = DiaryAutoBackupService(
+            layout: layout,
+            exportService: service,
+            calendar: calendar
+        )
+        let start = Date(timeIntervalSince1970: 1_735_689_600)
+
+        let first = try await manager.backupIfNeeded(now: start)
+        let repeated = try await manager.backupIfNeeded(now: start.addingTimeInterval(3_600))
+        XCTAssertEqual(first.dailyCount, 1)
+        XCTAssertEqual(repeated.dailyCount, 1)
+
+        for offset in 1...12 {
+            let date = calendar.date(byAdding: .day, value: offset * 4, to: start)!
+            _ = try await manager.backupIfNeeded(now: date)
+        }
+        let status = try await manager.status()
+        XCTAssertEqual(status.dailyCount, DiaryAutoBackupService.dailyRetentionCount)
+        XCTAssertEqual(status.weeklyCount, DiaryAutoBackupService.weeklyRetentionCount)
+        XCTAssertEqual(status.manualCount, 0)
+        XCTAssertNotNil(status.lastAutomaticBackup)
+    }
+
+    func testImmediateBackupAlwaysCreatesANewManualArchive() async throws {
+        let manager = DiaryAutoBackupService(layout: layout, exportService: service)
+        let now = Date(timeIntervalSince1970: 1_735_689_600)
+        let first = try await manager.backupNow(now: now)
+        let second = try await manager.backupNow(now: now)
+
+        XCTAssertNotEqual(first.0, second.0)
+        XCTAssertEqual(second.1.manualCount, 2)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.0.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.0.path))
+    }
+
     func testInvalidBackupDoesNotDeleteExistingDiary() async throws {
         let existing = DiaryEntry(title: "保留", body: "不能丢")
         try await repository.save(existing)

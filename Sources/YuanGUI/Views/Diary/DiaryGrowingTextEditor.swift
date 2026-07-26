@@ -6,13 +6,15 @@ import SwiftUI
 struct DiaryGrowingTextEditor: NSViewRepresentable {
     @Binding var text: String
     let minimumHeight: CGFloat
+    let onPasteImage: () -> Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
     }
 
     func makeNSView(context: Context) -> NSTextView {
-        let textView = NSTextView(frame: .zero)
+        let textView = DiaryTextView(frame: .zero)
+        textView.onPasteImage = onPasteImage
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.drawsBackground = false
@@ -35,6 +37,7 @@ struct DiaryGrowingTextEditor: NSViewRepresentable {
 
     func updateNSView(_ textView: NSTextView, context: Context) {
         context.coordinator.text = $text
+        (textView as? DiaryTextView)?.onPasteImage = onPasteImage
         if textView.string != text {
             textView.string = text
         }
@@ -81,77 +84,6 @@ struct DiaryGrowingTextEditor: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
             textView.invalidateIntrinsicContentSize()
-        }
-    }
-}
-
-struct DiaryImagePasteCommandMonitor: NSViewRepresentable {
-    let onPasteImage: () -> Bool
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPasteImage: onPasteImage)
-    }
-
-    func makeNSView(context: Context) -> MonitorView {
-        let view = MonitorView(frame: .zero)
-        view.coordinator = context.coordinator
-        context.coordinator.view = view
-        return view
-    }
-
-    func updateNSView(_ nsView: MonitorView, context: Context) {
-        context.coordinator.onPasteImage = onPasteImage
-    }
-
-    static func dismantleNSView(_ nsView: MonitorView, coordinator: Coordinator) {
-        coordinator.uninstall()
-    }
-
-    final class MonitorView: NSView {
-        weak var coordinator: Coordinator?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if window == nil {
-                coordinator?.uninstall()
-            } else {
-                coordinator?.install()
-            }
-        }
-    }
-
-    final class Coordinator {
-        weak var view: MonitorView?
-        var onPasteImage: () -> Bool
-        private var eventMonitor: Any?
-
-        init(onPasteImage: @escaping () -> Bool) {
-            self.onPasteImage = onPasteImage
-        }
-
-        func install() {
-            guard eventMonitor == nil else { return }
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self,
-                      event.window === view?.window,
-                      !event.isARepeat,
-                      event.charactersIgnoringModifiers?.lowercased() == "v",
-                      event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                      onPasteImage() else {
-                    return event
-                }
-                return nil
-            }
-        }
-
-        func uninstall() {
-            guard let eventMonitor else { return }
-            NSEvent.removeMonitor(eventMonitor)
-            self.eventMonitor = nil
-        }
-
-        deinit {
-            uninstall()
         }
     }
 }

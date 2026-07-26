@@ -6,7 +6,14 @@ struct QuickToolsSettingsView: View {
     @ObservedObject var settings: QuickToolsSettingsStore
 
     var body: some View {
-        Form {
+        VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
+            SettingsPageHeader(
+                title: "快捷工具",
+                subtitle: "集中管理截图、截图翻译和划词翻译",
+                systemImage: "wand.and.stars",
+                accent: .blue
+            )
+            Form {
             Section("全局快捷键") {
                 shortcutRow(.regionScreenshot, binding: settings.screenshotHotKey)
                 shortcutRow(.screenshotTranslation, binding: settings.screenshotTranslationHotKey)
@@ -89,8 +96,9 @@ struct QuickToolsSettingsView: View {
             if let message = controller.message {
                 Section { Text(message).font(.caption).foregroundStyle(.secondary) }
             }
+            }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
     }
 
     @ViewBuilder
