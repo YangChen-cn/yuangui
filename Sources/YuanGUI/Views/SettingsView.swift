@@ -190,7 +190,15 @@ struct SettingsView: View {
             )
             Form {
                 Section("陪伴式专注") {
-                Stepper("专注时长：\(focusTimer.durationMinutes) 分钟", value: $focusTimer.durationMinutes, in: 1...180, step: 5)
+                Stepper(
+                    "专注时长：\(focusTimer.durationMinutes) 分钟",
+                    value: Binding(
+                        get: { focusTimer.durationMinutes },
+                        set: focusTimer.setDurationMinutes
+                    ),
+                    in: FocusTimerStore.minimumDurationMinutes...FocusTimerStore.maximumDurationMinutes,
+                    step: 5
+                )
                 Text("专注期间桌宠保持安静，隐藏日常对白、天气播报和非紧急系统气泡；低电量与内存紧张仍会提醒。")
                     .font(.caption).foregroundStyle(.secondary)
                 if focusTimer.state == .running || focusTimer.state == .paused {

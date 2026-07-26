@@ -7,13 +7,10 @@ final class FocusTimerStore: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var remainingSeconds = 25 * 60
-    @Published var durationMinutes: Int {
-        didSet {
-            durationMinutes = min(max(durationMinutes, 1), 180)
-            defaults.set(durationMinutes, forKey: "focusDurationMinutes")
-            if state == .idle || state == .completed { remainingSeconds = durationMinutes * 60 }
-        }
-    }
+    @Published private(set) var durationMinutes: Int
+
+    static let minimumDurationMinutes = 1
+    static let maximumDurationMinutes = 180
 
     private let pet: PetStore
     private let defaults: UserDefaults
@@ -24,8 +21,9 @@ final class FocusTimerStore: ObservableObject {
         self.pet = pet
         self.defaults = defaults
         let saved = defaults.object(forKey: "focusDurationMinutes") as? Int ?? 25
-        self.durationMinutes = min(max(saved, 1), 180)
-        self.remainingSeconds = min(max(saved, 1), 180) * 60
+        let initialDuration = Self.clampedDuration(saved)
+        self.durationMinutes = initialDuration
+        self.remainingSeconds = initialDuration * 60
     }
 
     var timeText: String {
@@ -46,8 +44,19 @@ final class FocusTimerStore: ObservableObject {
         }
     }
 
+    func setDurationMinutes(_ minutes: Int) {
+        let clamped = Self.clampedDuration(minutes)
+        if durationMinutes != clamped {
+            durationMinutes = clamped
+        }
+        defaults.set(clamped, forKey: "focusDurationMinutes")
+        if state == .idle || state == .completed {
+            remainingSeconds = clamped * 60
+        }
+    }
+
     func start(minutes: Int) {
-        durationMinutes = min(max(minutes, 1), 180)
+        setDurationMinutes(minutes)
         start()
     }
 
@@ -101,5 +110,9 @@ final class FocusTimerStore: ObservableObject {
     private func updateRemaining() {
         guard let deadline else { return }
         remainingSeconds = max(Int(deadline.timeIntervalSinceNow.rounded(.up)), 0)
+    }
+
+    private static func clampedDuration(_ minutes: Int) -> Int {
+        min(max(minutes, minimumDurationMinutes), maximumDurationMinutes)
     }
 }

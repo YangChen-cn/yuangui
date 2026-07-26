@@ -21,13 +21,21 @@ struct FocusTimerControlView: View {
             if timer.state == .idle || timer.state == .completed {
                 HStack(spacing: 6) {
                     ForEach([15, 25, 45, 60], id: \.self) { minutes in
-                        Button("\(minutes)") { timer.durationMinutes = minutes }
+                        Button("\(minutes)") { timer.setDurationMinutes(minutes) }
                             .buttonStyle(.bordered)
                             .tint(timer.durationMinutes == minutes ? .red : .secondary)
                             .controlSize(.small)
                     }
                     Spacer()
-                    Stepper("\(timer.durationMinutes) 分钟", value: $timer.durationMinutes, in: 1...180, step: 5)
+                    Stepper(
+                        "\(timer.durationMinutes) 分钟",
+                        value: Binding(
+                            get: { timer.durationMinutes },
+                            set: timer.setDurationMinutes
+                        ),
+                        in: FocusTimerStore.minimumDurationMinutes...FocusTimerStore.maximumDurationMinutes,
+                        step: 5
+                    )
                         .fixedSize()
                 }
             } else {

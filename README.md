@@ -44,10 +44,12 @@
     <td><img src="docs/media/手帐本.gif" width="390" alt="元圭恋爱手帐演示"></td>
   </tr>
   <tr>
-    <th colspan="2">音乐播放器</th>
+    <th>音乐播放器</th>
+    <th>桌宠AI聊天</th>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="docs/media/播放器.gif" width="620" alt="音乐播放器演示"></td>
+    <td ><img src="docs/media/播放器.gif" width="390" alt="音乐播放器演示"></td>
+    <td ><img src="docs/media/ai chat.gif" width="390" alt="桌宠AI对话演示"></td>
   </tr>
 </table>
 

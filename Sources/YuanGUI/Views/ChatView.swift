@@ -2,9 +2,23 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum PetReplyBubbleLayout {
+    static let minimumContentHeight: CGFloat = 28
+    static let maximumContentHeight: CGFloat = 168
+}
+
+private struct PetReplyBubbleContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct PetReplyBubble: View {
     @ObservedObject var chat: ChatStore
     @ObservedObject var pet: PetStore
+    @State private var contentHeight = PetReplyBubbleLayout.minimumContentHeight
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -19,8 +33,17 @@ struct PetReplyBubble: View {
                 replyContent
                     .font(.system(size: 11.5, weight: .medium, design: .rounded))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: PetReplyBubbleContentHeightKey.self,
+                                value: proxy.size.height
+                            )
+                        }
+                    }
             }
-            .frame(height: replyContentHeight)
+            .frame(height: contentHeight)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -53,13 +76,14 @@ struct PetReplyBubble: View {
                 .frame(width: 25, height: 13)
                 .offset(x: 92, y: 9)
         }
-    }
-
-    private var replyContentHeight: CGFloat {
-        if chat.errorMessage != nil { return 28 }
-        let count = chat.latestReply?.count ?? 0
-        let estimatedLines = max(1, Int(ceil(Double(count) / 32.0)))
-        return min(max(CGFloat(estimatedLines) * 18, 28), 92)
+        .onPreferenceChange(PetReplyBubbleContentHeightKey.self) { measuredHeight in
+            let boundedHeight = min(
+                max(measuredHeight, PetReplyBubbleLayout.minimumContentHeight),
+                PetReplyBubbleLayout.maximumContentHeight
+            )
+            guard abs(contentHeight - boundedHeight) > 0.5 else { return }
+            contentHeight = boundedHeight
+        }
     }
 
     @ViewBuilder
