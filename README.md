@@ -13,7 +13,7 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.1.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.5.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -22,20 +22,43 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-当前文档正在准备 `2.5.0`，该版本尚未发布；README 中的公开下载链接和可下载产物仍指向已发布的 `2.1.0`。
+当前稳定版本为 `2.5.0`。
+
+## 界面预览
+
+### GIF 演示
+
+> 🎬 此处预留一段 20–30 秒的 GIF：依次展示桌宠互动、菜单栏概览、音乐控制和手帐本快速记录。
+
+<!--
+录制完成后将文件放到 docs/media/yuangui-demo.gif，并用下面的内容替换上方占位说明：
+<p align="center">
+  <img src="docs/media/yuangui-demo.gif" width="820" alt="元圭与 VCC 功能演示">
+</p>
+-->
+
+### 界面截图
+
+| 桌宠与状态气泡 | 菜单栏控制中心 |
+| --- | --- |
+| _截图预留_ | _截图预留_ |
+| **手帐本** | **音乐与快捷工具** |
+| _截图预留_ | _截图预留_ |
+
+<!-- 建议截图统一放在 docs/media/，宽度和窗口阴影保持一致。 -->
 
 ## 主要功能
 
 - **三种角色模式**：元圭、VCC、元圭与 VCC 一起。
 - **元圭恋爱手账**：原生 macOS 三栏日记界面，支持快速记录、心情、天气、地点、播放中的音乐、标签、Markdown、照片、日历、照片墙、那年今日、搜索、收藏、最近删除以及 Markdown/JSON/ZIP 导出。
-- **本地日记存储**：日记和附件保存在本机，采用带格式版本的 JSON、原图/缩略图分离、损坏文件隔离、脏记录保存和可验证备份恢复；地点可读取天气服务当前位置后继续编辑。
+- **本地日记存储**：日记和附件保存在本机，采用带格式版本的 JSON、原图/缩略图分离、损坏文件隔离、竞态安全的自动保存和可验证备份恢复；每天最多自动备份一次，并保留 7 个每日备份和 4 个每周备份。
 - **轻量动作效果**：每个普通动作和状态动作都带有短暂的位移、缩放、摆动或弹跳效果；低电量模式和“减少动态效果”下会自动静止。
 - **智能状态反应**：支持低电量、充电、内存压力、下雨和睡觉时间等状态动作；持续天气等非紧急状态短暂展示后会恢复听歌或当前活动，内存达到 90% 或系统报告严重压力时提醒。
 - **系统状态面板**：查看 CPU、内存、磁盘、网络、电池和运行时间。
 - **本地天气**：经用户授权后获取大致位置，并通过 Open-Meteo 获取天气，无需天气 API Key。
 - **主动对白**：可设置 1–120 分钟的日常对白间隔，并在天气刷新后进行角色化播报。
 - **AI 对话**：支持 OpenAI 兼容接口、SSE 流式回复（单次最多 4096 tokens）；填写 URL 与 API Key 后可自动读取模型，也可以手动填写模型名和编辑角色提示词。
-- **附件对话与历史记录**：支持图片和文本类附件，保留本地聊天历史。
+- **附件对话与历史记录**：支持图片和文本类附件，保留本地聊天历史；异步回复始终写回发起请求的会话。
 - **统一音乐播放器**：可以控制系统 Apple Music，也能导入哔哩哔哩 URL、BV 号和短链接播放公开视频音频；状态栏和完整播放器均可独立调节音量，并可选择在其他应用持续播放声音时自动暂停。
 - **哔哩哔哩资料库**：支持读取登录账号创建或收藏的视频收藏夹，弹窗选择后一键去重导入；同时支持播放列表、收藏、本地歌单和多种播放模式。
 - **哔哩哔哩扫码登录与字幕**：登录后可读取账号有权访问的播放器字幕；应用不会读取或保存账号密码。
@@ -65,9 +88,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-2.1.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.1.0.dmg)
+[一键下载最新版 `YuanGUI-2.5.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.5.0.dmg)
 
-1. 打开 `YuanGUI-2.1.0.dmg`。
+1. 打开 `YuanGUI-2.5.0.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -144,7 +167,7 @@ swift test
 swift test
 ```
 
-当前项目包含 183 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
+当前项目包含 271 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -168,7 +191,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
 
 ```text
-dist/YuanGUI-2.1.0.dmg
+dist/YuanGUI-2.5.0.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

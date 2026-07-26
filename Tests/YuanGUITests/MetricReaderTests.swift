@@ -93,6 +93,15 @@ final class MetricReaderTests: XCTestCase {
         XCTAssertLessThanOrEqual(result.total, 1)
     }
 
+    func testCPURejectsTooShortOrStaleDeltaWindows() {
+        XCTAssertFalse(CPUReader.shouldUseDelta(elapsed: 0.01))
+        XCTAssertFalse(CPUReader.shouldUseDelta(elapsed: 0.49))
+        XCTAssertTrue(CPUReader.shouldUseDelta(elapsed: 0.5))
+        XCTAssertTrue(CPUReader.shouldUseDelta(elapsed: 2))
+        XCTAssertTrue(CPUReader.shouldUseDelta(elapsed: 10))
+        XCTAssertFalse(CPUReader.shouldUseDelta(elapsed: 10.01))
+    }
+
     func testMemoryFormulaSubtractsCache() {
         let pages = MemoryPageCounts(
             active: 10,

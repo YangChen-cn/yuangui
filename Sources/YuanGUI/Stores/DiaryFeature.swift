@@ -24,18 +24,24 @@ final class DiaryFeature: ObservableObject {
     @Published private(set) var saveState: DiarySaveState = .idle
     @Published private(set) var recoveredFiles: [URL] = []
     @Published private(set) var recentlyDeletedItems: [DiaryDeletedItem] = []
+    @Published private(set) var backupStatus = DiaryBackupStatus.empty
+    @Published private(set) var isBackupWorking = false
     @Published var operationError: String?
 
     private let repository: DiaryRepository
     private let attachmentStore: DiaryAttachmentStore
     private let exportService: DiaryExportService
+    private let autoBackupService: DiaryAutoBackupService?
+    let backupDirectoryURL: URL?
     private let searchService: DiarySearchService
     private weak var weatherService: WeatherService?
     private weak var musicFeature: MusicFeature?
     private var autoSaveTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
+    private var autoBackupTask: Task<Void, Never>?
     private var debouncedSearchText = ""
     private var feedbackPendingEntryIDs = Set<UUID>()
+    private var dirtyEntryRevisions: [UUID: UInt64] = [:]
 
     var onEntryCompleted: (() -> Void)?
 
@@ -43,6 +49,8 @@ final class DiaryFeature: ObservableObject {
         repository: DiaryRepository,
         attachmentStore: DiaryAttachmentStore,
         exportService: DiaryExportService,
+        autoBackupService: DiaryAutoBackupService? = nil,
+        backupDirectoryURL: URL? = nil,
         searchService: DiarySearchService,
         weatherService: WeatherService? = nil,
         musicFeature: MusicFeature? = nil
@@ -50,16 +58,24 @@ final class DiaryFeature: ObservableObject {
         self.repository = repository
         self.attachmentStore = attachmentStore
         self.exportService = exportService
+        self.autoBackupService = autoBackupService
+        self.backupDirectoryURL = backupDirectoryURL
         self.searchService = searchService
         self.weatherService = weatherService
         self.musicFeature = musicFeature
     }
 
     convenience init(layout: DiaryStorageLayout, weatherService: WeatherService? = nil, musicFeature: MusicFeature? = nil) {
+        let exportService = DiaryExportService(layout: layout)
         self.init(
             repository: DiaryRepository(layout: layout),
             attachmentStore: DiaryAttachmentStore(layout: layout),
-            exportService: DiaryExportService(layout: layout),
+            exportService: exportService,
+            autoBackupService: DiaryAutoBackupService(
+                layout: layout,
+                exportService: exportService
+            ),
+            backupDirectoryURL: layout.backupURL,
             searchService: DiarySearchService(),
             weatherService: weatherService,
             musicFeature: musicFeature
@@ -289,6 +305,7 @@ final class DiaryFeature: ObservableObject {
             let deleted = try await repository.moveToRecentlyDeleted(entry)
             entries.removeAll { $0.id == id }
             dirtyEntryIDs.remove(id)
+            dirtyEntryRevisions[id] = nil
             feedbackPendingEntryIDs.remove(id)
             if selectedEntryID == id { selectedEntryID = filteredEntries.first?.id ?? entries.first?.id }
             recentlyDeletedItems.insert(deleted, at: 0)
@@ -406,7 +423,10 @@ final class DiaryFeature: ObservableObject {
     func flush() async -> Bool {
         autoSaveTask?.cancel()
         autoSaveTask = nil
-        return await saveDirtyEntries(ids: dirtyEntryIDs)
+        while !dirtyEntryIDs.isEmpty {
+            guard await saveDirtyEntries(ids: dirtyEntryIDs) else { return false }
+        }
+        return true
     }
 
     @discardableResult
@@ -448,6 +468,24 @@ final class DiaryFeature: ObservableObject {
         return try await exportService.backup(to: url)
     }
 
+    func createBackupNow() async throws -> URL {
+        guard let autoBackupService else { throw DiaryFeatureError.backupUnavailable }
+        guard await flush() else { throw DiaryFeatureError.unsavedChanges }
+        isBackupWorking = true
+        defer { isBackupWorking = false }
+        let result = try await autoBackupService.backupNow()
+        backupStatus = result.1
+        return result.0
+    }
+
+    func refreshBackupStatus() async {
+        guard let autoBackupService else {
+            backupStatus = .empty
+            return
+        }
+        backupStatus = (try? await autoBackupService.status()) ?? .empty
+    }
+
     func restoreBackup(from url: URL) async throws {
         guard await flush() else { throw DiaryFeatureError.unsavedChanges }
         let report = try await exportService.restore(from: url)
@@ -465,6 +503,7 @@ final class DiaryFeature: ObservableObject {
             try? await repository.purgeRecentlyDeleted(olderThan: cutoff)
             recentlyDeletedItems = try await repository.recentlyDeleted()
             loadState = .loaded
+            await refreshBackupStatus()
         } catch {
             loadState = .failed(error.localizedDescription)
         }
@@ -477,11 +516,13 @@ final class DiaryFeature: ObservableObject {
             .sorted { $0.occurredAt > $1.occurredAt }
         recoveredFiles = report.recoveredFiles
         dirtyEntryIDs.removeAll()
+        dirtyEntryRevisions.removeAll()
         feedbackPendingEntryIDs.removeAll()
         selectedEntryID = entries.first?.id
     }
 
     private func markDirty(_ id: UUID, schedule: Bool = true) {
+        dirtyEntryRevisions[id, default: 0] &+= 1
         dirtyEntryIDs.insert(id)
         feedbackPendingEntryIDs.insert(id)
         if schedule { scheduleAutoSave() }
@@ -512,19 +553,41 @@ final class DiaryFeature: ObservableObject {
             if case .saving = saveState { saveState = .idle }
             return true
         }
+        let revisions = Dictionary(uniqueKeysWithValues: ids.map { ($0, dirtyEntryRevisions[$0] ?? 0) })
         let candidates = entries.filter { ids.contains($0.id) && $0.hasPersistableContent }
         let skipped = ids.subtracting(candidates.map(\.id))
-        dirtyEntryIDs.subtract(skipped)
+        clearDirtyEntries(skipped, matching: revisions)
         guard !candidates.isEmpty else { return true }
         saveState = .saving
         let report = await repository.save(candidates)
-        dirtyEntryIDs.subtract(report.savedIDs)
+        clearDirtyEntries(report.savedIDs, matching: revisions)
         if report.succeeded {
             saveState = .saved(Date())
+            scheduleAutomaticBackup()
             return true
         }
         saveState = .failed(report.failures.map { $0.message }.joined(separator: "\n"))
         return false
+    }
+
+    private func clearDirtyEntries(_ ids: Set<UUID>, matching revisions: [UUID: UInt64]) {
+        for id in ids where dirtyEntryRevisions[id] == revisions[id] {
+            dirtyEntryIDs.remove(id)
+            dirtyEntryRevisions[id] = nil
+        }
+    }
+
+    private func scheduleAutomaticBackup() {
+        guard autoBackupTask == nil, let autoBackupService else { return }
+        autoBackupTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                backupStatus = try await autoBackupService.backupIfNeeded()
+            } catch {
+                operationError = "自动备份失败：\(error.localizedDescription)"
+            }
+            autoBackupTask = nil
+        }
     }
 
     private func normalizeTags(_ tags: [String]) -> [String] {
@@ -556,5 +619,12 @@ private extension DiaryEntry {
 
 enum DiaryFeatureError: LocalizedError {
     case unsavedChanges
-    var errorDescription: String? { "仍有未保存的日记，操作已取消" }
+    case backupUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .unsavedChanges: "仍有未保存的日记，操作已取消"
+        case .backupUnavailable: "当前无法使用日记备份"
+        }
+    }
 }

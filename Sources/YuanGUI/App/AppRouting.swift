@@ -6,6 +6,7 @@ enum SettingsTab: Int, CaseIterable, Equatable, Sendable {
     case ai
     case focus
     case music
+    case diary
     case about
 }
 

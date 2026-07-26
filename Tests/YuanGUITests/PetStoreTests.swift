@@ -441,6 +441,13 @@ final class PetStoreTests: XCTestCase {
         XCTAssertLessThan(mini.height, small.height)
     }
 
+    func testAuxiliaryBubbleFollowsPetAcrossSpaces() {
+        let behavior = PetPanelController.auxiliaryBubbleCollectionBehavior
+        XCTAssertTrue(behavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(behavior.contains(.fullScreenAuxiliary))
+        XCTAssertFalse(behavior.contains(.moveToActiveSpace))
+    }
+
     func testCompactPetCanUseTransparentTopInsetButBubblesStayVisible() {
         XCTAssertEqual(
             PetLayout.allowedTopOverflow(scale: 1, showsBubble: false, showsChat: false, showsMaintenance: false),

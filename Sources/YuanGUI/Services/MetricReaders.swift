@@ -29,15 +29,28 @@ struct CPUTickSample: Equatable {
 final class CPUReader: MetricReader {
     let identifier = MetricIdentifier.cpu
     let interval: TimeInterval = 2
+    static let validDeltaInterval: ClosedRange<TimeInterval> = 0.5...10
+
     private var previousTicks: CPUTickSample?
+    private var previousUptime: TimeInterval?
 
     func read(previous: SystemSnapshot) throws -> MetricUpdate {
         let current = try readTicks()
-        defer { previousTicks = current }
-        guard let previousTicks else {
-            return .cpu(CPUMetrics(total: 0, user: 0, system: 0))
+        let currentUptime = ProcessInfo.processInfo.systemUptime
+        defer {
+            previousTicks = current
+            previousUptime = currentUptime
+        }
+        guard let previousTicks,
+              let previousUptime,
+              Self.shouldUseDelta(elapsed: currentUptime - previousUptime) else {
+            return .cpu(previous.cpu ?? CPUMetrics(total: 0, user: 0, system: 0))
         }
         return .cpu(Self.calculate(previous: previousTicks, current: current))
+    }
+
+    static func shouldUseDelta(elapsed: TimeInterval) -> Bool {
+        validDeltaInterval.contains(elapsed)
     }
 
     static func calculate(previous: CPUTickSample, current: CPUTickSample) -> CPUMetrics {

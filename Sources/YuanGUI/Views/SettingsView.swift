@@ -16,6 +16,7 @@ struct SettingsView: View {
     @ObservedObject var loginItem: LoginItemStore
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedMusicFeature var music: MusicFeature
+    @ObservedObject var diary: DiaryFeature
     @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @ObservedObject var quickTools: QuickToolsController
     @ObservedObject var selection: SettingsSelectionModel
@@ -32,6 +33,7 @@ struct SettingsView: View {
                 Label("AI 对话", systemImage: "message.fill").tag(SettingsTab.ai)
                 Label("专注", systemImage: "timer").tag(SettingsTab.focus)
                 Label("音乐", systemImage: "music.note").tag(SettingsTab.music)
+                Label("手帐本", systemImage: "book.closed.fill").tag(SettingsTab.diary)
                 Label("关于", systemImage: "info.circle.fill").tag(SettingsTab.about)
             }
             .listStyle(.sidebar)
@@ -40,7 +42,7 @@ struct SettingsView: View {
 
             Group {
                 if selection.selectedTab == .pet {
-                    ScrollView { petSettings.padding(.bottom, 8) }
+                    PetSettingsView(pet: pet, loginItem: loginItem, showPet: showPet)
                 } else if selection.selectedTab == .quickTools {
                     QuickToolsSettingsView(controller: quickTools, settings: quickTools.settings)
                 } else if selection.selectedTab == .ai {
@@ -49,6 +51,8 @@ struct SettingsView: View {
                     focusSettings
                 } else if selection.selectedTab == .music {
                     musicSettings
+                } else if selection.selectedTab == .diary {
+                    DiaryBackupSettingsView(diary: diary)
                 } else {
                     AboutUpdateView()
                 }
@@ -64,7 +68,14 @@ struct SettingsView: View {
     }
 
     private var musicSettings: some View {
-        Form {
+        VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
+            SettingsPageHeader(
+                title: "音乐",
+                subtitle: "管理播放来源、桌面歌词与外部声音协作",
+                systemImage: "music.note",
+                accent: .purple
+            )
+            Form {
             Section("播放器") {
                 Picker("默认播放来源", selection: Binding(get: { music.playback.source }, set: music.setSource)) {
                     ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
@@ -147,13 +158,21 @@ struct SettingsView: View {
             }
             Button("打开完整音乐播放器") { appActions.open(.music) }
                 .buttonStyle(.borderedProminent)
+            }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
     }
 
     private var focusSettings: some View {
-        Form {
-            Section("陪伴式专注") {
+        VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
+            SettingsPageHeader(
+                title: "专注",
+                subtitle: "用番茄钟保持节奏，专注期间让桌宠安静陪伴",
+                systemImage: "timer",
+                accent: .orange
+            )
+            Form {
+                Section("陪伴式专注") {
                 Stepper("专注时长：\(focusTimer.durationMinutes) 分钟", value: $focusTimer.durationMinutes, in: 1...180, step: 5)
                 Text("专注期间桌宠保持安静，隐藏日常对白、天气播报和非紧急系统气泡；低电量与内存紧张仍会提醒。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -171,9 +190,10 @@ struct SettingsView: View {
                     Button("开始专注") { focusTimer.start(); showPet() }
                         .buttonStyle(.borderedProminent).tint(.orange)
                 }
+                }
             }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
     }
 
     private var petSettings: some View {
@@ -356,30 +376,12 @@ struct SettingsView: View {
 
     private var aiSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: "message.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        LinearGradient(
-                            colors: [.pink, .purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    )
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("AI 对话")
-                        .font(.title3.bold())
-                    Text("支持流式回复，单次最多生成 \(AIChatService.maximumCompletionTokens) tokens")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .padding(12)
-            .background(.quaternary.opacity(0.36), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            SettingsPageHeader(
+                title: "AI 对话",
+                subtitle: "配置兼容服务与角色设定，支持流式回复",
+                systemImage: "message.fill",
+                accent: .pink
+            )
 
             Form {
                 TextField("API 基础地址", text: Binding(

@@ -33,6 +33,13 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(selection.selectedTab, .ai)
     }
 
+    func testSettingsTabsIncludeDiaryBackupManagement() {
+        XCTAssertEqual(
+            SettingsTab.allCases,
+            [.pet, .quickTools, .ai, .focus, .music, .diary, .about]
+        )
+    }
+
     func testHotKeyValidationAndRoundTrip() throws {
         XCTAssertNil(HotKeyBinding.screenshotDefault.validationMessage)
         XCTAssertEqual(HotKeyBinding.screenshotDefault.displayText, "⌃A")

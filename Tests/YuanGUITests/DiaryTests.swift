@@ -5,6 +5,20 @@ import XCTest
 
 final class DiaryEntryTests: XCTestCase {
 
+    @MainActor
+    func testDiaryTextViewHandlesImagePasteInsideTheBodyEditor() {
+        let textView = DiaryTextView()
+        var pasteCount = 0
+        textView.onPasteImage = {
+            pasteCount += 1
+            return true
+        }
+
+        textView.paste(nil)
+
+        XCTAssertEqual(pasteCount, 1)
+    }
+
     func testCodableRoundTrip() throws {
         let entry = DiaryEntry(
             occurredAt: Date(timeIntervalSince1970: 1_700_000_000),
@@ -433,6 +447,36 @@ final class DiaryFeatureTests: XCTestCase {
         XCTAssertEqual(feature.entries.first?.body, "未保存编辑")
     }
 
+    func testEditDuringSaveKeepsNewRevisionDirtyUntilItIsPersisted() async throws {
+        let gate = FirstDiarySaveGate()
+        let repository = DiaryRepository(
+            layout: layout,
+            beforeBatchSave: { await gate.pauseFirstSave() }
+        )
+        let delayedFeature = DiaryFeature(
+            repository: repository,
+            attachmentStore: DiaryAttachmentStore(layout: layout),
+            exportService: DiaryExportService(layout: layout),
+            searchService: DiarySearchService()
+        )
+        let entry = delayedFeature.createEntry()
+        var draft = DiaryDraft(entry: entry)
+        draft.body = "保存开始时的内容"
+        delayedFeature.updateDraft(draft)
+
+        let flushTask = Task { @MainActor in await delayedFeature.flush() }
+        await gate.waitUntilPaused()
+        draft.body = "保存等待期间的新内容"
+        delayedFeature.updateDraft(draft)
+        await gate.resume()
+
+        let didFlush = await flushTask.value
+        XCTAssertTrue(didFlush)
+        XCTAssertTrue(delayedFeature.dirtyEntryIDs.isEmpty)
+        let persisted = try await repository.load(id: entry.id)
+        XCTAssertEqual(persisted?.body, "保存等待期间的新内容")
+    }
+
     func testPartialSaveFailureKeepsOnlyFailedEntryDirty() async throws {
         let failedEntry = feature.createEntry()
         var failedDraft = DiaryDraft(entry: failedEntry)
@@ -624,5 +668,30 @@ final class DiaryFeatureTests: XCTestCase {
         feature.searchText = "电影"
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertEqual(feature.filteredEntries.map(\.id), [first.id])
+    }
+}
+
+private actor FirstDiarySaveGate {
+    private var didPause = false
+    private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var resumeContinuation: CheckedContinuation<Void, Never>?
+
+    func pauseFirstSave() async {
+        guard !didPause else { return }
+        didPause = true
+        let waiters = pauseWaiters
+        pauseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { resumeContinuation = $0 }
+    }
+
+    func waitUntilPaused() async {
+        if didPause { return }
+        await withCheckedContinuation { pauseWaiters.append($0) }
+    }
+
+    func resume() {
+        resumeContinuation?.resume()
+        resumeContinuation = nil
     }
 }
