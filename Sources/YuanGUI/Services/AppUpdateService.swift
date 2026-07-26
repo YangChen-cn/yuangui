@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "2.6.0"
-    static let fallbackBuild = "14"
+    static let fallbackVersion = "2.6.1"
+    static let fallbackBuild = "15"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,11 +14,11 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
-        "元圭 2.6.0：新增桌宠左右贴边收纳，靠近边缘时提供磁吸预览，松手后切换为透明角色探头。",
-        "贴边探头支持悬停探出、鼠标穿透迷你监控，以及低电量和内存压力等主动提醒。",
-        "Liquid Glass 状态栏、桌宠气泡、迷你播放器和桌面歌词获得统一的轻量悬浮层设计。",
-        "Apple Music 与哔哩哔哩使用各自适合的状态栏高度，播放控制、队列和桌面歌词交互更加紧凑。",
-        "继续改进日记自动保存与备份、AI 会话归属、系统监控刷新和跨桌面窗口稳定性。"
+        "元圭 2.6.1：修复已开启的桌面歌词在重启后未恢复的问题。",
+        "修复修改番茄钟倒计时时间可能导致应用闪退的问题。",
+        "优化冷启动和常驻内存占用，延迟创建和释放不常用的窗口、音乐播放器与后台任务。",
+        "修复桌宠贴边切换角色、歌词条宽度和歌词交互中的几个显示与生命周期问题。",
+        "继续提升音乐播放、桌宠窗口和系统监控在长时间运行下的稳定性。"
     ]
 }
 
