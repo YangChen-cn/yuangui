@@ -28,6 +28,17 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testDesktopLyricsVisibilityRestoresFromDefaults() {
+        let suite = "LyricsVisibilityTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(true, forKey: "musicLyricsVisible")
+
+        XCTAssertTrue(LyricsPresentationStore(defaults: defaults).isVisible)
+    }
+
+    @MainActor
     func testLiveBilibiliPublicAudioStartsWhenEnabled() async throws {
         guard ProcessInfo.processInfo.environment["YUANGUI_LIVE_BILI"] == "1" else {
             throw XCTSkip("Set YUANGUI_LIVE_BILI=1 to run the network integration test")

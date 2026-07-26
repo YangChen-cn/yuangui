@@ -195,6 +195,9 @@ final class WindowCoordinator: NSObject {
         music.lyricsPresentation.onLockChanged = { [weak self] in
             self?.lyricsController?.updateLock()
         }
+        if music.lyricsPresentation.isVisible {
+            updateLyricsVisibility()
+        }
         weatherStartupTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(800))
             guard !Task.isCancelled else { return }

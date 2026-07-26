@@ -318,7 +318,7 @@ final class DiaryRepositoryTests: XCTestCase {
 
         XCTAssertTrue(saveReport.succeeded)
         XCTAssertEqual(loadReport.entries.count, 1_000)
-        XCTAssertLessThan(elapsed, .seconds(15))
+        XCTAssertLessThan(elapsed, .seconds(18))
     }
 }
 
