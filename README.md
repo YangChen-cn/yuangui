@@ -13,7 +13,7 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.5.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.6.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -22,30 +22,34 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-当前稳定版本为 `2.5.0`。
+当前稳定版本为 `2.6.0`。
 
 ## 界面预览
 
-### GIF 演示
+### 综合演示
 
-> 🎬 此处预留一段 20–30 秒的 GIF：依次展示桌宠互动、菜单栏概览、音乐控制和手帐本快速记录。
-
-<!--
-录制完成后将文件放到 docs/media/yuangui-demo.gif，并用下面的内容替换上方占位说明：
 <p align="center">
   <img src="docs/media/yuangui-demo.gif" width="820" alt="元圭与 VCC 功能演示">
 </p>
--->
 
-### 界面截图
+### 分项演示
 
-| 桌宠与状态气泡 | 菜单栏控制中心 |
-| --- | --- |
-| _截图预留_ | _截图预留_ |
-| **手帐本** | **音乐与快捷工具** |
-| _截图预留_ | _截图预留_ |
-
-<!-- 建议截图统一放在 docs/media/，宽度和窗口阴影保持一致。 -->
+<table>
+  <tr>
+    <th>桌宠与状态栏</th>
+    <th>元圭恋爱手帐</th>
+  </tr>
+  <tr>
+    <td><img src="docs/media/桌宠状态栏.gif" width="390" alt="桌宠与状态栏演示"></td>
+    <td><img src="docs/media/手帐本.gif" width="390" alt="元圭恋爱手帐演示"></td>
+  </tr>
+  <tr>
+    <th colspan="2">音乐播放器</th>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/media/播放器.gif" width="620" alt="音乐播放器演示"></td>
+  </tr>
+</table>
 
 ## 主要功能
 
@@ -66,7 +70,7 @@
 - **应用内更新**：设置中显示当前版本和更新内容，可读取 GitHub Release 更新日志并一键下载安装新版本。
 - **清理屋**：提供保守的空间清理、软件卸载、白名单、操作记录和路径安全检查。
 - **废纸篓互动**：把文件拖到桌宠上即可移入废纸篓，也可以打开或确认清空废纸篓。
-- **桌面交互**：支持拖动、四边贴靠、迷你露头、尺寸调节、交互锁定与鼠标穿透；锁定后悬停只显示一个紧凑解锁按钮，也可一键隐藏或显示 Finder 桌面图标。
+- **桌面交互**：支持拖动和左右贴边收纳；靠近边缘时显示磁吸预览，松手后切换为透明角色探头，悬停稍微探出并可显示鼠标穿透的窄版 CPU、内存与电量监控，低电量或内存压力时会主动提醒，点击后平滑恢复到屏幕范围内。另支持尺寸调节、交互锁定与鼠标穿透；锁定后悬停只显示一个紧凑解锁按钮，也可一键隐藏或显示 Finder 桌面图标。
 - **菜单栏入口与登录启动**：桌宠隐藏后仍可通过菜单栏恢复；状态栏“工具”页集中提供 AI 对话、清理屋、软件卸载、截图、翻译、废纸篓和设置入口，并可选择登录时自动启动。
 - **区域截图与标注**：按 `Control-A` 选区截图，添加画笔、文字、箭头、形状、高亮和马赛克，并复制或保存 PNG。
 - **截图翻译（OCR）**：按 `Control-Shift-A` 选区截图，通过 Vision 在本机完成结构化 OCR，再按语义句子批量翻译。可以使用紧凑翻译窗口，也可以把译文按原文位置覆盖到截图上；覆盖层支持独立原文遮盖补片、完整文本逻辑画布、以指针为锚点的触控板捏合、窗口与译图同步缩放、安全扩展窄文本宽度、同步中英对照、复制、拖动和 `Esc` 关闭。
@@ -88,9 +92,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-2.5.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.5.0.dmg)
+[一键下载最新版 `YuanGUI-2.6.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.6.0.dmg)
 
-1. 打开 `YuanGUI-2.5.0.dmg`。
+1. 打开 `YuanGUI-2.6.0.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -167,7 +171,7 @@ swift test
 swift test
 ```
 
-当前 `liquid-glass` 分支包含 279 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
+当前测试套件包含 290 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -191,7 +195,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
 
 ```text
-dist/YuanGUI-2.5.0.dmg
+dist/YuanGUI-2.6.0.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

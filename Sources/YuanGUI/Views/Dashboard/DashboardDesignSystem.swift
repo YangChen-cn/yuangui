@@ -3,6 +3,7 @@ import SwiftUI
 enum DashboardDesign {
     static let preferredWidth: CGFloat = 420
     static let preferredHeight: CGFloat = 448
+    static let appleMusicHeight: CGFloat = 460
     static let expandedHeight: CGFloat = 520
     static let minimumWidth: CGFloat = 390
     static let minimumHeight: CGFloat = 420
@@ -19,10 +20,16 @@ enum DashboardDesign {
     static let heroRadius: CGFloat = 16
     static let avatarSize: CGFloat = 46
 
-    static func preferredHeight(for section: DashboardSection) -> CGFloat {
+    static func preferredHeight(
+        for section: DashboardSection,
+        musicSource: MusicSource? = nil
+    ) -> CGFloat {
         switch section {
         case .overview: preferredHeight
-        case .music, .tools: expandedHeight
+        case .music:
+            musicSource == .appleMusic ? appleMusicHeight : expandedHeight
+        case .tools:
+            expandedHeight
         }
     }
 
@@ -188,12 +195,14 @@ enum DashboardPanelLayout {
 
     static func size(
         in visibleFrame: CGRect,
-        section: DashboardSection = .overview
+        section: DashboardSection = .overview,
+        musicSource: MusicSource? = nil
     ) -> CGSize {
         CGSize(
             width: min(DashboardDesign.preferredWidth, max(visibleFrame.width - screenInset * 2, 0)),
             height: height(
                 for: section,
+                musicSource: musicSource,
                 maximumHeight: max(visibleFrame.height - screenInset * 2, 0)
             )
         )
@@ -201,8 +210,12 @@ enum DashboardPanelLayout {
 
     static func height(
         for section: DashboardSection,
+        musicSource: MusicSource? = nil,
         maximumHeight: CGFloat
     ) -> CGFloat {
-        min(DashboardDesign.preferredHeight(for: section), max(maximumHeight, 0))
+        min(
+            DashboardDesign.preferredHeight(for: section, musicSource: musicSource),
+            max(maximumHeight, 0)
+        )
     }
 }

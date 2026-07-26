@@ -112,7 +112,8 @@ final class StatusDashboardPanelController {
         visibleFrame = visible
         let size = DashboardPanelLayout.size(
             in: visible,
-            section: dashboardState.selectedSection
+            section: dashboardState.selectedSection,
+            musicSource: music.playback.source
         )
         let width = size.width
         let height = size.height
@@ -159,8 +160,8 @@ final class StatusDashboardPanelController {
                 showPet: showPet,
                 openSettings: openSettings,
                 dismiss: { [weak self] in self?.hide() },
-                sectionDidChange: { [weak self] section in
-                    self?.resize(for: section)
+                layoutDidChange: { [weak self] section, source in
+                    self?.resize(for: section, musicSource: source)
                 }
             )
             .environment(\.appActions, appActions)
@@ -173,9 +174,13 @@ final class StatusDashboardPanelController {
         }
     }
 
-    private func resize(for section: DashboardSection) {
+    private func resize(for section: DashboardSection, musicSource: MusicSource) {
         guard panel.isVisible, !visibleFrame.isEmpty else { return }
-        let size = DashboardPanelLayout.size(in: visibleFrame, section: section)
+        let size = DashboardPanelLayout.size(
+            in: visibleFrame,
+            section: section,
+            musicSource: musicSource
+        )
         let inset = DashboardPanelLayout.screenInset
         let top = min(anchorRect.minY - 6, visibleFrame.maxY - inset)
         let y = max(visibleFrame.minY + inset, top - size.height)

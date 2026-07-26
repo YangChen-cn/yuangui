@@ -8,6 +8,7 @@ final class DashboardTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(DashboardDesign.preferredWidth, 400)
         XCTAssertLessThanOrEqual(DashboardDesign.preferredWidth, 430)
         XCTAssertEqual(DashboardDesign.preferredHeight, 448, accuracy: 8)
+        XCTAssertEqual(DashboardDesign.appleMusicHeight, 460, accuracy: 8)
         XCTAssertEqual(DashboardDesign.expandedHeight, 520, accuracy: 8)
         XCTAssertEqual(DashboardDesign.navigationHeight, 34, accuracy: 0.001)
         XCTAssertLessThanOrEqual(DashboardDesign.navigationHeight, 36)
@@ -53,11 +54,27 @@ final class DashboardTests: XCTestCase {
     func testDashboardUsesCompactOverviewAndExpandedMusicAndTools() {
         XCTAssertEqual(DashboardDesign.preferredHeight(for: .overview), 448)
         XCTAssertEqual(DashboardDesign.preferredHeight(for: .music), 520)
+        XCTAssertEqual(
+            DashboardDesign.preferredHeight(for: .music, musicSource: .appleMusic),
+            460
+        )
+        XCTAssertEqual(
+            DashboardDesign.preferredHeight(for: .music, musicSource: .bilibili),
+            520
+        )
         XCTAssertEqual(DashboardDesign.preferredHeight(for: .tools), 520)
 
         let visible = CGRect(x: 0, y: 0, width: 1_000, height: 800)
         XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .overview).height, 448)
         XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .music).height, 520)
+        XCTAssertEqual(
+            DashboardPanelLayout.size(
+                in: visible,
+                section: .music,
+                musicSource: .appleMusic
+            ).height,
+            460
+        )
         XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .tools).height, 520)
     }
 

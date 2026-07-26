@@ -7,6 +7,12 @@ enum PetDockEdge: String, CaseIterable {
     case bottom
 }
 
+struct PetDockCandidate: Equatable {
+    let edge: PetDockEdge
+    let distance: CGFloat
+    let isCommitReady: Bool
+}
+
 enum PetAuxiliaryBubblePlacement: Equatable {
     case abovePet
     case belowPet
@@ -60,11 +66,19 @@ enum PetLayout {
             height: bubbleHeight(scale: scale) + 18
         )
     }
-    static let edgePeekSize = CGSize(width: 76, height: 76)
-    static let edgePeekStatusSize = CGSize(width: 194, height: 76)
-    static let edgePeekInset: CGFloat = 3
-    static let edgePeekButtonDiameter: CGFloat = 70
-    static let edgePeekSpriteSize: CGFloat = 64
+    static let dockPreviewThreshold: CGFloat = 56
+    static let dockCommitThreshold: CGFloat = 28
+    static let defaultDockEdges: Set<PetDockEdge> = [.left, .right]
+    static let edgePeekSize = CGSize(width: 72, height: 84)
+    static let edgeStatusSize = CGSize(width: 68, height: 76)
+    static let edgeStatusMessageSize = CGSize(width: 132, height: 112)
+    static let edgeMessageSize = CGSize(width: 150, height: 50)
+    static let edgeStatusGap: CGFloat = 6
+    static let edgePeekInset: CGFloat = 0
+    static let edgePeekExposedWidth: CGFloat = 38
+    static let edgePeekHoverExposedWidth: CGFloat = 60
+    static let restoredPetScreenInset: CGFloat = 12
+    static let restoredPanelHorizontalOverflow: CGFloat = 24
 
     static func usesCompactControls(scale: Double) -> Bool {
         scale < 0.70
@@ -287,17 +301,42 @@ enum PetLayout {
         ).origin
     }
 
-    static func dockingEdge(for petVisualFrame: CGRect, in visibleFrame: CGRect) -> PetDockEdge? {
-        let outsideDistances: [(PetDockEdge, CGFloat)] = [
-            (.left, visibleFrame.minX - petVisualFrame.midX),
-            (.right, petVisualFrame.midX - visibleFrame.maxX),
-            (.top, petVisualFrame.midY - visibleFrame.maxY),
-            (.bottom, visibleFrame.minY - petVisualFrame.midY)
+    static func dockingCandidate(
+        for visiblePetFrame: CGRect,
+        in visibleFrame: CGRect,
+        threshold: CGFloat = dockPreviewThreshold,
+        allowedEdges: Set<PetDockEdge> = defaultDockEdges
+    ) -> PetDockCandidate? {
+        let distances: [(PetDockEdge, CGFloat)] = [
+            (.left, visiblePetFrame.minX - visibleFrame.minX),
+            (.right, visibleFrame.maxX - visiblePetFrame.maxX),
+            (.top, visibleFrame.maxY - visiblePetFrame.maxY),
+            (.bottom, visiblePetFrame.minY - visibleFrame.minY)
         ]
-        return outsideDistances
-            .filter { $0.1 >= 0 }
-            .max { $0.1 < $1.1 }?
-            .0
+        guard let nearest = distances
+            .filter({ allowedEdges.contains($0.0) })
+            .min(by: { $0.1 < $1.1 }),
+            nearest.1 <= threshold else {
+            return nil
+        }
+        return PetDockCandidate(
+            edge: nearest.0,
+            distance: nearest.1,
+            isCommitReady: nearest.1 <= dockCommitThreshold
+        )
+    }
+
+    static func dockingEdge(
+        for visiblePetFrame: CGRect,
+        in visibleFrame: CGRect,
+        allowedEdges: Set<PetDockEdge> = defaultDockEdges
+    ) -> PetDockEdge? {
+        dockingCandidate(
+            for: visiblePetFrame,
+            in: visibleFrame,
+            threshold: dockCommitThreshold,
+            allowedEdges: allowedEdges
+        )?.edge
     }
 
     static func constrainedOrigin(
@@ -325,15 +364,12 @@ enum PetLayout {
         )
     }
 
-    static func edgePeekPanelSize(showsMiniStatus: Bool) -> CGSize {
-        showsMiniStatus ? edgePeekStatusSize : edgePeekSize
-    }
-
     static func edgePeekOrigin(
         edge: PetDockEdge,
         anchorFrame: CGRect,
         visibleFrame: CGRect,
-        peekSize size: CGSize = edgePeekSize
+        peekSize size: CGSize = edgePeekSize,
+        exposedWidth: CGFloat = edgePeekExposedWidth
     ) -> CGPoint {
         let centeredX = min(
             max(anchorFrame.midX - size.width / 2, visibleFrame.minX + edgePeekInset),
@@ -345,27 +381,41 @@ enum PetLayout {
         )
         switch edge {
         case .left:
-            return CGPoint(x: visibleFrame.minX + edgePeekInset, y: centeredY)
+            return CGPoint(
+                x: visibleFrame.minX - edgePeekSize.width + exposedWidth,
+                y: centeredY
+            )
         case .right:
-            return CGPoint(x: visibleFrame.maxX - size.width - edgePeekInset, y: centeredY)
+            return CGPoint(
+                x: visibleFrame.maxX - exposedWidth,
+                y: centeredY
+            )
         case .top:
-            return CGPoint(x: centeredX, y: visibleFrame.maxY - size.height - edgePeekInset)
+            return CGPoint(x: centeredX, y: visibleFrame.maxY - exposedWidth)
         case .bottom:
-            return CGPoint(x: centeredX, y: visibleFrame.minY + edgePeekInset)
+            return CGPoint(x: centeredX, y: visibleFrame.minY - size.height + exposedWidth)
         }
     }
 
-    static func tuckedOrigin(edge: PetDockEdge, panelSize: CGSize, visibleFrame: CGRect, anchorOrigin: CGPoint) -> CGPoint {
+    static func tuckedOrigin(
+        edge: PetDockEdge,
+        panelOrigin: CGPoint,
+        visiblePetFrame: CGRect,
+        visibleFrame: CGRect,
+        exposedWidth: CGFloat = edgePeekExposedWidth
+    ) -> CGPoint {
+        var origin = panelOrigin
         switch edge {
         case .left:
-            return CGPoint(x: visibleFrame.minX - panelSize.width + edgePeekSize.width / 2, y: anchorOrigin.y)
+            origin.x += visibleFrame.minX + exposedWidth - visiblePetFrame.maxX
         case .right:
-            return CGPoint(x: visibleFrame.maxX - edgePeekSize.width / 2, y: anchorOrigin.y)
+            origin.x += visibleFrame.maxX - exposedWidth - visiblePetFrame.minX
         case .top:
-            return CGPoint(x: anchorOrigin.x, y: visibleFrame.maxY - edgePeekSize.height / 2)
+            origin.y += visibleFrame.maxY - exposedWidth - visiblePetFrame.minY
         case .bottom:
-            return CGPoint(x: anchorOrigin.x, y: visibleFrame.minY - panelSize.height + edgePeekSize.height / 2)
+            origin.y += visibleFrame.minY + exposedWidth - visiblePetFrame.maxY
         }
+        return origin
     }
 
     static func expandedOrigin(
@@ -392,5 +442,26 @@ enum PetLayout {
             visibleFrame: visibleFrame,
             allowedTopOverflow: allowedTopOverflow
         )
+    }
+
+    static func originEnsuringContentVisible(
+        panelOrigin: CGPoint,
+        contentFrame: CGRect,
+        visibleFrame: CGRect,
+        inset: CGFloat = 8
+    ) -> CGPoint {
+        let safeFrame = visibleFrame.insetBy(dx: inset, dy: inset)
+        var origin = panelOrigin
+        if contentFrame.minX < safeFrame.minX {
+            origin.x += safeFrame.minX - contentFrame.minX
+        } else if contentFrame.maxX > safeFrame.maxX {
+            origin.x -= contentFrame.maxX - safeFrame.maxX
+        }
+        if contentFrame.minY < safeFrame.minY {
+            origin.y += safeFrame.minY - contentFrame.minY
+        } else if contentFrame.maxY > safeFrame.maxY {
+            origin.y -= contentFrame.maxY - safeFrame.maxY
+        }
+        return origin
     }
 }

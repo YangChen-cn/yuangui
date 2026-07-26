@@ -2,115 +2,55 @@ import SwiftUI
 
 struct PetEdgePeekView: View {
     @ObservedObject var store: PetStore
-    @ObservedObject private var monitor: SystemMonitor
     let edge: PetDockEdge
+    let hoveringChanged: ((Bool) -> Void)?
     let expand: () -> Void
     @Environment(\.appActions) private var appActions
-    @State private var hovering = false
 
-    init(store: PetStore, edge: PetDockEdge, expand: @escaping () -> Void) {
+    init(
+        store: PetStore,
+        edge: PetDockEdge,
+        hoveringChanged: ((Bool) -> Void)? = nil,
+        expand: @escaping () -> Void
+    ) {
         self.store = store
         self.edge = edge
+        self.hoveringChanged = hoveringChanged
         self.expand = expand
-        _monitor = ObservedObject(wrappedValue: store.monitor)
     }
 
     var body: some View {
-        HStack(spacing: 5) {
-            if store.shouldShowPetBubble && edge != .left {
-                miniStatus
-            }
-            headButton
-            if store.shouldShowPetBubble && edge == .left {
-                miniStatus
-            }
-        }
-        .frame(
-            width: PetLayout.edgePeekPanelSize(showsMiniStatus: store.shouldShowPetBubble).width,
-            height: PetLayout.edgePeekPanelSize(showsMiniStatus: store.shouldShowPetBubble).height
-        )
-        .contextMenu { dockedContextMenu }
-    }
-
-    private var headButton: some View {
         Button(action: expand) {
-            ZStack {
-                Circle()
-                    .fill(.regularMaterial)
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.pink.opacity(0.22), .purple.opacity(0.12), .cyan.opacity(0.12)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-
-                if let image = SpriteLoader.image(mode: store.mode, action: store.currentAction) {
+            Group {
+                if let image = SpriteLoader.edgePeekImage(mode: store.mode, edge: edge)
+                    ?? SpriteLoader.image(mode: store.mode, action: store.currentAction) {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: PetLayout.edgePeekSpriteSize, height: PetLayout.edgePeekSpriteSize)
+                        .scaleEffect(x: edge == .right ? -1 : 1, y: 1)
+                        .accessibilityHidden(true)
                 } else {
                     Image(systemName: "pawprint.fill")
                         .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(.pink)
+                        .accessibilityHidden(true)
                 }
             }
-            .frame(width: PetLayout.edgePeekButtonDiameter, height: PetLayout.edgePeekButtonDiameter)
-            .clipShape(Circle())
-            .overlay(Circle().stroke(.white.opacity(0.72), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.22), radius: hovering ? 13 : 8, y: 4)
-            .scaleEffect(hovering ? 1.06 : 1)
-            .contentShape(Circle())
+            .frame(width: PetLayout.edgePeekSize.width, height: PetLayout.edgePeekSize.height)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { value in
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.72)) {
-                hovering = value
-            }
-        }
-        .help("点击叫回元圭与 VCC")
+        .onHover { hoveringChanged?($0) }
+        .help("悬停探出桌宠，点击叫回")
         .accessibilityLabel("叫回桌宠")
-        .frame(width: 76, height: 76)
-    }
-
-    private var miniStatus: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            miniMetric("cpu", value: percent(monitor.snapshot.cpu?.total), color: .pink)
-            miniMetric("memorychip", value: percent(monitor.snapshot.memory?.fractionUsed), color: .purple)
-            miniMetric(
-                monitor.snapshot.battery?.isCharging == true ? "bolt.fill" : "battery.75percent",
-                value: percent(monitor.snapshot.battery?.chargeFraction),
-                color: .mint
-            )
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(width: 111, alignment: .leading)
-        .yuanLiquidGlassSurface(.clear, cornerRadius: 18)
-    }
-
-    private func miniMetric(_ icon: String, value: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .frame(width: 13)
-            Text(value)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .monospacedDigit()
-        }
-    }
-
-    private func percent(_ value: Double?) -> String {
-        guard let value else { return "--" }
-        return "\(Int((value * 100).rounded()))%"
+        .frame(width: PetLayout.edgePeekSize.width, height: PetLayout.edgePeekSize.height)
+        .contextMenu { dockedContextMenu }
     }
 
     @ViewBuilder
     private var dockedContextMenu: some View {
         Button("展开桌宠") { expand() }
-        Button(store.shouldShowPetBubble ? "隐藏迷你监控" : "显示迷你监控") {
+        Button(store.showsSystemStatus ? "隐藏迷你监控" : "显示迷你监控") {
             store.toggleSystemStatus()
         }
         Button("打开完整监控") { appActions.open(.statusDashboard) }

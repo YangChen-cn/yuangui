@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "2.5.0"
-    static let fallbackBuild = "13"
+    static let fallbackVersion = "2.6.0"
+    static let fallbackBuild = "14"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,11 +14,11 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
-        "元圭 2.5.0：新增原生 macOS 恋爱手账，支持快速记录、时间线、日历、照片、Markdown、搜索和完整备份。",
-        "手账数据采用版本化本地存储、损坏隔离、最近删除和可验证恢复流程，自动保存与桌宠反馈更加稳定。",
-        "状态栏面板重构为概览、音乐和工具三个轻量区域，保留实时系统状态、天气、播放队列和常用操作。",
-        "优化状态栏首击、滚动边界、不同页面高度和实时监控刷新；音乐队列可快速预览后续八首。",
-        "继续支持 Apple Music、哔哩哔哩播放、截图翻译、划词翻译、清理屋及应用内更新。"
+        "元圭 2.6.0：新增桌宠左右贴边收纳，靠近边缘时提供磁吸预览，松手后切换为透明角色探头。",
+        "贴边探头支持悬停探出、鼠标穿透迷你监控，以及低电量和内存压力等主动提醒。",
+        "Liquid Glass 状态栏、桌宠气泡、迷你播放器和桌面歌词获得统一的轻量悬浮层设计。",
+        "Apple Music 与哔哩哔哩使用各自适合的状态栏高度，播放控制、队列和桌面歌词交互更加紧凑。",
+        "继续改进日记自动保存与备份、AI 会话归属、系统监控刷新和跨桌面窗口稳定性。"
     ]
 }
 

@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct PetRootView: View {
+    @ObservedObject var window: PetPanel
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
     @ObservedObject var maintenance: MaintenanceStore
@@ -10,6 +11,7 @@ struct PetRootView: View {
     @ObservedMusicFeature var music: MusicFeature
     @ObservedObject var auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
     @Environment(\.appActions) private var appActions
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @State private var dragStartOrigin: NSPoint?
     @State private var dragStartMouseLocation: NSPoint?
@@ -33,6 +35,24 @@ struct PetRootView: View {
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
+    }
+
+    private var dockPreviewScale: CGFloat {
+        guard let candidate = window.dockCandidate else { return 1 }
+        return candidate.isCommitReady ? 0.95 : 0.98
+    }
+
+    private var dockPreviewOpacity: Double {
+        window.dockCandidate?.isCommitReady == true ? 0.90 : 1
+    }
+
+    private var dockPreviewRotation: Angle {
+        guard let candidate = window.dockCandidate else { return .zero }
+        switch candidate.edge {
+        case .left: return .degrees(-2)
+        case .right: return .degrees(2)
+        case .top, .bottom: return .zero
+        }
     }
 
     var body: some View {
@@ -86,6 +106,9 @@ struct PetRootView: View {
                     }
                     .frame(width: 326 * scale, height: 326 * scale)
                     .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
+                    .scaleEffect(dockPreviewScale)
+                    .rotationEffect(dockPreviewRotation)
+                    .opacity(dockPreviewOpacity)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         store.interact()
@@ -176,6 +199,10 @@ struct PetRootView: View {
         .animation(.easeOut(duration: 0.18), value: chat.isPresented)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.petScale)
         .animation(.easeOut(duration: 0.18), value: store.toast)
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.16),
+            value: window.dockCandidate
+        )
         .contextMenu { contextMenu }
     }
 

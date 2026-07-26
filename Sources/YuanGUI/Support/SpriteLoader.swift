@@ -88,6 +88,25 @@ enum SpriteLoader {
         return image
     }
 
+    static func edgePeekImage(mode: PetMode, edge: PetDockEdge) -> NSImage? {
+        let filename: String
+        switch mode {
+        case .yuanGui:
+            filename = "yuangui_edge_\(edge.rawValue)"
+        case .vcc:
+            filename = "vcc_edge_\(edge.rawValue)"
+        case .duo:
+            filename = "duo_edge_\(edge.rawValue)"
+        }
+        let key = "edge-peek/\(filename)" as NSString
+        if let cached = box.cache.object(forKey: key) { return cached }
+        guard let url = resourceURL(file: filename, subdirectory: "Sprites/EdgePeek"),
+              let image = NSImage(contentsOf: url) else { return nil }
+        let cost = max(Int(image.size.width * image.size.height * 4), 1)
+        box.cache.setObject(image, forKey: key, cost: cost)
+        return image
+    }
+
     static func sequenceKind(for action: PetAction) -> SequenceKind? {
         if action.file.contains("chatting") { return .chatting }
         if action.file.contains("charging") { return .charging }

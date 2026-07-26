@@ -738,10 +738,57 @@ final class PetStoreTests: XCTestCase {
 
         XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: -170, y: 200), size: size), in: visible), .left)
         XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 1_280, y: 200), size: size), in: visible), .right)
-        XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 400, y: 740), size: size), in: visible), .top)
-        XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 400, y: -170), size: size), in: visible), .bottom)
+        XCTAssertEqual(
+            PetLayout.dockingEdge(
+                for: CGRect(origin: CGPoint(x: 400, y: 740), size: size),
+                in: visible,
+                allowedEdges: Set(PetDockEdge.allCases)
+            ),
+            .top
+        )
+        XCTAssertEqual(
+            PetLayout.dockingEdge(
+                for: CGRect(origin: CGPoint(x: 400, y: -170), size: size),
+                in: visible,
+                allowedEdges: Set(PetDockEdge.allCases)
+            ),
+            .bottom
+        )
         XCTAssertNil(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: 400, y: 250), size: size), in: visible))
-        XCTAssertNil(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: -150, y: 250), size: size), in: visible))
+        XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: -150, y: 250), size: size), in: visible), .left)
+    }
+
+    func testDockingCandidateUsesTwoThresholds() {
+        let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        let nearPreview = CGRect(x: 48, y: 260, width: 240, height: 240)
+        let preview = PetLayout.dockingCandidate(for: nearPreview, in: visible)
+        XCTAssertEqual(preview?.edge, .left)
+        XCTAssertEqual(preview?.distance ?? -1, 48, accuracy: 0.001)
+        XCTAssertFalse(preview?.isCommitReady == true)
+
+        let nearCommit = nearPreview.offsetBy(dx: -28, dy: 0)
+        let commit = PetLayout.dockingCandidate(for: nearCommit, in: visible)
+        XCTAssertEqual(commit?.edge, .left)
+        XCTAssertEqual(commit?.distance ?? -1, 20, accuracy: 0.001)
+        XCTAssertTrue(commit?.isCommitReady == true)
+
+        let awayFromEdge = nearPreview.offsetBy(dx: 20, dy: 0)
+        XCTAssertNil(PetLayout.dockingCandidate(for: awayFromEdge, in: visible))
+    }
+
+    func testDefaultDockEdgesOnlyIncludeLeftAndRight() {
+        XCTAssertEqual(PetLayout.defaultDockEdges, [.left, .right])
+        let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        let nearTop = CGRect(x: 500, y: 606, width: 240, height: 240)
+        XCTAssertNil(PetLayout.dockingCandidate(for: nearTop, in: visible))
+        XCTAssertEqual(
+            PetLayout.dockingCandidate(
+                for: nearTop,
+                in: visible,
+                allowedEdges: Set(PetDockEdge.allCases)
+            )?.edge,
+            .top
+        )
     }
 
     func testPetVisualFrameMatchesRenderedImageArea() {
@@ -757,10 +804,23 @@ final class PetStoreTests: XCTestCase {
         let panelSize = CGSize(width: 540, height: 390)
         let anchor = CGRect(origin: CGPoint(x: -20, y: 700), size: panelSize)
 
-        for edge in PetDockEdge.allCases {
+        for edge in PetLayout.defaultDockEdges {
             let peek = PetLayout.edgePeekOrigin(edge: edge, anchorFrame: anchor, visibleFrame: visible)
             let peekFrame = CGRect(origin: peek, size: PetLayout.edgePeekSize)
-            XCTAssertTrue(visible.contains(peekFrame))
+            XCTAssertEqual(peekFrame.intersection(visible).width, PetLayout.edgePeekExposedWidth, accuracy: 0.001)
+
+            let hoveredPeek = PetLayout.edgePeekOrigin(
+                edge: edge,
+                anchorFrame: anchor,
+                visibleFrame: visible,
+                exposedWidth: PetLayout.edgePeekHoverExposedWidth
+            )
+            let hoveredFrame = CGRect(origin: hoveredPeek, size: PetLayout.edgePeekSize)
+            XCTAssertEqual(
+                hoveredFrame.intersection(visible).width,
+                PetLayout.edgePeekHoverExposedWidth,
+                accuracy: 0.001
+            )
 
             let expanded = PetLayout.expandedOrigin(
                 edge: edge,
@@ -776,12 +836,93 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testEdgePeekSpriteFitsInsideItsCircle() {
-        XCTAssertLessThan(PetLayout.edgePeekSpriteSize, PetLayout.edgePeekButtonDiameter)
-        XCTAssertLessThanOrEqual(
-            PetLayout.edgePeekSpriteSize,
-            PetLayout.edgePeekButtonDiameter - 4
+    func testTuckedPetStartsWithOnlyItsEdgeStripVisible() {
+        let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        let panelOrigin = CGPoint(x: 300, y: 260)
+        let petFrame = CGRect(x: 420, y: 280, width: 240, height: 220)
+
+        for edge in PetLayout.defaultDockEdges {
+            let tucked = PetLayout.tuckedOrigin(
+                edge: edge,
+                panelOrigin: panelOrigin,
+                visiblePetFrame: petFrame,
+                visibleFrame: visible
+            )
+            let movedPet = petFrame.offsetBy(
+                dx: tucked.x - panelOrigin.x,
+                dy: tucked.y - panelOrigin.y
+            )
+            XCTAssertEqual(
+                movedPet.intersection(visible).width,
+                PetLayout.edgePeekExposedWidth,
+                accuracy: 0.001
+            )
+        }
+    }
+
+    func testEdgePeekUsesCompactPointerFootprint() {
+        XCTAssertLessThanOrEqual(PetLayout.edgePeekSize.width, 72)
+        XCTAssertLessThanOrEqual(PetLayout.edgePeekSize.height, 84)
+        XCTAssertEqual(PetLayout.edgePeekExposedWidth, 38)
+        XCTAssertEqual(PetLayout.edgePeekHoverExposedWidth, 60)
+        XCTAssertLessThanOrEqual(PetLayout.edgeStatusSize.width, 70)
+    }
+
+    func testRestoredPetArtworkIsMovedFullyInsideVisibleScreen() {
+        let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        let panelOrigin = CGPoint(x: 1_020, y: 200)
+        let petFrame = CGRect(x: 1_330, y: 240, width: 180, height: 260)
+        let restored = PetLayout.originEnsuringContentVisible(
+            panelOrigin: panelOrigin,
+            contentFrame: petFrame,
+            visibleFrame: visible,
+            inset: PetLayout.restoredPetScreenInset
         )
+        let movedPet = petFrame.offsetBy(
+            dx: restored.x - panelOrigin.x,
+            dy: restored.y - panelOrigin.y
+        )
+
+        XCTAssertGreaterThanOrEqual(movedPet.minX, visible.minX + PetLayout.restoredPetScreenInset)
+        XCTAssertLessThanOrEqual(movedPet.maxX, visible.maxX - PetLayout.restoredPetScreenInset)
+        XCTAssertGreaterThanOrEqual(movedPet.minY, visible.minY + PetLayout.restoredPetScreenInset)
+        XCTAssertLessThanOrEqual(movedPet.maxY, visible.maxY - PetLayout.restoredPetScreenInset)
+    }
+
+    func testRestoredExpandedPanelUsesOnlyBoundedHorizontalOverflow() {
+        let visible = CGRect(x: 0, y: 76, width: 1_470, height: 847)
+        let panelSize = CGSize(width: 270, height: 195)
+        let staleCompactOrigin = CGPoint(x: 1_254, y: 756)
+        let restored = PetLayout.constrainedOrigin(
+            staleCompactOrigin,
+            panelSize: panelSize,
+            visibleFrame: visible,
+            allowedTopOverflow: 29,
+            allowedRightOverflow: PetLayout.restoredPanelHorizontalOverflow
+        )
+
+        XCTAssertEqual(
+            restored.x,
+            visible.maxX - panelSize.width + PetLayout.restoredPanelHorizontalOverflow
+        )
+        XCTAssertLessThanOrEqual(
+            restored.x + panelSize.width,
+            visible.maxX + PetLayout.restoredPanelHorizontalOverflow
+        )
+    }
+
+    func testUrgentEdgeMessagesUseDistinctCharacterVoices() {
+        for state in [SmartPetState.lowBattery, .memoryPressure] {
+            let messages = PetMode.allCases.map {
+                PetEdgeMessageResolver.alert(
+                    for: $0,
+                    state: state,
+                    snapshot: .empty
+                )
+            }
+            XCTAssertEqual(Set(messages).count, PetMode.allCases.count)
+            XCTAssertTrue(messages.allSatisfy { !$0.contains("点我") })
+        }
     }
 
     func testSmartStatePrioritizesPressureAndLowBattery() {

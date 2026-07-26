@@ -79,4 +79,24 @@ final class SpriteResourceTests: XCTestCase {
         XCTAssertLessThan(vcc.height, yuanGui.height)
         XCTAssertNotEqual(vcc, yuanGui)
     }
+
+    func testEdgePeekSpritesLoadForEveryCharacterAndSide() throws {
+        for mode in PetMode.allCases {
+            for edge in PetLayout.defaultDockEdges {
+                let image = try XCTUnwrap(
+                    SpriteLoader.edgePeekImage(mode: mode, edge: edge),
+                    "Missing edge-peek sprite for \(mode.rawValue) on \(edge.rawValue)"
+                )
+                XCTAssertEqual(max(image.size.width, image.size.height), 512, accuracy: 0.5)
+                XCTAssertLessThan(image.size.width, image.size.height)
+                let representation = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
+                XCTAssertTrue(representation.hasAlpha)
+                XCTAssertEqual(
+                    representation.colorAt(x: 0, y: 0)?.alphaComponent ?? 1,
+                    0,
+                    accuracy: 0.001
+                )
+            }
+        }
+    }
 }

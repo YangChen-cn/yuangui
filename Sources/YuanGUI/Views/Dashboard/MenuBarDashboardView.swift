@@ -15,7 +15,7 @@ struct MenuBarDashboardView: View {
     let showPet: () -> Void
     let openSettings: () -> Void
     let dismiss: () -> Void
-    let sectionDidChange: (DashboardSection) -> Void
+    let layoutDidChange: (DashboardSection, MusicSource) -> Void
 
     @Environment(\.appActions) private var appActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -50,6 +50,7 @@ struct MenuBarDashboardView: View {
             width: dashboardWidth,
             height: DashboardPanelLayout.height(
                 for: panelState.selectedSection,
+                musicSource: music.playback.source,
                 maximumHeight: dashboardHeight
             )
         )
@@ -65,7 +66,10 @@ struct MenuBarDashboardView: View {
         .preferredColorScheme(palette.preferredColorScheme)
         .onAppear(perform: prepareDashboard)
         .onChange(of: panelState.selectedSection) { _, section in
-            sectionDidChange(section)
+            layoutDidChange(section, music.playback.source)
+        }
+        .onChange(of: music.playback.source) { _, source in
+            layoutDidChange(panelState.selectedSection, source)
         }
         .onExitCommand(perform: dismiss)
         .onMoveCommand(perform: moveSelection)
