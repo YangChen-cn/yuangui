@@ -157,6 +157,66 @@ final class AIChatTests: XCTestCase {
         XCTAssertEqual(chat.sessions.first?.messages.count, 4)
     }
 
+    @MainActor
+    func testReplyReturnsToSessionThatSentRequestAfterSwitchingSessions() async {
+        let suite = "ChatSessionOwnershipTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secrets = MemorySecretStore()
+        secrets.value = "test-key"
+        let settings = AISettingsStore(defaults: defaults, secrets: secrets)
+        let service = SuspendedChatService(reply: "原会话回复")
+        let chat = ChatStore(settings: settings, service: service, history: MemoryChatHistoryStore())
+
+        let sendTask = Task { @MainActor in
+            await chat.send("原会话问题", petMode: .duo)
+        }
+        await service.waitUntilRequested()
+        let originalSessionID = try! XCTUnwrap(chat.currentSessionID)
+        chat.newSession()
+        let newSessionID = try! XCTUnwrap(chat.currentSessionID)
+        await service.resume()
+        await sendTask.value
+
+        let original = chat.sessions.first { $0.id == originalSessionID }
+        let current = chat.sessions.first { $0.id == newSessionID }
+        XCTAssertEqual(original?.messages.map(\.content), ["原会话问题", "原会话回复"])
+        XCTAssertTrue(current?.messages.isEmpty == true)
+        XCTAssertNil(chat.latestReply)
+    }
+
+    @MainActor
+    func testSessionLoadDoesNotRestoreDeletedSessionUsingStaleIndex() async {
+        let suite = "ChatSessionLoadRaceTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let persisted = ChatSession(
+            title: "磁盘会话",
+            messages: [ChatMessage(role: .assistant, content: "磁盘回复")]
+        )
+        let loadStarted = expectation(description: "session load started")
+        let history = BlockingChatHistoryStore(session: persisted, loadStarted: loadStarted)
+        let chat = ChatStore(
+            settings: AISettingsStore(defaults: defaults, secrets: MemorySecretStore()),
+            service: SequencedChatService(replies: []),
+            history: history
+        )
+
+        for _ in 0..<100 where !chat.sessions.contains(where: { $0.id == persisted.id }) {
+            await Task.yield()
+        }
+        XCTAssertTrue(chat.sessions.contains(where: { $0.id == persisted.id }))
+        chat.selectSession(persisted.id)
+        await fulfillment(of: [loadStarted], timeout: 1)
+        chat.deleteSession(persisted.id)
+        history.resumeLoad()
+        for _ in 0..<100 where chat.isLoadingSession {
+            await Task.yield()
+        }
+
+        XCTAssertFalse(chat.sessions.contains(where: { $0.id == persisted.id }))
+    }
+
     func testChatHistoryFileStorePersistsDeletesAndProtectsFile() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ChatHistoryTests-\(UUID().uuidString)", isDirectory: true)
@@ -333,6 +393,40 @@ private actor SequencedChatService: AIChatServicing {
     func receivedContents() -> [[String]] { received }
 }
 
+private actor SuspendedChatService: AIChatServicing {
+    private let response: String
+    private var requested = false
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
+    private var replyContinuation: CheckedContinuation<String, Never>?
+
+    init(reply: String) {
+        response = reply
+    }
+
+    func reply(
+        messages: [ChatMessage],
+        attachments: [PreparedChatAttachment],
+        configuration: AIChatConfiguration,
+        petMode: PetMode
+    ) async throws -> String {
+        requested = true
+        let waiters = requestWaiters
+        requestWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        return await withCheckedContinuation { replyContinuation = $0 }
+    }
+
+    func waitUntilRequested() async {
+        if requested { return }
+        await withCheckedContinuation { requestWaiters.append($0) }
+    }
+
+    func resume() {
+        replyContinuation?.resume(returning: response)
+        replyContinuation = nil
+    }
+}
+
 private final class MemoryChatHistoryStore: ChatHistoryStoring {
     var sessions: [ChatSession] = []
     func loadMetadata() throws -> [ChatSessionMetadata] { sessions.map(ChatSessionMetadata.init) }
@@ -343,4 +437,44 @@ private final class MemoryChatHistoryStore: ChatHistoryStoring {
     }
     func deleteSession(id: UUID, metadata: [ChatSessionMetadata]) throws { sessions.removeAll { $0.id == id } }
     func clear() throws { sessions = [] }
+}
+
+private final class BlockingChatHistoryStore: ChatHistoryStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private let loadRelease = DispatchSemaphore(value: 0)
+    private let loadStarted: XCTestExpectation
+    private var session: ChatSession?
+
+    init(session: ChatSession, loadStarted: XCTestExpectation) {
+        self.session = session
+        self.loadStarted = loadStarted
+    }
+
+    func loadMetadata() throws -> [ChatSessionMetadata] {
+        lock.withLock { session.map { [ChatSessionMetadata(session: $0)] } ?? [] }
+    }
+
+    func loadSession(id: UUID) throws -> ChatSession? {
+        loadStarted.fulfill()
+        loadRelease.wait()
+        return lock.withLock { session?.id == id ? session : nil }
+    }
+
+    func save(session: ChatSession, metadata: [ChatSessionMetadata]) throws {
+        lock.withLock { self.session = session }
+    }
+
+    func deleteSession(id: UUID, metadata: [ChatSessionMetadata]) throws {
+        lock.withLock {
+            if session?.id == id { session = nil }
+        }
+    }
+
+    func clear() throws {
+        lock.withLock { session = nil }
+    }
+
+    func resumeLoad() {
+        loadRelease.signal()
+    }
 }

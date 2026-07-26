@@ -3,12 +3,18 @@ import Foundation
 actor DiaryRepository {
     private let layout: DiaryStorageLayout
     private let fileManager: FileManager
+    private let beforeBatchSave: (@Sendable () async -> Void)?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    init(layout: DiaryStorageLayout, fileManager: FileManager = .default) {
+    init(
+        layout: DiaryStorageLayout,
+        fileManager: FileManager = .default,
+        beforeBatchSave: (@Sendable () async -> Void)? = nil
+    ) {
         self.layout = layout
         self.fileManager = fileManager
+        self.beforeBatchSave = beforeBatchSave
         encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
@@ -28,7 +34,8 @@ actor DiaryRepository {
         try removeLegacyDuplicates(for: entry.id)
     }
 
-    func save(_ entries: [DiaryEntry]) -> DiarySaveReport {
+    func save(_ entries: [DiaryEntry]) async -> DiarySaveReport {
+        await beforeBatchSave?()
         var savedIDs = Set<UUID>()
         var failures: [DiaryWriteFailure] = []
         for entry in entries {

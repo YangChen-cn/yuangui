@@ -41,6 +41,7 @@ final class DiaryFeature: ObservableObject {
     private var autoBackupTask: Task<Void, Never>?
     private var debouncedSearchText = ""
     private var feedbackPendingEntryIDs = Set<UUID>()
+    private var dirtyEntryRevisions: [UUID: UInt64] = [:]
 
     var onEntryCompleted: (() -> Void)?
 
@@ -304,6 +305,7 @@ final class DiaryFeature: ObservableObject {
             let deleted = try await repository.moveToRecentlyDeleted(entry)
             entries.removeAll { $0.id == id }
             dirtyEntryIDs.remove(id)
+            dirtyEntryRevisions[id] = nil
             feedbackPendingEntryIDs.remove(id)
             if selectedEntryID == id { selectedEntryID = filteredEntries.first?.id ?? entries.first?.id }
             recentlyDeletedItems.insert(deleted, at: 0)
@@ -421,7 +423,10 @@ final class DiaryFeature: ObservableObject {
     func flush() async -> Bool {
         autoSaveTask?.cancel()
         autoSaveTask = nil
-        return await saveDirtyEntries(ids: dirtyEntryIDs)
+        while !dirtyEntryIDs.isEmpty {
+            guard await saveDirtyEntries(ids: dirtyEntryIDs) else { return false }
+        }
+        return true
     }
 
     @discardableResult
@@ -511,11 +516,13 @@ final class DiaryFeature: ObservableObject {
             .sorted { $0.occurredAt > $1.occurredAt }
         recoveredFiles = report.recoveredFiles
         dirtyEntryIDs.removeAll()
+        dirtyEntryRevisions.removeAll()
         feedbackPendingEntryIDs.removeAll()
         selectedEntryID = entries.first?.id
     }
 
     private func markDirty(_ id: UUID, schedule: Bool = true) {
+        dirtyEntryRevisions[id, default: 0] &+= 1
         dirtyEntryIDs.insert(id)
         feedbackPendingEntryIDs.insert(id)
         if schedule { scheduleAutoSave() }
@@ -546,13 +553,14 @@ final class DiaryFeature: ObservableObject {
             if case .saving = saveState { saveState = .idle }
             return true
         }
+        let revisions = Dictionary(uniqueKeysWithValues: ids.map { ($0, dirtyEntryRevisions[$0] ?? 0) })
         let candidates = entries.filter { ids.contains($0.id) && $0.hasPersistableContent }
         let skipped = ids.subtracting(candidates.map(\.id))
-        dirtyEntryIDs.subtract(skipped)
+        clearDirtyEntries(skipped, matching: revisions)
         guard !candidates.isEmpty else { return true }
         saveState = .saving
         let report = await repository.save(candidates)
-        dirtyEntryIDs.subtract(report.savedIDs)
+        clearDirtyEntries(report.savedIDs, matching: revisions)
         if report.succeeded {
             saveState = .saved(Date())
             scheduleAutomaticBackup()
@@ -560,6 +568,13 @@ final class DiaryFeature: ObservableObject {
         }
         saveState = .failed(report.failures.map { $0.message }.joined(separator: "\n"))
         return false
+    }
+
+    private func clearDirtyEntries(_ ids: Set<UUID>, matching revisions: [UUID: UInt64]) {
+        for id in ids where dirtyEntryRevisions[id] == revisions[id] {
+            dirtyEntryIDs.remove(id)
+            dirtyEntryRevisions[id] = nil
+        }
     }
 
     private func scheduleAutomaticBackup() {

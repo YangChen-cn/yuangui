@@ -46,16 +46,19 @@ final class ChatStore: ObservableObject {
         await ensureCurrentSessionLoaded()
         let content = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!content.isEmpty || !attachments.isEmpty), !isSending else { return }
+        if currentSessionID == nil { newSession() }
+        guard let targetSessionID = currentSessionID else { return }
         latestReply = nil
         errorMessage = nil
         isSending = true
         defer { isSending = false }
         let displayContent = content.isEmpty ? "请看看这些附件" : content
         let userMessage = ChatMessage(role: .user, content: displayContent, attachments: attachments.map(\.metadata))
-        append(userMessage)
+        guard append(userMessage, to: targetSessionID) else { return }
+        let requestMessages = sessions.first(where: { $0.id == targetSessionID })?.messages ?? [userMessage]
         do {
             let reply = try await service.streamReply(
-                messages: Array((currentSession?.messages ?? [userMessage]).suffix(12)),
+                messages: Array(requestMessages.suffix(12)),
                 attachments: attachments,
                 configuration: AIChatConfiguration(
                     baseURL: settings.baseURL,
@@ -65,13 +68,18 @@ final class ChatStore: ObservableObject {
                 ),
                 petMode: petMode,
                 onPartialReply: { [weak self] partialReply in
-                    self?.latestReply = partialReply
+                    guard let self,
+                          self.currentSessionID == targetSessionID,
+                          self.sessions.contains(where: { $0.id == targetSessionID }) else { return }
+                    self.latestReply = partialReply
                 }
             )
-            latestReply = reply
-            append(ChatMessage(role: .assistant, content: reply))
+            _ = append(ChatMessage(role: .assistant, content: reply), to: targetSessionID)
         } catch {
-            errorMessage = error.localizedDescription
+            if currentSessionID == targetSessionID,
+               sessions.contains(where: { $0.id == targetSessionID }) {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -148,13 +156,15 @@ final class ChatStore: ObservableObject {
 
     private func loadSessionIfNeeded(_ id: UUID) async {
         guard !loadedSessionIDs.contains(id),
-              let index = sessions.firstIndex(where: { $0.id == id }) else {
+              sessions.contains(where: { $0.id == id }) else {
             updateLatestReply()
             return
         }
         isLoadingSession = true
         defer { isLoadingSession = false }
-        if let session = try? await history.loadSession(id: id) {
+        if let session = try? await history.loadSession(id: id),
+           !loadedSessionIDs.contains(id),
+           let index = sessions.firstIndex(where: { $0.id == id }) {
             sessions[index] = session
             loadedSessionIDs.insert(id)
             sessionMessageCounts[id] = session.messages.count
@@ -166,10 +176,9 @@ final class ChatStore: ObservableObject {
         latestReply = currentSession?.messages.last(where: { $0.role == .assistant })?.content
     }
 
-    private func append(_ message: ChatMessage) {
-        if currentSessionID == nil { newSession() }
-        guard let id = currentSessionID,
-              let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult
+    private func append(_ message: ChatMessage, to id: UUID) -> Bool {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return false }
         sessions[index].messages.append(message)
         if sessions[index].messages.count > Self.maximumMessagesPerSession {
             sessions[index].messages = Array(sessions[index].messages.suffix(Self.maximumMessagesPerSession))
@@ -185,6 +194,8 @@ final class ChatStore: ObservableObject {
         trimSessionLimit()
         let metadata = metadataSnapshot()
         Task { await history.scheduleSave(session: session, metadata: metadata) }
+        if currentSessionID == id { updateLatestReply() }
+        return true
     }
 
     private func trimSessionLimit() {
