@@ -666,8 +666,13 @@ final class DiaryFeatureTests: XCTestCase {
         second.body = "去公园"
         feature.updateEntry(second)
         feature.searchText = "电影"
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(feature.filteredEntries.map(\.id), [first.id])
+        let expectedIDs = [first.id]
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while feature.filteredEntries.map(\.id) != expectedIDs,
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(feature.filteredEntries.map(\.id), expectedIDs)
     }
 }
 
