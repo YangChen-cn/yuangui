@@ -39,12 +39,16 @@ final class MusicFeature {
     private let bilibiliFavoritesService = BilibiliFavoritesService()
     private let makeBilibiliPlayer: BilibiliPlayerFactory
     private var bilibiliPlayer: (any BilibiliPlaying)?
+    private var bilibiliPlayerReleaseTask: Task<Void, Never>?
+    private let bilibiliPlayerReleaseDelay: Duration
     private let lyricsService: any LyricsProviding
     private let library: any MusicLibraryCoordinating
     private let defaults: UserDefaults
     private var libraryRestoreTask: Task<Void, Never>?
     private var appleSyncTask: Task<Void, Never>?
     private var appleClockTask: Task<Void, Never>?
+    private var appleSyncGeneration: UInt = 0
+    private var appleClockGeneration: UInt = 0
     private var appleRefreshTask: Task<Void, Never>?
     private var appleArtworkTask: Task<Void, Never>?
     private var bilibiliImportResultTask: Task<Void, Never>?
@@ -77,7 +81,8 @@ final class MusicFeature {
         bilibiliPlayer: (any BilibiliPlaying)? = nil,
         bilibiliPlayerFactory: @escaping BilibiliPlayerFactory = { BilibiliPlayerEngine() },
         lyricsService: any LyricsProviding = LyricsService(),
-        library: any MusicLibraryCoordinating = MusicLibraryActor()
+        library: any MusicLibraryCoordinating = MusicLibraryActor(),
+        bilibiliPlayerReleaseDelay: Duration = .seconds(60)
     ) {
         let source = MusicSource(rawValue: defaults.string(forKey: "musicSource") ?? "") ?? .appleMusic
         let savedBilibiliVolume = defaults.object(forKey: "bilibiliMusicVolume") as? Double ?? 0.8
@@ -86,6 +91,7 @@ final class MusicFeature {
         self.bilibili = bilibili
         self.bilibiliPlayer = bilibiliPlayer
         self.makeBilibiliPlayer = bilibiliPlayerFactory
+        self.bilibiliPlayerReleaseDelay = bilibiliPlayerReleaseDelay
         self.lyricsService = lyricsService
         self.library = library
         playback = MusicPlaybackStore(source: source, volume: savedBilibiliVolume)
@@ -122,11 +128,35 @@ final class MusicFeature {
     }
 
     private func ensureBilibiliPlayer() -> any BilibiliPlaying {
+        bilibiliPlayerReleaseTask?.cancel()
+        bilibiliPlayerReleaseTask = nil
         if let bilibiliPlayer { return bilibiliPlayer }
         let player = makeBilibiliPlayer()
         configureBilibiliPlayer(player)
         bilibiliPlayer = player
         return player
+    }
+
+    private func unloadBilibiliPlayer() {
+        bilibiliPlayer?.onStateChange = nil
+        bilibiliPlayer?.onProgress = nil
+        bilibiliPlayer?.onFinished = nil
+        bilibiliPlayer?.onFailure = nil
+        bilibiliPlayer?.stop()
+        bilibiliPlayer = nil
+    }
+
+    private func scheduleBilibiliPlayerRelease() {
+        guard bilibiliPlayer != nil else { return }
+        bilibiliPlayerReleaseTask?.cancel()
+        let releaseDelay = bilibiliPlayerReleaseDelay
+        bilibiliPlayerReleaseTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: releaseDelay) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            self.bilibiliPlayerReleaseTask = nil
+            guard self.activePlaybackSource != .bilibili else { return }
+            self.unloadBilibiliPlayer()
+        }
     }
 
     private var browsingSource: MusicSource {
@@ -336,14 +366,22 @@ final class MusicFeature {
     @discardableResult
     private func activatePlaybackSource(_ newSource: MusicSource) -> Bool {
         guard activePlaybackSource != newSource else { return false }
-        switch newSource {
+        switch activePlaybackSource {
         case .appleMusic:
-            if activePlaybackSource == .bilibili { lastBilibiliPosition = position }
+            stopAppleSyncTask()
+            stopAppleClock()
+        case .bilibili:
+            lastBilibiliPosition = position
             bilibiliLoadTask?.cancel()
             bilibiliLoadTask = nil
             bilibiliPlayer?.pause()
-            stopAppleSyncTask()
-            stopAppleClock()
+            scheduleBilibiliPlayerRelease()
+        case nil:
+            break
+        }
+        switch newSource {
+        case .appleMusic:
+            break
         case .bilibili:
             Task { [appleMusic] in await appleMusic.pause() }
             if volume != bilibiliVolume { volume = bilibiliVolume }
@@ -847,7 +885,10 @@ final class MusicFeature {
         if wasCurrent {
             bilibiliPlayer?.stop(); currentTrack = nil; currentTrackID = nil; setPlaybackState(.stopped)
             lastBilibiliPosition = 0
-            if activePlaybackSource == .bilibili { activePlaybackSource = nil }
+            if activePlaybackSource == .bilibili {
+                activePlaybackSource = nil
+                scheduleBilibiliPlayerRelease()
+            }
             playbackProgress.reset(); cancelLyricLoad()
             lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
         }
@@ -862,6 +903,7 @@ final class MusicFeature {
         lastBilibiliPosition = 0
         if activePlaybackSource == .bilibili || currentTrack?.source == .bilibili {
             activePlaybackSource = nil
+            scheduleBilibiliPlayerRelease()
             currentTrack = nil; setPlaybackState(.stopped)
             playbackProgress.reset(); cancelLyricLoad()
             lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
@@ -1089,14 +1131,11 @@ final class MusicFeature {
         libraryRestoreTask?.cancel()
         stopAppleSyncTask()
         stopAppleClock()
+        bilibiliPlayerReleaseTask?.cancel()
+        bilibiliPlayerReleaseTask = nil
         appleRefreshTask?.cancel(); appleArtworkTask?.cancel(); bilibiliImportResultTask?.cancel()
         lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliFavoriteTask?.cancel()
-        bilibiliPlayer?.onStateChange = nil
-        bilibiliPlayer?.onProgress = nil
-        bilibiliPlayer?.onFinished = nil
-        bilibiliPlayer?.onFailure = nil
-        bilibiliPlayer?.stop()
-        bilibiliPlayer = nil
+        unloadBilibiliPlayer()
         appleMusicWorkspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         appleMusicWorkspaceObservers.removeAll()
         persistenceRevision &+= 1
@@ -1140,17 +1179,26 @@ final class MusicFeature {
         guard activePlaybackSource == .appleMusic,
               appleMusicRunning,
               appleSyncTask == nil else { return }
+        appleSyncGeneration &+= 1
+        let generation = appleSyncGeneration
         appleSyncTask = Task { [weak self] in
-            await self?.runAppleSyncLoop()
+            await self?.runAppleSyncLoop(generation: generation)
         }
     }
 
     private func stopAppleSyncTask() {
+        appleSyncGeneration &+= 1
         appleSyncTask?.cancel()
         appleSyncTask = nil
     }
 
-    private func runAppleSyncLoop() async {
+    private func finishAppleSyncTask(generation: UInt) {
+        guard appleSyncGeneration == generation else { return }
+        appleSyncTask = nil
+    }
+
+    private func runAppleSyncLoop(generation: UInt) async {
+        defer { finishAppleSyncTask(generation: generation) }
         while !Task.isCancelled {
             guard activePlaybackSource == .appleMusic, appleMusicRunning else { return }
             await refreshAppleMusic()
@@ -1174,6 +1222,7 @@ final class MusicFeature {
                         self.scheduleAppleRefresh()
                     } else if self.activePlaybackSource == .appleMusic {
                         self.stopAppleSyncTask()
+                        self.stopAppleClock()
                         self.setPlaybackState(.stopped)
                     }
                 }
@@ -1186,18 +1235,28 @@ final class MusicFeature {
         guard activePlaybackSource == .appleMusic,
               playbackState.isPlaying,
               appleClockTask == nil else { return }
+        appleClockGeneration &+= 1
+        let generation = appleClockGeneration
         appleClockTask = Task { [weak self] in
-            await self?.runAppleClock()
+            await self?.runAppleClock(generation: generation)
         }
     }
 
     private func stopAppleClock() {
+        appleClockGeneration &+= 1
         appleClockTask?.cancel()
         appleClockTask = nil
         lastAppleClockTime = nil
     }
 
-    private func runAppleClock() async {
+    private func finishAppleClockTask(generation: UInt) {
+        guard appleClockGeneration == generation else { return }
+        appleClockTask = nil
+        lastAppleClockTime = nil
+    }
+
+    private func runAppleClock(generation: UInt) async {
+        defer { finishAppleClockTask(generation: generation) }
         while !Task.isCancelled {
             guard activePlaybackSource == .appleMusic, playbackState.isPlaying else { return }
             let now = Date.timeIntervalSinceReferenceDate

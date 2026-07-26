@@ -777,6 +777,54 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testBilibiliPlayerReleaseIsDelayedAndCancelledByPlayback() async {
+        let suiteName = "MusicPlayerReleaseTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var factoryCalls = 0
+        let firstPlayer = RecordingBilibiliPlayer()
+        let feature = MusicFeature(
+            defaults: defaults,
+            appleMusic: StubAppleMusicProvider(),
+            bilibili: StubBilibiliMusicProvider(),
+            bilibiliPlayerFactory: {
+                factoryCalls += 1
+                return factoryCalls == 1 ? firstPlayer : RecordingBilibiliPlayer()
+            },
+            library: RecordingMusicLibraryCoordinator(),
+            bilibiliPlayerReleaseDelay: .milliseconds(20)
+        )
+        let track = MusicTrack(
+            id: "release-bilibili-track",
+            source: .bilibili,
+            title: "延迟释放测试",
+            artist: "测试歌手",
+            album: nil,
+            coverURL: nil,
+            duration: 180,
+            bilibili: BilibiliTrackReference(bvid: "BV1xx411c7mD", aid: 1, cid: 2, page: 1),
+            subtitleURL: nil
+        )
+
+        feature.play(track)
+        XCTAssertEqual(factoryCalls, 1)
+        feature.connectAppleMusic()
+        feature.play(track)
+        try? await Task.sleep(for: .milliseconds(40))
+
+        XCTAssertEqual(factoryCalls, 1)
+        XCTAssertEqual(firstPlayer.stopCount, 0)
+
+        feature.connectAppleMusic()
+        try? await Task.sleep(for: .milliseconds(40))
+        feature.play(track)
+
+        XCTAssertEqual(factoryCalls, 2)
+        await feature.shutdown()
+    }
+
+    @MainActor
     func testSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay() async {
         let suiteName = "MusicSourceSwitchTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -847,6 +895,23 @@ private struct StubBilibiliMusicProvider: BilibiliMusicProviding {
 
     func subtitleURL(for track: MusicTrack) async -> URL? { nil }
     func playbackHeaders() async -> [String: String] { [:] }
+}
+
+private struct StubAppleMusicProvider: AppleMusicProviding {
+    func isRunning() async -> Bool { true }
+
+    func requestSnapshot() async throws -> AppleMusicSnapshot {
+        AppleMusicSnapshot(isRunning: true, track: nil, state: .stopped, position: 0, volume: 1)
+    }
+
+    func artworkURL(for trackID: String) async -> URL? { nil }
+    func play() async {}
+    func playPause() async {}
+    func pause() async {}
+    func previous() async {}
+    func next() async {}
+    func seek(to position: TimeInterval) async {}
+    func setVolume(_ volume: Double) async {}
 }
 
 @MainActor

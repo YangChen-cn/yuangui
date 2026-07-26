@@ -189,9 +189,12 @@ final class WindowCoordinator: NSObject {
         )
         panelController?.show()
         installMenuBarItem()
-        lyrics().updateVisibility()
-        music.lyricsPresentation.onVisibilityChanged = { [weak self] in self?.lyrics().updateVisibility() }
-        music.lyricsPresentation.onLockChanged = { [weak self] in self?.lyrics().updateLock() }
+        music.lyricsPresentation.onVisibilityChanged = { [weak self] in
+            self?.updateLyricsVisibility()
+        }
+        music.lyricsPresentation.onLockChanged = { [weak self] in
+            self?.lyricsController?.updateLock()
+        }
         weatherStartupTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(800))
             guard !Task.isCancelled else { return }
@@ -391,11 +394,15 @@ final class WindowCoordinator: NSObject {
         diaryController?.showQuickEntry()
     }
 
-    private func lyrics() -> LyricsPanelController {
-        if let lyricsController { return lyricsController }
-        let controller = LyricsPanelController(music: music)
-        lyricsController = controller
-        return controller
+    private func updateLyricsVisibility() {
+        guard music.lyricsPresentation.isVisible else {
+            lyricsController?.hide()
+            return
+        }
+        if lyricsController == nil {
+            lyricsController = LyricsPanelController(music: music)
+        }
+        lyricsController?.show()
     }
 
     @objc private func startRegionScreenshot() {
