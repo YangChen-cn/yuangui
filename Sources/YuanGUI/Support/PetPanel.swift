@@ -128,6 +128,7 @@ final class PetPanelController {
     private var edgeMessageHideTask: Task<Void, Never>?
     private var edgeAutoPeekTask: Task<Void, Never>?
     private var lastPresentedEdgeSmartState: SmartPetState?
+    private var edgeTransitionGeneration: UInt = 0
 
     init(
         store: PetStore,
@@ -376,6 +377,28 @@ final class PetPanelController {
                     await Task.yield()
                     guard let self, self.auxiliaryBubblePanel.isVisible else { return }
                     self.positionAuxiliaryBubble()
+                }
+            }
+            .store(in: &cancellables)
+        store.$mode
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await Task.yield()
+                    guard self.dockedEdge != nil else { return }
+                    if self.isDockTransitioning {
+                        self.cancelEdgeTransition()
+                        self.panel.orderOut(nil)
+                        self.store.setPetPresented(false)
+                    }
+                    self.refreshEdgePeekContent()
+                    self.resizeEdgePeekPanel()
+                    self.positionEdgePeek()
+                    self.edgePeekPanel.alphaValue = 1
+                    self.edgePeekPanel.orderFrontRegardless()
+                    self.updateEdgeStatusPanel()
+                    self.presentEdgeSmartState(self.store.smartState, force: true)
                 }
             }
             .store(in: &cancellables)
@@ -895,6 +918,7 @@ final class PetPanelController {
 
     private func dock(to edge: PetDockEdge, on screen: NSScreen) {
         guard dockedEdge == nil else { return }
+        let transitionGeneration = beginEdgeTransition()
         stopLockedHoverTracking()
         let targetExpandedOrigin = PetLayout.expandedOrigin(
             edge: edge,
@@ -922,7 +946,6 @@ final class PetPanelController {
             expandedOrigin: targetExpandedOrigin,
             visibleFrame: screen.visibleFrame
         )
-        isDockTransitioning = true
         panel.bypassScreenConstraint = true
         let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         edgePeekPanel.alphaValue = 0
@@ -936,7 +959,9 @@ final class PetPanelController {
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self,
+                      self.edgeTransitionGeneration == transitionGeneration,
+                      self.dockedEdge == edge else { return }
                 self.panel.orderOut(nil)
                 self.panel.alphaValue = 1
                 self.panel.bypassScreenConstraint = false
@@ -949,7 +974,10 @@ final class PetPanelController {
         }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(110))
-            guard let self, self.isDockTransitioning else { return }
+            guard let self,
+                  self.edgeTransitionGeneration == transitionGeneration,
+                  self.isDockTransitioning,
+                  self.dockedEdge == edge else { return }
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.13
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -989,10 +1017,10 @@ final class PetPanelController {
         )
         let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
+        let transitionGeneration = beginEdgeTransition()
         dockedEdge = nil
         resetEdgePresentation()
         UserDefaults.standard.removeObject(forKey: "petDockedEdge")
-        isDockTransitioning = true
         panel.bypassScreenConstraint = true
         panel.setFrameOrigin(reducesMotion ? target : tucked)
         panel.alphaValue = 0
@@ -1003,7 +1031,9 @@ final class PetPanelController {
         store.setPetPresented(true)
 
         let finish: @MainActor () -> Void = { [weak self] in
-            guard let self else { return }
+            guard let self,
+                  self.edgeTransitionGeneration == transitionGeneration,
+                  self.dockedEdge == nil else { return }
             let finalOrigin = PetLayout.constrainedOrigin(
                 target,
                 panelSize: self.panel.frame.size,
@@ -1047,7 +1077,10 @@ final class PetPanelController {
         }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(135))
-            guard let self, self.isDockTransitioning else { return }
+            guard let self,
+                  self.edgeTransitionGeneration == transitionGeneration,
+                  self.isDockTransitioning,
+                  self.dockedEdge == nil else { return }
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.12
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
@@ -1056,6 +1089,24 @@ final class PetPanelController {
                 Task { @MainActor [weak self] in self?.edgePeekPanel.orderOut(nil) }
             }
         }
+    }
+
+    private func beginEdgeTransition() -> UInt {
+        cancelEdgeTransition()
+        edgeTransitionGeneration &+= 1
+        isDockTransitioning = true
+        return edgeTransitionGeneration
+    }
+
+    private func cancelEdgeTransition() {
+        edgeTransitionGeneration &+= 1
+        panel.setFrameOrigin(panel.frame.origin)
+        panel.alphaValue = 1
+        panel.bypassScreenConstraint = false
+        edgePeekPanel.alphaValue = 0
+        edgePeekPanel.orderOut(nil)
+        edgeStatusPanel.orderOut(nil)
+        isDockTransitioning = false
     }
 
     private func positionEdgePeek(on providedScreen: NSScreen? = nil) {
