@@ -402,7 +402,10 @@ final class PetStoreTests: XCTestCase {
 
         store.setInteractionLocked(true)
         store.scheduleLockedControlsHide(after: 0)
-        try await Task.sleep(nanoseconds: 2_000_000)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while store.lockedControlsVisible, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         XCTAssertFalse(store.lockedControlsVisible)
 
         store.revealLockedControls()
