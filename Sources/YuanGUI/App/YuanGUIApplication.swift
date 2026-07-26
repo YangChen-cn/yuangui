@@ -355,28 +355,38 @@ final class WindowCoordinator: NSObject {
 
     private func showMaintenance() {
         if maintenanceController == nil {
-            maintenanceController = MaintenanceWindowController(store: maintenance)
+            maintenanceController = MaintenanceWindowController(store: maintenance) { [weak self] in
+                self?.maintenanceController = nil
+            }
         }
         maintenanceController?.show()
     }
 
     private func showMusic() {
         if musicController == nil {
-            musicController = MusicWindowController(music: music, appActions: actions)
+            musicController = MusicWindowController(
+                music: music,
+                appActions: actions,
+                onClose: { [weak self] in self?.musicController = nil }
+            )
         }
         musicController?.show()
     }
 
     private func showDiary() {
         if diaryController == nil {
-            diaryController = DiaryWindowController(store: diary)
+            diaryController = DiaryWindowController(store: diary) { [weak self] in
+                self?.diaryController = nil
+            }
         }
         diaryController?.show()
     }
 
     private func showQuickDiary() {
         if diaryController == nil {
-            diaryController = DiaryWindowController(store: diary)
+            diaryController = DiaryWindowController(store: diary) { [weak self] in
+                self?.diaryController = nil
+            }
         }
         diaryController?.showQuickEntry()
     }

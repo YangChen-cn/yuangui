@@ -9,13 +9,16 @@ private final class DiaryWindow: NSWindow {
 @MainActor
 final class DiaryWindowController: NSObject, NSWindowDelegate {
     private let store: DiaryFeature
+    private let onClose: () -> Void
     private var window: NSWindow?
     private var quickEntryWindow: NSWindow?
     private var allowClose = false
     private var closeTask: Task<Void, Never>?
+    private var didNotifyIdle = false
 
-    init(store: DiaryFeature) {
+    init(store: DiaryFeature, onClose: @escaping () -> Void = {}) {
         self.store = store
+        self.onClose = onClose
         super.init()
     }
 
@@ -40,6 +43,7 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         if !window.setFrameUsingName("YuanGUI.DiaryWindow") { window.center() }
         window.delegate = self
         window.contentView = NSHostingView(rootView: DiaryMainView(store: store))
+        didNotifyIdle = false
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.async {
@@ -75,11 +79,13 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
                 onSaved: { [weak self] in self?.closeQuickEntry() },
                 onCancel: { [weak self] in self?.closeQuickEntry() },
                 onOpenFullDiary: { [weak self] in
-                    self?.closeQuickEntry()
-                    self?.show()
+                    guard let self else { return }
+                    self.closeQuickEntry(notifyWhenIdle: false)
+                    self.show()
                 }
             )
         )
+        didNotifyIdle = false
         quickEntryWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -103,9 +109,19 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard let closedWindow = notification.object as? NSWindow,
-              closedWindow === quickEntryWindow else { return }
-        quickEntryWindow = nil
+        guard let closedWindow = notification.object as? NSWindow else { return }
+        if closedWindow === quickEntryWindow {
+            closedWindow.contentView = nil
+            closedWindow.delegate = nil
+            quickEntryWindow = nil
+        } else if closedWindow === window {
+            closedWindow.contentView = nil
+            closedWindow.delegate = nil
+            window = nil
+        } else {
+            return
+        }
+        notifyIfIdle()
     }
 
     private func handleSaveFailure(window: NSWindow) async {
@@ -129,10 +145,18 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         allowClose = false
     }
 
-    private func closeQuickEntry() {
+    private func closeQuickEntry(notifyWhenIdle: Bool = true) {
         guard let quickEntryWindow else { return }
         quickEntryWindow.delegate = nil
+        quickEntryWindow.contentView = nil
         quickEntryWindow.close()
         self.quickEntryWindow = nil
+        if notifyWhenIdle { notifyIfIdle() }
+    }
+
+    private func notifyIfIdle() {
+        guard window == nil, quickEntryWindow == nil, !didNotifyIdle else { return }
+        didNotifyIdle = true
+        onClose()
     }
 }

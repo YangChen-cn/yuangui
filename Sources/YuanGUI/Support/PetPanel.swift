@@ -102,12 +102,12 @@ final class PetPanelController {
     private let focusTimer: FocusTimerStore
     private let music: MusicFeature
     private let appActions: AppActions
-    private let lockedToolbarPanel: PetLockedToolbarPanel
-    private let auxiliaryBubblePanel: PetAuxiliaryBubblePanel
+    private var lockedToolbarPanel: PetLockedToolbarPanel?
+    private var auxiliaryBubblePanel: PetAuxiliaryBubblePanel?
     private let auxiliaryBubblePresentation = PetAuxiliaryBubblePresentation()
-    private let edgePeekPanel: PetEdgePeekPanel
-    private let edgeStatusPanel: PetEdgeStatusPanel
-    private let dockPreviewPanel: PetDockPreviewPanel
+    private var edgePeekPanel: PetEdgePeekPanel?
+    private var edgeStatusPanel: PetEdgeStatusPanel?
+    private var dockPreviewPanel: PetDockPreviewPanel?
     private var observers: [NSObjectProtocol] = []
     private var cancellables = Set<AnyCancellable>()
     private var dockedEdge: PetDockEdge?
@@ -158,41 +158,6 @@ final class PetPanelController {
             backing: .buffered,
             defer: false
         )
-        lockedToolbarPanel = PetLockedToolbarPanel(
-            contentRect: NSRect(origin: .zero, size: PetLayout.lockedControlPanelSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        auxiliaryBubblePanel = PetAuxiliaryBubblePanel(
-            contentRect: NSRect(
-                origin: .zero,
-                size: PetLayout.auxiliaryBubblePanelSize(scale: store.petScale)
-            ),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        let peekPanel = PetEdgePeekPanel(
-            contentRect: NSRect(origin: .zero, size: PetLayout.edgePeekSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        edgePeekPanel = peekPanel
-        edgeStatusPanel = PetEdgeStatusPanel(
-            contentRect: NSRect(origin: .zero, size: PetLayout.edgeStatusSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        let previewPanel = PetDockPreviewPanel(
-            contentRect: NSRect(origin: .zero, size: CGSize(width: 5, height: 180)),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        dockPreviewPanel = previewPanel
         panel.title = "元圭与 VCC"
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -216,77 +181,12 @@ final class PetPanelController {
         )
         panel.ignoresMouseEvents = store.interactionLocked
         updateAllowedTopOverflow()
-        lockedToolbarPanel.isOpaque = false
-        lockedToolbarPanel.backgroundColor = .clear
-        lockedToolbarPanel.hasShadow = false
-        lockedToolbarPanel.level = .floating
-        lockedToolbarPanel.hidesOnDeactivate = false
-        lockedToolbarPanel.isReleasedWhenClosed = false
-        lockedToolbarPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        lockedToolbarPanel.contentView = NSHostingView(rootView:
-            PetUnlockControlView(store: store)
-                .environment(\.appActions, appActions)
-        )
-        auxiliaryBubblePanel.isOpaque = false
-        auxiliaryBubblePanel.backgroundColor = .clear
-        auxiliaryBubblePanel.hasShadow = false
-        auxiliaryBubblePanel.level = .floating
-        auxiliaryBubblePanel.hidesOnDeactivate = false
-        auxiliaryBubblePanel.isReleasedWhenClosed = false
-        auxiliaryBubblePanel.collectionBehavior = Self.auxiliaryBubbleCollectionBehavior
-        auxiliaryBubblePanel.contentView = NSHostingView(rootView:
-            PetAuxiliaryBubbleView(
-                store: store,
-                chat: chat,
-                maintenance: maintenance,
-                focusTimer: focusTimer,
-                music: music,
-                presentation: auxiliaryBubblePresentation
-            )
-            .environment(\.appActions, appActions)
-        )
-        panel.addChildWindow(auxiliaryBubblePanel, ordered: .above)
-        edgePeekPanel.isOpaque = false
-        edgePeekPanel.backgroundColor = .clear
-        edgePeekPanel.hasShadow = false
-        edgePeekPanel.level = .floating
-        edgePeekPanel.hidesOnDeactivate = false
-        edgePeekPanel.isReleasedWhenClosed = false
-        edgePeekPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        edgePeekPanel.contentView = NSHostingView(rootView:
-            PetEdgePeekView(store: store, edge: .left, hoveringChanged: nil) { [weak peekPanel] in
-                peekPanel?.restoreAction?()
-            }
-            .environment(\.appActions, appActions)
-        )
-
-        edgeStatusPanel.isOpaque = false
-        edgeStatusPanel.backgroundColor = .clear
-        edgeStatusPanel.hasShadow = false
-        edgeStatusPanel.level = .floating
-        edgeStatusPanel.ignoresMouseEvents = true
-        edgeStatusPanel.hidesOnDeactivate = false
-        edgeStatusPanel.isReleasedWhenClosed = false
-        edgeStatusPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        edgeStatusPanel.contentView = NSHostingView(rootView:
-            PetEdgeMiniStatusView(store: store)
-        )
-
-        dockPreviewPanel.isOpaque = false
-        dockPreviewPanel.backgroundColor = .clear
-        dockPreviewPanel.hasShadow = false
-        dockPreviewPanel.level = .floating
-        dockPreviewPanel.ignoresMouseEvents = true
-        dockPreviewPanel.hidesOnDeactivate = false
-        dockPreviewPanel.isReleasedWhenClosed = false
-        dockPreviewPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        dockPreviewPanel.contentView = NSHostingView(rootView:
-            PetDockPreviewView(edge: .left, isCommitReady: false)
-        )
-
         restoreOrPlaceWindow()
         lastExpandedOrigin = panel.frame.origin
         dockedEdge = UserDefaults.standard.string(forKey: "petDockedEdge").flatMap(PetDockEdge.init(rawValue:))
+        if dockedEdge != nil {
+            _ = ensureEdgePeekPanel()
+        }
         panel.dragMovedAction = { [weak self] in
             self?.updateDockPreview()
             self?.positionLockedToolbar()
@@ -297,7 +197,6 @@ final class PetPanelController {
             self.chat.dismiss()
         }
         panel.dragEndedAction = { [weak self] in self?.finishUserDrag() }
-        edgePeekPanel.restoreAction = { [weak self] in self?.restoreFromEdge(animated: true) }
         chat.onWillPresentationChange = { [weak self] presented in
             self?.prepareForChatPresentationChange(presented)
         }
@@ -375,7 +274,7 @@ final class PetPanelController {
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
                     await Task.yield()
-                    guard let self, self.auxiliaryBubblePanel.isVisible else { return }
+                    guard let self, self.auxiliaryBubblePanel?.isVisible == true else { return }
                     self.positionAuxiliaryBubble()
                 }
             }
@@ -395,13 +294,145 @@ final class PetPanelController {
                     self.refreshEdgePeekContent()
                     self.resizeEdgePeekPanel()
                     self.positionEdgePeek()
-                    self.edgePeekPanel.alphaValue = 1
-                    self.edgePeekPanel.orderFrontRegardless()
+                    self.edgePeekPanel?.alphaValue = 1
+                    self.edgePeekPanel?.orderFrontRegardless()
                     self.updateEdgeStatusPanel()
                     self.presentEdgeSmartState(self.store.smartState, force: true)
                 }
             }
             .store(in: &cancellables)
+    }
+
+    @discardableResult
+    private func ensureLockedToolbarPanel() -> PetLockedToolbarPanel {
+        if let lockedToolbarPanel { return lockedToolbarPanel }
+        let toolbarPanel = PetLockedToolbarPanel(
+            contentRect: NSRect(origin: .zero, size: PetLayout.lockedControlPanelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        toolbarPanel.isOpaque = false
+        toolbarPanel.backgroundColor = .clear
+        toolbarPanel.hasShadow = false
+        toolbarPanel.level = .floating
+        toolbarPanel.hidesOnDeactivate = false
+        toolbarPanel.isReleasedWhenClosed = false
+        toolbarPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        toolbarPanel.contentView = NSHostingView(rootView:
+            PetUnlockControlView(store: store)
+                .environment(\.appActions, appActions)
+        )
+        lockedToolbarPanel = toolbarPanel
+        return toolbarPanel
+    }
+
+    @discardableResult
+    private func ensureAuxiliaryBubblePanel() -> PetAuxiliaryBubblePanel {
+        if let auxiliaryBubblePanel { return auxiliaryBubblePanel }
+        let bubblePanel = PetAuxiliaryBubblePanel(
+            contentRect: NSRect(
+                origin: .zero,
+                size: PetLayout.auxiliaryBubblePanelSize(scale: store.petScale)
+            ),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        bubblePanel.isOpaque = false
+        bubblePanel.backgroundColor = .clear
+        bubblePanel.hasShadow = false
+        bubblePanel.level = .floating
+        bubblePanel.hidesOnDeactivate = false
+        bubblePanel.isReleasedWhenClosed = false
+        bubblePanel.collectionBehavior = Self.auxiliaryBubbleCollectionBehavior
+        bubblePanel.contentView = NSHostingView(rootView:
+            PetAuxiliaryBubbleView(
+                store: store,
+                chat: chat,
+                maintenance: maintenance,
+                focusTimer: focusTimer,
+                music: music,
+                presentation: auxiliaryBubblePresentation
+            )
+            .environment(\.appActions, appActions)
+        )
+        panel.addChildWindow(bubblePanel, ordered: .above)
+        auxiliaryBubblePanel = bubblePanel
+        return bubblePanel
+    }
+
+    @discardableResult
+    private func ensureEdgePeekPanel() -> PetEdgePeekPanel? {
+        guard let edge = dockedEdge else { return nil }
+        if let edgePeekPanel { return edgePeekPanel }
+        let peekPanel = PetEdgePeekPanel(
+            contentRect: NSRect(origin: .zero, size: PetLayout.edgePeekSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        peekPanel.isOpaque = false
+        peekPanel.backgroundColor = .clear
+        peekPanel.hasShadow = false
+        peekPanel.level = .floating
+        peekPanel.hidesOnDeactivate = false
+        peekPanel.isReleasedWhenClosed = false
+        peekPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        peekPanel.contentView = NSHostingView(rootView:
+            PetEdgePeekView(store: store, edge: edge, hoveringChanged: nil) { [weak peekPanel] in
+                peekPanel?.restoreAction?()
+            }
+            .environment(\.appActions, appActions)
+        )
+        peekPanel.restoreAction = { [weak self] in self?.restoreFromEdge(animated: true) }
+        edgePeekPanel = peekPanel
+        return peekPanel
+    }
+
+    @discardableResult
+    private func ensureEdgeStatusPanel() -> PetEdgeStatusPanel {
+        if let edgeStatusPanel { return edgeStatusPanel }
+        let statusPanel = PetEdgeStatusPanel(
+            contentRect: NSRect(origin: .zero, size: PetLayout.edgeStatusSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        statusPanel.isOpaque = false
+        statusPanel.backgroundColor = .clear
+        statusPanel.hasShadow = false
+        statusPanel.level = .floating
+        statusPanel.ignoresMouseEvents = true
+        statusPanel.hidesOnDeactivate = false
+        statusPanel.isReleasedWhenClosed = false
+        statusPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        edgeStatusPanel = statusPanel
+        return statusPanel
+    }
+
+    @discardableResult
+    private func ensureDockPreviewPanel(edge: PetDockEdge) -> PetDockPreviewPanel {
+        if let dockPreviewPanel { return dockPreviewPanel }
+        let previewPanel = PetDockPreviewPanel(
+            contentRect: NSRect(origin: .zero, size: CGSize(width: 5, height: 180)),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        previewPanel.isOpaque = false
+        previewPanel.backgroundColor = .clear
+        previewPanel.hasShadow = false
+        previewPanel.level = .floating
+        previewPanel.ignoresMouseEvents = true
+        previewPanel.hidesOnDeactivate = false
+        previewPanel.isReleasedWhenClosed = false
+        previewPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        previewPanel.contentView = NSHostingView(rootView:
+            PetDockPreviewView(edge: edge, isCommitReady: false)
+        )
+        dockPreviewPanel = previewPanel
+        return previewPanel
     }
 
     deinit {
@@ -417,12 +448,12 @@ final class PetPanelController {
         if dockedEdge != nil {
             store.setPetPresented(false)
             panel.orderOut(nil)
-            lockedToolbarPanel.orderOut(nil)
+            lockedToolbarPanel?.orderOut(nil)
             refreshEdgePeekContent()
             resizeEdgePeekPanel()
             positionEdgePeek()
-            edgePeekPanel.orderFrontRegardless()
-            edgePeekPanel.alphaValue = 1
+            edgePeekPanel?.orderFrontRegardless()
+            edgePeekPanel?.alphaValue = 1
             updateEdgeStatusPanel()
             presentEdgeSmartState(store.smartState, force: true)
             store.monitor.setPetVisible(true)
@@ -442,18 +473,18 @@ final class PetPanelController {
     func hide() {
         resetEdgePresentation()
         panel.orderOut(nil)
-        lockedToolbarPanel.orderOut(nil)
-        auxiliaryBubblePanel.orderOut(nil)
-        edgePeekPanel.orderOut(nil)
-        edgeStatusPanel.orderOut(nil)
-        dockPreviewPanel.orderOut(nil)
+        lockedToolbarPanel?.orderOut(nil)
+        auxiliaryBubblePanel?.orderOut(nil)
+        edgePeekPanel?.orderOut(nil)
+        edgeStatusPanel?.orderOut(nil)
+        dockPreviewPanel?.orderOut(nil)
         stopLockedHoverTracking()
         store.setPetPresented(false)
         store.monitor.setPetVisible(false)
     }
 
     func toggle() {
-        (panel.isVisible || edgePeekPanel.isVisible) ? hide() : show()
+        (panel.isVisible || edgePeekPanel?.isVisible == true) ? hide() : show()
     }
 
     func focusForChatInput() {
@@ -493,7 +524,7 @@ final class PetPanelController {
                 // programmatic-layout guard and persist a temporary position.
                 let wasProgrammaticMove = self.isApplyingProgrammaticLayout
                 self.positionLockedToolbar()
-                if self.auxiliaryBubblePanel.isVisible {
+                if self.auxiliaryBubblePanel?.isVisible == true {
                     self.positionAuxiliaryBubble()
                 }
                 guard !self.panel.isUserDragging,
@@ -687,10 +718,10 @@ final class PetPanelController {
 
     private func updateInteractionLock(_ locked: Bool) {
         panel.ignoresMouseEvents = locked
-        auxiliaryBubblePanel.ignoresMouseEvents = locked
+        auxiliaryBubblePanel?.ignoresMouseEvents = locked
         guard locked, panel.isVisible, dockedEdge == nil else {
             stopLockedHoverTracking()
-            lockedToolbarPanel.orderOut(nil)
+            lockedToolbarPanel?.orderOut(nil)
             return
         }
         startLockedHoverTracking()
@@ -702,23 +733,25 @@ final class PetPanelController {
               visible,
               panel.isVisible,
               dockedEdge == nil else {
-            lockedToolbarPanel.orderOut(nil)
+            lockedToolbarPanel?.orderOut(nil)
             return
         }
+        let toolbarPanel = ensureLockedToolbarPanel()
         positionLockedToolbar()
-        lockedToolbarPanel.orderFrontRegardless()
+        toolbarPanel.orderFrontRegardless()
     }
 
     private func positionLockedToolbar() {
-        let placesAbovePet = auxiliaryBubblePanel.isVisible
+        guard let toolbarPanel = lockedToolbarPanel else { return }
+        let placesAbovePet = auxiliaryBubblePanel?.isVisible == true
             && auxiliaryBubblePresentation.placement == .belowPet
         let y = placesAbovePet
-            ? panel.frame.maxY - lockedToolbarPanel.frame.height - PetLayout.bottomToolbarNormalBottomPadding
+            ? panel.frame.maxY - toolbarPanel.frame.height - PetLayout.bottomToolbarNormalBottomPadding
             : panel.frame.minY + (chat.isPresented
                 ? PetLayout.bottomToolbarChatBottomPadding
                 : PetLayout.bottomToolbarNormalBottomPadding)
-        lockedToolbarPanel.setFrameOrigin(NSPoint(
-            x: panel.frame.midX - lockedToolbarPanel.frame.width / 2,
+        toolbarPanel.setFrameOrigin(NSPoint(
+            x: panel.frame.midX - toolbarPanel.frame.width / 2,
             y: y
         ))
     }
@@ -726,16 +759,17 @@ final class PetPanelController {
     private func updateAuxiliaryBubble() {
         guard panel.isVisible, dockedEdge == nil, shouldShowAuxiliaryBubble else {
             auxiliaryBubblePresentation.isVisible = false
-            auxiliaryBubblePanel.orderOut(nil)
+            auxiliaryBubblePanel?.orderOut(nil)
             return
         }
+        let bubblePanel = ensureAuxiliaryBubblePanel()
         let size = PetLayout.auxiliaryBubblePanelSize(scale: store.petScale)
-        if auxiliaryBubblePanel.frame.size != size {
-            auxiliaryBubblePanel.setContentSize(size)
+        if bubblePanel.frame.size != size {
+            bubblePanel.setContentSize(size)
         }
         positionAuxiliaryBubble()
         auxiliaryBubblePresentation.isVisible = true
-        auxiliaryBubblePanel.orderFrontRegardless()
+        bubblePanel.orderFrontRegardless()
     }
 
     private var shouldShowAuxiliaryBubble: Bool {
@@ -754,6 +788,7 @@ final class PetPanelController {
     private func positionAuxiliaryBubble() {
         let performanceStart = RuntimePerformance.start()
         defer { RuntimePerformance.record("pet.auxiliary.position", since: performanceStart) }
+        guard let bubblePanel = auxiliaryBubblePanel else { return }
         guard let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) })
             ?? panel.screen
             ?? screenForExpandedPet()
@@ -770,11 +805,11 @@ final class PetPanelController {
         )
         let layout = PetLayout.auxiliaryBubbleLayout(
             petVisualFrame: visiblePetFrame,
-            bubbleSize: auxiliaryBubblePanel.frame.size,
+            bubbleSize: bubblePanel.frame.size,
             visibleFrame: screen.visibleFrame
         )
         auxiliaryBubblePresentation.placement = layout.placement
-        auxiliaryBubblePanel.setFrameOrigin(layout.origin)
+        bubblePanel.setFrameOrigin(layout.origin)
         positionLockedToolbar()
     }
 
@@ -841,7 +876,7 @@ final class PetPanelController {
             // The published flag and the auxiliary window can become out of
             // sync after a resize or a transient visibility change. Repair the
             // actual window as well, even when the flag was already true.
-            if !lastLockedPointerInside || !lockedToolbarPanel.isVisible {
+            if !lastLockedPointerInside || lockedToolbarPanel?.isVisible != true {
                 updateLockedToolbarVisibility(visible: true)
             }
         } else if !inside, lastLockedPointerInside {
@@ -852,8 +887,8 @@ final class PetPanelController {
 
     private func isPointerInsideLockedRegion(at location: CGPoint) -> Bool {
         let petArea = panel.frame.insetBy(dx: -8, dy: -8)
-        let toolbarArea = lockedToolbarPanel.frame.insetBy(dx: -8, dy: -8)
-        return petArea.contains(location) || toolbarArea.contains(location)
+        let toolbarArea = lockedToolbarPanel?.frame.insetBy(dx: -8, dy: -8)
+        return petArea.contains(location) || toolbarArea?.contains(location) == true
     }
 
     private func updateAllowedTopOverflow() {
@@ -881,7 +916,7 @@ final class PetPanelController {
             allowedEdges: PetLayout.defaultDockEdges
         )
         panel.setDockCandidate(nil)
-        dockPreviewPanel.orderOut(nil)
+        dockPreviewPanel?.orderOut(nil)
         if let edge = candidate?.edge, candidate?.isCommitReady == true {
             dock(to: edge, on: screen)
         } else {
@@ -934,9 +969,10 @@ final class PetPanelController {
         lastPresentedEdgeSmartState = nil
         UserDefaults.standard.set(edge.rawValue, forKey: "petDockedEdge")
         persistExpandedOrigin()
-        lockedToolbarPanel.orderOut(nil)
-        auxiliaryBubblePanel.orderOut(nil)
-        edgeStatusPanel.orderOut(nil)
+        lockedToolbarPanel?.orderOut(nil)
+        auxiliaryBubblePanel?.orderOut(nil)
+        edgeStatusPanel?.orderOut(nil)
+        guard let peekPanel = ensureEdgePeekPanel() else { return }
         refreshEdgePeekContent()
         resizeEdgePeekPanel()
         positionEdgePeek(on: screen)
@@ -948,8 +984,8 @@ final class PetPanelController {
         )
         panel.bypassScreenConstraint = true
         let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        edgePeekPanel.alphaValue = 0
-        edgePeekPanel.orderFrontRegardless()
+        peekPanel.alphaValue = 0
+        peekPanel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = reducesMotion ? 0.18 : 0.24
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.8, 0.25, 1)
@@ -968,7 +1004,7 @@ final class PetPanelController {
                 self.isDockTransitioning = false
                 self.store.setPetPresented(false)
                 self.positionEdgePeek()
-                self.edgePeekPanel.alphaValue = 1
+                self.edgePeekPanel?.alphaValue = 1
                 self.presentEdgeSmartState(self.store.smartState, force: true)
             }
         }
@@ -981,7 +1017,7 @@ final class PetPanelController {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.13
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                self.edgePeekPanel.animator().alphaValue = 1
+                self.edgePeekPanel?.animator().alphaValue = 1
             } completionHandler: {}
         }
     }
@@ -1025,9 +1061,9 @@ final class PetPanelController {
         panel.setFrameOrigin(reducesMotion ? target : tucked)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
-        edgeStatusPanel.orderOut(nil)
-        edgePeekPanel.alphaValue = 1
-        edgePeekPanel.orderFrontRegardless()
+        edgeStatusPanel?.orderOut(nil)
+        edgePeekPanel?.alphaValue = 1
+        edgePeekPanel?.orderFrontRegardless()
         store.setPetPresented(true)
 
         let finish: @MainActor () -> Void = { [weak self] in
@@ -1060,7 +1096,7 @@ final class PetPanelController {
 
         guard animated else {
             panel.setFrameOrigin(target)
-            edgePeekPanel.orderOut(nil)
+            edgePeekPanel?.orderOut(nil)
             panel.alphaValue = 1
             finish()
             return
@@ -1084,9 +1120,9 @@ final class PetPanelController {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.12
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                self.edgePeekPanel.animator().alphaValue = 0
+                self.edgePeekPanel?.animator().alphaValue = 0
             } completionHandler: {
-                Task { @MainActor [weak self] in self?.edgePeekPanel.orderOut(nil) }
+                Task { @MainActor [weak self] in self?.edgePeekPanel?.orderOut(nil) }
             }
         }
     }
@@ -1103,43 +1139,45 @@ final class PetPanelController {
         panel.setFrameOrigin(panel.frame.origin)
         panel.alphaValue = 1
         panel.bypassScreenConstraint = false
-        edgePeekPanel.alphaValue = 0
-        edgePeekPanel.orderOut(nil)
-        edgeStatusPanel.orderOut(nil)
+        edgePeekPanel?.alphaValue = 0
+        edgePeekPanel?.orderOut(nil)
+        edgeStatusPanel?.orderOut(nil)
         isDockTransitioning = false
     }
 
     private func positionEdgePeek(on providedScreen: NSScreen? = nil) {
         guard let edge = dockedEdge,
+              let peekPanel = edgePeekPanel,
               let screen = providedScreen ?? screenForEdgePeek() ?? screenForExpandedPet() ?? NSScreen.main else {
             return
         }
         let anchor = CGRect(origin: lastExpandedOrigin, size: panel.frame.size)
-        edgePeekPanel.setFrameOrigin(PetLayout.edgePeekOrigin(
+        peekPanel.setFrameOrigin(PetLayout.edgePeekOrigin(
             edge: edge,
             anchorFrame: anchor,
             visibleFrame: screen.visibleFrame,
-            peekSize: edgePeekPanel.frame.size,
+            peekSize: peekPanel.frame.size,
             exposedWidth: (edgePeekHovering || edgePeekAutoExposed)
                 ? PetLayout.edgePeekHoverExposedWidth
                 : PetLayout.edgePeekExposedWidth
         ))
-        if edgeStatusPanel.isVisible {
+        if edgeStatusPanel?.isVisible == true {
             positionEdgeStatusPanel(on: screen)
         }
     }
 
     private func resizeEdgePeekPanel() {
+        guard let peekPanel = edgePeekPanel else { return }
         let targetSize = PetLayout.edgePeekSize
-        guard edgePeekPanel.frame.size != targetSize else { return }
-        var frame = edgePeekPanel.frame
+        guard peekPanel.frame.size != targetSize else { return }
+        var frame = peekPanel.frame
         frame.size = targetSize
-        edgePeekPanel.setFrame(frame, display: true, animate: false)
+        peekPanel.setFrame(frame, display: true, animate: false)
     }
 
     private func refreshEdgePeekContent() {
-        guard let edge = dockedEdge else { return }
-        edgePeekPanel.contentView = NSHostingView(rootView:
+        guard let edge = dockedEdge, let peekPanel = ensureEdgePeekPanel() else { return }
+        peekPanel.contentView = NSHostingView(rootView:
             PetEdgePeekView(
                 store: store,
                 edge: edge,
@@ -1152,60 +1190,63 @@ final class PetPanelController {
             }
             .environment(\.appActions, appActions)
         )
-        refreshEdgeStatusContent()
+        if edgeStatusPanel != nil { refreshEdgeStatusContent() }
     }
 
     private func updateEdgeStatusPanel() {
-        guard dockedEdge != nil, edgePeekPanel.isVisible else {
-            edgeStatusPanel.orderOut(nil)
+        guard dockedEdge != nil, edgePeekPanel?.isVisible == true else {
+            edgeStatusPanel?.orderOut(nil)
             return
         }
         let isPeekExposed = edgePeekHovering || edgePeekAutoExposed
         let showsMonitor = store.showsSystemStatus && isPeekExposed
         guard showsMonitor || edgeMessage != nil else {
-            edgeStatusPanel.orderOut(nil)
+            edgeStatusPanel?.orderOut(nil)
             return
         }
         refreshEdgeStatusContent()
         positionEdgeStatusPanel()
-        edgeStatusPanel.orderFrontRegardless()
+        edgeStatusPanel?.orderFrontRegardless()
     }
 
     private func refreshEdgeStatusContent() {
+        let statusPanel = ensureEdgeStatusPanel()
         let targetSize: CGSize
         if store.showsSystemStatus && (edgePeekHovering || edgePeekAutoExposed) {
             targetSize = edgeMessage == nil
                 ? PetLayout.edgeStatusSize
                 : PetLayout.edgeStatusMessageSize
-            edgeStatusPanel.contentView = NSHostingView(rootView:
+            statusPanel.contentView = NSHostingView(rootView:
                 PetEdgeMiniStatusView(store: store, message: edgeMessage)
             )
         } else if let edgeMessage {
             targetSize = PetLayout.edgeMessageSize
-            edgeStatusPanel.contentView = NSHostingView(rootView:
+            statusPanel.contentView = NSHostingView(rootView:
                 PetEdgeMessageBubbleView(message: edgeMessage)
             )
         } else {
             targetSize = PetLayout.edgeStatusSize
-            edgeStatusPanel.contentView = NSHostingView(rootView:
+            statusPanel.contentView = NSHostingView(rootView:
                 PetEdgeMiniStatusView(store: store)
             )
         }
-        guard edgeStatusPanel.frame.size != targetSize else { return }
-        var frame = edgeStatusPanel.frame
+        guard statusPanel.frame.size != targetSize else { return }
+        var frame = statusPanel.frame
         frame.size = targetSize
-        edgeStatusPanel.setFrame(frame, display: true, animate: false)
+        statusPanel.setFrame(frame, display: true, animate: false)
     }
 
     private func positionEdgeStatusPanel(on providedScreen: NSScreen? = nil) {
         guard let edge = dockedEdge,
+              let statusPanel = edgeStatusPanel,
+              let peekPanel = edgePeekPanel,
               let screen = providedScreen ?? screenForEdgePeek() ?? screenForExpandedPet() ?? NSScreen.main else {
             return
         }
         let visibleFrame = screen.visibleFrame
-        let size = edgeStatusPanel.frame.size
+        let size = statusPanel.frame.size
         let y = min(
-            max(edgePeekPanel.frame.midY - size.height / 2, visibleFrame.minY),
+            max(peekPanel.frame.midY - size.height / 2, visibleFrame.minY),
             visibleFrame.maxY - size.height
         )
         let x: CGFloat
@@ -1218,7 +1259,7 @@ final class PetPanelController {
         case .top, .bottom:
             return
         }
-        edgeStatusPanel.setFrameOrigin(CGPoint(x: x, y: y))
+        statusPanel.setFrameOrigin(CGPoint(x: x, y: y))
     }
 
     private func edgePeekHoverDidChange(_ hovering: Bool) {
@@ -1229,7 +1270,7 @@ final class PetPanelController {
 
     private func presentEdgeSmartState(_ state: SmartPetState, force: Bool = false) {
         guard dockedEdge != nil,
-              edgePeekPanel.isVisible,
+              edgePeekPanel?.isVisible == true,
               store.smartReactionsEnabled else {
             return
         }
@@ -1253,7 +1294,7 @@ final class PetPanelController {
     }
 
     private func showEdgeMessage(_ message: String, autoExpose: Bool = false) {
-        guard dockedEdge != nil, edgePeekPanel.isVisible else { return }
+        guard dockedEdge != nil, edgePeekPanel?.isVisible == true else { return }
         edgeMessageHideTask?.cancel()
         edgeMessage = message
         if autoExpose {
@@ -1363,7 +1404,7 @@ final class PetPanelController {
         guard panel.isUserDragging,
               let screen = screenAtMouse() ?? screenForExpandedPet() else {
             panel.setDockCandidate(nil)
-            dockPreviewPanel.orderOut(nil)
+            dockPreviewPanel?.orderOut(nil)
             return
         }
         let candidate = PetLayout.dockingCandidate(
@@ -1373,15 +1414,16 @@ final class PetPanelController {
         )
         panel.setDockCandidate(candidate)
         guard let candidate else {
-            dockPreviewPanel.orderOut(nil)
+            dockPreviewPanel?.orderOut(nil)
             return
         }
-        dockPreviewPanel.contentView = NSHostingView(rootView:
+        let previewPanel = ensureDockPreviewPanel(edge: candidate.edge)
+        previewPanel.contentView = NSHostingView(rootView:
             PetDockPreviewView(edge: candidate.edge, isCommitReady: candidate.isCommitReady)
         )
         let frame = dockPreviewFrame(for: candidate.edge, petFrame: currentVisiblePetFrame(), screen: screen)
-        dockPreviewPanel.setFrame(frame, display: true, animate: false)
-        dockPreviewPanel.orderFrontRegardless()
+        previewPanel.setFrame(frame, display: true, animate: false)
+        previewPanel.orderFrontRegardless()
     }
 
     private func dockPreviewFrame(for edge: PetDockEdge, petFrame: CGRect, screen: NSScreen) -> CGRect {
@@ -1405,6 +1447,7 @@ final class PetPanelController {
     }
 
     private func screenForEdgePeek() -> NSScreen? {
-        NSScreen.screens.first(where: { $0.visibleFrame.intersects(edgePeekPanel.frame) })
+        guard let edgePeekPanel else { return nil }
+        return NSScreen.screens.first(where: { $0.visibleFrame.intersects(edgePeekPanel.frame) })
     }
 }

@@ -737,6 +737,46 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testMusicFeatureDefersBilibiliPlayerUntilPlayback() async {
+        let suiteName = "MusicLazyPlayerTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var factoryCalls = 0
+        let player = RecordingBilibiliPlayer()
+        let feature = MusicFeature(
+            defaults: defaults,
+            bilibili: StubBilibiliMusicProvider(),
+            bilibiliPlayerFactory: {
+                factoryCalls += 1
+                return player
+            },
+            library: RecordingMusicLibraryCoordinator()
+        )
+
+        XCTAssertEqual(factoryCalls, 0)
+        feature.setSource(.bilibili)
+        XCTAssertEqual(factoryCalls, 0)
+
+        let track = MusicTrack(
+            id: "lazy-bilibili-track",
+            source: .bilibili,
+            title: "惰性播放器测试",
+            artist: "测试歌手",
+            album: nil,
+            coverURL: nil,
+            duration: 180,
+            bilibili: BilibiliTrackReference(bvid: "BV1xx411c7mD", aid: 1, cid: 2, page: 1),
+            subtitleURL: nil
+        )
+        feature.play(track)
+        feature.play(track)
+
+        XCTAssertEqual(factoryCalls, 1)
+        await feature.shutdown()
+    }
+
+    @MainActor
     func testSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay() async {
         let suiteName = "MusicSourceSwitchTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -796,6 +836,17 @@ private actor StaticMusicLibraryCoordinator: MusicLibraryCoordinating {
     func load() async throws -> MusicLibrarySnapshot { snapshot }
     func scheduleSave(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {}
     func saveNow(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {}
+}
+
+private struct StubBilibiliMusicProvider: BilibiliMusicProviding {
+    func resolveTracks(from input: String) async throws -> [MusicTrack] { [] }
+
+    func audioLocation(for track: MusicTrack) async throws -> BilibiliAudioLocation {
+        BilibiliAudioLocation(candidates: [URL(string: "https://example.com/audio.mp3")!])
+    }
+
+    func subtitleURL(for track: MusicTrack) async -> URL? { nil }
+    func playbackHeaders() async -> [String: String] { [:] }
 }
 
 @MainActor

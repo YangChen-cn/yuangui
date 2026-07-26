@@ -7,24 +7,38 @@ private final class MusicPlayerWindow: NSWindow {
 }
 
 @MainActor
-final class MusicWindowController {
+final class MusicWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
+    private let onClose: () -> Void
 
-    init(music: MusicFeature, appActions: AppActions = .disabled) {
+    init(
+        music: MusicFeature,
+        appActions: AppActions = .disabled,
+        onClose: @escaping () -> Void = {}
+    ) {
+        self.onClose = onClose
         window = MusicPlayerWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
+        super.init()
         window.title = "YuanGUI 音乐"
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.minSize = NSSize(width: 760, height: 520)
         window.contentView = NSHostingView(rootView:
             MusicPlayerView(music: music)
                 .environment(\.appActions, appActions)
         )
         window.center()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window.contentView = nil
+        window.delegate = nil
+        onClose()
     }
 
     func show() {
