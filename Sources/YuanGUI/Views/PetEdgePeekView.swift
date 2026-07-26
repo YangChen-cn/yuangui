@@ -88,9 +88,7 @@ struct PetEdgePeekView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .frame(width: 111, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.55), lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.13), radius: 8, y: 3)
+        .yuanLiquidGlassSurface(.clear, cornerRadius: 18)
     }
 
     private func miniMetric(_ icon: String, value: String, color: Color) -> some View {

@@ -12,6 +12,7 @@ enum DashboardDesign {
     static let sectionRadius: CGFloat = 14
     static let controlRadius: CGFloat = 9
     static let rowHeight: CGFloat = 36
+    static let navigationHeight: CGFloat = 34
     static let queueLimit = 8
     static let animationDuration = 0.18
     static let navigationAnimationDuration = 0.22
@@ -68,7 +69,7 @@ enum DashboardDesign {
                 accent: Color(red: 0.22, green: 0.52, blue: 0.96),
                 topGlow: .white,
                 bottomGlow: Color(red: 0.48, green: 0.74, blue: 1.0),
-                ambientOpacity: 0.07,
+                ambientOpacity: 0.045,
                 preferredColorScheme: nil,
                 treatment: .liquidGlass
             )

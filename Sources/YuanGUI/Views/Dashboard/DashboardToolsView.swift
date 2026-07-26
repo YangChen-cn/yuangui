@@ -47,6 +47,7 @@ struct DashboardToolsView: View {
                         launch(quickTools.beginScreenshotTranslation)
                     }
                 }
+                .modifier(DashboardQuickActionGlassContainerModifier())
                 Text("更多工具")
                     .font(.caption)
                     .bold()
@@ -121,15 +122,68 @@ struct DashboardQuickAction: View {
             }
             .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
             .padding(9)
-            .background(
-                backgroundColor,
-                in: .rect(cornerRadius: DashboardDesign.sectionRadius)
+            .modifier(
+                DashboardQuickActionSurfaceModifier(
+                    role: role,
+                    isHovering: isHovering
+                )
             )
             .contentShape(.rect(cornerRadius: DashboardDesign.sectionRadius))
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityLabel("\(title)，\(subtitle)")
+    }
+
+}
+
+private struct DashboardQuickActionGlassContainerModifier: ViewModifier {
+    @Environment(\.dashboardVisualTreatment) private var treatment
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if treatment == .liquidGlass {
+            if #available(macOS 26.0, *) {
+                GlassEffectContainer(spacing: DashboardDesign.compactSpacing) {
+                    content
+                }
+            } else {
+                content
+            }
+        } else {
+            content
+        }
+    }
+}
+
+private struct DashboardQuickActionSurfaceModifier: ViewModifier {
+    let role: DashboardActionRole
+    let isHovering: Bool
+
+    @Environment(\.dashboardVisualTreatment) private var treatment
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if treatment == .liquidGlass, role == .yuanGUI {
+            if #available(macOS 26.0, *) {
+                content.glassEffect(
+                    .regular
+                        .tint(Color.accentColor.opacity(0.04))
+                        .interactive(),
+                    in: .rect(cornerRadius: DashboardDesign.sectionRadius)
+                )
+            } else {
+                content.background(
+                    Color.accentColor.opacity(isHovering ? 0.13 : 0.08),
+                    in: .rect(cornerRadius: DashboardDesign.sectionRadius)
+                )
+            }
+        } else {
+            content.background(
+                backgroundColor,
+                in: .rect(cornerRadius: DashboardDesign.sectionRadius)
+            )
+        }
     }
 
     private var backgroundColor: Color {

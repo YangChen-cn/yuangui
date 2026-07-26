@@ -20,6 +20,7 @@ final class ChatStore: ObservableObject {
     private var sessionMessageCounts: [UUID: Int] = [:]
     private var hasBootstrapped = false
     private var bootstrapWaiters: [CheckedContinuation<Void, Never>] = []
+    var onWillPresentationChange: ((Bool) -> Void)?
 
     init(
         settings: AISettingsStore,
@@ -129,9 +130,17 @@ final class ChatStore: ObservableObject {
         Task { try? await history.clear() }
     }
 
-    func togglePresented() { isPresented.toggle() }
-    func present() { isPresented = true }
-    func dismiss() { isPresented = false }
+    func togglePresented() { setPresented(!isPresented) }
+    func present() { setPresented(true) }
+    func dismiss() { setPresented(false) }
+
+    private func setPresented(_ presented: Bool) {
+        guard presented != isPresented else { return }
+        // Window controllers must capture their compact geometry before
+        // @Published invalidates SwiftUI and AppKit starts resizing the panel.
+        onWillPresentationChange?(presented)
+        isPresented = presented
+    }
 
     private func bootstrap() async {
         let metadata = (try? await history.loadMetadata()) ?? []

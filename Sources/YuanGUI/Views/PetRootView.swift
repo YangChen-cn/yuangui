@@ -74,7 +74,7 @@ struct PetRootView: View {
                         && (!displayedPetAction.file.contains("chatting") || store.ambientMessage != nil)
                 )
                     .overlay(alignment: .topTrailing) {
-                        if music.playback.isPlaying {
+                        if showsStandaloneMusicIndicator {
                             Image(systemName: "music.note")
                                 .font(.system(size: max(14, 24 * scale), weight: .bold))
                                 .foregroundStyle(.pink)
@@ -170,7 +170,10 @@ struct PetRootView: View {
             if locked { isHovering = false }
         }
         .onAppear { updateAdaptiveControlSide() }
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: chat.isPresented)
+        // The AppKit panel already changes size and origin atomically. A
+        // second spring animation on the entire SwiftUI root exaggerates the
+        // apparent jump when a chat closes beside a display edge.
+        .animation(.easeOut(duration: 0.18), value: chat.isPresented)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.petScale)
         .animation(.easeOut(duration: 0.18), value: store.toast)
         .contextMenu { contextMenu }
@@ -178,6 +181,21 @@ struct PetRootView: View {
 
     private var displayedPetAction: PetAction {
         store.resolvedAction(isMusicPlaying: music.playback.isPlaying)
+    }
+
+    private var showsStandaloneMusicIndicator: Bool {
+        let showsLyricBubble = PetMusicPresentationPolicy.showsLyricBubble(
+            isPlaying: music.playback.isPlaying,
+            lightSingAlongEnabled: music.lyricsPresentation.lightSingAlongEnabled,
+            hasCurrentLyric: music.lyricsStore.currentLine != nil,
+            isChatPresented: chat.isPresented,
+            hasMaintenanceTask: maintenance.quickMode != nil,
+            focusState: focusTimer.state
+        )
+        return PetMusicPresentationPolicy.showsStandaloneMusicIndicator(
+            isPlaying: music.playback.isPlaying,
+            showsLyricBubble: showsLyricBubble
+        )
     }
 
     private var placesToolbarAbovePet: Bool {

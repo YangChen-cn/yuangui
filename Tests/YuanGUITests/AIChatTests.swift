@@ -4,6 +4,28 @@ import XCTest
 @testable import YuanGUI
 
 final class AIChatTests: XCTestCase {
+    @MainActor
+    func testPresentationHookRunsSynchronouslyBeforePublishedStateChanges() {
+        let suite = "ChatPresentationHookTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AISettingsStore(defaults: defaults, secrets: MemorySecretStore())
+        let chat = ChatStore(settings: settings, history: MemoryChatHistoryStore())
+        var targets: [Bool] = []
+        var statesObservedByHook: [Bool] = []
+        chat.onWillPresentationChange = { target in
+            targets.append(target)
+            statesObservedByHook.append(chat.isPresented)
+        }
+
+        chat.present()
+        chat.dismiss()
+
+        XCTAssertEqual(targets, [true, false])
+        XCTAssertEqual(statesObservedByHook, [false, true])
+        XCTAssertFalse(chat.isPresented)
+    }
+
     func testChatEndpointAppendsPathToBaseURL() {
         XCTAssertEqual(
             AIChatService.chatEndpoint(from: "https://api.xiaomimimo.com/v1")?.absoluteString,

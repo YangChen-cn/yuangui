@@ -18,7 +18,27 @@ struct DashboardAtmosphereBackground: View {
         self.smartState = smartState
     }
 
+    @ViewBuilder
     var body: some View {
+        if palette.treatment == .liquidGlass {
+            if #available(macOS 26.0, *) {
+                ZStack {
+                    Color.clear
+                    ambientColorLayer
+                }
+                .glassEffect(.regular, in: .rect(cornerRadius: 20))
+                .clipShape(.rect(cornerRadius: 20))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            } else {
+                fallbackBackground
+            }
+        } else {
+            fallbackBackground
+        }
+    }
+
+    private var fallbackBackground: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 20)
                 .fill(.regularMaterial)
@@ -56,7 +76,7 @@ struct DashboardAtmosphereBackground: View {
     }
 
     private var ambientOpacity: Double {
-        let requested = min(max(palette.ambientOpacity, 0.04), 0.12)
+        let requested = min(max(palette.ambientOpacity, 0.025), 0.12)
         let darkMultiplier = colorScheme == .dark ? 0.72 : 1
         let contrastMultiplier = colorSchemeContrast == .increased ? 0.32 : 1
         return requested * darkMultiplier * contrastMultiplier

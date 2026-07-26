@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import XCTest
 @testable import YuanGUI
@@ -8,6 +9,8 @@ final class DashboardTests: XCTestCase {
         XCTAssertLessThanOrEqual(DashboardDesign.preferredWidth, 430)
         XCTAssertEqual(DashboardDesign.preferredHeight, 448, accuracy: 8)
         XCTAssertEqual(DashboardDesign.expandedHeight, 520, accuracy: 8)
+        XCTAssertEqual(DashboardDesign.navigationHeight, 34, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(DashboardDesign.navigationHeight, 36)
         XCTAssertEqual(DashboardDesign.navigationAnimationDuration, 0.22, accuracy: 0.001)
         XCTAssertLessThanOrEqual(DashboardDesign.minimumHeight, DashboardDesign.preferredHeight)
     }
@@ -89,6 +92,33 @@ final class DashboardTests: XCTestCase {
         XCTAssertTrue(hostingView.acceptsFirstMouse(for: nil))
         hostingView.frame = CGRect(x: 0, y: 0, width: 100, height: 100)
         XCTAssertNotNil(hostingView.hitTest(CGPoint(x: 50, y: 50)))
+    }
+
+    @MainActor
+    func testLiquidGlassSectionPickerKeepsCompactIntrinsicHeight() {
+        guard #available(macOS 26.0, *) else { return }
+        let picker = DashboardLiquidGlassSectionPicker(selection: .constant(.overview))
+            .frame(width: DashboardDesign.preferredWidth - DashboardDesign.outerPadding * 2)
+        let hostingView = NSHostingView(rootView: picker)
+
+        hostingView.layoutSubtreeIfNeeded()
+
+        XCTAssertLessThanOrEqual(hostingView.fittingSize.height, 44)
+    }
+
+    @MainActor
+    func testSharedLiquidGlassSurfacePreservesCompactIntrinsicSize() {
+        let surface = Text("状态正常")
+            .padding(10)
+            .yuanLiquidGlassSurface(.clear, cornerRadius: 14)
+        let hostingView = NSHostingView(rootView: surface)
+
+        hostingView.layoutSubtreeIfNeeded()
+
+        XCTAssertGreaterThan(hostingView.fittingSize.width, 0)
+        XCTAssertGreaterThan(hostingView.fittingSize.height, 0)
+        XCTAssertLessThan(hostingView.fittingSize.width, 160)
+        XCTAssertLessThan(hostingView.fittingSize.height, 64)
     }
 
     func testAppleMusicSourceSelectionRequestsARealConnection() {

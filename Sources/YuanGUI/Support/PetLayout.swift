@@ -110,6 +110,23 @@ enum PetLayout {
         return compactTopTransparentInset * scale
     }
 
+    static func compactHorizontalOverflow(scale: Double) -> (left: CGFloat, right: CGFloat) {
+        let panelSize = panelSize(
+            scale: scale,
+            showsBubble: false,
+            showsChat: false
+        )
+        let petFrame = petVisualFrame(
+            panelFrame: CGRect(origin: .zero, size: panelSize),
+            scale: scale,
+            showsChat: false
+        )
+        return (
+            left: max(petFrame.minX, 0),
+            right: max(panelSize.width - petFrame.maxX, 0)
+        )
+    }
+
     static func petVisualFrame(panelFrame: CGRect, scale: Double, showsChat: Bool) -> CGRect {
         let petSize = 326 * scale
         return CGRect(
@@ -149,19 +166,66 @@ enum PetLayout {
             scale: scale,
             showsChat: oldShowsChat
         )
+        return panelFrame(
+            preservingPetVisualFrame: visualFrame,
+            targetSize: targetSize,
+            scale: scale,
+            showsChat: newShowsChat,
+            visibleFrame: visibleFrame
+        )
+    }
+
+    static func panelFrame(
+        preservingPetVisualFrame visualFrame: CGRect,
+        targetSize: CGSize,
+        scale: Double,
+        showsChat: Bool,
+        visibleFrame: CGRect
+    ) -> CGRect {
         let proposedOrigin = panelOrigin(
             preservingPetVisualFrame: visualFrame,
             targetPanelSize: targetSize,
             scale: scale,
-            showsChat: newShowsChat
+            showsChat: showsChat
         )
         let constrained = constrainedOrigin(
             proposedOrigin,
             panelSize: targetSize,
             visibleFrame: visibleFrame,
-            allowedTopOverflow: newShowsChat ? 0 : compactTopTransparentInset * scale
+            allowedTopOverflow: showsChat ? 0 : compactTopTransparentInset * scale
         )
         return CGRect(origin: constrained, size: targetSize)
+    }
+
+    /// Restore an exact compact-panel origin when its character remains
+    /// meaningfully visible. Compact pet panels intentionally contain
+    /// transparent margins that may sit outside the visible frame near an
+    /// edge; clamping the whole panel would make the character jump.
+    static func restoredCompactOrigin(
+        _ savedOrigin: CGPoint,
+        panelSize: CGSize,
+        scale: Double,
+        visibleFrame: CGRect
+    ) -> CGPoint {
+        let savedFrame = CGRect(origin: savedOrigin, size: panelSize)
+        let petFrame = petVisualFrame(
+            panelFrame: savedFrame,
+            scale: scale,
+            showsChat: false
+        )
+        let visiblePetFrame = petFrame.intersection(visibleFrame)
+        let minimumVisibleLength = min(44, min(petFrame.width, petFrame.height))
+        if !visiblePetFrame.isNull,
+           visiblePetFrame.width >= minimumVisibleLength,
+           visiblePetFrame.height >= minimumVisibleLength {
+            return savedOrigin
+        }
+        return constrainedOrigin(
+            savedOrigin,
+            panelSize: panelSize,
+            visibleFrame: visibleFrame,
+            allowedTopOverflow: compactTopTransparentInset * scale
+        )
     }
 
     static func usablePanelFrame(in visibleFrame: CGRect, showsChat: Bool) -> CGRect {
@@ -240,13 +304,24 @@ enum PetLayout {
         _ proposed: CGPoint,
         panelSize: CGSize,
         visibleFrame: CGRect,
-        allowedTopOverflow: CGFloat
+        allowedTopOverflow: CGFloat,
+        allowedLeftOverflow: CGFloat = 0,
+        allowedRightOverflow: CGFloat = 0,
+        allowedBottomOverflow: CGFloat = 0
     ) -> CGPoint {
-        let maximumX = max(visibleFrame.minX, visibleFrame.maxX - panelSize.width)
-        let maximumY = max(visibleFrame.minY, visibleFrame.maxY - panelSize.height + allowedTopOverflow)
+        let minimumX = visibleFrame.minX - allowedLeftOverflow
+        let maximumX = max(
+            minimumX,
+            visibleFrame.maxX - panelSize.width + allowedRightOverflow
+        )
+        let minimumY = visibleFrame.minY - allowedBottomOverflow
+        let maximumY = max(
+            minimumY,
+            visibleFrame.maxY - panelSize.height + allowedTopOverflow
+        )
         return CGPoint(
-            x: min(max(proposed.x, visibleFrame.minX), maximumX),
-            y: min(max(proposed.y, visibleFrame.minY), maximumY)
+            x: min(max(proposed.x, minimumX), maximumX),
+            y: min(max(proposed.y, minimumY), maximumY)
         )
     }
 

@@ -15,13 +15,7 @@ private struct DashboardSystemGlassButtonStyleModifier: ViewModifier {
     func body(content: Content) -> some View {
         if treatment == .liquidGlass {
             if #available(macOS 26.0, *) {
-                if isProminent {
-                    content
-                        .buttonStyle(.glassProminent)
-                        .tint(.accentColor)
-                } else {
-                    content.buttonStyle(.glass)
-                }
+                content.yuanSystemGlassButton(isProminent: isProminent)
             } else {
                 fallbackStyle(content: content)
             }

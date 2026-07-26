@@ -134,6 +134,10 @@ enum LyricsFontStyle: String, CaseIterable, Identifiable {
     case system
     case serif
     case monospaced
+    case pingFang
+    case songti
+    case kaiti
+    case heiti
 
     var id: String { rawValue }
     var title: String {
@@ -142,6 +146,10 @@ enum LyricsFontStyle: String, CaseIterable, Identifiable {
         case .system: return "系统字体"
         case .serif: return "衬线体"
         case .monospaced: return "等宽体"
+        case .pingFang: return "苹方"
+        case .songti: return "宋体"
+        case .kaiti: return "楷体"
+        case .heiti: return "黑体"
         }
     }
 }

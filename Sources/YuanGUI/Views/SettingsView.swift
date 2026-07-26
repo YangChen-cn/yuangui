@@ -87,10 +87,27 @@ struct SettingsView: View {
                     get: { music.lyricsPresentation.shadowEnabled },
                     set: music.setLyricsShadowEnabled
                 ))
-                Toggle("显示桌面歌词半透明背景长条", isOn: Binding(
+                Toggle("增强桌面歌词背景对比度", isOn: Binding(
                     get: { music.lyricsPresentation.backgroundVisible },
                     set: music.setLyricsBackgroundVisible
                 ))
+                HStack {
+                    Text("桌面歌词细条透明度")
+                    Slider(
+                        value: Binding(
+                            get: { music.lyricsPresentation.backgroundOpacity },
+                            set: music.setLyricsBackgroundOpacity
+                        ),
+                        in: 0.12...0.60,
+                        step: 0.01
+                    )
+                    Text(
+                        music.lyricsPresentation.backgroundOpacity,
+                        format: .percent.precision(.fractionLength(0))
+                    )
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 42, alignment: .trailing)
+                }
                 HStack {
                     Text("桌面歌词字号")
                     Slider(

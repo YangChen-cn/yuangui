@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum DashboardSurfaceProminence {
+enum DashboardSurfaceProminence: Equatable {
     case hero
     case card
     case subtle
@@ -15,9 +15,14 @@ struct DashboardSectionSurface<Content: View>: View {
     var body: some View {
         content
             .padding(10)
-            .background(
-                treatment == .liquidGlass ? AnyShapeStyle(liquidSurfaceFill) : surfaceFill,
-                in: .rect(cornerRadius: cornerRadius)
+            .modifier(
+                DashboardSectionSurfaceModifier(
+                    treatment: treatment,
+                    prominence: prominence,
+                    surfaceFill: surfaceFill,
+                    liquidSurfaceFill: liquidSurfaceFill,
+                    cornerRadius: cornerRadius
+                )
             )
     }
 
@@ -51,11 +56,34 @@ struct DashboardSectionSurface<Content: View>: View {
     private var liquidSurfaceFill: Color {
         switch prominence {
         case .hero:
-            Color.accentColor.opacity(0.07)
+            Color.accentColor.opacity(0.04)
         case .card:
             Color.primary.opacity(0.032)
         case .subtle:
             Color.primary.opacity(0.018)
+        }
+    }
+}
+
+private struct DashboardSectionSurfaceModifier: ViewModifier {
+    let treatment: DashboardVisualTreatment
+    let prominence: DashboardSurfaceProminence
+    let surfaceFill: AnyShapeStyle
+    let liquidSurfaceFill: Color
+    let cornerRadius: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if treatment == .liquidGlass, prominence == .hero {
+            content.background(
+                liquidSurfaceFill,
+                in: .rect(cornerRadius: cornerRadius)
+            )
+        } else {
+            content.background(
+                treatment == .liquidGlass ? AnyShapeStyle(liquidSurfaceFill) : surfaceFill,
+                in: .rect(cornerRadius: cornerRadius)
+            )
         }
     }
 }
@@ -83,9 +111,10 @@ struct DashboardToggleButton: View {
             Label(title, systemImage: systemImage)
                 .labelStyle(.titleAndIcon)
                 .font(.caption)
+                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
                 .frame(minHeight: 30)
         }
-        .dashboardSystemGlassButton(isProminent: isOn)
+        .dashboardSystemGlassButton()
         .controlSize(.small)
         .help("\(title)：\(isOn ? "开" : "关")")
         .accessibilityValue(isOn ? "开" : "关")

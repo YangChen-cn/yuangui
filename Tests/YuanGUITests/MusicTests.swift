@@ -4,6 +4,30 @@ import XCTest
 
 final class MusicTests: XCTestCase {
     @MainActor
+    func testDesktopLyricsBackgroundOpacityDefaultsClampsAndPersists() {
+        let suite = "LyricsOpacityTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = LyricsPresentationStore(defaults: defaults)
+        XCTAssertEqual(store.backgroundOpacity, 0.24, accuracy: 0.001)
+
+        defaults.set(0.90, forKey: "musicLyricsBackgroundOpacity")
+        XCTAssertEqual(
+            LyricsPresentationStore(defaults: defaults).backgroundOpacity,
+            0.60,
+            accuracy: 0.001
+        )
+
+        defaults.set(0.05, forKey: "musicLyricsBackgroundOpacity")
+        XCTAssertEqual(
+            LyricsPresentationStore(defaults: defaults).backgroundOpacity,
+            0.12,
+            accuracy: 0.001
+        )
+    }
+
+    @MainActor
     func testLiveBilibiliPublicAudioStartsWhenEnabled() async throws {
         guard ProcessInfo.processInfo.environment["YUANGUI_LIVE_BILI"] == "1" else {
             throw XCTSkip("Set YUANGUI_LIVE_BILI=1 to run the network integration test")
@@ -595,7 +619,10 @@ final class MusicTests: XCTestCase {
     func testPlayModesHaveStableUserFacingLabels() {
         XCTAssertEqual(MusicPlayMode.allCases.map(\.title), ["顺序播放", "单曲循环", "列表循环", "随机播放"])
         XCTAssertEqual(MusicSource.allCases.map(\.title), ["Apple Music", "哔哩哔哩"])
-        XCTAssertEqual(LyricsFontStyle.allCases.map(\.title), ["圆体", "系统字体", "衬线体", "等宽体"])
+        XCTAssertEqual(
+            LyricsFontStyle.allCases.map(\.title),
+            ["圆体", "系统字体", "衬线体", "等宽体", "苹方", "宋体", "楷体", "黑体"]
+        )
     }
 
     func testSequentialPlaybackQueueOnlyContainsTracksAfterCurrent() throws {

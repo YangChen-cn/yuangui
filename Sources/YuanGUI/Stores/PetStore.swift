@@ -4,6 +4,9 @@ import Foundation
 
 @MainActor
 final class PetStore: ObservableObject {
+    static let liquidGlassThemeMigrationKey = "dashboardStyleLiquidGlassMigrationV1"
+    static let batteryWarningReminderIntervalSeconds: TimeInterval = 5 * 60
+
     enum TaskState: Equatable {
         case idle
         case maintenance
@@ -63,9 +66,11 @@ final class PetStore: ObservableObject {
     private var ambientMessageHideTask: Task<Void, Never>?
     private var focusCelebrationTask: Task<Void, Never>?
     private var urgentReminderTask: Task<Void, Never>?
+    private var batteryWarningReminderTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
     private var lastAmbientMessage: String?
+    private var batteryAlertLevel: BatteryAlertLevel = .normal
 
     var currentAction: PetAction {
         resolvedAction(isMusicPlaying: false)
@@ -85,6 +90,7 @@ final class PetStore: ObservableObject {
             smartReactionsEnabled: smartReactionsEnabled,
             smartActionSuppressed: isSmartActionSuppressed,
             smartState: smartState,
+            isSmartStateUrgent: isUrgentSmartState(smartState),
             transientSmartState: transientSmartActionState
         ))
     }
@@ -93,12 +99,20 @@ final class PetStore: ObservableObject {
         if isFocusActive {
             return smartReactionsEnabled && urgentReminderVisible
         }
-        let hasNonUrgentBubble = activeSmartStates.contains { $0.showsAutomaticBubble && !$0.isUrgent }
+        let hasNonUrgentBubble = activeSmartStates.contains {
+            $0 != .lowBattery
+                && $0.showsAutomaticBubble
+                && !isUrgentSmartState($0)
+        }
         return showsSystemStatus || (!automaticBubbleSuppressed && smartReactionsEnabled && (urgentReminderVisible || hasNonUrgentBubble))
     }
 
     var urgentReminderVisible: Bool {
-        let hasUrgent = activeSmartStates.contains(where: \.isUrgent)
+        if activeSmartStates.contains(.lowBattery),
+           batteryAlertLevel == .critical {
+            return true
+        }
+        let hasUrgent = activeSmartStates.contains { isUrgentSmartState($0) }
         return hasUrgent && (urgentReminderMode == .persistent || urgentReminderPulseVisible)
     }
 
@@ -140,7 +154,13 @@ final class PetStore: ObservableObject {
         self.showsSystemStatus = defaults.bool(forKey: "showsSystemStatus")
         let savedScale = defaults.object(forKey: "petScale") as? Double ?? PetLayout.defaultScale
         self.petScale = min(max(savedScale, PetLayout.minimumScale), PetLayout.maximumScale)
-        if defaults.object(forKey: "dashboardStyle") == nil {
+        if !defaults.bool(forKey: Self.liquidGlassThemeMigrationKey) {
+            self.dashboardStyle = .liquidGlass
+            if defaults.object(forKey: "dashboardStyle") != nil {
+                defaults.set(DashboardStyle.liquidGlass.rawValue, forKey: "dashboardStyle")
+            }
+            defaults.set(true, forKey: Self.liquidGlassThemeMigrationKey)
+        } else if defaults.object(forKey: "dashboardStyle") == nil {
             self.dashboardStyle = .liquidGlass
         } else {
             self.dashboardStyle = DashboardStyle(
@@ -179,15 +199,19 @@ final class PetStore: ObservableObject {
 
         Publishers.CombineLatest(monitor.$snapshot, self.weather.$snapshot)
             .map { [weak self] snapshot, weather in
-                SmartPetState.resolveAll(
-                    system: snapshot, weather: weather, date: Date(),
-                    bedtimeEnabled: self?.bedtimeReminderEnabled ?? true,
-                    bedtimeStartMinutes: self?.bedtimeStartMinutes ?? 23 * 60,
-                    bedtimeEndMinutes: self?.bedtimeEndMinutes ?? 5 * 60
-                )
+                self?.smartStateEvaluation(system: snapshot, weather: weather)
+                    ?? PetSmartStateEvaluation(
+                        states: [],
+                        batteryAlertLevel: BatteryAlertLevel.resolve(from: snapshot.battery)
+                    )
             }
             .removeDuplicates()
-            .sink { [weak self] states in self?.applySmartStates(states) }
+            .sink { [weak self] evaluation in
+                self?.applySmartStates(
+                    evaluation.states,
+                    batteryAlertLevel: evaluation.batteryAlertLevel
+                )
+            }
             .store(in: &cancellables)
 
         self.weather.$snapshot
@@ -314,6 +338,8 @@ final class PetStore: ObservableObject {
             smartRotationTimer = nil
             urgentReminderTask?.cancel()
             urgentReminderTask = nil
+            batteryWarningReminderTask?.cancel()
+            batteryWarningReminderTask = nil
             syncMiniMonitoringDemand()
         }
         if enabled { evaluateSmartState() }
@@ -570,22 +596,41 @@ final class PetStore: ObservableObject {
         actionIndex = (actionIndex + 1) % count
     }
 
-    func applySmartStates(_ states: [SmartPetState]) {
+    func applySmartStates(
+        _ states: [SmartPetState],
+        batteryAlertLevel nextBatteryAlertLevel: BatteryAlertLevel? = nil
+    ) {
         guard smartReactionsEnabled else { return }
+        let previousBatteryAlertLevel = batteryAlertLevel
+        batteryAlertLevel = nextBatteryAlertLevel
+            ?? BatteryAlertLevel.resolve(from: monitor.snapshot.battery)
         let states = states.filter {
             ($0 != .lowBattery || lowBatteryAlertsEnabled)
                 && ($0 != .memoryPressure || memoryPressureAlertsEnabled)
         }
         let previousStates = activeSmartStates
         let newlyActivatedStates = states.filter { !previousStates.contains($0) }
+        let urgencyChanged = states.contains(.lowBattery)
+            && previousBatteryAlertLevel != batteryAlertLevel
+        let presentationStateChanged = states != previousStates || urgencyChanged
         activeSmartStates = states
-        if states != previousStates {
+        if presentationStateChanged {
             automaticBubbleSuppressed = false
             smartActionSuppressionTask?.cancel()
             smartActionSuppressionTask = nil
             isSmartActionSuppressed = false
         }
-        if let urgentState = newlyActivatedStates.first(where: \.isUrgent) {
+        let newlyUrgentState = states.first {
+            isUrgentSmartState($0, batteryLevel: batteryAlertLevel)
+                && (
+                    !previousStates.contains($0)
+                        || !isUrgentSmartState(
+                            $0,
+                            batteryLevel: previousBatteryAlertLevel
+                        )
+                )
+        }
+        if let urgentState = newlyUrgentState {
             smartState = urgentState
         } else if let newlyActivatedState = newlyActivatedStates.first {
             smartState = newlyActivatedState
@@ -600,13 +645,14 @@ final class PetStore: ObservableObject {
             transientSmartActionTask = nil
             self.transientSmartActionState = nil
         }
-        if let newlyActivatedState = newlyActivatedStates.first(where: { !$0.isUrgent }) {
+        if let newlyActivatedState = newlyActivatedStates.first(where: { !isUrgentSmartState($0) }) {
             presentTransientSmartAction(newlyActivatedState)
         }
         syncMiniMonitoringDemand()
         updateSmartRotationTimer()
-        updateUrgentReminderSchedule(restart: states != previousStates)
-        guard states != previousStates, smartState != .normal else { return }
+        updateUrgentReminderSchedule(restart: presentationStateChanged)
+        updateBatteryWarningReminderSchedule(restart: presentationStateChanged)
+        guard presentationStateChanged, smartState != .normal else { return }
         showSmartMessage(smartState)
     }
 
@@ -623,8 +669,10 @@ final class PetStore: ObservableObject {
     }
 
     private func updateUrgentReminderSchedule(restart: Bool) {
-        let hasUrgent = activeSmartStates.contains(where: \.isUrgent)
-        if urgentReminderMode == .persistent || !hasUrgent {
+        let hasUrgent = activeSmartStates.contains { isUrgentSmartState($0) }
+        let hasPersistentCriticalBattery = activeSmartStates.contains(.lowBattery)
+            && batteryAlertLevel == .critical
+        if urgentReminderMode == .persistent || hasPersistentCriticalBattery || !hasUrgent {
             urgentReminderTask?.cancel()
             urgentReminderTask = nil
             urgentReminderPulseVisible = hasUrgent
@@ -643,6 +691,36 @@ final class PetStore: ObservableObject {
                 self?.syncMiniMonitoringDemand()
                 let interval = max((self?.urgentReminderIntervalMinutes ?? 15) * 60 - 10, 10)
                 do { try await Task.sleep(for: .seconds(interval)) } catch { return }
+            }
+        }
+    }
+
+    private func updateBatteryWarningReminderSchedule(restart: Bool) {
+        let shouldRepeat = lowBatteryAlertsEnabled
+            && activeSmartStates.contains(.lowBattery)
+            && batteryAlertLevel == .warning
+        guard shouldRepeat else {
+            batteryWarningReminderTask?.cancel()
+            batteryWarningReminderTask = nil
+            return
+        }
+        guard restart || batteryWarningReminderTask == nil else { return }
+        batteryWarningReminderTask?.cancel()
+        batteryWarningReminderTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(
+                        for: .seconds(Self.batteryWarningReminderIntervalSeconds)
+                    )
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled,
+                      let self,
+                      self.lowBatteryAlertsEnabled,
+                      self.activeSmartStates.contains(.lowBattery),
+                      self.batteryAlertLevel == .warning else { return }
+                self.showLowBatteryMessage()
             }
         }
     }
@@ -669,11 +747,10 @@ final class PetStore: ObservableObject {
     }
 
     private func showSmartMessage(_ state: SmartPetState) {
-        if isFocusActive, !state.isUrgent { return }
+        if isFocusActive, !isUrgentSmartState(state) { return }
         switch state {
         case .lowBattery:
-            let percent = monitor.snapshot.battery?.chargeFraction.map(MetricFormatting.percent) ?? "低电量"
-            showAmbientMessage("master，Mac 只剩 \(percent) 电量啦，VCC 正叼着充电线跑来～")
+            showLowBatteryMessage()
         case .memoryPressure:
             showAmbientMessage("master，现在内存有点挤，元圭陪你看看要不要休息一下应用吧～")
         case .charging:
@@ -697,6 +774,27 @@ final class PetStore: ObservableObject {
             showAmbientMessage("夜深了，master 该休息啦，元圭和 VCC 陪你说晚安～")
         case .normal:
             break
+        }
+    }
+
+    private func showLowBatteryMessage() {
+        let percent = monitor.snapshot.battery?.chargeFraction
+            .map(MetricFormatting.percent)
+            ?? "未知"
+        showAmbientMessage("master，Mac 当前电量 \(percent)，VCC 正叼着充电线跑来～")
+    }
+
+    private func isUrgentSmartState(
+        _ state: SmartPetState,
+        batteryLevel: BatteryAlertLevel? = nil
+    ) -> Bool {
+        switch state {
+        case .lowBattery:
+            return (batteryLevel ?? batteryAlertLevel) == .critical
+        case .memoryPressure:
+            return true
+        case .normal, .charging, .rainy, .bedtime:
+            return false
         }
     }
 
@@ -815,13 +913,33 @@ final class PetStore: ObservableObject {
     }
 
     private func evaluateSmartState(at date: Date = Date()) {
-        applySmartStates(SmartPetState.resolveAll(
+        let evaluation = smartStateEvaluation(
             system: monitor.snapshot,
             weather: weather.snapshot,
+            date: date
+        )
+        applySmartStates(
+            evaluation.states,
+            batteryAlertLevel: evaluation.batteryAlertLevel
+        )
+    }
+
+    private func smartStateEvaluation(
+        system: SystemSnapshot,
+        weather: WeatherSnapshot?,
+        date: Date = Date()
+    ) -> PetSmartStateEvaluation {
+        let states = SmartPetState.resolveAll(
+            system: system,
+            weather: weather,
             date: date,
             bedtimeEnabled: bedtimeReminderEnabled,
             bedtimeStartMinutes: bedtimeStartMinutes,
             bedtimeEndMinutes: bedtimeEndMinutes
-        ))
+        )
+        return PetSmartStateEvaluation(
+            states: states,
+            batteryAlertLevel: BatteryAlertLevel.resolve(from: system.battery)
+        )
     }
 }

@@ -224,6 +224,10 @@ final class MusicFeature {
         get { lyricsPresentation.backgroundVisible }
         set { lyricsPresentation.backgroundVisible = newValue }
     }
+    private var lyricsBackgroundOpacity: Double {
+        get { lyricsPresentation.backgroundOpacity }
+        set { lyricsPresentation.backgroundOpacity = newValue }
+    }
     private var bilibiliAccount: BilibiliAccount? {
         get { bilibiliAccountStore.account }
         set { bilibiliAccountStore.account = newValue }
@@ -920,6 +924,11 @@ final class MusicFeature {
     func setLyricsBackgroundVisible(_ visible: Bool) {
         lyricsBackgroundVisible = visible
         defaults.set(visible, forKey: "musicLyricsBackgroundVisible")
+    }
+
+    func setLyricsBackgroundOpacity(_ opacity: Double) {
+        lyricsBackgroundOpacity = min(max(opacity, 0.12), 0.60)
+        defaults.set(lyricsBackgroundOpacity, forKey: "musicLyricsBackgroundOpacity")
     }
 
     func setLyricOffset(_ offset: TimeInterval) {

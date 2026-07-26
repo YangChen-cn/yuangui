@@ -33,9 +33,14 @@ struct PetAuxiliaryBubbleView: View {
     }
 
     private var showsMusicLyric: Bool {
-        music.playback.isPlaying && music.lyricsPresentation.lightSingAlongEnabled && music.lyricsStore.currentLine != nil
-            && !chat.isPresented && maintenance.quickMode == nil
-            && focusTimer.state != .running && focusTimer.state != .paused
+        PetMusicPresentationPolicy.showsLyricBubble(
+            isPlaying: music.playback.isPlaying,
+            lightSingAlongEnabled: music.lyricsPresentation.lightSingAlongEnabled,
+            hasCurrentLyric: music.lyricsStore.currentLine != nil,
+            isChatPresented: chat.isPresented,
+            hasMaintenanceTask: maintenance.quickMode != nil,
+            focusState: focusTimer.state
+        )
     }
 
     private var musicAlertText: String? {

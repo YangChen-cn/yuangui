@@ -88,6 +88,7 @@ final class LyricsPresentationStore: ObservableObject {
     @Published var color: NSColor
     @Published var shadowEnabled: Bool
     @Published var backgroundVisible: Bool
+    @Published var backgroundOpacity: Double
     var onVisibilityChanged: (() -> Void)?
     var onLockChanged: (() -> Void)?
 
@@ -104,6 +105,10 @@ final class LyricsPresentationStore: ObservableObject {
             ? true
             : defaults.bool(forKey: "musicLyricsShadowEnabled")
         backgroundVisible = defaults.bool(forKey: "musicLyricsBackgroundVisible")
+        backgroundOpacity = min(
+            max(defaults.object(forKey: "musicLyricsBackgroundOpacity") as? Double ?? 0.24, 0.12),
+            0.60
+        )
     }
 }
 

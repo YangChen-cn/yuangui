@@ -63,22 +63,23 @@ private struct LyricsLockedControlsView: View {
             } label: {
                 Image(systemName: "lock.fill")
             }
+            .yuanSystemGlassButton()
+            .controlSize(.small)
             .help("解锁桌面歌词")
+            .accessibilityLabel("解锁桌面歌词")
 
             Button {
                 music.toggleLyricsVisible()
             } label: {
                 Image(systemName: "xmark")
             }
+            .yuanSystemGlassButton()
+            .controlSize(.small)
             .help("关闭桌面歌词")
+            .accessibilityLabel("关闭桌面歌词")
         }
-        .buttonStyle(.plain)
-        .font(.system(size: 12, weight: .semibold))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.45), lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.18), radius: 7, y: 3)
+        .yuanGlassEffectContainer(spacing: 8)
+        .padding(6)
     }
 }
 
@@ -90,29 +91,35 @@ private struct DesktopLyricsView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Text(music.lyricsStore.currentLine?.text ?? music.playback.currentTrack?.title ?? "YuanGUI 桌面歌词")
-                    .font(.system(size: music.lyricsPresentation.fontSize, weight: .bold, design: music.lyricsPresentation.fontStyle.fontDesign))
+                    .font(music.lyricsPresentation.fontStyle.font(
+                        size: music.lyricsPresentation.fontSize,
+                        weight: .bold
+                    ))
                     .foregroundStyle(Color(nsColor: music.lyricsPresentation.color))
                     .shadow(
-                        color: music.lyricsPresentation.shadowEnabled ? .black.opacity(0.9) : .clear,
-                        radius: 3,
+                        color: music.lyricsPresentation.shadowEnabled ? .black.opacity(0.38) : .clear,
+                        radius: 1.5,
                         y: 1
                     )
                     .lineLimit(1).minimumScaleFactor(0.6)
                 if let next = music.lyricsStore.nextLine?.text {
-                    Text(next).font(.system(size: max(12, music.lyricsPresentation.fontSize * 0.62), weight: .semibold, design: music.lyricsPresentation.fontStyle.fontDesign))
-                        .foregroundStyle(Color(nsColor: music.lyricsPresentation.color).opacity(0.72))
+                    Text(next).font(music.lyricsPresentation.fontStyle.font(
+                        size: max(11, music.lyricsPresentation.fontSize * 0.52),
+                        weight: .medium
+                    ))
+                        .foregroundStyle(Color(nsColor: music.lyricsPresentation.color).opacity(0.46))
                         .shadow(
-                            color: music.lyricsPresentation.shadowEnabled ? .black.opacity(0.8) : .clear,
-                            radius: 2,
+                            color: music.lyricsPresentation.shadowEnabled ? .black.opacity(0.18) : .clear,
+                            radius: 1,
                             y: 1
                         )
                         .lineLimit(1).minimumScaleFactor(0.65)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 48)
+            .padding(.horizontal, 72)
 
             if !music.lyricsPresentation.isPanelLocked {
                 HStack(spacing: 5) {
@@ -121,14 +128,20 @@ private struct DesktopLyricsView: View {
                     } label: {
                         Image(systemName: "xmark")
                     }
+                    .yuanSystemGlassButton()
+                    .controlSize(.small)
                     .help("关闭桌面歌词")
+                    .accessibilityLabel("关闭桌面歌词")
 
                     Button {
                         music.setLyricsPanelLocked(true)
                     } label: {
                         Image(systemName: "lock.open")
                     }
+                    .yuanSystemGlassButton()
+                    .controlSize(.small)
                     .help("锁定歌词并允许点击穿透；可从播放器解锁")
+                    .accessibilityLabel("锁定桌面歌词")
 
                     Button {
                         syncSearchFields()
@@ -136,7 +149,10 @@ private struct DesktopLyricsView: View {
                     } label: {
                         Image(systemName: "gearshape.fill")
                     }
+                    .yuanSystemGlassButton()
+                    .controlSize(.small)
                     .help("桌面歌词设置")
+                    .accessibilityLabel("桌面歌词设置")
                     .popover(isPresented: $showsSettings, arrowEdge: .top) {
                         DesktopLyricsSettingsView(
                             music: music,
@@ -145,25 +161,18 @@ private struct DesktopLyricsView: View {
                         )
                     }
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold))
-                .padding(7)
-                .background(.regularMaterial, in: Capsule())
-                .padding(8)
+                .yuanGlassEffectContainer(spacing: 5)
+                .padding(6)
             }
         }
-        .padding(.horizontal, 22).padding(.vertical, 10)
-        .frame(width: 620, height: 108)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .frame(width: 620, height: 92)
         .background(
-            music.lyricsPresentation.backgroundVisible ? Color.black.opacity(0.16) : Color.clear,
-            in: Capsule()
+            Color.black.opacity(effectiveBackgroundOpacity),
+            in: .rect(cornerRadius: 18)
         )
-        .shadow(
-            color: music.lyricsPresentation.backgroundVisible ? .black.opacity(0.24) : .clear,
-            radius: 8,
-            y: 4
-        )
-        .contentShape(Rectangle())
+        .contentShape(.rect(cornerRadius: 18))
         .onAppear(perform: syncSearchFields)
         .onChange(of: music.playback.currentTrack?.id) { _, _ in syncSearchFields() }
     }
@@ -171,6 +180,14 @@ private struct DesktopLyricsView: View {
     private func syncSearchFields() {
         searchTitle = music.playback.currentTrack?.title ?? ""
         searchArtist = music.playback.currentTrack?.artist ?? ""
+    }
+
+    private var effectiveBackgroundOpacity: Double {
+        min(
+            music.lyricsPresentation.backgroundOpacity
+                + (music.lyricsPresentation.backgroundVisible ? 0.10 : 0),
+            0.70
+        )
     }
 }
 
@@ -215,10 +232,24 @@ private struct DesktopLyricsSettingsView: View {
                 get: { music.lyricsPresentation.shadowEnabled },
                 set: music.setLyricsShadowEnabled
             ))
-            Toggle("显示半透明背景长条", isOn: Binding(
+            Toggle("增强歌词背景对比度", isOn: Binding(
                 get: { music.lyricsPresentation.backgroundVisible },
                 set: music.setLyricsBackgroundVisible
             ))
+            HStack {
+                Text("细条透明度")
+                Slider(
+                    value: Binding(
+                        get: { music.lyricsPresentation.backgroundOpacity },
+                        set: music.setLyricsBackgroundOpacity
+                    ),
+                    in: 0.12...0.60,
+                    step: 0.01
+                )
+                Text(music.lyricsPresentation.backgroundOpacity, format: .percent.precision(.fractionLength(0)))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 38, alignment: .trailing)
+            }
             Divider()
             Text("歌词搜索信息")
                 .font(.subheadline.weight(.semibold))
@@ -264,12 +295,24 @@ private struct DesktopLyricsSettingsView: View {
 }
 
 private extension LyricsFontStyle {
-    var fontDesign: Font.Design {
+    func font(size: CGFloat, weight: Font.Weight) -> Font {
         switch self {
-        case .rounded: return .rounded
-        case .system: return .default
-        case .serif: return .serif
-        case .monospaced: return .monospaced
+        case .rounded:
+            return .system(size: size, weight: weight, design: .rounded)
+        case .system:
+            return .system(size: size, weight: weight)
+        case .serif:
+            return .system(size: size, weight: weight, design: .serif)
+        case .monospaced:
+            return .system(size: size, weight: weight, design: .monospaced)
+        case .pingFang:
+            return .custom("PingFang SC", size: size).weight(weight)
+        case .songti:
+            return .custom("Songti SC", size: size).weight(weight)
+        case .kaiti:
+            return .custom("Kaiti SC", size: size).weight(weight)
+        case .heiti:
+            return .custom("Heiti SC", size: size).weight(weight)
         }
     }
 }
@@ -289,7 +332,7 @@ final class LyricsPanelController {
         self.music = music
         self.defaults = defaults
         panel = LyricsPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 108),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 92),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false

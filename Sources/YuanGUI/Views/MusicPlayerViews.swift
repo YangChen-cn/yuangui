@@ -39,26 +39,45 @@ struct MusicArtworkView: View {
 struct MusicTransportControls: View {
     @ObservedMusicFeature var music: MusicFeature
     var compact = false
+    var usesGlassButtons = false
 
     var body: some View {
         HStack(spacing: compact ? 15 : 22) {
             Button(action: music.previous) { Image(systemName: "backward.fill") }
+                .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
                 .help("上一首")
                 .accessibilityLabel("上一首")
             Button(action: music.playPause) {
                 Image(systemName: music.playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: compact ? 15 : 20, weight: .bold))
                     .frame(width: compact ? 27 : 38, height: compact ? 27 : 38)
-                    .background(.primary.opacity(0.10), in: Circle())
+                    .background(
+                        usesGlassButtons ? Color.clear : Color.primary.opacity(0.10),
+                        in: Circle()
+                    )
             }
+            .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
             .help(music.playback.isPlaying ? "暂停" : "播放")
             .accessibilityLabel(music.playback.isPlaying ? "暂停" : "播放")
             Button(action: music.next) { Image(systemName: "forward.fill") }
+                .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
                 .help("下一首")
                 .accessibilityLabel("下一首")
         }
-        .buttonStyle(.plain)
         .disabled(!music.canControl)
+    }
+}
+
+private struct MusicTransportButtonModifier: ViewModifier {
+    let usesGlass: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if usesGlass {
+            content.yuanSystemGlassButton()
+        } else {
+            content.buttonStyle(.plain)
+        }
     }
 }
 
@@ -374,18 +393,33 @@ struct MiniMusicPlayerView: View {
             HStack {
                 Button { music.toggleLyricsVisible() } label: {
                     Image(systemName: music.lyricsPresentation.isVisible ? "quote.bubble.fill" : "quote.bubble")
-                }.help(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词")
+                }
+                .yuanSystemGlassButton()
+                .controlSize(.small)
+                .help(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词")
+                .accessibilityLabel(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词")
                 Button { music.setLyricsPanelLocked(!music.lyricsPresentation.isPanelLocked) } label: {
                     Image(systemName: music.lyricsPresentation.isPanelLocked ? "lock.fill" : "lock.open")
-                }.help(music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词")
+                }
+                .yuanSystemGlassButton()
+                .controlSize(.small)
+                .help(music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词")
+                .accessibilityLabel(music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词")
                 Spacer()
-                MusicTransportControls(music: music, compact: true)
+                MusicTransportControls(music: music, compact: true, usesGlassButtons: true)
                 Spacer()
-                Button { appActions.open(.music) } label: { Image(systemName: "list.bullet") }.help("打开完整播放器")
-            }.buttonStyle(.plain)
+                Button { appActions.open(.music) } label: { Image(systemName: "list.bullet") }
+                    .yuanSystemGlassButton()
+                    .controlSize(.small)
+                    .help("打开完整播放器")
+                    .accessibilityLabel("打开完整播放器")
+            }
         }
         .padding(12)
         .frame(width: 300)
+        .yuanLiquidGlassSurface(.regular, cornerRadius: 22)
+        .padding(6)
+        .presentationBackground(.clear)
     }
 }
 
@@ -1115,17 +1149,14 @@ struct PetMusicLyricBubble: View {
             }
         }
         .padding(.horizontal, 15).padding(.vertical, 11)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.42), lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         .frame(maxWidth: 350)
-        .overlay(alignment: placement == .abovePet ? .bottom : .top) {
-            PetBubbleTail()
-                .fill(.regularMaterial)
-                .frame(width: 20, height: 10)
-                .rotationEffect(.degrees(placement == .abovePet ? 0 : 180))
-                .offset(y: placement == .abovePet ? 8 : -8)
-        }
+        .yuanPetBubbleGlass(
+            cornerRadius: 20,
+            placement: placement,
+            tailWidth: 20,
+            tailHeight: 10,
+            tailOffset: 8
+        )
     }
 }
 

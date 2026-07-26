@@ -5,6 +5,8 @@ import SwiftUI
 
 final class PetPanel: NSPanel {
     var allowedTopOverflow: CGFloat = 0
+    var allowedLeftOverflow: CGFloat = 0
+    var allowedRightOverflow: CGFloat = 0
     var isUserDragging = false
     var bypassScreenConstraint = false
     var dragMovedAction: (() -> Void)?
@@ -30,7 +32,9 @@ final class PetPanel: NSPanel {
             frame.origin,
             panelSize: frame.size,
             visibleFrame: visible,
-            allowedTopOverflow: allowedTopOverflow
+            allowedTopOverflow: allowedTopOverflow,
+            allowedLeftOverflow: allowedLeftOverflow,
+            allowedRightOverflow: allowedRightOverflow
         )
         return frame
     }
@@ -84,6 +88,7 @@ final class PetPanelController {
     private var isApplyingProgrammaticLayout = false
     private var lastLayoutScale: Double
     private var lastLayoutShowsChat: Bool
+    private var preChatPanelOrigin: CGPoint?
 
     init(
         store: PetStore,
@@ -214,6 +219,9 @@ final class PetPanelController {
         }
         panel.dragEndedAction = { [weak self] in self?.finishUserDrag() }
         edgePeekPanel.restoreAction = { [weak self] in self?.restoreFromEdge(animated: true) }
+        chat.onWillPresentationChange = { [weak self] presented in
+            self?.prepareForChatPresentationChange(presented)
+        }
         installObservers()
         Publishers.CombineLatest4(store.$showsSystemStatus, store.$smartState, store.$petScale, chat.$isPresented)
             .dropFirst()
@@ -337,21 +345,36 @@ final class PetPanelController {
         panel.makeKeyAndOrderFront(nil)
     }
 
+    private func prepareForChatPresentationChange(_ willPresent: Bool) {
+        guard willPresent else { return }
+        if dockedEdge != nil {
+            restoreFromEdge(animated: false)
+        }
+        // This runs before ChatStore publishes the new value, so neither
+        // SwiftUI's intrinsic-content update nor AppKit's panel resizing can
+        // replace the true compact origin with the expanded chat origin.
+        preChatPanelOrigin = panel.frame.origin
+    }
+
     private func installObservers() {
         observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: panel,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 guard let self else { return }
+                // Handle this synchronously. NSWindow posts the notification
+                // during setFrame; deferring to a task can outlive the
+                // programmatic-layout guard and persist a temporary position.
+                let wasProgrammaticMove = self.isApplyingProgrammaticLayout
                 self.positionLockedToolbar()
                 if self.auxiliaryBubblePanel.isVisible {
                     self.positionAuxiliaryBubble()
                 }
                 guard !self.panel.isUserDragging,
                       !self.isDockTransitioning,
-                      !self.isApplyingProgrammaticLayout,
+                      !wasProgrammaticMove,
                       self.dockedEdge == nil else { return }
                 self.lastExpandedOrigin = self.panel.frame.origin
                 self.persistExpandedOrigin()
@@ -396,8 +419,17 @@ final class PetPanelController {
             targetSize.width = min(targetSize.width, usableFrame.width)
             targetSize.height = min(targetSize.height, usableFrame.height)
         }
+        let isOpeningChat = !lastLayoutShowsChat && chat.isPresented
+        let isClosingChat = lastLayoutShowsChat && !chat.isPresented
+        if isOpeningChat, preChatPanelOrigin == nil {
+            // Keep the exact compact-panel position. Preserving only the
+            // sprite frame loses information when the larger chat panel is
+            // clamped at a display edge and causes a visible jump on close.
+            preChatPanelOrigin = panel.frame.origin
+        }
         updateAllowedTopOverflow()
-        guard panel.frame.size != targetSize else {
+        let mustRestoreChatOrigin = isClosingChat && preChatPanelOrigin != nil
+        guard panel.frame.size != targetSize || mustRestoreChatOrigin else {
             lastLayoutScale = store.petScale
             lastLayoutShowsChat = chat.isPresented
             updateAuxiliaryBubble()
@@ -410,36 +442,64 @@ final class PetPanelController {
                 height: max(panel.frame.height, targetSize.height)
             )
         )
-        let frame = PetLayout.resizedPanelFrame(
-            from: panel.frame,
-            targetSize: targetSize,
-            scale: store.petScale,
-            oldShowsChat: lastLayoutShowsChat,
-            newShowsChat: chat.isPresented,
-            visibleFrame: usableFrame ?? fallbackVisibleFrame
-        )
+        let layoutFrame = usableFrame ?? fallbackVisibleFrame
+        let frame: CGRect
+        if isClosingChat, let originalOrigin = preChatPanelOrigin {
+            frame = CGRect(
+                origin: PetLayout.restoredCompactOrigin(
+                    originalOrigin,
+                    panelSize: targetSize,
+                    scale: store.petScale,
+                    visibleFrame: layoutFrame,
+                ),
+                size: targetSize
+            )
+        } else {
+            frame = PetLayout.resizedPanelFrame(
+                from: panel.frame,
+                targetSize: targetSize,
+                scale: store.petScale,
+                oldShowsChat: lastLayoutShowsChat,
+                newShowsChat: chat.isPresented,
+                visibleFrame: layoutFrame
+            )
+        }
         isApplyingProgrammaticLayout = true
         panel.bypassScreenConstraint = true
         panel.setFrame(frame, display: true, animate: false)
         panel.bypassScreenConstraint = false
         lastLayoutScale = store.petScale
         lastLayoutShowsChat = chat.isPresented
+        if isClosingChat {
+            preChatPanelOrigin = nil
+        }
         if dockedEdge != nil {
             resizeEdgePeekPanel()
             positionEdgePeek()
             isApplyingProgrammaticLayout = false
             return
         }
-        constrainToVisibleScreens(persist: false)
+        if !isClosingChat {
+            constrainToVisibleScreens(persist: false)
+        }
+        if isClosingChat {
+            lastExpandedOrigin = panel.frame.origin
+            persistExpandedOrigin()
+        }
         positionLockedToolbar()
         updateAuxiliaryBubble()
         isApplyingProgrammaticLayout = false
     }
 
     private static func showsMusicLyric(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore, music: MusicFeature) -> Bool {
-        music.playback.isPlaying && music.lyricsPresentation.lightSingAlongEnabled && music.lyricsStore.currentLine != nil
-            && !chat.isPresented && maintenance.quickMode == nil
-            && focusTimer.state != .running && focusTimer.state != .paused
+        PetMusicPresentationPolicy.showsLyricBubble(
+            isPlaying: music.playback.isPlaying,
+            lightSingAlongEnabled: music.lyricsPresentation.lightSingAlongEnabled,
+            hasCurrentLyric: music.lyricsStore.currentLine != nil,
+            isChatPresented: chat.isPresented,
+            hasMaintenanceTask: maintenance.quickMode != nil,
+            focusState: focusTimer.state
+        )
     }
 
     private func restoreOrPlaceWindow() {
@@ -475,14 +535,18 @@ final class PetPanelController {
             frame.origin,
             panelSize: frame.size,
             visibleFrame: visible,
-            allowedTopOverflow: panel.allowedTopOverflow
+            allowedTopOverflow: panel.allowedTopOverflow,
+            allowedLeftOverflow: panel.allowedLeftOverflow,
+            allowedRightOverflow: panel.allowedRightOverflow
         )
         let wasApplyingProgrammaticLayout = isApplyingProgrammaticLayout
         if !persist { isApplyingProgrammaticLayout = true }
         defer { isApplyingProgrammaticLayout = wasApplyingProgrammaticLayout }
         panel.setFrameOrigin(frame.origin)
-        lastExpandedOrigin = frame.origin
-        if persist { persistExpandedOrigin() }
+        if persist {
+            lastExpandedOrigin = frame.origin
+            persistExpandedOrigin()
+        }
         positionLockedToolbar()
         positionAuxiliaryBubble()
     }
@@ -665,6 +729,10 @@ final class PetPanelController {
             showsChat: chat.isPresented,
             showsMaintenance: maintenance.quickMode != nil
         )
+        let allowsCompactOverflow = !chat.isPresented && maintenance.quickMode == nil
+        let horizontalOverflow = PetLayout.compactHorizontalOverflow(scale: store.petScale)
+        panel.allowedLeftOverflow = allowsCompactOverflow ? horizontalOverflow.left : 0
+        panel.allowedRightOverflow = allowsCompactOverflow ? horizontalOverflow.right : 0
     }
 
     private func finishUserDrag() {
@@ -679,6 +747,26 @@ final class PetPanelController {
         if let edge = PetLayout.dockingEdge(for: petVisualFrame, in: screen.visibleFrame) {
             dock(to: edge, on: screen)
         } else {
+            if chat.isPresented {
+                let compactSize = PetLayout.panelSize(
+                    scale: store.petScale,
+                    showsBubble: false,
+                    showsChat: false,
+                    showsMaintenance: maintenance.quickMode != nil
+                )
+                let compactOrigin = PetLayout.panelOrigin(
+                    preservingPetVisualFrame: petVisualFrame,
+                    targetPanelSize: compactSize,
+                    scale: store.petScale,
+                    showsChat: false
+                )
+                preChatPanelOrigin = PetLayout.constrainedOrigin(
+                    compactOrigin,
+                    panelSize: compactSize,
+                    visibleFrame: screen.visibleFrame,
+                    allowedTopOverflow: PetLayout.compactTopTransparentInset * store.petScale
+                )
+            }
             lastExpandedOrigin = panel.frame.origin
             persistExpandedOrigin()
             positionLockedToolbar()

@@ -13,6 +13,7 @@ struct PetActionContext {
     let smartReactionsEnabled: Bool
     let smartActionSuppressed: Bool
     let smartState: SmartPetState
+    let isSmartStateUrgent: Bool
     let transientSmartState: SmartPetState?
 }
 
@@ -36,7 +37,7 @@ enum PetActionResolver {
         }
         if context.isChatting { return context.mode.chatAction }
         if context.smartReactionsEnabled,
-           context.smartState.isUrgent,
+           context.isSmartStateUrgent,
            let action = context.mode.smartAction(for: context.smartState) {
             return action
         }
