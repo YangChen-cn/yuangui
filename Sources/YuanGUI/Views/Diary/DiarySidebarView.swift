@@ -7,7 +7,7 @@ struct DiarySidebarView: View {
         VStack(spacing: 0) {
             brandHeader
             List {
-                Section("回忆") {
+                Section(AppLocalizer.string("回忆")) {
                     navigationButton("时间线", icon: "text.justify.left", active: isAllTimeline) {
                         store.clearFilters()
                         store.viewMode = .timeline
@@ -30,7 +30,7 @@ struct DiarySidebarView: View {
                     }
                 }
 
-                Section("月份") {
+                Section(AppLocalizer.string("月份")) {
                     ForEach(availableMonths, id: \.self) { month in
                         navigationButton(
                             month.formatted(.dateTime.year().month(.wide)),
@@ -43,7 +43,7 @@ struct DiarySidebarView: View {
                 }
 
                 if !store.allTags.isEmpty {
-                    Section("标签") {
+                    Section(AppLocalizer.string("标签")) {
                         ForEach(store.allTags, id: \.self) { tag in
                             navigationButton(
                                 "#\(tag)",
@@ -69,9 +69,9 @@ struct DiarySidebarView: View {
                 .font(.title2)
                 .foregroundStyle(Color.diaryAccent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("手帐本")
+                Text(AppLocalizer.string("手帐本"))
                     .font(.headline)
-                Text("珍藏属于我们的日常")
+                Text(AppLocalizer.string("珍藏属于我们的日常"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -85,15 +85,18 @@ struct DiarySidebarView: View {
 
     private var sidebarFooter: some View {
         HStack(spacing: 12) {
-            Label("\(store.entries.count)", systemImage: "book.closed")
-            Label("\(photoCount)", systemImage: "photo")
+            Label(AppLocalizer.format("diary.sidebar.entryCount", store.entries.count), systemImage: "book.closed")
+            Label(AppLocalizer.format("diary.sidebar.photoCount", photoCount), systemImage: "photo")
         }
         .font(.caption.monospacedDigit())
         .foregroundStyle(.tertiary)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("\(store.entries.count) 条日记，\(photoCount) 张照片")
+        .accessibilityLabel(
+            "\(AppLocalizer.format("diary.sidebar.entryCount", store.entries.count)), " +
+            AppLocalizer.format("diary.sidebar.photoCount", photoCount)
+        )
     }
 
     private var isAllTimeline: Bool {
@@ -125,7 +128,7 @@ struct DiarySidebarView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Label(title, systemImage: icon)
+            Label(AppLocalizer.string(title), systemImage: icon)
                 .foregroundStyle(active ? AnyShapeStyle(Color.diaryAccent) : AnyShapeStyle(.primary))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())

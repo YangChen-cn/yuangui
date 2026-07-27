@@ -27,16 +27,16 @@ struct DiaryEntryList: View {
                 timelineList
             }
         }
-        .confirmationDialog("将这篇日记移到最近删除？", item: $pendingDelete) { entry in
-            Button("移到最近删除", role: .destructive) { delete(entry) }
-            Button("取消", role: .cancel) {}
+        .confirmationDialog(AppLocalizer.string("将这篇日记移到最近删除？"), item: $pendingDelete) { entry in
+            Button(AppLocalizer.string("移到最近删除"), role: .destructive) { delete(entry) }
+            Button(AppLocalizer.string("取消"), role: .cancel) {}
         }
         .confirmationDialog(
-            "将 \(pendingDeleteIDs.count) 篇日记移到最近删除？",
+            AppLocalizer.format("diary.list.batchDeleteConfirmation", pendingDeleteIDs.count),
             isPresented: $showBatchDeleteConfirmation
         ) {
-            Button("移到最近删除", role: .destructive) { deleteSelected() }
-            Button("取消", role: .cancel) {}
+            Button(AppLocalizer.string("移到最近删除"), role: .destructive) { deleteSelected() }
+            Button(AppLocalizer.string("取消"), role: .cancel) {}
         }
         .onChange(of: selectedEntryIDs) { _, ids in
             guard isSelectionMode else { return }
@@ -65,7 +65,7 @@ struct DiaryEntryList: View {
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索日记", text: $store.searchText)
+                TextField(AppLocalizer.string("搜索日记"), text: $store.searchText)
                     .textFieldStyle(.plain)
                     .focused($searchIsFocused)
                 if !store.searchText.isEmpty {
@@ -74,8 +74,8 @@ struct DiaryEntryList: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .help("清除搜索")
-                    .accessibilityLabel("清除搜索")
+                    .help(AppLocalizer.string("清除搜索"))
+                    .accessibilityLabel(AppLocalizer.string("清除搜索"))
                 }
             }
             .padding(.horizontal, 10)
@@ -98,27 +98,27 @@ struct DiaryEntryList: View {
                         }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
-                        .help(allVisibleEntriesSelected ? "取消选择当前列表" : "选择当前列表")
-                        .accessibilityLabel(allVisibleEntriesSelected ? "反全选" : "全选")
+                        .help(AppLocalizer.string(allVisibleEntriesSelected ? "取消选择当前列表" : "选择当前列表"))
+                        .accessibilityLabel(AppLocalizer.string(allVisibleEntriesSelected ? "反全选" : "全选"))
                     }
                     if !selectedEntryIDs.isEmpty {
-                        Text("已选 \(selectedEntryIDs.count)")
+                        Text(AppLocalizer.format("diary.list.selectedCount", selectedEntryIDs.count))
                             .foregroundStyle(.tertiary)
                     }
-                    Button("完成") {
+                    Button(AppLocalizer.string("完成")) {
                         isSelectionMode = false
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                 } else {
-                    Button("选择", systemImage: "checklist") {
+                    Button(AppLocalizer.string("选择"), systemImage: "checklist") {
                         isSelectionMode = true
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
-                    .help("选择多篇日记")
+                    .help(AppLocalizer.string("选择多篇日记"))
                 }
-                Text("\(store.filteredEntries.count) 篇")
+                Text(AppLocalizer.format("diary.list.entryCount", store.filteredEntries.count))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
@@ -142,11 +142,11 @@ struct DiaryEntryList: View {
             .listStyle(.inset)
             .contextMenu {
                 if !selectedEntryIDs.isEmpty {
-                    Button(allEntriesFavorited(selectedEntryIDs) ? "取消收藏所选" : "收藏所选") {
+                    Button(AppLocalizer.string(allEntriesFavorited(selectedEntryIDs) ? "取消收藏所选" : "收藏所选")) {
                         toggleFavorite(for: selectedEntryIDs)
                     }
                     Divider()
-                    Button(selectedEntryIDs.count > 1 ? "删除所选…" : "删除…", role: .destructive) {
+                    Button(AppLocalizer.string(selectedEntryIDs.count > 1 ? "删除所选…" : "删除…"), role: .destructive) {
                         pendingDeleteIDs = selectedEntryIDs
                         showBatchDeleteConfirmation = true
                     }
@@ -160,11 +160,11 @@ struct DiaryEntryList: View {
                             DiaryEntryRow(store: store, entry: entry)
                                 .tag(entry.id)
                                 .contextMenu {
-                                    Button(entry.isFavorite ? "取消收藏" : "收藏") {
+                                    Button(AppLocalizer.string(entry.isFavorite ? "取消收藏" : "收藏")) {
                                         store.toggleFavorite(id: entry.id)
                                     }
                                     Divider()
-                                    Button("删除…", role: .destructive) { pendingDelete = entry }
+                                    Button(AppLocalizer.string("删除…"), role: .destructive) { pendingDelete = entry }
                                 }
                         }
                     }
@@ -188,8 +188,8 @@ struct DiaryEntryList: View {
         .listRowBackground(isSelected ? Color.diarySelection : Color.clear)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { toggleEntrySelection(entry.id) }
-        .accessibilityLabel(entry.displayTitle.isEmpty ? "未命名日记" : entry.displayTitle)
-        .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .accessibilityLabel(entry.displayTitle.isEmpty ? AppLocalizer.string("未命名日记") : entry.displayTitle)
+        .accessibilityValue(AppLocalizer.string(isSelected ? "已选择" : "未选择"))
     }
 
     private var groupedEntries: [DiaryTimelineGroup] {
@@ -203,12 +203,12 @@ struct DiaryEntryList: View {
     }
 
     private var listTitle: String {
-        if !store.searchText.isEmpty { return "搜索结果" }
-        if store.filter.favoritesOnly { return "收藏" }
+        if !store.searchText.isEmpty { return AppLocalizer.string("搜索结果") }
+        if store.filter.favoritesOnly { return AppLocalizer.string("收藏") }
         if let tag = store.filter.tag { return "#\(tag)" }
         if let day = store.filter.day { return day.formatted(.dateTime.month().day()) }
         if let month = store.filter.month { return month.formatted(.dateTime.year().month(.wide)) }
-        return "时间线"
+        return AppLocalizer.string("时间线")
     }
 
     private var visibleEntryIDs: [UUID] {
@@ -234,7 +234,7 @@ struct DiaryEntryList: View {
             undoManager?.registerUndo(withTarget: store) { target in
                 Task { await target.restoreDeleted(id: deleted.id) }
             }
-            undoManager?.setActionName("恢复日记")
+            undoManager?.setActionName(AppLocalizer.string("恢复日记"))
         }
     }
 
@@ -288,7 +288,7 @@ struct DiaryEntryList: View {
             undoManager?.registerUndo(withTarget: store) { target in
                 Task { _ = await target.restoreDeleted(ids: deletedIDs) }
             }
-            undoManager?.setActionName("恢复日记")
+            undoManager?.setActionName(AppLocalizer.string("恢复日记"))
         }
     }
 }
@@ -300,8 +300,8 @@ private struct DiaryTimelineGroup: Identifiable {
     var id: Date { day }
 
     var title: String {
-        if Calendar.current.isDateInToday(day) { return "今天" }
-        if Calendar.current.isDateInYesterday(day) { return "昨天" }
+        if Calendar.current.isDateInToday(day) { return AppLocalizer.string("今天") }
+        if Calendar.current.isDateInYesterday(day) { return AppLocalizer.string("昨天") }
         return day.formatted(.dateTime.month().day().weekday(.wide))
     }
 }

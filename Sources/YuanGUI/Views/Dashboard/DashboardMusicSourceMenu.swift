@@ -11,7 +11,9 @@ struct DashboardMusicSourceMenu: View {
                     onSelect(source)
                 } label: {
                     Label(
-                        source == selection ? "\(source.title)（当前）" : source.title,
+                        source == selection
+                            ? AppLocalizer.format("music.source.currentFormat", source.title)
+                            : source.title,
                         systemImage: source == selection ? "checkmark" : source.systemImage
                     )
                 }

@@ -12,7 +12,7 @@ struct WeatherCardView: View {
                     .foregroundStyle(.blue)
                 Text("\(Int(weather.temperature))°C")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                Text(weather.condition)
+                Text(AppLocalizer.string(weather.condition))
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
             }

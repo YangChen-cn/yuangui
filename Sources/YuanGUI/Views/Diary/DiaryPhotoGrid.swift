@@ -19,7 +19,7 @@ struct DiaryPhotoGrid: View {
 
             if attachments.isEmpty {
                 Button(action: onAdd) {
-                    Label("添加照片，或从 Finder 拖到这里", systemImage: "photo.badge.plus")
+                Label(AppLocalizer.string("添加照片，或从 Finder 拖到这里"), systemImage: "photo.badge.plus")
                         .frame(maxWidth: .infinity, minHeight: 72)
                 }
                 .buttonStyle(.bordered)
@@ -35,7 +35,7 @@ struct DiaryPhotoGrid: View {
                         )
                     }
                 }
-                Button("添加更多照片", systemImage: "plus", action: onAdd)
+                Button(AppLocalizer.string("添加更多照片"), systemImage: "plus", action: onAdd)
                     .buttonStyle(.plain)
                     .font(.caption)
                     .foregroundStyle(Color.diaryAccent)
@@ -97,11 +97,11 @@ struct DiaryAttachmentThumbnail: View {
                     Button(action: onOpen) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                     }
-                    .help("查看大图")
+            .help(AppLocalizer.string("查看大图"))
                     Button(action: onRemove) {
                         Image(systemName: "trash")
                     }
-                    .help("移除照片")
+            .help(AppLocalizer.string("移除照片"))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -112,11 +112,11 @@ struct DiaryAttachmentThumbnail: View {
         }
         .onHover { isHovering = $0 }
         .contextMenu {
-            Button("查看大图", systemImage: "arrow.up.left.and.arrow.down.right", action: onOpen)
-            Button("移除照片", systemImage: "trash", role: .destructive, action: onRemove)
+            Button(AppLocalizer.string("查看大图"), systemImage: "arrow.up.left.and.arrow.down.right", action: onOpen)
+            Button(AppLocalizer.string("移除照片"), systemImage: "trash", role: .destructive, action: onRemove)
         }
-        .accessibilityAction(named: "查看大图", onOpen)
-        .accessibilityAction(named: "移除照片", onRemove)
+        .accessibilityAction(named: AppLocalizer.string("查看大图"), onOpen)
+        .accessibilityAction(named: AppLocalizer.string("移除照片"), onRemove)
         .task(id: attachment.id) {
             if let data = await store.thumbnailData(for: attachment) {
                 image = NSImage(data: data)
@@ -148,8 +148,8 @@ struct DiaryAttachmentViewer: View {
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
-                    .help("关闭")
-                    .accessibilityLabel("关闭照片")
+                    .help(AppLocalizer.string("关闭"))
+                    .accessibilityLabel(AppLocalizer.string("关闭照片"))
             }
 
             Group {
@@ -163,7 +163,7 @@ struct DiaryAttachmentViewer: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Button("打开所属日记", systemImage: "book.pages") {
+            Button(AppLocalizer.string("打开所属日记"), systemImage: "book.pages") {
                 onOpenEntry()
                 dismiss()
             }

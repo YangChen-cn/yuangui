@@ -1037,6 +1037,39 @@ final class MusicTests: XCTestCase {
         await feature.shutdown()
     }
 
+    @MainActor
+    func testSwitchingFromLocalToBilibiliRebuildsStatusQueueForTheNewSource() async {
+        let suiteName = "MusicSourceQueueSwitchTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(MusicSource.local.rawValue, forKey: "musicSource")
+
+        let local = makeLocalTrack(id: "local:current", filename: "current.mp3")
+        let localNext = makeLocalTrack(id: "local:next", filename: "next.mp3")
+        let bilibili = makeQueueTracks(count: 2)
+        let library = StaticMusicLibraryCoordinator(snapshot: MusicLibrarySnapshot(
+            playlist: [local, bilibili[0], localNext, bilibili[1]],
+            playMode: .sequential,
+            currentTrackID: local.id
+        ))
+        let feature = MusicFeature(
+            defaults: defaults,
+            bilibiliPlayer: RecordingBilibiliPlayer(),
+            library: library
+        )
+        for _ in 0..<8 { await Task.yield() }
+
+        XCTAssertEqual(feature.playback.source, .local)
+        XCTAssertEqual(feature.upcomingTracks.map(\.id), [localNext.id])
+
+        feature.setSource(.bilibili)
+
+        XCTAssertEqual(feature.playback.currentTrack?.id, bilibili[0].id)
+        XCTAssertEqual(feature.upcomingTracks.map(\.id), [bilibili[1].id])
+        XCTAssertTrue(feature.upcomingTracks.allSatisfy { $0.source == .bilibili })
+        await feature.shutdown()
+    }
+
     private func makeQueueTracks(count: Int) -> [MusicTrack] {
         (0..<count).map { index in
             MusicTrack(

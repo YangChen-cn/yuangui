@@ -42,16 +42,16 @@ struct DiaryExportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("导出、备份与恢复", systemImage: "square.and.arrow.up")
+            Label(AppLocalizer.string("导出、备份与恢复"), systemImage: "square.and.arrow.up")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(Color.diaryAccent)
-            Picker("格式", selection: $format) {
-                ForEach(ExportFormat.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            Picker(AppLocalizer.string("格式"), selection: $format) {
+                ForEach(ExportFormat.allCases, id: \.self) { Text(AppLocalizer.string($0.rawValue)).tag($0) }
             }
             .pickerStyle(.menu)
             if format != .backup {
-                Picker("范围", selection: $scope) {
-                    ForEach(ExportScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Picker(AppLocalizer.string("范围"), selection: $scope) {
+                    ForEach(ExportScope.allCases, id: \.self) { Text(AppLocalizer.string($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.segmented)
             }
@@ -61,37 +61,37 @@ struct DiaryExportView: View {
             }
             if let resultURL {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("操作完成", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Label(AppLocalizer.string("操作完成"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                     Text(resultURL.path).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
-                    Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([resultURL]) }
+                    Button(AppLocalizer.string("在 Finder 中显示")) { NSWorkspace.shared.activateFileViewerSelecting([resultURL]) }
                 }
             }
             Divider()
             HStack {
-                Button("恢复备份…") {
+                Button(AppLocalizer.string("恢复备份…")) {
                     restoreURL = DiaryPanelService.chooseBackup()
                     showRestoreConfirmation = restoreURL != nil
                 }
                 .disabled(isWorking)
                 Spacer()
-                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(isWorking ? "处理中…" : "选择位置并导出") { chooseAndExport() }
+                Button(AppLocalizer.string("关闭")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(AppLocalizer.string(isWorking ? "处理中…" : "选择位置并导出")) { chooseAndExport() }
                     .buttonStyle(.borderedProminent).disabled(isWorking)
             }
         }
         .padding(20)
         .frame(width: 480)
         .tint(.diaryAccent)
-        .confirmationDialog("恢复会替换当前手账数据", isPresented: $showRestoreConfirmation) {
-            Button("验证并恢复", role: .destructive) { restore() }
-            Button("取消", role: .cancel) { restoreURL = nil }
+        .confirmationDialog(AppLocalizer.string("恢复会替换当前手账数据"), isPresented: $showRestoreConfirmation) {
+            Button(AppLocalizer.string("验证并恢复"), role: .destructive) { restore() }
+            Button(AppLocalizer.string("取消"), role: .cancel) { restoreURL = nil }
         } message: {
-            Text("恢复前会完整验证备份；失败时自动回滚当前数据。")
+            Text(AppLocalizer.string("恢复前会完整验证备份；失败时自动回滚当前数据。"))
         }
     }
 
     private func chooseAndExport() {
-        let prefix = format == .backup ? "手帐本备份" : "手帐本"
+        let prefix = AppLocalizer.string(format == .backup ? "手帐本备份" : "手帐本")
         let name = "\(prefix)-\(dateStamp()).\(format.fileExtension)"
         guard let url = DiaryPanelService.saveDestination(suggestedName: name, contentType: format.contentType) else { return }
         isWorking = true
@@ -109,7 +109,7 @@ struct DiaryExportView: View {
                 }
                 resultURL = result
             } catch {
-                errorMessage = "导出失败：\(error.localizedDescription)"
+                errorMessage = AppLocalizer.format("diary.export.failed", error.localizedDescription)
             }
             isWorking = false
         }

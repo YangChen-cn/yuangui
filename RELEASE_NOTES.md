@@ -9,6 +9,7 @@
 - Added security-scoped bookmark persistence, stable `local:<UUID>` track IDs, metadata and embedded-artwork extraction, local playlists and favorites, playback-mode queues, progress restoration, and recoverable missing-file relocation.
 - Local lyrics now prefer a matching sidecar `.lrc`, then YuanGUI’s cache, LRCLIB, and manual LRC tools. Desktop lyrics, lyric seeking and offsets, external-audio interruption, and pet listening actions are shared with the existing sources.
 - Generalized the AVPlayer engine for both network candidates and local file URLs. Network fallback and the 12-second watchdog remain limited to HTTP/HTTPS playback.
+- Polished the full-player sidebar and menu bar empty states: import labels no longer truncate at compact widths, every empty source can open the full player, and runtime music, lyrics, Apple Music, and Bilibili feedback is fully localized.
 
 ## 2.7.0 — English localization and global-release preparation
 

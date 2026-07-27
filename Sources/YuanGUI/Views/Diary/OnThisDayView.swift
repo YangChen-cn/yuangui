@@ -86,7 +86,7 @@ private struct OnThisDayCard: View {
             .diaryPageStyle()
         }
         .buttonStyle(.plain)
-        .accessibilityHint("打开这篇日记")
+        .accessibilityHint(AppLocalizer.string("打开这篇日记"))
         .task(id: entry.attachments.first?.id) {
             guard let attachment = entry.attachments.first,
                   let data = await store.thumbnailData(for: attachment)
@@ -98,7 +98,7 @@ private struct OnThisDayCard: View {
     private var metadata: some View {
         FlowLayout(spacing: 12) {
             if let weather = entry.weather {
-                Label("\(Int(weather.temperature))°C \(weather.condition)", systemImage: weather.icon)
+                Label("\(Int(weather.temperature))°C \(AppLocalizer.string(weather.condition))", systemImage: weather.icon)
             }
             if let music = entry.music {
                 Label(music.title, systemImage: "music.note")
@@ -113,6 +113,6 @@ private struct OnThisDayCard: View {
 
     private var yearsAgoText: String {
         let years = max(Calendar.current.dateComponents([.year], from: entry.occurredAt, to: Date()).year ?? 1, 1)
-        return "\(years) 年前的今天"
+        return AppLocalizer.format("diary.onThisDay.yearsAgo", years)
     }
 }

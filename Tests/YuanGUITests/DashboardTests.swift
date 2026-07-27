@@ -153,6 +153,27 @@ final class DashboardTests: XCTestCase {
         )
     }
 
+    func testEmptyMusicStateAlwaysOffersTheFullPlayer() {
+        for source in MusicSource.allCases {
+            XCTAssertTrue(
+                DashboardMusicEmptyAction.actions(for: source).contains(.openFullPlayer),
+                "\(source) should offer the full player from its empty state"
+            )
+        }
+        XCTAssertEqual(
+            DashboardMusicEmptyAction.actions(for: .appleMusic),
+            [.connectAppleMusic, .openFullPlayer]
+        )
+        XCTAssertEqual(
+            DashboardMusicEmptyAction.actions(for: .local),
+            [.importLocalMusic, .openFullPlayer]
+        )
+        XCTAssertEqual(
+            DashboardMusicEmptyAction.actions(for: .bilibili),
+            [.openFullPlayer]
+        )
+    }
+
     func testHeaderGreetingAndCompanionCopyAreDeterministic() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

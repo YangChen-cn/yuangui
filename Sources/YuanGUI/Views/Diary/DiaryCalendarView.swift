@@ -42,8 +42,8 @@ struct DiaryCalendarView: View {
     private var monthHeader: some View {
         HStack {
             Button { changeMonth(-1) } label: { Image(systemName: "chevron.left") }
-                .help("上个月")
-                .accessibilityLabel("上个月")
+                .help(AppLocalizer.string("上个月"))
+                .accessibilityLabel(AppLocalizer.string("上个月"))
             Spacer()
             VStack(spacing: 3) {
                 Text(selectedMonth.formatted(.dateTime.year().month(.wide)))
@@ -51,16 +51,24 @@ struct DiaryCalendarView: View {
             }
             Spacer()
             Button { changeMonth(1) } label: { Image(systemName: "chevron.right") }
-                .help("下个月")
-                .accessibilityLabel("下个月")
+                .help(AppLocalizer.string("下个月"))
+                .accessibilityLabel(AppLocalizer.string("下个月"))
         }
         .buttonStyle(.borderless)
     }
 
     private var weekdayHeader: some View {
         HStack {
-            ForEach(["日", "一", "二", "三", "四", "五", "六"], id: \.self) { day in
-                Text(day)
+            ForEach([
+                "diary.weekday.sunday",
+                "diary.weekday.monday",
+                "diary.weekday.tuesday",
+                "diary.weekday.wednesday",
+                "diary.weekday.thursday",
+                "diary.weekday.friday",
+                "diary.weekday.saturday"
+            ], id: \.self) { day in
+                Text(AppLocalizer.string(day))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
@@ -111,7 +119,7 @@ private struct DiaryCalendarDayCell: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 5) {
                     if !entries.isEmpty {
-                        Text("\(entries.count) 篇")
+                        Text(AppLocalizer.format("diary.list.entryCount", entries.count))
                     }
                     if entries.contains(where: { !$0.attachments.isEmpty }) {
                         Image(systemName: "photo.fill")
@@ -136,6 +144,8 @@ private struct DiaryCalendarDayCell: View {
     private var accessibilityText: String {
         let dateText = date.formatted(.dateTime.month().day())
         let moodText = entries.first?.mood?.title ?? ""
-        return "\(dateText)，\(entries.count) 篇日记\(moodText.isEmpty ? "" : "，心情\(moodText)")"
+        let entryCount = AppLocalizer.format("diary.list.entryCount", entries.count)
+        let mood = moodText.isEmpty ? "" : "，\(AppLocalizer.string("心情"))\(moodText)"
+        return "\(dateText)，\(entryCount)\(mood)"
     }
 }

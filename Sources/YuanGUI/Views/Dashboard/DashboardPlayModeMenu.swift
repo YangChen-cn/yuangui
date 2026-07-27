@@ -16,7 +16,7 @@ struct DashboardPlayModeMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("播放模式：\(selection.title)")
+        .help(AppLocalizer.format("music.playMode.currentFormat", selection.title))
         .accessibilityValue(selection.title)
     }
 }

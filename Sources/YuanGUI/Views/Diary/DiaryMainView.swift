@@ -43,10 +43,10 @@ struct DiaryMainView: View {
             )
         }
         .task { await store.loadIfNeeded() }
-        .alert("操作失败", isPresented: operationErrorBinding) {
-            Button("好", role: .cancel) { store.operationError = nil }
+        .alert(AppLocalizer.string("操作失败"), isPresented: operationErrorBinding) {
+            Button(AppLocalizer.string("好"), role: .cancel) { store.operationError = nil }
         } message: {
-            Text(store.operationError ?? "未知错误")
+            Text(AppLocalizer.string(store.operationError ?? "未知错误"))
         }
     }
 
@@ -56,15 +56,15 @@ struct DiaryMainView: View {
             Button { _ = store.createEntry() } label: {
                 Image(systemName: "square.and.pencil")
             }
-            .help("新建日记")
-            .accessibilityLabel("新建日记")
+            .help(AppLocalizer.string("新建日记"))
+            .accessibilityLabel(AppLocalizer.string("新建日记"))
             .keyboardShortcut("n", modifiers: .command)
 
             Button { showQuickEntry = true } label: {
                 Image(systemName: "bolt")
             }
-            .help("快速记录")
-            .accessibilityLabel("快速记录")
+            .help(AppLocalizer.string("快速记录"))
+            .accessibilityLabel(AppLocalizer.string("快速记录"))
 
             DiarySaveStatusView(state: store.saveState) {
                 Task { _ = await store.flush() }
@@ -74,8 +74,8 @@ struct DiaryMainView: View {
             Button { showExport = true } label: {
                 Image(systemName: "square.and.arrow.up")
             }
-            .help("导出与备份")
-            .accessibilityLabel("导出与备份")
+            .help(AppLocalizer.string("导出与备份"))
+            .accessibilityLabel(AppLocalizer.string("导出与备份"))
         }
     }
 
@@ -83,7 +83,7 @@ struct DiaryMainView: View {
     private var detail: some View {
         switch store.loadState {
         case .unloaded, .loading:
-            ProgressView("正在加载手账…")
+            ProgressView(AppLocalizer.string("正在加载手账…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
             DiaryEmptyState(title: "无法加载手账", message: message, systemImage: "exclamationmark.triangle")
@@ -123,7 +123,7 @@ struct DiaryMainView: View {
             title: "选择一篇日记",
             message: store.recoveredFiles.isEmpty
                 ? "从时间线选择一篇日记，或记录这一刻。"
-                : "已隔离 \(store.recoveredFiles.count) 个损坏文件，可在 Recovery 目录中恢复。",
+                : AppLocalizer.format("diary.recoveredFiles", store.recoveredFiles.count),
             systemImage: "book.closed",
             actionTitle: "记录这一刻"
         ) {

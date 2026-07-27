@@ -15,9 +15,9 @@ enum ScreenCaptureServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .permissionDenied: "需要开启“屏幕与系统音频录制”权限后才能截图。"
-        case .displayUnavailable: "找不到选区所在的显示器。"
-        case .invalidSelection: "截图区域太小，请重新选择。"
+        case .permissionDenied: AppLocalizer.string("需要开启“屏幕与系统音频录制”权限后才能截图。")
+        case .displayUnavailable: AppLocalizer.string("找不到选区所在的显示器。")
+        case .invalidSelection: AppLocalizer.string("截图区域太小，请重新选择。")
         }
     }
 }

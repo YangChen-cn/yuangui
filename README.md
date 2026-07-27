@@ -44,6 +44,8 @@ Your journal, chat history, music library, Bilibili tokens, and API credentials 
 
 Local Music never scans Desktop, Downloads, Documents, Music, your home folder, or any other location on launch. YuanGUI reads audio only after you choose files or folders in the system import panel, stores security-scoped bookmarks for continued access, and leaves the original files untouched. A matching `.lrc` beside an imported track takes priority over the existing lyrics cache and LRCLIB lookup.
 
+The menu bar music panel exposes source-specific empty-state actions and always provides a path to the full player. In the full player, import controls adapt to narrow sidebars without truncating their labels; built-in library names are localized while your playlist and track names remain unchanged.
+
 Cleanup House is intentionally conservative:
 
 - It never uses `sudo`, changes system settings, resets services, rebuilds Spotlight, scans the whole home folder, or analyzes the entire disk.

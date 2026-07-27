@@ -37,7 +37,7 @@ struct DashboardUpNextSection: View {
             }
             HStack {
                 if remainingCount > 0 {
-                    Text("还有 \(remainingCount) 首")
+                    Text(AppLocalizer.format("music.queue.remainingCount", remainingCount))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

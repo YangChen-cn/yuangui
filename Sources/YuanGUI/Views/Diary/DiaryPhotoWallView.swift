@@ -51,8 +51,8 @@ struct DiaryPhotoWallView: View {
     private var pageHeader: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("照片墙").font(.title2.weight(.semibold))
-                Text("\(photos.count) 张回忆")
+                Text(AppLocalizer.string("照片墙")).font(.title2.weight(.semibold))
+                Text(AppLocalizer.format("diary.photoWall.photoCount", photos.count))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -81,7 +81,7 @@ private struct DiaryPhotoWallCell: View {
                 photoContent
                 if isHovering {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(photo.entry.displayTitle.isEmpty ? "未命名日记" : photo.entry.displayTitle)
+                        Text(photo.entry.displayTitle.isEmpty ? AppLocalizer.string("未命名日记") : photo.entry.displayTitle)
                             .font(.caption.weight(.semibold))
                             .lineLimit(1)
                         Text(photo.entry.occurredAt.formatted(date: .abbreviated, time: .shortened))
@@ -106,7 +106,10 @@ private struct DiaryPhotoWallCell: View {
         }
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(photo.entry.occurredAt.formatted(date: .long, time: .omitted))，\(photo.entry.displayTitle)")
+        .accessibilityLabel(
+            "\(photo.entry.occurredAt.formatted(date: .long, time: .omitted)), " +
+            (photo.entry.displayTitle.isEmpty ? AppLocalizer.string("未命名日记") : photo.entry.displayTitle)
+        )
         .task(id: photo.id) {
             if let data = await store.thumbnailData(for: photo.attachment) {
                 image = NSImage(data: data)

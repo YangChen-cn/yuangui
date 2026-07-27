@@ -66,8 +66,8 @@ struct MusicTransportControls: View {
                     )
             }
             .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
-            .help(music.playback.isPlaying ? "暂停" : "播放")
-            .accessibilityLabel(music.playback.isPlaying ? "暂停" : "播放")
+            .help(AppLocalizer.string(music.playback.isPlaying ? "暂停" : "播放"))
+            .accessibilityLabel(AppLocalizer.string(music.playback.isPlaying ? "暂停" : "播放"))
             Button(action: music.next) { Image(systemName: "forward.fill") }
                 .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
                 .help("下一首")
@@ -193,9 +193,9 @@ private struct FullPlayerLyricsView: View {
             onActivationChange: setScrollFocus,
             onScroll: previewLyrics
         ))
-        .help(isScrollFocused
+        .help(AppLocalizer.string(isScrollFocused
             ? "歌词滚动已选中；点击播放器空白处退出，点击歌词可跳转"
-            : "点击选中歌词区域，再上下滚动预览；点击歌词可跳转")
+            : "点击选中歌词区域，再上下滚动预览；点击歌词可跳转"))
         .onHover { isInside in
             if !isInside, isScrollFocused { setScrollFocus(false) }
         }
@@ -264,13 +264,20 @@ private struct FullPlayerLyricsView: View {
         }
         .buttonStyle(.plain)
         .allowsHitTesting(isScrollFocused)
-        .help("跳转到 \(formatTime(line.time + music.currentLyricOffset))")
-        .accessibilityLabel("\(formatTime(line.time + music.currentLyricOffset))，\(line.text)")
+        .help(AppLocalizer.format(
+            "music.lyrics.jumpToTime",
+            formatTime(line.time + music.currentLyricOffset)
+        ))
+        .accessibilityLabel(AppLocalizer.format(
+            "music.lyrics.lineAccessibility",
+            formatTime(line.time + music.currentLyricOffset),
+            line.text
+        ))
         .accessibilityHint("跳转到这句歌词")
     }
 
     private func lyricStatus(_ text: String, systemImage: String) -> some View {
-        Label(text, systemImage: systemImage)
+        Label(AppLocalizer.string(text), systemImage: systemImage)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 264)
     }
@@ -391,7 +398,9 @@ struct MiniMusicPlayerView: View {
             HStack(spacing: 10) {
                 MusicArtworkView(track: music.playback.currentTrack, size: 52)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(music.playback.currentTrack?.title ?? "暂无播放内容").font(.headline).lineLimit(1)
+                    Text(music.playback.currentTrack?.title ?? AppLocalizer.string("暂无播放内容"))
+                        .font(.headline)
+                        .lineLimit(1)
                     Text(music.playback.currentTrack?.artist ?? music.playback.playbackSource.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     Label(music.playback.playbackSource.title, systemImage: music.playback.playbackSource.systemImage)
                         .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
@@ -405,15 +414,23 @@ struct MiniMusicPlayerView: View {
                 }
                 .yuanSystemGlassButton()
                 .controlSize(.small)
-                .help(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词")
-                .accessibilityLabel(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词")
+                .help(AppLocalizer.string(
+                    music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
+                ))
+                .accessibilityLabel(AppLocalizer.string(
+                    music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
+                ))
                 Button { music.setLyricsPanelLocked(!music.lyricsPresentation.isPanelLocked) } label: {
                     Image(systemName: music.lyricsPresentation.isPanelLocked ? "lock.fill" : "lock.open")
                 }
                 .yuanSystemGlassButton()
                 .controlSize(.small)
-                .help(music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词")
-                .accessibilityLabel(music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词")
+                .help(AppLocalizer.string(
+                    music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词"
+                ))
+                .accessibilityLabel(AppLocalizer.string(
+                    music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词"
+                ))
                 Spacer()
                 MusicTransportControls(music: music, compact: true, usesGlassButtons: true)
                 Spacer()
@@ -493,7 +510,12 @@ struct MusicPlayerView: View {
         if music.playback.source == .appleMusic {
             List {
                 Section("Apple Music") {
-                    Label(music.playback.appleMusicRunning ? "Music 正在运行" : "Music 尚未运行", systemImage: "music.note")
+                    Label(
+                        AppLocalizer.string(
+                            music.playback.appleMusicRunning ? "Music 正在运行" : "Music 尚未运行"
+                        ),
+                        systemImage: "music.note"
+                    )
                     Button("连接并控制 Music App") { music.connectAppleMusic() }
                     Button("打开 Music App") { music.openAppleMusic() }
                 }
@@ -537,7 +559,11 @@ struct MusicPlayerView: View {
                         else { isBilibiliFavoritesPresented = true }
                     } label: {
                         Label(
-                            music.bilibiliAccountStore.account == nil ? "登录后导入收藏夹" : "导入哔哩哔哩收藏夹",
+                            AppLocalizer.string(
+                                music.bilibiliAccountStore.account == nil
+                                    ? "登录后导入收藏夹"
+                                    : "导入哔哩哔哩收藏夹"
+                            ),
                             systemImage: "folder.badge.plus"
                         )
                     }
@@ -562,7 +588,8 @@ struct MusicPlayerView: View {
                                 savedPlaylist.name,
                                 systemImage: "music.note.house",
                                 id: "playlist:\(savedPlaylist.id.uuidString)",
-                                count: music.tracks(in: savedPlaylist).count(where: { $0.source == .bilibili })
+                                count: music.tracks(in: savedPlaylist).count(where: { $0.source == .bilibili }),
+                                localizesTitle: false
                             )
                                 .contextMenu {
                                     Button("删除歌单", role: .destructive) {
@@ -587,7 +614,9 @@ struct MusicPlayerView: View {
                         .tag(track.id)
                         .contextMenu {
                             Button("播放") { music.play(track) }
-                            Button(music.isFavorite(track) ? "取消收藏" : "收藏") { music.toggleFavorite(track) }
+                            Button(AppLocalizer.string(music.isFavorite(track) ? "取消收藏" : "收藏")) {
+                                music.toggleFavorite(track)
+                            }
                             if !music.libraryStore.savedPlaylists.isEmpty {
                                 Menu("加入歌单") {
                                     ForEach(music.libraryStore.savedPlaylists) { savedPlaylist in
@@ -605,7 +634,9 @@ struct MusicPlayerView: View {
                     }
                 }.listStyle(.sidebar)
                 HStack {
-                    Text("\(displayedTracks.count) 首").font(.caption).foregroundStyle(.secondary)
+                    Text(AppLocalizer.format("music.library.trackCount", displayedTracks.count))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Spacer()
                     if selectedCollectionID == "all", !displayedTracks.isEmpty {
                         Button("清空") { music.clearPlaylist() }.buttonStyle(.plain).foregroundStyle(.secondary)
@@ -617,12 +648,16 @@ struct MusicPlayerView: View {
 
     private var localSidebar: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button("music.local.import.files", systemImage: "plus", action: chooseLocalFiles)
-                Button("music.local.import.folder", systemImage: "folder.badge.plus", action: chooseLocalFolder)
-                if music.localImportStore.isImporting {
-                    ProgressView().controlSize(.small)
-                    Button("取消", action: music.cancelLocalImport)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    localImportFileButton
+                    localImportFolderButton
+                    localImportProgress
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    localImportFileButton
+                    localImportFolderButton
+                    localImportProgress
                 }
             }
             .padding(10)
@@ -658,7 +693,8 @@ struct MusicPlayerView: View {
                                 savedPlaylist.name,
                                 systemImage: "music.note.house",
                                 id: "playlist:\(savedPlaylist.id.uuidString)",
-                                count: music.tracks(in: savedPlaylist).count(where: { $0.source == .local })
+                                count: music.tracks(in: savedPlaylist).count(where: { $0.source == .local }),
+                                localizesTitle: false
                             )
                         }
                         Button { isCreatingPlaylist = true } label: { Label("新建歌单", systemImage: "plus") }
@@ -682,7 +718,9 @@ struct MusicPlayerView: View {
                             .tag(track.id)
                             .contextMenu {
                                 Button("播放") { music.play(track) }
-                                Button(music.isFavorite(track) ? "取消收藏" : "收藏") { music.toggleFavorite(track) }
+                                Button(AppLocalizer.string(music.isFavorite(track) ? "取消收藏" : "收藏")) {
+                                    music.toggleFavorite(track)
+                                }
                                 Menu("加入歌单") {
                                     ForEach(music.libraryStore.savedPlaylists) { savedPlaylist in
                                         Button(savedPlaylist.name) { music.add(track, to: savedPlaylist) }
@@ -720,7 +758,10 @@ struct MusicPlayerView: View {
                 MusicTransportControls(music: music)
                 if let track = music.playback.currentTrack, track.source != .appleMusic {
                     Button { music.toggleFavorite(track) } label: {
-                        Label(music.isFavorite(track) ? "已收藏" : "收藏", systemImage: music.isFavorite(track) ? "heart.fill" : "heart")
+                        Label(
+                            AppLocalizer.string(music.isFavorite(track) ? "已收藏" : "收藏"),
+                            systemImage: music.isFavorite(track) ? "heart.fill" : "heart"
+                        )
                     }
                     .buttonStyle(.bordered)
                     .tint(.pink)
@@ -796,7 +837,9 @@ struct MusicPlayerView: View {
         .controlSize(.regular)
         .fixedSize(horizontal: true, vertical: true)
         .offset(x: music.bilibiliAccountStore.account == nil ? 0 : 20)
-        .help(music.bilibiliAccountStore.account.map { "已登录：\($0.name)，点击管理账号" } ?? "扫码登录哔哩哔哩")
+        .help(music.bilibiliAccountStore.account.map {
+            AppLocalizer.format("music.bilibili.account.manage", $0.name)
+        } ?? AppLocalizer.string("扫码登录哔哩哔哩"))
     }
 
     private var emptyTitle: String {
@@ -809,7 +852,11 @@ struct MusicPlayerView: View {
 
     @ViewBuilder
     private var lyricsActionButtons: some View {
-        Button(music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词") { music.toggleLyricsVisible() }
+        Button(AppLocalizer.string(
+            music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
+        )) {
+            music.toggleLyricsVisible()
+        }
         Button("导入 LRC 文件") { chooseLRC() }
         Button("修改歌曲信息或匹配歌词") { prepareLyricsSearch() }
     }
@@ -890,14 +937,29 @@ struct MusicPlayerView: View {
     }
 
     private var collectionTitle: String {
-        if selectedCollectionID == "favorites" { return "收藏歌曲" }
-        return selectedSavedPlaylist?.name ?? "播放列表"
+        if selectedCollectionID == "favorites" { return AppLocalizer.string("收藏歌曲") }
+        return selectedSavedPlaylist?.name ?? AppLocalizer.string("播放列表")
     }
 
-    private func collectionButton(_ title: String, systemImage: String, id: String, count: Int) -> some View {
+    private func collectionButton(
+        _ title: String,
+        systemImage: String,
+        id: String,
+        count: Int,
+        localizesTitle: Bool = true
+    ) -> some View {
         Button { selectedCollectionID = id } label: {
             HStack {
-                Label(title, systemImage: systemImage).lineLimit(1)
+                Label {
+                    if localizesTitle {
+                        Text(AppLocalizer.string(title))
+                    } else {
+                        Text(verbatim: title)
+                    }
+                } icon: {
+                    Image(systemName: systemImage)
+                }
+                .lineLimit(1)
                 Spacer()
                 Text("\(count)").font(.caption).foregroundStyle(.secondary)
             }
@@ -905,6 +967,26 @@ struct MusicPlayerView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(selectedCollectionID == id ? Color.accentColor : Color.primary)
+    }
+
+    private var localImportFileButton: some View {
+        Button("music.local.import.files", systemImage: "plus", action: chooseLocalFiles)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var localImportFolderButton: some View {
+        Button("music.local.import.folder", systemImage: "folder.badge.plus", action: chooseLocalFolder)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    @ViewBuilder
+    private var localImportProgress: some View {
+        if music.localImportStore.isImporting {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Button("取消", action: music.cancelLocalImport)
+            }
+        }
     }
 
     private func createPlaylist() {
@@ -993,7 +1075,10 @@ struct BilibiliFavoriteImportSheet: View {
                 ContentUnavailableView(
                     "没有可导入的收藏夹",
                     systemImage: "folder",
-                    description: Text(music.bilibiliImportStore.favoriteMessage ?? "请确认账号已登录，并尝试刷新。")
+                    description: Text(
+                        music.bilibiliImportStore.favoriteMessage
+                            ?? AppLocalizer.string("请确认账号已登录，并尝试刷新。")
+                    )
                 )
                 .frame(maxHeight: .infinity)
             } else {
@@ -1015,7 +1100,10 @@ struct BilibiliFavoriteImportSheet: View {
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(folder.title).lineLimit(1)
                                             HStack(spacing: 6) {
-                                                Text("\(folder.mediaCount) 个视频")
+                                                Text(AppLocalizer.format(
+                                                    "music.bilibili.videoCount",
+                                                    folder.mediaCount
+                                                ))
                                                 if let owner = folder.ownerName, folder.kind == .collected {
                                                     Text("· \(owner)").lineLimit(1)
                                                 }
@@ -1040,15 +1128,19 @@ struct BilibiliFavoriteImportSheet: View {
                         value: Double(music.bilibiliImportStore.completedCount),
                         total: Double(max(music.bilibiliImportStore.totalCount, 1))
                     )
-                    Text("正在解析视频 \(music.bilibiliImportStore.completedCount)/\(music.bilibiliImportStore.totalCount)…")
+                    Text(AppLocalizer.format(
+                        "music.bilibili.importProgress",
+                        music.bilibiliImportStore.completedCount,
+                        music.bilibiliImportStore.totalCount
+                    ))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             } else if let message = music.bilibiliImportStore.favoriteMessage,
                       !music.bilibiliImportStore.favoriteFolders.isEmpty {
-                Text(AppLocalizer.string(message))
+                Text(message)
                     .font(.caption)
-                    .foregroundStyle(message.hasPrefix("已从") ? Color.green : Color.orange)
+                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -1152,7 +1244,9 @@ struct BilibiliLoginSheet: View {
                     Button("取消") { isPresented = false }
                         .keyboardShortcut(.cancelAction)
                     Spacer()
-                    Button(music.bilibiliAccountStore.qrCodeURL == nil ? "生成二维码" : "刷新二维码") {
+                    Button(AppLocalizer.string(
+                        music.bilibiliAccountStore.qrCodeURL == nil ? "生成二维码" : "刷新二维码"
+                    )) {
                         music.startBilibiliLogin()
                     }
                     .disabled(music.bilibiliAccountStore.loginPhase == .requestingQRCode)
@@ -1273,9 +1367,9 @@ private struct LyricsSearchSheet: View {
             }
             .formStyle(.grouped)
             if let message = music.lyricsStore.searchMessage {
-                Text(AppLocalizer.string(message))
+                Text(message)
                     .font(.caption)
-                    .foregroundStyle(message.hasPrefix("已") ? .green : .orange)
+                    .foregroundStyle(.secondary)
             }
             HStack {
                 Spacer()

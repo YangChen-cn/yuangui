@@ -384,6 +384,7 @@ final class MusicFeature {
             if activePlaybackSource != nil { _ = activatePlaybackSource(.appleMusic) }
             if currentTrack?.source != .appleMusic { clearTransientPlaybackState() }
         }
+        rebuildBilibiliPlaybackQueue()
     }
 
     @discardableResult
@@ -662,8 +663,8 @@ final class MusicFeature {
                 persistLibrary()
                 let importedTrackID = (added.first ?? tracks.first)?.id
                 let message = added.isEmpty
-                    ? "歌曲已在资料库中"
-                    : "已加入 \(added.count) 首歌曲"
+                    ? AppLocalizer.string("歌曲已在资料库中")
+                    : AppLocalizer.format("music.import.addedCount", added.count)
                 showBilibiliImportResult(message, trackID: importedTrackID)
             } catch { errorMessage = error.localizedDescription }
             isImporting = false
@@ -700,7 +701,7 @@ final class MusicFeature {
 
     func loadBilibiliFavoriteFolders() {
         guard let account = bilibiliAccount else {
-            bilibiliFavoriteMessage = "请先登录哔哩哔哩账号"
+            bilibiliFavoriteMessage = AppLocalizer.string("请先登录哔哩哔哩账号")
             return
         }
         bilibiliFavoriteTask?.cancel()
@@ -712,7 +713,9 @@ final class MusicFeature {
                 let folders = try await bilibiliFavoritesService.folders(for: account.mid)
                 guard !Task.isCancelled else { return }
                 bilibiliFavoriteFolders = folders
-                if folders.isEmpty { bilibiliFavoriteMessage = "这个账号没有可导入的视频收藏夹" }
+                if folders.isEmpty {
+                    bilibiliFavoriteMessage = AppLocalizer.string("这个账号没有可导入的视频收藏夹")
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -736,7 +739,10 @@ final class MusicFeature {
             do {
                 let bvids = try await bilibiliFavoritesService.videoBVIDs(in: folder)
                 guard !bvids.isEmpty else {
-                    bilibiliFavoriteMessage = "“\(folder.title)”没有可导入的公开视频"
+                    bilibiliFavoriteMessage = AppLocalizer.format(
+                        "music.bilibili.favorite.emptyFolder",
+                        folder.title
+                    )
                     isImportingBilibiliFavoriteFolder = false
                     bilibiliFavoriteTask = nil
                     return
@@ -777,10 +783,13 @@ final class MusicFeature {
                 setSource(.bilibili)
                 persistLibrary()
                 let duplicateCount = tracks.count - added.count
-                var details = "已从“\(folder.title)”导入 \(added.count) 首"
-                if duplicateCount > 0 { details += "，跳过 \(duplicateCount) 首重复歌曲" }
-                if failedCount > 0 { details += "，\(failedCount) 个视频解析失败" }
-                bilibiliFavoriteMessage = details
+                bilibiliFavoriteMessage = AppLocalizer.format(
+                    "music.bilibili.favorite.importResult",
+                    folder.title,
+                    added.count,
+                    duplicateCount,
+                    failedCount
+                )
             } catch is CancellationError {
                 return
             } catch {
@@ -849,7 +858,7 @@ final class MusicFeature {
                         return
                     case .succeeded:
                         guard let account = try await bilibiliAccountService.currentAccount() else {
-                            throw BilibiliAccountError.api("登录凭据未生效")
+                            throw BilibiliAccountError.api(AppLocalizer.string("登录凭据未生效"))
                         }
                         bilibiliAccount = account
                         bilibiliLoginPhase = .loggedIn
@@ -1203,7 +1212,7 @@ final class MusicFeature {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let artist = rawArtist.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else {
-            lyricsSearchMessage = "请填写歌曲名"
+            lyricsSearchMessage = AppLocalizer.string("请填写歌曲名")
             return
         }
         isSearchingLyrics = true
@@ -1231,9 +1240,13 @@ final class MusicFeature {
                 updateMetadata(for: track.id, title: title, artist: artist)
                 updateLyric()
                 persistLibrary()
-                lyricsSearchMessage = "已匹配歌词，并更新为“\(title) — \(artist.isEmpty ? "未知歌手" : artist)”"
+                lyricsSearchMessage = AppLocalizer.format(
+                    "music.lyrics.matchResult",
+                    title,
+                    artist.isEmpty ? AppLocalizer.string("未知歌手") : artist
+                )
             } else {
-                lyricsSearchMessage = "没有找到可信度足够的同步歌词，已保留原有歌词"
+                lyricsSearchMessage = AppLocalizer.string("没有找到可信度足够的同步歌词，已保留原有歌词")
             }
             isSearchingLyrics = false
             lyricsSearchTask = nil
@@ -1248,16 +1261,18 @@ final class MusicFeature {
         let title = enteredTitle.isEmpty ? track.title : enteredTitle
         let artist = enteredArtist.isEmpty ? track.artist : enteredArtist
         guard !title.isEmpty, !artist.isEmpty else {
-            lyricsSearchMessage = "歌曲名和歌手不能同时留空"
+            lyricsSearchMessage = AppLocalizer.string("歌曲名和歌手不能同时留空")
             return false
         }
         updateMetadata(for: track.id, title: title, artist: artist)
-        lyricsSearchMessage = "已保存歌曲信息：“\(title) — \(artist)”；原有歌词保持不变"
+        lyricsSearchMessage = AppLocalizer.format("music.lyrics.metadataSaved", title, artist)
         return true
     }
 
     private func updateMetadata(for trackID: String, title: String, artist: String) {
-        let resolvedArtist = artist.isEmpty ? (currentTrack?.artist ?? "未知歌手") : artist
+        let resolvedArtist = artist.isEmpty
+            ? (currentTrack?.artist ?? AppLocalizer.string("未知歌手"))
+            : artist
         if let index = playlist.firstIndex(where: { $0.id == trackID }) {
             playlist[index].title = title
             playlist[index].artist = resolvedArtist
@@ -1296,7 +1311,7 @@ final class MusicFeature {
     func importLRC(from url: URL) {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
-            errorMessage = "无法读取这个 LRC 文件"; return
+            errorMessage = AppLocalizer.string("无法读取这个 LRC 文件"); return
         }
         cancelLyricLoad()
         let document = LyricsParser.parseLRC(text)
@@ -1522,8 +1537,12 @@ final class MusicFeature {
             setPlaybackState(.loading)
             loadBilibiliTrack(track, position: position)
         } else {
-            setPlaybackState(.failed("播放地址已失效，刷新后仍无法播放"))
-            errorMessage = "播放地址已失效，刷新后仍无法播放：\(error.localizedDescription)"
+            let failure = AppLocalizer.string("播放地址已失效，刷新后仍无法播放")
+            setPlaybackState(.failed(failure))
+            errorMessage = AppLocalizer.format(
+                "music.bilibili.playbackExpiredDetail",
+                error.localizedDescription
+            )
         }
     }
 

@@ -36,7 +36,7 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "手帐本"
+        window.title = AppLocalizer.string("手帐本")
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 700, height: 450)
         window.setFrameAutosaveName("YuanGUI.DiaryWindow")
@@ -66,7 +66,7 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "快速记录"
+        window.title = AppLocalizer.string("快速记录")
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 460, height: 470)
         window.maxSize = NSSize(width: 620, height: 760)
@@ -127,10 +127,10 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
     private func handleSaveFailure(window: NSWindow) async {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "日记尚未保存"
-        alert.informativeText = "保存失败。可以重试，或仍然关闭窗口并保留当前进程中的编辑内容。"
-        alert.addButton(withTitle: "重试保存")
-        alert.addButton(withTitle: "仍然关闭")
+        alert.messageText = AppLocalizer.string("日记尚未保存")
+        alert.informativeText = AppLocalizer.string("保存失败。可以重试，或仍然关闭窗口并保留当前进程中的编辑内容。")
+        alert.addButton(withTitle: AppLocalizer.string("重试保存"))
+        alert.addButton(withTitle: AppLocalizer.string("仍然关闭"))
         if alert.runModal() == .alertFirstButtonReturn {
             let saved = await store.flush()
             if saved { finishClosing(window) }

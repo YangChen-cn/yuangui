@@ -10,11 +10,11 @@ struct DiaryEntryRow: View {
             Text(entry.mood?.emoji ?? "📝")
                 .font(.title3)
                 .frame(width: 26)
-                .accessibilityLabel(entry.mood?.title ?? "未记录心情")
+                .accessibilityLabel(entry.mood?.title ?? AppLocalizer.string("未记录心情"))
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(entry.displayTitle.isEmpty ? "未命名日记" : entry.displayTitle)
+                    Text(entry.displayTitle.isEmpty ? AppLocalizer.string("未命名日记") : entry.displayTitle)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -22,7 +22,7 @@ struct DiaryEntryRow: View {
                         Image(systemName: "star.fill")
                             .font(.caption2)
                             .foregroundStyle(.yellow)
-                            .accessibilityLabel("已收藏")
+                            .accessibilityLabel(AppLocalizer.string("已收藏"))
                     }
                 }
 

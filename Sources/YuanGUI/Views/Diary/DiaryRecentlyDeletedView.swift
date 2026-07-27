@@ -17,7 +17,7 @@ struct DiaryRecentlyDeletedView: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("最近删除")
+                        Text(AppLocalizer.string("最近删除"))
                         .font(.title2.weight(.semibold))
                     Spacer()
                     if isSelectionMode {
@@ -30,36 +30,36 @@ struct DiaryRecentlyDeletedView: View {
                         }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
-                        .help(allItemsSelected ? "取消选择所有最近删除" : "选择所有最近删除")
-                        .accessibilityLabel(allItemsSelected ? "反全选" : "全选")
+                        .help(AppLocalizer.string(allItemsSelected ? "取消选择所有最近删除" : "选择所有最近删除"))
+                        .accessibilityLabel(AppLocalizer.string(allItemsSelected ? "反全选" : "全选"))
                         if !selectedItemIDs.isEmpty {
-                            Text("已选 \(selectedItemIDs.count)")
+                            Text(AppLocalizer.format("diary.list.selectedCount", selectedItemIDs.count))
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
-                            Button("恢复", systemImage: "arrow.uturn.backward") {
+                            Button(AppLocalizer.string("恢复"), systemImage: "arrow.uturn.backward") {
                                 restore(selectedItemIDs)
                             }
                             .buttonStyle(.borderless)
                             .controlSize(.small)
-                            Button("删除", systemImage: "trash", role: .destructive) {
+                            Button(AppLocalizer.string("删除"), systemImage: "trash", role: .destructive) {
                                 pendingPermanentDeleteIDs = selectedItemIDs
                                 showPermanentDeleteConfirmation = true
                             }
                             .buttonStyle(.borderless)
                             .controlSize(.small)
                         }
-                        Button("完成") {
+                        Button(AppLocalizer.string("完成")) {
                             isSelectionMode = false
                         }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
                     } else {
-                        Button("选择", systemImage: "checklist") {
+                        Button(AppLocalizer.string("选择"), systemImage: "checklist") {
                             isSelectionMode = true
                         }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
-                        .help("选择多篇最近删除")
+                        .help(AppLocalizer.string("选择多篇最近删除"))
                     }
                 }
                 .padding(.horizontal, 20)
@@ -75,13 +75,16 @@ struct DiaryRecentlyDeletedView: View {
                 pendingPermanentDeleteIDs.removeAll()
             }
             .confirmationDialog(
-                "彻底删除 \(pendingPermanentDeleteIDs.count) 篇日记后无法恢复",
+                AppLocalizer.format(
+                    "diary.recentlyDeleted.permanentDeleteConfirmation",
+                    pendingPermanentDeleteIDs.count
+                ),
                 isPresented: $showPermanentDeleteConfirmation
             ) {
-                Button("彻底删除", role: .destructive) {
+                Button(AppLocalizer.string("彻底删除"), role: .destructive) {
                     permanentlyDeleteSelected()
                 }
-                Button("取消", role: .cancel) {}
+                Button(AppLocalizer.string("取消"), role: .cancel) {}
             }
         }
     }
@@ -107,9 +110,9 @@ struct DiaryRecentlyDeletedView: View {
         HStack(spacing: 12) {
             deletedItemSummary(item)
             Spacer()
-            Button("恢复") { Task { await store.restoreDeleted(id: item.id) } }
+            Button(AppLocalizer.string("恢复")) { Task { await store.restoreDeleted(id: item.id) } }
             Menu {
-                Button("彻底删除…", systemImage: "trash", role: .destructive) {
+                Button(AppLocalizer.string("彻底删除…"), systemImage: "trash", role: .destructive) {
                     pendingPermanentDeleteIDs = [item.id]
                     showPermanentDeleteConfirmation = true
                 }
@@ -118,7 +121,7 @@ struct DiaryRecentlyDeletedView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("更多操作")
+            .help(AppLocalizer.string("更多操作"))
         }
         .padding(.vertical, 6)
     }
@@ -137,8 +140,8 @@ struct DiaryRecentlyDeletedView: View {
         .listRowBackground(isSelected ? Color.diarySelection : Color.clear)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { toggleItemSelection(item.id) }
-        .accessibilityLabel(item.entry.displayTitle.isEmpty ? "未命名日记" : item.entry.displayTitle)
-        .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .accessibilityLabel(item.entry.displayTitle.isEmpty ? AppLocalizer.string("未命名日记") : item.entry.displayTitle)
+        .accessibilityValue(AppLocalizer.string(isSelected ? "已选择" : "未选择"))
     }
 
     private func deletedItemSummary(_ item: DiaryDeletedItem) -> some View {
@@ -146,10 +149,13 @@ struct DiaryRecentlyDeletedView: View {
             Text(item.entry.mood?.emoji ?? "📝")
                 .font(.title3)
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.entry.displayTitle.isEmpty ? "未命名日记" : item.entry.displayTitle)
+                Text(item.entry.displayTitle.isEmpty ? AppLocalizer.string("未命名日记") : item.entry.displayTitle)
                     .font(.headline)
                     .lineLimit(1)
-                Text("删除于 \(item.deletedAt.formatted(date: .abbreviated, time: .shortened))")
+                Text(AppLocalizer.format(
+                    "diary.recentlyDeleted.deletedAt",
+                    item.deletedAt.formatted(date: .abbreviated, time: .shortened)
+                ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

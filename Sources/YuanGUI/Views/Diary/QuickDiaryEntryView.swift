@@ -98,8 +98,8 @@ struct QuickDiaryEntryView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .disabled(isSaving)
-                .help("取消")
-                .accessibilityLabel("取消快速记录")
+                .help(AppLocalizer.string("取消"))
+                .accessibilityLabel(AppLocalizer.string("取消快速记录"))
         }
     }
 
@@ -114,13 +114,13 @@ struct QuickDiaryEntryView: View {
             .background(Color.diarySecondarySurface, in: RoundedRectangle(cornerRadius: DiaryDesign.cardCornerRadius))
             .overlay(alignment: .topLeading) {
                 if bodyText.isEmpty {
-                    Text("今天发生了什么…")
+                    Text(AppLocalizer.string("今天发生了什么…"))
                         .foregroundStyle(.tertiary)
                         .padding(14)
                         .allowsHitTesting(false)
                 }
             }
-            .accessibilityLabel("快速记录正文")
+            .accessibilityLabel(AppLocalizer.string("快速记录正文"))
     }
 
     private var tagsEditor: some View {
@@ -130,7 +130,7 @@ struct QuickDiaryEntryView: View {
                 ForEach(tags, id: \.self) { tag in
                     DiaryTagChip(tag: tag) { tags.removeAll { $0 == tag } }
                 }
-                TextField("添加标签", text: $tagText)
+                TextField(AppLocalizer.string("添加标签"), text: $tagText)
                     .textFieldStyle(.plain)
                     .frame(width: 90)
                     .onSubmit(addTag)
@@ -140,14 +140,14 @@ struct QuickDiaryEntryView: View {
 
     private var photoActions: some View {
         HStack(spacing: 12) {
-            Button("选择照片", systemImage: "photo.badge.plus") {
+            Button(AppLocalizer.string("选择照片"), systemImage: "photo.badge.plus") {
                 imageURLs.append(contentsOf: DiaryPanelService.chooseImages())
             }
             Button { pasteImage() } label: { Image(systemName: "doc.on.clipboard") }
-                .help("从剪贴板添加照片")
-                .accessibilityLabel("从剪贴板添加照片")
+                .help(AppLocalizer.string("从剪贴板添加照片"))
+                .accessibilityLabel(AppLocalizer.string("从剪贴板添加照片"))
             if pendingPhotoCount > 0 {
-                Label("\(pendingPhotoCount) 张待导入", systemImage: "photo.stack")
+                Label(AppLocalizer.format("diary.quickEntry.pendingPhotos", pendingPhotoCount), systemImage: "photo.stack")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -158,10 +158,10 @@ struct QuickDiaryEntryView: View {
 
     private var saveBar: some View {
         HStack {
-            Button("完整编辑", systemImage: "rectangle.split.3x1") { continueInFullDiary() }
+            Button(AppLocalizer.string("完整编辑"), systemImage: "rectangle.split.3x1") { continueInFullDiary() }
                 .disabled(isSaving)
             Spacer()
-            Button(isSaving ? "保存中…" : "保存这一刻", systemImage: "checkmark") { save() }
+            Button(AppLocalizer.string(isSaving ? "保存中…" : "保存这一刻"), systemImage: "checkmark") { save() }
                 .buttonStyle(.borderedProminent)
                 .disabled(isSaving || bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
@@ -179,7 +179,10 @@ struct QuickDiaryEntryView: View {
 
     private func pasteImage() {
         guard let image = DiaryPanelService.clipboardImage() else {
-            failures = [DiaryImageImportFailure(name: "剪贴板", message: "没有可用图片")]
+            failures = [DiaryImageImportFailure(
+                name: AppLocalizer.string("剪贴板"),
+                message: AppLocalizer.string("没有可用图片")
+            )]
             return
         }
         clipboardImages.append(image)
@@ -199,7 +202,10 @@ struct QuickDiaryEntryView: View {
                 onSaved()
                 dismiss()
             } else {
-                failures.insert(DiaryImageImportFailure(name: "日记", message: "保存失败，请重试"), at: 0)
+                failures.insert(DiaryImageImportFailure(
+                    name: AppLocalizer.string("日记"),
+                    message: AppLocalizer.string("保存失败，请重试")
+                ), at: 0)
                 isSaving = false
             }
         }

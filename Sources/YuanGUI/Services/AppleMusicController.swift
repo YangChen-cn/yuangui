@@ -29,8 +29,11 @@ enum AppleMusicControlError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notRunning: return "Music App 尚未运行"
-        case .automationDenied: return "没有控制 Music App 的权限，请在系统设置的“隐私与安全性 → 自动化”中允许 YuanGUI。"
+        case .notRunning: return AppLocalizer.string("Music App 尚未运行")
+        case .automationDenied:
+            return AppLocalizer.string(
+                "没有控制 Music App 的权限，请在系统设置的“隐私与安全性 → 自动化”中允许 YuanGUI。"
+            )
         case .script(let message): return message
         }
     }

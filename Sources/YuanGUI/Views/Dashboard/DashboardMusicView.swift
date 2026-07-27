@@ -53,8 +53,8 @@ struct DashboardMusicView: View {
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(music.isFavorite(track) ? Color.pink : Color.secondary)
-                        .help(music.isFavorite(track) ? "取消收藏当前歌曲" : "收藏当前歌曲")
-                        .accessibilityLabel(music.isFavorite(track) ? "取消收藏" : "收藏")
+                        .help(AppLocalizer.string(music.isFavorite(track) ? "取消收藏当前歌曲" : "收藏当前歌曲"))
+                        .accessibilityLabel(AppLocalizer.string(music.isFavorite(track) ? "取消收藏" : "收藏"))
                     }
                 }
                 MusicProgressView(music: music)
@@ -66,7 +66,12 @@ struct DashboardMusicView: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("正在播放 \(track.title)，\(track.artist)，来源 \(track.source.title)")
+        .accessibilityLabel(AppLocalizer.format(
+            "music.accessibility.nowPlaying",
+            track.title,
+            track.artist,
+            track.source.title
+        ))
     }
 
     @ViewBuilder
@@ -141,13 +146,12 @@ struct DashboardMusicView: View {
                 systemImage: "music.note",
                 description: emptyDescription
             )
-            Button(emptyActionTitle) {
-                if music.playback.source == .appleMusic {
-                    music.connectAppleMusic()
-                } else if music.playback.source == .local {
-                    importLocalMusic()
-                } else {
-                    openFullPlayer()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    emptyStateActions
+                }
+                VStack(spacing: 8) {
+                    emptyStateActions
                 }
             }
             .controlSize(.small)
@@ -166,11 +170,29 @@ struct DashboardMusicView: View {
         }
     }
 
-    private var emptyActionTitle: String {
-        switch music.playback.source {
-        case .appleMusic: AppLocalizer.string("连接 Apple Music")
-        case .local: AppLocalizer.string("music.local.import.action")
-        case .bilibili: AppLocalizer.string("打开完整播放器")
+    @ViewBuilder
+    private var emptyStateActions: some View {
+        ForEach(DashboardMusicEmptyAction.actions(for: music.playback.source)) { action in
+            if let systemImage = action.systemImage {
+                Button(action.title, systemImage: systemImage) {
+                    performEmptyAction(action)
+                }
+            } else {
+                Button(action.title) {
+                    performEmptyAction(action)
+                }
+            }
+        }
+    }
+
+    private func performEmptyAction(_ action: DashboardMusicEmptyAction) {
+        switch action {
+        case .connectAppleMusic:
+            music.connectAppleMusic()
+        case .importLocalMusic:
+            importLocalMusic()
+        case .openFullPlayer:
+            openFullPlayer()
         }
     }
 

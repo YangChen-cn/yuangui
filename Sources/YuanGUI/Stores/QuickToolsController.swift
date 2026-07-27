@@ -73,7 +73,11 @@ final class QuickToolsController: ObservableObject {
         do {
             try hotKeyManager.update(binding, for: action, otherBindings: otherBindings)
             settings.saveHotKey(binding, for: action)
-            message = "已设置\(action.title)快捷键：\(binding.displayText)"
+            message = AppLocalizer.format(
+                "quickTools.hotKeySaved",
+                action.title,
+                binding.displayText
+            )
         } catch {
             message = error.localizedDescription
         }
@@ -96,7 +100,11 @@ final class QuickToolsController: ObservableObject {
         screenshotTranslationOverlay?.close()
         if ScreenCapturePermission.state != .granted, !ScreenCapturePermission.request() {
             message = ScreenCaptureServiceError.permissionDenied.localizedDescription
-            showError(title: "无法开始截图", message: message ?? "请开启屏幕录制权限。", openSettings: ScreenCapturePermission.openSettings)
+            showError(
+                title: AppLocalizer.string("无法开始截图"),
+                message: message ?? AppLocalizer.string("请开启屏幕录制权限。"),
+                openSettings: ScreenCapturePermission.openSettings
+            )
             return
         }
 
@@ -111,7 +119,7 @@ final class QuickToolsController: ObservableObject {
             case let .failure(error):
                 isCapturing = false
                 selectionController.cancel()
-                if !(error is CancellationError) { present(error, title: "截图失败") }
+                if !(error is CancellationError) { present(error, title: AppLocalizer.string("截图失败")) }
             }
         }
     }
@@ -124,19 +132,19 @@ final class QuickToolsController: ObservableObject {
                 showTranslationEditor(snapshot: snapshot)
                 message = nil
             } catch let error as AccessibilityTextError {
-                showTranslationEditor(snapshot: manualSnapshot(text: "", source: "手动输入"))
+                showTranslationEditor(snapshot: manualSnapshot(text: "", source: AppLocalizer.string("手动输入")))
                 if case .permissionDenied = error {
                     message = error.localizedDescription
                     showError(
-                        title: "需要辅助功能权限",
-                        message: "请在系统设置中允许 YuanGUI 控制这台 Mac。若已允许但仍无法取词，请先移除旧的 YuanGUI 项，再重新添加当前应用。",
+                        title: AppLocalizer.string("需要辅助功能权限"),
+                        message: AppLocalizer.string("quickTools.accessibilitySettingsHelp"),
                         openSettings: AccessibilityPermission.openSettings
                     )
                 } else {
-                    message = "未取得选中文字，已打开手动输入翻译。"
+                    message = AppLocalizer.string("未取得选中文字，已打开手动输入翻译。")
                 }
             } catch {
-                present(error, title: "无法翻译所选文字")
+                present(error, title: AppLocalizer.string("无法翻译所选文字"))
             }
         }
     }
@@ -178,7 +186,7 @@ final class QuickToolsController: ObservableObject {
                     let controller = ScreenshotTranslationOverlayWindowController(
                         selection: selection,
                         image: captured.image,
-                        snapshot: manualSnapshot(text: "", source: "截图 OCR 覆盖"),
+                        snapshot: manualSnapshot(text: "", source: AppLocalizer.string("截图 OCR 覆盖")),
                         nonChineseTarget: settings.nonChineseTarget,
                         chineseTarget: settings.chineseTarget,
                         engine: settings.translationEngine,
@@ -189,17 +197,17 @@ final class QuickToolsController: ObservableObject {
                     controller.show()
                     presenter = controller
                 } else {
-                    presenter = showTranslationEditor(snapshot: manualSnapshot(text: "", source: "截图 OCR"))
+                    presenter = showTranslationEditor(snapshot: manualSnapshot(text: "", source: AppLocalizer.string("截图 OCR")))
                 }
-                presenter.setMessage("正在识别截图文字…")
+                presenter.setMessage(AppLocalizer.string("正在识别截图文字…"))
                 do {
                     let recognition = try await ocrService.recognizeLayout(in: captured.image)
                     let text = recognition.text
                     presenter.updateRecognition(recognition)
                     let status = text.isEmpty
                         ? (settings.screenshotTranslationOverlayEnabled
-                            ? "未识别到文字，请关闭后重新框选。"
-                            : "未识别到文字，可以手动输入。")
+                            ? AppLocalizer.string("未识别到文字，请关闭后重新框选。")
+                            : AppLocalizer.string("未识别到文字，可以手动输入。"))
                         : nil
                     presenter.setMessage(status)
                     message = status
@@ -217,7 +225,7 @@ final class QuickToolsController: ObservableObject {
             } else {
                 openSettings = nil
             }
-            present(error, title: "截图失败", openSettings: openSettings)
+            present(error, title: AppLocalizer.string("截图失败"), openSettings: openSettings)
         }
     }
 
@@ -267,8 +275,8 @@ final class QuickToolsController: ObservableObject {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "知道了")
-        if openSettings != nil { alert.addButton(withTitle: "打开系统设置") }
+        alert.addButton(withTitle: AppLocalizer.string("知道了"))
+        if openSettings != nil { alert.addButton(withTitle: AppLocalizer.string("打开系统设置")) }
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertSecondButtonReturn { openSettings?() }
     }

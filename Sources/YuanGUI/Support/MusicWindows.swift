@@ -106,7 +106,11 @@ private struct DesktopLyricsView: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 2) {
-                Text(music.lyricsStore.currentLine?.text ?? music.playback.currentTrack?.title ?? "YuanGUI 桌面歌词")
+                Text(
+                    music.lyricsStore.currentLine?.text
+                        ?? music.playback.currentTrack?.title
+                        ?? AppLocalizer.string("YuanGUI 桌面歌词")
+                )
                     .font(music.lyricsPresentation.fontStyle.font(
                         size: music.lyricsPresentation.fontSize,
                         weight: .bold
@@ -289,7 +293,7 @@ private struct DesktopLyricsSettingsView: View {
             if let message = music.lyricsStore.searchMessage {
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(message.hasPrefix("已") ? Color.green : Color.orange)
+                    .foregroundStyle(.secondary)
             }
             Divider()
             HStack {

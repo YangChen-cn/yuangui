@@ -28,9 +28,12 @@ enum BilibiliFavoritesError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unavailable: return "无法连接哔哩哔哩收藏夹服务"
-        case .notLoggedIn: return "登录状态已失效，请重新登录哔哩哔哩"
-        case .api(let message): return "读取哔哩哔哩收藏夹失败：\(message)"
+        case .unavailable:
+            return AppLocalizer.string("无法连接哔哩哔哩收藏夹服务")
+        case .notLoggedIn:
+            return AppLocalizer.string("登录状态已失效，请重新登录哔哩哔哩")
+        case .api(let message):
+            return AppLocalizer.format("music.bilibili.favorite.apiError", message)
         }
     }
 }

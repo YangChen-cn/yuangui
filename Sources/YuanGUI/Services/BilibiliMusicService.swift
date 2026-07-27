@@ -11,11 +11,16 @@ enum BilibiliMusicError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidInput: return "请输入有效的 BV 号、Bilibili 视频链接或 b23.tv 短链接"
-        case .unsupportedRedirect: return "短链接跳转到了不受支持的网站"
-        case .api(let message): return "Bilibili 返回错误：\(message)"
-        case .noAudio: return "这个视频没有可公开播放的兼容音频"
-        case .unreachable: return "Bilibili 返回了音频地址，但当前所有 CDN 线路都无法连接"
+        case .invalidInput:
+            return AppLocalizer.string("请输入有效的 BV 号、Bilibili 视频链接或 b23.tv 短链接")
+        case .unsupportedRedirect:
+            return AppLocalizer.string("短链接跳转到了不受支持的网站")
+        case .api(let message):
+            return AppLocalizer.format("music.bilibili.apiError", message)
+        case .noAudio:
+            return AppLocalizer.string("这个视频没有可公开播放的兼容音频")
+        case .unreachable:
+            return AppLocalizer.string("Bilibili 返回了音频地址，但当前所有 CDN 线路都无法连接")
         }
     }
 }

@@ -73,9 +73,9 @@ struct DiaryDetailEditView: View {
         .onExitCommand {
             if isFocusMode { onFocusModeChange(false) }
         }
-        .confirmationDialog("将这篇日记移到最近删除？", isPresented: $showDeleteConfirmation) {
-            Button("移到最近删除", role: .destructive) { deleteEntry() }
-            Button("取消", role: .cancel) {}
+        .confirmationDialog(AppLocalizer.string("将这篇日记移到最近删除？"), isPresented: $showDeleteConfirmation) {
+            Button(AppLocalizer.string("移到最近删除"), role: .destructive) { deleteEntry() }
+            Button(AppLocalizer.string("取消"), role: .cancel) {}
         }
         .sheet(item: $selectedAttachment) { attachment in
             DiaryAttachmentViewer(store: store, entry: entry, attachment: attachment) {
@@ -101,7 +101,7 @@ struct DiaryDetailEditView: View {
 
             MoodPickerView(selectedMood: $draft.mood)
                 .frame(minWidth: 120, maxWidth: 310)
-                .accessibilityLabel("心情")
+                .accessibilityLabel(AppLocalizer.string("心情"))
 
             Spacer(minLength: 0)
 
@@ -109,28 +109,28 @@ struct DiaryDetailEditView: View {
                 Button { changeEditorMode() } label: {
                     Image(systemName: editorMode == .edit ? "eye" : "pencil")
                 }
-                .help(editorMode == .edit ? "预览" : "编辑")
-                .accessibilityLabel(editorMode == .edit ? "预览日记" : "编辑日记")
+                .help(AppLocalizer.string(editorMode == .edit ? "预览" : "编辑"))
+                .accessibilityLabel(AppLocalizer.string(editorMode == .edit ? "预览日记" : "编辑日记"))
 
                 Button { onFocusModeChange(!isFocusMode) } label: {
                     Image(systemName: isFocusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                 }
-                .help(isFocusMode ? "退出专注模式" : "进入专注模式")
-                .accessibilityLabel(isFocusMode ? "退出专注模式" : "进入专注模式")
+                .help(AppLocalizer.string(isFocusMode ? "退出专注模式" : "进入专注模式"))
+                .accessibilityLabel(AppLocalizer.string(isFocusMode ? "退出专注模式" : "进入专注模式"))
 
                 Button { store.toggleFavorite(id: entry.id) } label: {
                     Image(systemName: entry.isFavorite ? "star.fill" : "star")
                         .foregroundStyle(entry.isFavorite ? .yellow : .secondary)
                 }
-                .help(entry.isFavorite ? "取消收藏" : "收藏")
-                .accessibilityLabel(entry.isFavorite ? "取消收藏" : "收藏")
+                .help(AppLocalizer.string(entry.isFavorite ? "取消收藏" : "收藏"))
+                .accessibilityLabel(AppLocalizer.string(entry.isFavorite ? "取消收藏" : "收藏"))
 
                 Menu {
-                    Button("添加照片…", systemImage: "photo.badge.plus", action: chooseImages)
-                    Button("从剪贴板添加", systemImage: "doc.on.clipboard", action: pasteImage)
+                    Button(AppLocalizer.string("添加照片…"), systemImage: "photo.badge.plus", action: chooseImages)
+                    Button(AppLocalizer.string("从剪贴板添加"), systemImage: "doc.on.clipboard", action: pasteImage)
                         .keyboardShortcut("v", modifiers: [.command, .shift])
                     Divider()
-                    Button("移到最近删除…", systemImage: "trash", role: .destructive) {
+                    Button(AppLocalizer.string("移到最近删除…"), systemImage: "trash", role: .destructive) {
                         showDeleteConfirmation = true
                     }
                 } label: {
@@ -138,8 +138,8 @@ struct DiaryDetailEditView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .help("更多操作")
-                .accessibilityLabel("更多操作")
+                .help(AppLocalizer.string("更多操作"))
+                .accessibilityLabel(AppLocalizer.string("更多操作"))
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
@@ -148,10 +148,10 @@ struct DiaryDetailEditView: View {
     }
 
     private var titleEditor: some View {
-        TextField("为这一刻写个标题（可选）", text: $draft.title)
+        TextField(AppLocalizer.string("为这一刻写个标题（可选）"), text: $draft.title)
             .textFieldStyle(.plain)
             .font(.title.weight(.semibold))
-            .accessibilityLabel("日记标题")
+            .accessibilityLabel(AppLocalizer.string("日记标题"))
     }
 
     @ViewBuilder
@@ -168,7 +168,7 @@ struct DiaryDetailEditView: View {
             )
                 .overlay(alignment: .topLeading) {
                     if draft.body.isEmpty {
-                        Text("写下今天发生的事…")
+                        Text(AppLocalizer.string("写下今天发生的事…"))
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 7)
@@ -176,7 +176,7 @@ struct DiaryDetailEditView: View {
                     }
                 }
                 .transition(.opacity)
-                .accessibilityLabel("日记正文")
+                .accessibilityLabel(AppLocalizer.string("日记正文"))
         }
     }
 
@@ -189,7 +189,7 @@ struct DiaryDetailEditView: View {
                         draft.tags.removeAll { $0 == tag }
                     }
                 }
-                TextField("添加标签", text: $newTag)
+                TextField(AppLocalizer.string("添加标签"), text: $newTag)
                     .textFieldStyle(.plain)
                     .frame(width: 90)
                     .onSubmit(addTag)
@@ -208,7 +208,7 @@ struct DiaryDetailEditView: View {
                 .foregroundStyle(.orange)
             }
             HStack {
-                Text("\(draft.body.count) 字")
+                Text(AppLocalizer.format("diary.detail.characterCount", draft.body.count))
                     .foregroundStyle(.tertiary)
                 Spacer()
                 DiarySaveStatusView(state: store.saveState) {
@@ -243,7 +243,10 @@ struct DiaryDetailEditView: View {
 
     private func pasteImage() {
         guard pasteImageIfAvailable() else {
-            importFailures = [DiaryImageImportFailure(name: "剪贴板", message: "没有可用图片")]
+            importFailures = [DiaryImageImportFailure(
+                name: AppLocalizer.string("剪贴板"),
+                message: AppLocalizer.string("没有可用图片")
+            )]
             return
         }
     }
@@ -260,7 +263,7 @@ struct DiaryDetailEditView: View {
             undoManager?.registerUndo(withTarget: store) { target in
                 Task { await target.restoreDeleted(id: deleted.id) }
             }
-            undoManager?.setActionName("恢复日记")
+            undoManager?.setActionName(AppLocalizer.string("恢复日记"))
         }
     }
 }

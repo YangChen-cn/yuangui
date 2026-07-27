@@ -14,13 +14,13 @@ enum AccessibilityTextError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .permissionDenied: "需要开启辅助功能权限才能读取和替换其他应用中的选中文字。"
-        case .noFocusedElement: "没有找到当前应用中的文字焦点。"
-        case .noSelection: "请先选中一段文字。"
-        case .targetUnavailable: "原应用或文字位置已经不可用。"
-        case .targetChanged: "原文字或选区已经变化，为避免覆盖错误内容，本次没有替换。"
-        case .targetReadOnly: "原位置不可编辑，可以复制译文后手动粘贴。"
-        case let .replacementFailed(message): "替换失败：\(message)"
+        case .permissionDenied: AppLocalizer.string("需要开启辅助功能权限才能读取和替换其他应用中的选中文字。")
+        case .noFocusedElement: AppLocalizer.string("没有找到当前应用中的文字焦点。")
+        case .noSelection: AppLocalizer.string("请先选中一段文字。")
+        case .targetUnavailable: AppLocalizer.string("原应用或文字位置已经不可用。")
+        case .targetChanged: AppLocalizer.string("原文字或选区已经变化，为避免覆盖错误内容，本次没有替换。")
+        case .targetReadOnly: AppLocalizer.string("原位置不可编辑，可以复制译文后手动粘贴。")
+        case let .replacementFailed(message): AppLocalizer.format("quickTools.replacementFailed", message)
         }
     }
 }

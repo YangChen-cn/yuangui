@@ -16,20 +16,20 @@ struct DiaryMetadataSection: View {
                 if let weather, !weather.condition.isEmpty {
                     metadataRow(
                         icon: weather.icon,
-                        text: "\(Int(weather.temperature))°C  \(weather.condition)"
+                        text: "\(Int(weather.temperature))°C  \(AppLocalizer.string(weather.condition))"
                     )
                 }
                 if let music, !music.title.isEmpty {
                     metadataRow(
                         icon: "music.note",
-                        text: "正在听《\(music.title)》— \(music.artist)"
+                        text: AppLocalizer.format("diary.metadata.listening", music.title, music.artist)
                     )
                 }
                 HStack(spacing: 9) {
                     Image(systemName: "mappin.and.ellipse")
                         .frame(width: 16)
                         .foregroundStyle(.secondary)
-                    TextField("记录地点", text: $locationName)
+                    TextField(AppLocalizer.string("记录地点"), text: $locationName)
                         .textFieldStyle(.plain)
                     Button { useCurrentLocation() } label: {
                         if isLocating {
@@ -40,8 +40,8 @@ struct DiaryMetadataSection: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isLocating)
-                    .help("使用当前位置")
-                    .accessibilityLabel("使用当前位置")
+                    .help(AppLocalizer.string("使用当前位置"))
+                    .accessibilityLabel(AppLocalizer.string("使用当前位置"))
                 }
                 if let locationError {
                     Label(locationError, systemImage: "location.slash")
@@ -73,7 +73,7 @@ struct DiaryMetadataSection: View {
             if let resolved = await onUseCurrentLocation() {
                 locationName = resolved
             } else {
-                locationError = "无法获取当前位置"
+                locationError = AppLocalizer.string("无法获取当前位置")
             }
             isLocating = false
         }

@@ -225,8 +225,10 @@ enum BilibiliAccountError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unavailable: return "无法连接哔哩哔哩登录服务"
-        case .api(let message): return "哔哩哔哩登录失败：\(message)"
+        case .unavailable:
+            return AppLocalizer.string("无法连接哔哩哔哩登录服务")
+        case .api(let message):
+            return AppLocalizer.format("music.bilibili.login.apiError", message)
         }
     }
 }
