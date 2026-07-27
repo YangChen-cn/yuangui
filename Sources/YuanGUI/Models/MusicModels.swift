@@ -69,7 +69,7 @@ enum MusicPlayMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct BilibiliPlaybackQueue: Equatable {
+struct MusicPlaybackQueue: Equatable {
     private(set) var upcomingTrackIDs: [String] = []
     private(set) var historyTrackIDs: [String] = []
 
@@ -78,6 +78,7 @@ struct BilibiliPlaybackQueue: Equatable {
         currentTrackID: String?,
         mode: MusicPlayMode
     ) {
+        let playlist = filteredPlaylist(playlist, currentTrackID: currentTrackID)
         historyTrackIDs = []
         rebuildUpcoming(playlist: playlist, currentTrackID: currentTrackID, mode: mode)
     }
@@ -112,6 +113,7 @@ struct BilibiliPlaybackQueue: Equatable {
         currentTrackID: String?,
         mode: MusicPlayMode
     ) -> String? {
+        let playlist = filteredPlaylist(playlist, currentTrackID: currentTrackID)
         if mode == .repeatOne { return currentTrackID }
         if upcomingTrackIDs.isEmpty, mode == .repeatAll || mode == .shuffle {
             rebuildUpcoming(playlist: playlist, currentTrackID: currentTrackID, mode: mode)
@@ -132,6 +134,7 @@ struct BilibiliPlaybackQueue: Equatable {
         currentTrackID: String?,
         mode: MusicPlayMode
     ) -> String? {
+        let playlist = filteredPlaylist(playlist, currentTrackID: currentTrackID)
         if mode == .repeatOne { return currentTrackID }
         if let previousTrackID = historyTrackIDs.popLast() {
             upcomingTrackIDs.removeAll { $0 == previousTrackID }
@@ -152,7 +155,17 @@ struct BilibiliPlaybackQueue: Equatable {
         upcomingTrackIDs.insert(currentTrackID, at: 0)
         return previousTrackID
     }
+
+    private func filteredPlaylist(_ playlist: [MusicTrack], currentTrackID: String?) -> [MusicTrack] {
+        guard let currentTrackID,
+              let source = playlist.first(where: { $0.id == currentTrackID })?.source else {
+            return playlist
+        }
+        return playlist.filter { $0.source == source }
+    }
 }
+
+typealias BilibiliPlaybackQueue = MusicPlaybackQueue
 
 enum LyricsFontStyle: String, CaseIterable, Identifiable {
     case rounded
@@ -165,6 +178,13 @@ enum LyricsFontStyle: String, CaseIterable, Identifiable {
     case heiti
 
     var id: String { rawValue }
+
+    /// Do not make a Chinese typeface the implicit choice for a new English UI.
+    /// Existing explicit user choices stay untouched in `LyricsPresentationStore`.
+    static var defaultForCurrentLanguage: Self {
+        AppLocalizer.effectiveLanguage == .english ? .system : .rounded
+    }
+
     var title: String {
         switch self {
         case .rounded: return AppLocalizer.string("圆体")
@@ -186,6 +206,12 @@ struct BilibiliTrackReference: Codable, Hashable, Sendable {
     let page: Int
 }
 
+struct LocalTrackReference: Codable, Hashable, Sendable {
+    var bookmarkData: Data
+    let originalFilename: String
+    var fileSize: Int64?
+}
+
 struct MusicTrack: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let source: MusicSource
@@ -196,6 +222,8 @@ struct MusicTrack: Codable, Identifiable, Hashable, Sendable {
     var duration: TimeInterval
     var bilibili: BilibiliTrackReference?
     var subtitleURL: URL?
+    var local: LocalTrackReference? = nil
+    var localArtworkCacheKey: String? = nil
 
     var lyricsCacheKey: String {
         switch source {
@@ -241,6 +269,15 @@ struct MusicTrack: Codable, Identifiable, Hashable, Sendable {
             bilibili: nil,
             subtitleURL: nil
         )
+    }
+
+    var localDuplicateKey: String? {
+        guard let local else { return nil }
+        return [
+            local.originalFilename.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current),
+            String(local.fileSize ?? -1),
+            String(Int(duration.rounded()))
+        ].joined(separator: "\u{1F}")
     }
 }
 

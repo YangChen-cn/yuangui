@@ -11,6 +11,7 @@ struct ObservedMusicFeature: DynamicProperty {
     @ObservedObject private var presentation: LyricsPresentationStore
     @ObservedObject private var account: BilibiliAccountStore
     @ObservedObject private var importer: BilibiliImportStore
+    @ObservedObject private var localImporter: LocalMusicImportStore
 
     init(wrappedValue: MusicFeature) {
         self.wrappedValue = wrappedValue
@@ -20,6 +21,7 @@ struct ObservedMusicFeature: DynamicProperty {
         _presentation = ObservedObject(wrappedValue: wrappedValue.lyricsPresentation)
         _account = ObservedObject(wrappedValue: wrappedValue.bilibiliAccountStore)
         _importer = ObservedObject(wrappedValue: wrappedValue.bilibiliImportStore)
+        _localImporter = ObservedObject(wrappedValue: wrappedValue.localImportStore)
     }
 }
 
@@ -99,7 +101,8 @@ final class LyricsPresentationStore: ObservableObject {
             : defaults.bool(forKey: "musicLightSingAlong")
         isPanelLocked = defaults.bool(forKey: "musicLyricsPanelLocked")
         fontSize = min(max(defaults.object(forKey: "musicLyricsFontSize") as? Double ?? 21, 14), 42)
-        fontStyle = LyricsFontStyle(rawValue: defaults.string(forKey: "musicLyricsFontStyle") ?? "") ?? .rounded
+        fontStyle = LyricsFontStyle(rawValue: defaults.string(forKey: "musicLyricsFontStyle") ?? "")
+            ?? .defaultForCurrentLanguage
         color = MusicFeature.decodeLyricsColor(defaults.string(forKey: "musicLyricsColor")) ?? .white
         shadowEnabled = defaults.object(forKey: "musicLyricsShadowEnabled") == nil
             ? true
@@ -131,4 +134,15 @@ final class BilibiliImportStore: ObservableObject {
     @Published var completedCount = 0
     @Published var totalCount = 0
     @Published var favoriteMessage: String?
+}
+
+@MainActor
+final class LocalMusicImportStore: ObservableObject {
+    @Published var isImporting = false
+    @Published var importedCount = 0
+    @Published var duplicateCount = 0
+    @Published var failedCount = 0
+    @Published var message: String?
+    @Published var errorMessage: String?
+    @Published var trackNeedingRelocation: MusicTrack?
 }
