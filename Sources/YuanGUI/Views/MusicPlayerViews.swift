@@ -6,16 +6,25 @@ import UniformTypeIdentifiers
 struct MusicArtworkView: View {
     let track: MusicTrack?
     var size: CGFloat = 54
+    @State private var localArtwork: NSImage?
 
     var body: some View {
         Group {
-            if let url = displayCoverURL {
+            if let localArtwork {
+                Image(nsImage: localArtwork).resizable().scaledToFill()
+            } else if let url = displayCoverURL {
                 AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { placeholder }
             } else { placeholder }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: size * 0.18).stroke(.primary.opacity(0.12), lineWidth: 0.7))
+        .task(id: track?.localArtworkCacheKey) {
+            localArtwork = nil
+            guard let track, track.source == .local,
+                  let data = await LocalMusicArtworkRepository.shared.data(for: track) else { return }
+            localArtwork = NSImage(data: data)
+        }
     }
 
     private var displayCoverURL: URL? {
@@ -489,6 +498,8 @@ struct MusicPlayerView: View {
                     Button("打开 Music App") { music.openAppleMusic() }
                 }
             }.listStyle(.sidebar)
+        } else if music.playback.source == .local {
+            localSidebar
         } else {
             VStack(spacing: 0) {
                 HStack {
@@ -594,6 +605,91 @@ struct MusicPlayerView: View {
         }
     }
 
+    private var localSidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button("music.local.import.files", systemImage: "plus", action: chooseLocalFiles)
+                Button("music.local.import.folder", systemImage: "folder.badge.plus", action: chooseLocalFolder)
+                if music.localImportStore.isImporting {
+                    ProgressView().controlSize(.small)
+                    Button("取消", action: music.cancelLocalImport)
+                }
+            }
+            .padding(10)
+            if let message = music.localImportStore.message {
+                Text(message).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
+            }
+            if localTracks.isEmpty {
+                ContentUnavailableView {
+                    Label("music.local.empty.title", systemImage: "music.note.house")
+                } description: {
+                    VStack(spacing: 3) {
+                        Text("music.local.empty.description")
+                        Text("music.local.empty.privacy")
+                    }
+                } actions: {
+                    Button("music.local.import.action", action: chooseLocalFiles)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                List(selection: $selectedTrackID) {
+                    Section("资料库") {
+                        collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: localTracks.count)
+                        collectionButton(
+                            "收藏",
+                            systemImage: "heart.fill",
+                            id: "favorites",
+                            count: localTracks.count(where: music.isFavorite)
+                        )
+                    }
+                    Section {
+                        ForEach(music.libraryStore.savedPlaylists) { savedPlaylist in
+                            collectionButton(
+                                savedPlaylist.name,
+                                systemImage: "music.note.house",
+                                id: "playlist:\(savedPlaylist.id.uuidString)",
+                                count: music.tracks(in: savedPlaylist).count(where: { $0.source == .local })
+                            )
+                        }
+                        Button { isCreatingPlaylist = true } label: { Label("新建歌单", systemImage: "plus") }
+                    } header: { Text("我的歌单") }
+                    Section(collectionTitle) {
+                        ForEach(displayedTracks) { track in
+                            HStack(spacing: 8) {
+                                Image(systemName: music.playback.currentTrack?.id == track.id && music.playback.isPlaying
+                                    ? "speaker.wave.2.fill"
+                                    : "music.note")
+                                    .foregroundStyle(music.playback.currentTrack?.id == track.id ? .pink : .secondary)
+                                    .frame(width: 16)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(track.title).lineLimit(1)
+                                    Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    if let filename = track.local?.originalFilename {
+                                        Text(filename).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                                    }
+                                }
+                            }
+                            .tag(track.id)
+                            .contextMenu {
+                                Button("播放") { music.play(track) }
+                                Button(music.isFavorite(track) ? "取消收藏" : "收藏") { music.toggleFavorite(track) }
+                                Menu("加入歌单") {
+                                    ForEach(music.libraryStore.savedPlaylists) { savedPlaylist in
+                                        Button(savedPlaylist.name) { music.add(track, to: savedPlaylist) }
+                                    }
+                                }
+                                Button("music.local.relocate") { chooseRelocation(for: track) }
+                                Button("从资料库移除", role: .destructive) { music.remove(track) }
+                            }
+                            .onTapGesture(count: 2) { music.play(track) }
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+            }
+        }
+    }
+
     private var detail: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -612,7 +708,7 @@ struct MusicPlayerView: View {
                 }
                 MusicProgressView(music: music).frame(maxWidth: 480)
                 MusicTransportControls(music: music)
-                if let track = music.playback.currentTrack, track.source == .bilibili {
+                if let track = music.playback.currentTrack, track.source != .appleMusic {
                     Button { music.toggleFavorite(track) } label: {
                         Label(music.isFavorite(track) ? "已收藏" : "收藏", systemImage: music.isFavorite(track) ? "heart.fill" : "heart")
                     }
@@ -620,7 +716,7 @@ struct MusicPlayerView: View {
                     .tint(.pink)
                 }
                 MusicVolumeControl(music: music).frame(width: 230)
-                if music.playback.source == .bilibili {
+                if music.playback.source != .appleMusic {
                     Picker("播放模式", selection: Binding(get: { music.playback.playMode }, set: music.setPlayMode)) {
                         ForEach(MusicPlayMode.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
                     }.labelsHidden().frame(width: 120)
@@ -634,6 +730,15 @@ struct MusicPlayerView: View {
                 if let error = music.bilibiliImportStore.errorMessage {
                     Text(error).font(.caption).foregroundStyle(.orange).multilineTextAlignment(.center)
                     if music.playback.playbackSource == .appleMusic { Button("打开自动化权限设置") { music.openAutomationSettings() } }
+                }
+                if let error = music.localImportStore.errorMessage {
+                    Text(error).font(.caption).foregroundStyle(.orange).multilineTextAlignment(.center)
+                    if let track = music.localImportStore.trackNeedingRelocation {
+                        HStack {
+                            Button("music.local.relocate") { chooseRelocation(for: track) }
+                            Button("music.local.remove", role: .destructive) { music.remove(track) }
+                        }
+                    }
                 }
             }
             .padding(28).frame(maxWidth: .infinity)
@@ -684,7 +789,13 @@ struct MusicPlayerView: View {
         .help(music.bilibiliAccountStore.account.map { "已登录：\($0.name)，点击管理账号" } ?? "扫码登录哔哩哔哩")
     }
 
-    private var emptyTitle: String { music.playback.source == .appleMusic ? "连接 Apple Music" : "从左侧导入并选择歌曲" }
+    private var emptyTitle: String {
+        switch music.playback.source {
+        case .appleMusic: AppLocalizer.string("连接 Apple Music")
+        case .local: AppLocalizer.string("music.local.empty.title")
+        case .bilibili: AppLocalizer.string("从左侧导入并选择歌曲")
+        }
+    }
 
     @ViewBuilder
     private var lyricsActionButtons: some View {
@@ -694,43 +805,55 @@ struct MusicPlayerView: View {
     }
 
     private var lyricsAdjustments: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Text("歌词偏移")
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(AppLocalizer.string("歌词偏移"))
+                    .font(.headline)
                 LyricOffsetControl(music: music)
             }
             Text("正数会让歌词延后出现，负数会让歌词提前出现。偏移按歌曲保存。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                Label("桌面歌词字号", systemImage: "textformat.size")
-                Slider(
-                    value: Binding(get: { music.lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
-                    in: 14...42,
-                    step: 1
-                )
-                .frame(width: 150)
-                Text("\(Int(music.lyricsPresentation.fontSize))")
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(width: 24)
-                Picker("字体", selection: Binding(
-                    get: { music.lyricsPresentation.fontStyle },
-                    set: music.setLyricsFontStyle
-                )) {
-                    ForEach(LyricsFontStyle.allCases) { style in Text(style.title).tag(style) }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label(AppLocalizer.string("桌面歌词字号"), systemImage: "textformat.size")
+                    .font(.headline)
+
+                HStack(spacing: 10) {
+                    Slider(
+                        value: Binding(get: { music.lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
+                        in: 14...42,
+                        step: 1
+                    )
+                    .frame(maxWidth: .infinity)
+                    Text("\(Int(music.lyricsPresentation.fontSize))")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 28, alignment: .trailing)
                 }
-                .labelsHidden()
-                .frame(width: 100)
-                ColorPicker(
-                    "颜色",
-                    selection: Binding(
-                        get: { Color(nsColor: music.lyricsPresentation.color) },
-                        set: { music.setLyricsColor(NSColor($0)) }
-                    ),
-                    supportsOpacity: true
-                )
-                .fixedSize()
-                Toggle("锁定并点击穿透", isOn: Binding(
+
+                HStack(spacing: 12) {
+                    Picker(AppLocalizer.string("字体"), selection: Binding(
+                        get: { music.lyricsPresentation.fontStyle },
+                        set: music.setLyricsFontStyle
+                    )) {
+                        ForEach(LyricsFontStyle.allCases) { style in Text(style.title).tag(style) }
+                    }
+                    .frame(maxWidth: 260)
+
+                    ColorPicker(
+                        AppLocalizer.string("颜色"),
+                        selection: Binding(
+                            get: { Color(nsColor: music.lyricsPresentation.color) },
+                            set: { music.setLyricsColor(NSColor($0)) }
+                        ),
+                        supportsOpacity: true
+                    )
+                    .fixedSize()
+                }
+
+                Toggle(AppLocalizer.string("锁定并点击穿透"), isOn: Binding(
                     get: { music.lyricsPresentation.isPanelLocked },
                     set: music.setLyricsPanelLocked
                 ))
@@ -749,9 +872,11 @@ struct MusicPlayerView: View {
     }
 
     private var displayedTracks: [MusicTrack] {
-        if selectedCollectionID == "favorites" { return music.libraryStore.favoriteTracks }
-        if let selectedSavedPlaylist { return music.tracks(in: selectedSavedPlaylist) }
-        return music.libraryStore.playlist
+        let tracks: [MusicTrack]
+        if selectedCollectionID == "favorites" { tracks = music.libraryStore.favoriteTracks }
+        else if let selectedSavedPlaylist { tracks = music.tracks(in: selectedSavedPlaylist) }
+        else { tracks = music.libraryStore.playlist }
+        return tracks.filter { $0.source == music.playback.source }
     }
 
     private var collectionTitle: String {
@@ -783,6 +908,39 @@ struct MusicPlayerView: View {
         let panel = NSOpenPanel(); panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
         panel.allowedContentTypes = [UTType(filenameExtension: "lrc") ?? .plainText, .plainText]
         if panel.runModal() == .OK, let url = panel.url { music.importLRC(from: url) }
+    }
+
+    private var localTracks: [MusicTrack] {
+        music.libraryStore.playlist.filter { $0.source == .local }
+    }
+
+    private func chooseLocalFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = LocalMusicImportService.supportedExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
+        if panel.runModal() == .OK { music.importLocalMusic(panel.urls) }
+    }
+
+    private func chooseLocalFolder() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        if panel.runModal() == .OK { music.importLocalMusic(panel.urls) }
+    }
+
+    private func chooseRelocation(for track: MusicTrack) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = LocalMusicImportService.supportedExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
+        panel.nameFieldStringValue = track.local?.originalFilename ?? ""
+        if panel.runModal() == .OK, let url = panel.url { music.relocate(track, to: url) }
     }
 
     private func prepareLyricsSearch() {

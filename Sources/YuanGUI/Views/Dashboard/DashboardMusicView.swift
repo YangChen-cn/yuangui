@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardMusicView: View {
     @ObservedMusicFeature var music: MusicFeature
@@ -41,7 +43,7 @@ struct DashboardMusicView: View {
                         )
                     }
                     Spacer(minLength: 4)
-                    if track.source == .bilibili {
+                    if track.source != .appleMusic {
                         Button {
                             music.toggleFavorite(track)
                         } label: {
@@ -69,7 +71,7 @@ struct DashboardMusicView: View {
 
     @ViewBuilder
     private var queueSection: some View {
-        if music.playback.source == .bilibili {
+        if music.playback.source != .appleMusic {
             let presentation = DashboardQueuePresentation.resolve(
                 upcoming: music.upcomingTracks,
                 currentTrackID: music.playback.currentTrack?.id
@@ -135,15 +137,15 @@ struct DashboardMusicView: View {
                 )
             }
             DashboardEmptyState(
-                title: "暂无播放内容",
+                title: music.playback.source == .local ? "music.local.empty.title" : "暂无播放内容",
                 systemImage: "music.note",
-                description: music.playback.source == .appleMusic
-                    ? "连接 Music App 后可在这里快速控制。"
-                    : "请在完整播放器中导入哔哩哔哩歌曲。"
+                description: emptyDescription
             )
-            Button(music.playback.source == .appleMusic ? "连接 Apple Music" : "打开完整播放器") {
+            Button(emptyActionTitle) {
                 if music.playback.source == .appleMusic {
                     music.connectAppleMusic()
+                } else if music.playback.source == .local {
+                    importLocalMusic()
                 } else {
                     openFullPlayer()
                 }
@@ -151,6 +153,36 @@ struct DashboardMusicView: View {
             .controlSize(.small)
         }
         .frame(maxHeight: .infinity)
+    }
+
+    private var emptyDescription: String {
+        switch music.playback.source {
+        case .appleMusic: AppLocalizer.string("连接 Music App 后可在这里快速控制。")
+        case .local:
+            AppLocalizer.string("music.local.empty.description")
+                + "\n"
+                + AppLocalizer.string("music.local.empty.privacy")
+        case .bilibili: AppLocalizer.string("请在完整播放器中导入哔哩哔哩歌曲。")
+        }
+    }
+
+    private var emptyActionTitle: String {
+        switch music.playback.source {
+        case .appleMusic: AppLocalizer.string("连接 Apple Music")
+        case .local: AppLocalizer.string("music.local.import.action")
+        case .bilibili: AppLocalizer.string("打开完整播放器")
+        }
+    }
+
+    private func importLocalMusic() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = LocalMusicImportService.supportedExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
+        if panel.runModal() == .OK { music.importLocalMusic(panel.urls) }
     }
 
     private func openFullPlayer() {
