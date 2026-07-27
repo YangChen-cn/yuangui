@@ -4,7 +4,15 @@
 
 原生 macOS 桌宠与效率工具：音乐、系统监控、AI 对话、OCR 翻译、日记和安全清理。
 
-[English](README.md) · [最新发布页](https://github.com/YangChen-cn/yuangui/releases/latest) · [安装与权限说明](docs/INSTALLATION.zh-CN.md)
+<p align="center">
+<a href="README.md">English</a> | 简体中文
+</p>
+
+<p align="center">
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest">最新发布页</a> ·
+  <a href="docs/INSTALLATION.zh-CN.md">安装与权限说明</a> ·
+  <a href="LICENSE">GPL-3.0-only</a>
+</p>
 
 YuanGUI 使用 SwiftUI、AppKit 与 Swift Package Manager 开发。个人数据默认留在本机；只有使用相关功能时才会请求系统权限。
 
@@ -13,7 +21,7 @@ YuanGUI 使用 SwiftUI、AppKit 与 Swift Package Manager 开发。个人数据�
 - 元圭、蓝猫 VCC 与双人模式桌宠，结合天气、时间、电池和内存状态互动。
 - 菜单栏状态面板：CPU、内存、磁盘、网络、电池、运行时间、音乐和常用工具。
 - 本地日记：照片、Markdown、日历、备份恢复和导出。
-- Apple Music 控制、哔哩哔哩播放与导入、本地歌词和桌面歌词。
+- Apple Music 控制、哔哩哔哩播放与导入，以及 MP3、M4A、AAC、WAV、AIFF 本地音乐；支持歌单、收藏、同名 LRC、歌词缓存和桌面歌词。
 - 兼容 OpenAI 接口的流式 AI 对话、本地历史和可编辑角色提示词。
 - 区域截图、端侧 Vision OCR、截图翻译、划词翻译与标注。
 - 清理屋：缓存、旧日志、开发缓存、项目构建产物和旧安装包的保守扫描。
@@ -25,6 +33,10 @@ YuanGUI 使用 SwiftUI、AppKit 与 Swift Package Manager 开发。个人数据�
 - 项目产物和旧安装包只会移入废纸篓，不会永久删除。
 - 符号链接、保护目录、运行中应用、系统/安全/MDM 软件、云盘、输入法、密码管理器、AI 模型和 YuanGUI 数据自动跳过。
 - 每项操作均可预览、再次确认、执行前复核并写入本地记录。
+
+## 本地音乐与隐私
+
+YuanGUI 不会在启动或打开音乐页时扫描桌面、下载、文稿、音乐、用户主目录或其他位置。只有点击“导入音乐”并在系统面板中选择文件或文件夹后，应用才会读取其中受支持的音频；递归查找仅限用户选中的文件夹。应用使用安全作用域书签延续访问权限，不复制、移动或修改原始音乐文件。音频旁的同名 `.lrc` 会优先于现有歌词缓存和 LRCLIB。
 
 ## 安装与构建
 

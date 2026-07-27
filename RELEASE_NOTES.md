@@ -2,6 +2,14 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
+## Unreleased — Local Music
+
+- Added Local Music as a third playback source alongside Apple Music and Bilibili, with language-aware source ordering and migration-safe defaults.
+- Added explicit file and folder import for MP3, M4A, AAC, WAV, and AIFF; folder traversal runs only inside a user-selected location. FLAC remains disabled pending device-level AVFoundation validation.
+- Added security-scoped bookmark persistence, stable `local:<UUID>` track IDs, metadata and embedded-artwork extraction, local playlists and favorites, playback-mode queues, progress restoration, and recoverable missing-file relocation.
+- Local lyrics now prefer a matching sidecar `.lrc`, then YuanGUI’s cache, LRCLIB, and manual LRC tools. Desktop lyrics, lyric seeking and offsets, external-audio interruption, and pet listening actions are shared with the existing sources.
+- Generalized the AVPlayer engine for both network candidates and local file URLs. Network fallback and the 12-second watchdog remain limited to HTTP/HTTPS playback.
+
 ## 2.7.0 — English localization and global-release preparation
 
 - Added English and Simplified Chinese resource bundles, a System/English/Simplified Chinese preference, localized app metadata, and restart guidance.

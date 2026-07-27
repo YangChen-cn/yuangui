@@ -39,6 +39,17 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testDesktopLyricsFontChoiceRestoresWithoutLanguageMigration() {
+        let suite = "LyricsFontTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(LyricsFontStyle.pingFang.rawValue, forKey: "musicLyricsFontStyle")
+
+        XCTAssertEqual(LyricsPresentationStore(defaults: defaults).fontStyle, .pingFang)
+    }
+
+    @MainActor
     func testLiveBilibiliPublicAudioStartsWhenEnabled() async throws {
         guard ProcessInfo.processInfo.environment["YUANGUI_LIVE_BILI"] == "1" else {
             throw XCTSkip("Set YUANGUI_LIVE_BILI=1 to run the network integration test")
@@ -222,6 +233,32 @@ final class MusicTests: XCTestCase {
         XCTAssertTrue(snapshot.lyricOffsets.isEmpty)
         XCTAssertTrue(snapshot.lyricsByTrackID.isEmpty)
         XCTAssertEqual(snapshot.lastPosition, 12)
+    }
+
+    func testLocalTrackReferenceRoundTripsAndLegacyTrackStillDecodes() throws {
+        let reference = LocalTrackReference(
+            bookmarkData: Data([1, 2, 3]),
+            originalFilename: "Song.m4a",
+            fileSize: 42
+        )
+        XCTAssertEqual(
+            try JSONDecoder().decode(
+                LocalTrackReference.self,
+                from: JSONEncoder().encode(reference)
+            ),
+            reference
+        )
+
+        let legacy = Data(
+            #"{"id":"old","source":"bilibili","title":"Old","artist":"Artist","duration":120}"#.utf8
+        )
+        let track = try JSONDecoder().decode(MusicTrack.self, from: legacy)
+        XCTAssertNil(track.local)
+        XCTAssertNil(track.localArtworkCacheKey)
+        XCTAssertEqual(
+            LocalMusicImportService.supportedExtensions,
+            Set(["mp3", "m4a", "aac", "wav", "aiff"])
+        )
     }
 
     func testAppleMusicLyricsCacheKeyIgnoresDurationAndMetadataFormatting() {
@@ -731,6 +768,130 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id, tracks[2].id])
     }
 
+    func testPlaybackQueueNeverMixesLocalAndBilibiliTracks() {
+        let local = makeLocalTrack(id: "local:one", filename: "one.mp3")
+        let localTwo = makeLocalTrack(id: "local:two", filename: "two.mp3")
+        let bilibili = makeQueueTracks(count: 2)
+        let mixed = [local, bilibili[0], localTwo, bilibili[1]]
+
+        var localQueue = MusicPlaybackQueue()
+        localQueue.rebuild(playlist: mixed, currentTrackID: local.id, mode: .repeatAll)
+        XCTAssertEqual(Set(localQueue.upcomingTrackIDs), Set([localTwo.id]))
+
+        var bilibiliQueue = MusicPlaybackQueue()
+        bilibiliQueue.rebuild(playlist: mixed, currentTrackID: bilibili[0].id, mode: .repeatAll)
+        XCTAssertEqual(Set(bilibiliQueue.upcomingTrackIDs), Set([bilibili[1].id]))
+    }
+
+    @MainActor
+    func testDuplicateLocalImportAddsOnlyOneTrack() async {
+        let defaults = UserDefaults(suiteName: "LocalDuplicate-\(UUID().uuidString)")!
+        let track = makeLocalTrack(id: "local:first", filename: "same.mp3")
+        let duplicate = makeLocalTrack(id: "local:second", filename: "same.mp3")
+        let importer = StubLocalMusicImporter(importResult: LocalMusicImportResult(
+            tracks: [track, duplicate],
+            failures: []
+        ))
+        let feature = MusicFeature(
+            defaults: defaults,
+            localMusicImporter: importer,
+            library: RecordingMusicLibraryCoordinator()
+        )
+
+        feature.importLocalMusic([URL(fileURLWithPath: "/tmp/selected")])
+        for _ in 0..<12 { await Task.yield() }
+
+        XCTAssertEqual(feature.libraryStore.playlist.filter { $0.source == .local }.count, 1)
+        XCTAssertEqual(feature.localImportStore.duplicateCount, 1)
+        await feature.shutdown()
+    }
+
+    @MainActor
+    func testMissingLocalFileProducesRelocationStateInsteadOfCrashing() async {
+        let defaults = UserDefaults(suiteName: "LocalMissing-\(UUID().uuidString)")!
+        let track = makeLocalTrack(id: "local:missing", filename: "missing.mp3")
+        let importer = StubLocalMusicImporter(resolveError: .missingFile)
+        let feature = MusicFeature(
+            defaults: defaults,
+            bilibiliPlayer: RecordingBilibiliPlayer(),
+            localMusicImporter: importer,
+            library: RecordingMusicLibraryCoordinator()
+        )
+
+        feature.play(track)
+        for _ in 0..<12 { await Task.yield() }
+
+        XCTAssertEqual(feature.localImportStore.trackNeedingRelocation?.id, track.id)
+        if case .failed = feature.playback.state {} else { XCTFail("Expected a recoverable failed state") }
+        await feature.shutdown()
+    }
+
+    @MainActor
+    func testStaleBookmarkAlsoRequestsRelocation() async {
+        let track = makeLocalTrack(id: "local:stale", filename: "stale.m4a")
+        let feature = MusicFeature(
+            defaults: UserDefaults(suiteName: "LocalStale-\(UUID().uuidString)")!,
+            bilibiliPlayer: RecordingBilibiliPlayer(),
+            localMusicImporter: StubLocalMusicImporter(resolveError: .staleBookmark),
+            library: RecordingMusicLibraryCoordinator()
+        )
+        feature.play(track)
+        for _ in 0..<12 { await Task.yield() }
+        XCTAssertEqual(feature.localImportStore.trackNeedingRelocation?.id, track.id)
+        await feature.shutdown()
+    }
+
+    @MainActor
+    func testLocalLRCPrecedesCachedAndRemoteLyrics() async {
+        let defaults = UserDefaults(suiteName: "LocalLyrics-\(UUID().uuidString)")!
+        defaults.set(MusicSource.local.rawValue, forKey: "musicSource")
+        let track = makeLocalTrack(id: "local:lyrics", filename: "lyrics.mp3")
+        let cached = LyricsParser.parseLRC("[00:01.00]缓存", source: "cache")
+        let local = LyricsParser.parseLRC("[00:01.00]本地", source: "Local LRC")
+        let library = StaticMusicLibraryCoordinator(snapshot: MusicLibrarySnapshot(
+            playlist: [track],
+            currentTrackID: track.id,
+            lyricsByTrackID: [track.lyricsCacheKey: cached]
+        ))
+        let importer = StubLocalMusicImporter(localLyrics: local)
+        let feature = MusicFeature(
+            defaults: defaults,
+            lyricsService: StubLyricsProvider(),
+            localMusicImporter: importer,
+            library: library
+        )
+        for _ in 0..<16 { await Task.yield() }
+
+        XCTAssertEqual(feature.lyricsStore.document?.lines.first?.text, "本地")
+        await feature.shutdown()
+    }
+
+    @MainActor
+    func testLocalProgressUpdatesLyricsAndSwitchingSourcePausesURLPlayer() async {
+        let defaults = UserDefaults(suiteName: "LocalPlayback-\(UUID().uuidString)")!
+        let track = makeLocalTrack(id: "local:playing", filename: "playing.mp3")
+        let player = RecordingBilibiliPlayer()
+        let importer = StubLocalMusicImporter(
+            localLyrics: LyricsParser.parseLRC("[00:01.00]当前歌词", source: "Local LRC")
+        )
+        let feature = MusicFeature(
+            defaults: defaults,
+            appleMusic: StubAppleMusicProvider(),
+            bilibiliPlayer: player,
+            localMusicImporter: importer,
+            library: RecordingMusicLibraryCoordinator()
+        )
+
+        feature.play(track)
+        for _ in 0..<16 { await Task.yield() }
+        player.onProgress?(1.2, 180)
+        XCTAssertEqual(feature.lyricsStore.currentLine?.text, "当前歌词")
+
+        feature.connectAppleMusic()
+        XCTAssertGreaterThanOrEqual(player.pauseCount, 1)
+        await feature.shutdown()
+    }
+
     @MainActor
     func testMusicFeatureComposesDedicatedStoresAndShutdownFlushesDependencies() async {
         let suiteName = "MusicFeatureTests-\(UUID().uuidString)"
@@ -884,6 +1045,25 @@ final class MusicTests: XCTestCase {
             )
         }
     }
+
+    private func makeLocalTrack(id: String, filename: String) -> MusicTrack {
+        MusicTrack(
+            id: id,
+            source: .local,
+            title: filename,
+            artist: "Artist",
+            album: nil,
+            coverURL: nil,
+            duration: 180,
+            bilibili: nil,
+            subtitleURL: nil,
+            local: LocalTrackReference(
+                bookmarkData: Data([1, 2, 3]),
+                originalFilename: filename,
+                fileSize: 100
+            )
+        )
+    }
 }
 
 private actor RecordingMusicLibraryCoordinator: MusicLibraryCoordinating {
@@ -912,6 +1092,42 @@ private actor StaticMusicLibraryCoordinator: MusicLibraryCoordinating {
     func load() async throws -> MusicLibrarySnapshot { snapshot }
     func scheduleSave(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {}
     func saveNow(_ snapshot: MusicLibrarySnapshot, revision: UInt64) async {}
+}
+
+private actor StubLocalMusicImporter: LocalMusicImporting {
+    let importResult: LocalMusicImportResult
+    let resolveError: LocalMusicImportError?
+    let localDocument: LyricsDocument?
+
+    init(
+        importResult: LocalMusicImportResult = LocalMusicImportResult(tracks: [], failures: []),
+        resolveError: LocalMusicImportError? = nil,
+        localLyrics: LyricsDocument? = nil
+    ) {
+        self.importResult = importResult
+        self.resolveError = resolveError
+        self.localDocument = localLyrics
+    }
+
+    func importFiles(_ urls: [URL]) async -> LocalMusicImportResult { importResult }
+
+    func resolveURL(for track: MusicTrack) async throws -> URL {
+        if let resolveError { throw resolveError }
+        return FileManager.default.temporaryDirectory.appending(path: track.local?.originalFilename ?? "track.mp3")
+    }
+
+    func relocatedTrack(_ track: MusicTrack, to url: URL) async throws -> MusicTrack { track }
+    func localLyrics(for track: MusicTrack) async throws -> LyricsDocument? { localDocument }
+}
+
+private actor StubLyricsProvider: LyricsProviding {
+    func lyrics(for track: MusicTrack) async -> LyricsDocument? {
+        LyricsParser.parseLRC("[00:01.00]远程", source: "LRCLIB")
+    }
+
+    func search(title: String, artist: String, duration: TimeInterval) async throws -> LyricsDocument? {
+        nil
+    }
 }
 
 private struct StubBilibiliMusicProvider: BilibiliMusicProviding {
@@ -950,6 +1166,7 @@ private final class RecordingBilibiliPlayer: BilibiliPlaying {
     var onFailure: ((Error) -> Void)?
     var hasLoadedItem = false
     private(set) var stopCount = 0
+    private(set) var pauseCount = 0
 
     func load(urls: [URL], headers: [String: String], position: TimeInterval, autoplay: Bool) {
         hasLoadedItem = true
@@ -957,7 +1174,7 @@ private final class RecordingBilibiliPlayer: BilibiliPlaying {
 
     func play() {}
     func playPause() {}
-    func pause() {}
+    func pause() { pauseCount += 1 }
     func seek(to position: TimeInterval) {}
     func setVolume(_ volume: Double) {}
     func stop() { stopCount += 1 }
