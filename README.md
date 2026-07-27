@@ -1,75 +1,71 @@
-<p align="center"><img src="Sources/YuanGUI/Resources/AppIcon.png" width="152" alt="YuanGUI icon"></p>
+<p align="center">
+  <img src="Sources/YuanGUI/Resources/AppIcon.png" width="152" alt="YuanGUI and VCC icon">
+</p>
 
-<h1 align="center">YuanGUI</h1>
-
-<p align="center">A native macOS desktop companion with music, system monitoring, AI chat, OCR translation, journaling, and safe cleanup.</p>
+<h1 align="center">YuanGUI and VCC</h1>
 
 <p align="center">
-English | <a href="README.zh-CN.md">简体中文</a>
+  A native macOS companion that keeps you company, plays music, watches the weather and your Mac, and chats with you.
 </p>
 
 <p align="center">
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest">Latest release</a> ·
-  <a href="docs/INSTALLATION.md">Installation &amp; permissions</a> ·
-  <a href="LICENSE">GPL-3.0-only</a>
+  <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-111111?logo=apple">
+  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
+  <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
+  <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
 </p>
 
-> The screenshots, interface labels, and companion artwork below intentionally use the Chinese interface. YuanGUI itself supports English and Simplified Chinese; choose your language in **Settings → General → Language**, then reopen the app.
+[简体中文](README.zh-CN.md) · [Latest release](https://github.com/YangChen-cn/yuangui/releases/latest) · [Installation and permissions](docs/INSTALLATION.md)
 
-## Meet YuanGUI and VCC
+## Overview
 
-YuanGUI is a local-first macOS companion made with SwiftUI, AppKit, and Swift Package Manager. It puts a small companion, useful system information, music, notes, translation, and careful maintenance tools in one native app—without turning your private data into a cloud service.
+YuanGUI is a native macOS companion and productivity tool built with SwiftUI, AppKit, and Swift Package Manager. It brings character companionship, music, system status, weather, AI chat, screenshots, OCR translation, journaling, and careful maintenance into a lightweight floating panel and menu bar app.
 
-<!-- GIF placeholder: desktop companion greeting, Chinese interface -->
-<!-- ![Desktop companion greeting](docs/media/pet-greeting.gif) -->
+Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-## What it includes
+## Interface preview
 
-| Chinese interface label | What it does |
-| --- | --- |
-| 桌宠 | Choose YuanGUI, VCC, or both. They react to weather, time, battery, and memory state. |
-| 状态面板 | Check CPU, memory, disk, network, battery, uptime, music, and common tools from the menu bar. |
-| 音乐 | Control Apple Music, play Bilibili audio, or import local MP3, M4A, AAC, WAV, and AIFF files with playlists, favorites, synchronized lyrics, and desktop lyrics. |
-| AI 对话 | Use an OpenAI-compatible endpoint with streaming replies, local history, and your own credentials. |
-| 手帐本 | Keep a local journal with photos, Markdown, calendar browsing, backup/restore, and export. |
-| 截图翻译 / 划词翻译 | Capture a region, run on-device Vision OCR, translate, edit annotations, or translate selected text. |
-| 清理屋 | Review caches, old logs, developer caches, project build artifacts, and old installers before anything changes. |
+<p align="center">
+  <img src="docs/media/yuangui-demo.gif" width="820" alt="YuanGUI and VCC feature demo">
+</p>
 
-<!-- GIF placeholder: status panel, Chinese interface -->
-<!-- ![Status panel](docs/media/status-panel.gif) -->
+<table>
+  <tr><th>Companion and status bar</th><th>Journal</th></tr>
+  <tr>
+    <td><img src="docs/media/桌宠状态栏.gif" width="390" alt="Companion and status bar demo"></td>
+    <td><img src="docs/media/手帐本.gif" width="390" alt="Journal demo"></td>
+  </tr>
+  <tr><th>Music player</th><th>AI chat</th></tr>
+  <tr>
+    <td><img src="docs/media/播放器.gif" width="390" alt="Music player demo"></td>
+    <td><img src="docs/media/ai chat.gif" width="390" alt="AI chat demo"></td>
+  </tr>
+</table>
 
-## Privacy and cleanup safety
+## Features
 
-Your journal, chat history, music library, Bilibili tokens, and API credentials stay on this Mac. Attachments are only sent to the AI service you explicitly configure.
+- **Three companion modes**: YuanGUI, VCC, or both together, with lightweight animated reactions.
+- **Smart state reactions**: low battery, charging, memory pressure, rain, and bedtime states.
+- **Status panel**: CPU, memory, disk, network, battery, uptime, music, and common tools.
+- **Local weather**: approximate location through macOS permission and Open-Meteo, with no weather API key.
+- **Journal**: local photos, Markdown, calendar, mood, weather, music, search, favorites, recently deleted items, and Markdown/JSON/ZIP export.
+- **AI chat**: OpenAI-compatible endpoints, streaming replies, attachments, local history, and editable prompts.
+- **Music player**: Apple Music, Bilibili, and local audio. Local Music supports MP3, M4A, AAC, WAV, and AIFF, with playlists, favorites, matching LRC lyrics, lyric cache, and desktop lyrics.
+- **Bilibili library**: QR login, authorized subtitles, and deduplicated favorites import without storing passwords.
+- **Screenshots and translation**: region capture, annotations, on-device Vision OCR, screenshot translation, selected-text translation, and Apple or online translation engines.
+- **Cleanup House**: conservative cleanup, uninstall tools, allowlists, operation logs, and path safety checks.
+- **Desktop interaction**: drag, edge docking, mini status, resizing, interaction lock, mouse pass-through, and Finder icon visibility controls.
 
-Local Music never scans Desktop, Downloads, Documents, Music, your home folder, or any other location on launch. YuanGUI reads audio only after you choose files or folders in the system import panel, stores security-scoped bookmarks for continued access, and leaves the original files untouched. A matching `.lrc` beside an imported track takes priority over the existing lyrics cache and LRCLIB lookup.
+## Requirements and installation
 
-The menu bar music panel exposes source-specific empty-state actions and always provides a path to the full player. In the full player, import controls adapt to narrow sidebars without truncating their labels; built-in library names are localized while your playlist and track names remain unchanged.
+- macOS 15 Sequoia or later
+- Swift 6 / current Xcode for source builds
+- Your own OpenAI-compatible API URL and key for AI chat
+- Network access for weather, Bilibili playback, lyric matching, and update checks
 
-Cleanup House is intentionally conservative:
+Download the DMG from the [latest release](https://github.com/YangChen-cn/yuangui/releases/latest), then drag `YuanGUI.app` to Applications. Personal-share builds use an ad-hoc signature. If macOS blocks the first launch, Control-click the app and choose **Open**, or allow it in **System Settings → Privacy & Security**.
 
-- It never uses `sudo`, changes system settings, resets services, rebuilds Spotlight, scans the whole home folder, or analyzes the entire disk.
-- Browser data, developer caches, project artifacts, installers, and inferred orphaned data require review and are not selected by default.
-- Project artifacts and installers go to the Trash, never permanent deletion.
-- Symbolic links, protected paths, running apps, security/MDM tools, cloud drives, input methods, password managers, AI-model data, and YuanGUI data are skipped.
-- Every operation is previewed, confirmed, checked again immediately before execution, and logged locally.
-
-<!-- GIF placeholder: Cleanup House preview, Chinese interface -->
-<!-- ![Cleanup House](docs/media/cleanup-house.gif) -->
-
-## Install
-
-Download the DMG from the [latest release](https://github.com/YangChen-cn/yuangui/releases/latest), then drag `YuanGUI.app` to Applications. Personal-share builds use an ad-hoc signature: Control-click the app and choose **Open**, then allow it in **System Settings → Privacy & Security** if macOS blocks it.
-
-Permissions are requested only when you use the related feature:
-
-- **Location** for local weather.
-- **Screen Recording** for region capture and OCR translation.
-- **Accessibility** for selected-text translation.
-- **Music/Finder Automation** after you request music control or a Finder action.
-- **Files and folders** only after you explicitly choose local audio to import or relocate.
-
-See the complete [installation and permission guide](docs/INSTALLATION.md), including recovery steps after denying a permission.
+See the complete [installation and permission guide](docs/INSTALLATION.md). Location, Screen Recording, Accessibility, Music/Finder Automation, and file access are requested only when the related feature is used.
 
 ## Build from source
 
@@ -81,12 +77,46 @@ swift test
 ./script/package_dmg.sh
 ```
 
-The package script creates `dist/YuanGUI-2.7.0.dmg`, verifies it, and prints its SHA-256. It keeps the existing ad-hoc signing workflow; a Developer ID and notarization service are optional, not required.
+The run script builds and launches a verified app bundle. The package script creates and checks a DMG and prints its SHA-256. An ad-hoc signature is sufficient for local builds; Developer ID and notarization are optional.
 
-## Contributing
+## Music
 
-Focused issues and pull requests are welcome. Please run `swift test` before submitting changes. Cleanup rules must remain user-scoped, previewable, and free of elevated privileges.
+Open the full player from the status bar music panel or Settings, then select Apple Music, Bilibili, or Local Music.
 
-## License and notices
+- Apple Music controls the system Music app.
+- Bilibili accepts video URLs, BV IDs, and `b23.tv` links. QR login enables authorized subtitles and favorites import.
+- Local Music reads audio only after you choose files or folders in the system import panel. It uses security-scoped bookmarks for continued access and never changes the original files.
+- A matching `.lrc` beside an imported track takes priority over the lyrics cache and LRCLIB lookup. Playlists, favorites, lyrics, offsets, and progress stay on this Mac.
 
-Source code is licensed under **GPL-3.0-only**, copyright © YangChen-cn. See [LICENSE](LICENSE). Original icons, sprites, character art, and `docs/media` are separately licensed under [CC BY-SA 4.0](ASSET_LICENSE.md). Reused code and acknowledgements are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The menu bar panel follows the selected source and shows source-specific empty-state actions. The full player keeps import controls usable in narrow sidebars; built-in library labels are localized while user playlist and track names remain unchanged.
+
+## Screenshots and translation
+
+Configure global shortcuts in **Settings → Quick Tools**. Screenshots and OCR run locally through Vision. Translations can open in an editable window or be placed over the original screenshot with adaptive layout. Replacing selected text is enabled only when the original app and editable selection can still be verified.
+
+## Privacy and safety
+
+- API keys, chat history, journal entries, music data, Bilibili cookies, and refresh tokens stay in local app data.
+- Attachments are sent only to the AI service you explicitly configure; original files are not copied into chat history.
+- YuanGUI does not scan Desktop, Downloads, Documents, Music, the home directory, or other locations on launch.
+- Cleanup never uses `sudo`, changes system settings, resets services, rebuilds Spotlight, or analyzes the whole disk.
+- Review-only items are not selected by default. Project artifacts and installers go to the Trash, never permanent deletion.
+- Protected paths, symbolic links, running apps, cloud drives, password managers, AI-model data, and YuanGUI data are skipped.
+- Every cleanup operation is previewed, confirmed, checked again before execution, and logged locally.
+
+## Localization
+
+YuanGUI supports English and Simplified Chinese. Open **Settings → General → Language**, choose System, English, or Simplified Chinese, then reopen the app. Existing journal entries, playlists, track names, and other user content are not translated or renamed.
+
+## Tests and packaging
+
+```bash
+swift test
+./script/package_dmg.sh
+```
+
+Tests cover system metrics, companion states, weather, AI services, music sources and local import, lyrics, translation layout, cleanup safety, settings persistence, and resource loading. GitHub Actions runs `swift test` for pushes and pull requests.
+
+## License
+
+Source code is licensed under [GPL-3.0-only](LICENSE), copyright © YangChen-cn. Original icons, sprites, character art, and `docs/media` use [CC BY-SA 4.0](ASSET_LICENSE.md). Reused code and acknowledgements are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

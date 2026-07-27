@@ -1,57 +1,238 @@
-<p align="center"><img src="Sources/YuanGUI/Resources/AppIcon.png" width="152" alt="元圭与 VCC 图标"></p>
+<p align="center">
+  <img src="Sources/YuanGUI/Resources/AppIcon.png" width="152" alt="元圭与 VCC 图标">
+</p>
 
-# 元圭与 VCC
-
-原生 macOS 桌宠与效率工具：音乐、系统监控、AI 对话、OCR 翻译、日记和安全清理。
+<h1 align="center">元圭与 VCC</h1>
 
 <p align="center">
-<a href="README.md">English</a> | 简体中文
+  一只会陪伴、听歌、看天气、关注 Mac 状态，也能和你聊天的原生 macOS 桌宠。
 </p>
 
 <p align="center">
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest">最新发布页</a> ·
-  <a href="docs/INSTALLATION.zh-CN.md">安装与权限说明</a> ·
-  <a href="LICENSE">GPL-3.0-only</a>
+  <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-111111?logo=apple">
+  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
+  <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
+  <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.6.1.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
-YuanGUI 使用 SwiftUI、AppKit 与 Swift Package Manager 开发。个人数据默认留在本机；只有使用相关功能时才会请求系统权限。
+## 项目简介
+
+“元圭与 VCC”是一款使用 SwiftUI、AppKit 和 Swift Package Manager 开发的原生 macOS 桌宠与效率工具。它把角色陪伴、音乐播放、系统状态、天气、AI 对话、截图标注、OCR 翻译和基础维护工具整合在轻量的透明悬浮面板与菜单栏入口中。
+
+应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
+
+当前稳定版本为 `2.6.1`。
+
+## 界面预览
+
+### 综合演示
+
+<p align="center">
+  <img src="docs/media/yuangui-demo.gif" width="820" alt="元圭与 VCC 功能演示">
+</p>
+
+### 分项演示
+
+<table>
+  <tr>
+    <th>桌宠与状态栏</th>
+    <th>元圭恋爱手帐</th>
+  </tr>
+  <tr>
+    <td><img src="docs/media/桌宠状态栏.gif" width="390" alt="桌宠与状态栏演示"></td>
+    <td><img src="docs/media/手帐本.gif" width="390" alt="元圭恋爱手帐演示"></td>
+  </tr>
+  <tr>
+    <th>音乐播放器</th>
+    <th>桌宠AI聊天</th>
+  </tr>
+  <tr>
+    <td ><img src="docs/media/播放器.gif" width="390" alt="音乐播放器演示"></td>
+    <td ><img src="docs/media/ai chat.gif" width="390" alt="桌宠AI对话演示"></td>
+  </tr>
+</table>
 
 ## 主要功能
 
-- 元圭、蓝猫 VCC 与双人模式桌宠，结合天气、时间、电池和内存状态互动。
-- 菜单栏状态面板：CPU、内存、磁盘、网络、电池、运行时间、音乐和常用工具。
-- 本地日记：照片、Markdown、日历、备份恢复和导出。
-- Apple Music 控制、哔哩哔哩播放与导入，以及 MP3、M4A、AAC、WAV、AIFF 本地音乐；支持歌单、收藏、同名 LRC、歌词缓存和桌面歌词。
-- 兼容 OpenAI 接口的流式 AI 对话、本地历史和可编辑角色提示词。
-- 区域截图、端侧 Vision OCR、截图翻译、划词翻译与标注。
-- 清理屋：缓存、旧日志、开发缓存、项目构建产物和旧安装包的保守扫描。
+- **三种角色模式**：元圭、VCC、元圭与 VCC 一起。
+- **元圭恋爱手账**：原生 macOS 三栏日记界面，支持快速记录、心情、天气、地点、播放中的音乐、标签、Markdown、照片、日历、照片墙、那年今日、搜索、收藏、最近删除以及 Markdown/JSON/ZIP 导出。
+- **本地日记存储**：日记和附件保存在本机，采用带格式版本的 JSON、原图/缩略图分离、损坏文件隔离、竞态安全的自动保存和可验证备份恢复；每天最多自动备份一次，并保留 7 个每日备份和 4 个每周备份。
+- **轻量动作效果**：每个普通动作和状态动作都带有短暂的位移、缩放、摆动或弹跳效果；低电量模式和“减少动态效果”下会自动静止。
+- **智能状态反应**：支持低电量、充电、内存压力、下雨和睡觉时间等状态动作；电量 20% 时短暂气泡提醒，10% 及以下才进入紧急提醒，内存达到 90% 或系统报告严重压力时提醒。
+- **系统状态面板**：查看 CPU、内存、磁盘、网络、电池和运行时间。
+- **本地天气**：经用户授权后获取大致位置，并通过 Open-Meteo 获取天气，无需天气 API Key。
+- **主动对白**：可设置 1–120 分钟的日常对白间隔，并在天气刷新后进行角色化播报。
+- **AI 对话**：支持 OpenAI 兼容接口、SSE 流式回复（单次最多 4096 tokens）；填写 URL 与 API Key 后可自动读取模型，也可以手动填写模型名和编辑角色提示词。
+- **附件对话与历史记录**：支持图片和文本类附件，保留本地聊天历史；异步回复始终写回发起请求的会话。
+- **统一音乐播放器**：可以控制系统 Apple Music，也能导入哔哩哔哩 URL、BV 号和短链接播放公开视频音频；状态栏和完整播放器均可独立调节音量，并可选择在其他应用持续播放声音时自动暂停。
+- **哔哩哔哩资料库**：支持读取登录账号创建或收藏的视频收藏夹，弹窗选择后一键去重导入；同时支持播放列表、收藏、本地歌单和多种播放模式。
+- **哔哩哔哩扫码登录与字幕**：登录后可读取账号有权访问的播放器字幕；应用不会读取或保存账号密码。
+- **歌词与听歌陪伴**：支持 LRCLIB 自动匹配、单独修改歌曲名或歌手、导入 LRC、手动输入与精细调整歌词偏移，以及带可调透明度细条、Liquid Glass 控制按钮和圆体、苹方、宋体、楷体等字体的桌面悬浮歌词；播放期间角色会切换到听歌动作。
+- **应用内更新**：设置中显示当前版本和更新内容，可读取 GitHub Release 更新日志并一键下载安装新版本。
+- **清理屋**：提供保守的空间清理、软件卸载、白名单、操作记录和路径安全检查。
+- **废纸篓互动**：把文件拖到桌宠上即可移入废纸篓，也可以打开或确认清空废纸篓。
+- **桌面交互**：支持拖动和左右贴边收纳；靠近边缘时显示磁吸预览，松手后切换为透明角色探头，悬停稍微探出并可显示鼠标穿透的窄版 CPU、内存与电量监控，低电量或内存压力时会主动提醒，点击后平滑恢复到屏幕范围内。另支持尺寸调节、交互锁定与鼠标穿透；锁定后悬停只显示一个紧凑解锁按钮，也可一键隐藏或显示 Finder 桌面图标。
+- **菜单栏入口与登录启动**：桌宠隐藏后仍可通过菜单栏恢复；状态栏“工具”页集中提供 AI 对话、清理屋、软件卸载、截图、翻译、废纸篓和设置入口，并可选择登录时自动启动。
+- **区域截图与标注**：按 `Control-A` 选区截图，添加画笔、文字、箭头、形状、高亮和马赛克，并复制或保存 PNG。
+- **截图翻译（OCR）**：按 `Control-Shift-A` 选区截图，通过 Vision 在本机完成结构化 OCR，再按语义句子批量翻译。可以使用紧凑翻译窗口，也可以把译文按原文位置覆盖到截图上；覆盖层支持独立原文遮盖补片、完整文本逻辑画布、以指针为锚点的触控板捏合、窗口与译图同步缩放、安全扩展窄文本宽度、同步中英对照、复制、拖动和 `Esc` 关闭。
+- **划词与手动翻译**：按 `Control-Z` 翻译网页或应用选区；没有选中文字时仍会打开窗口，可直接输入原文。翻译窗口保持单实例，新窗口会自动关闭上一个；支持修正原文后重新翻译、复制译文，并在可编辑输入框中校验后替换原选区。
+- **可选翻译引擎**：默认通过系统快捷指令免费调用 Apple 翻译，也可手动选择 Apple 本地翻译或在线 AI。在线 AI 只有在用户明确选择并完成配置后才会调用。
 
-## 清理安全
+系统快捷指令调用参考 [QuickTranslate](https://github.com/ringozzt/quicktranslate)（MIT）：通过 `shortcuts run` 的标准输入传入 JSON，源语言留空自动检测，并使用系统要求的 `zh_CN`、`en_US` 等语言标识。
 
-- 不使用 sudo，不优化系统、不重置服务、不重建 Spotlight，不扫描整个主目录或整盘大文件。
-- 浏览器、开发缓存、项目产物、安装包和推断出的孤儿数据都需要人工检查，默认不选。
-- 项目产物和旧安装包只会移入废纸篓，不会永久删除。
-- 符号链接、保护目录、运行中应用、系统/安全/MDM 软件、云盘、输入法、密码管理器、AI 模型和 YuanGUI 数据自动跳过。
-- 每项操作均可预览、再次确认、执行前复核并写入本地记录。
+## 系统要求
 
-## 本地音乐与隐私
+- macOS 15 Sequoia 或更高版本
+- 从源码构建需要 Swift 6 工具链（推荐使用最新版 Xcode）
+- 天气功能需要授予位置权限并允许网络访问
+- AI 对话需要用户自己的 OpenAI 兼容 API 地址和 API Key
+- 哔哩哔哩播放、歌词匹配和检查更新需要网络访问；读取字幕需要登录哔哩哔哩账号
+- 恋爱手账的天气和当前位置需要授予位置权限；日记正文、照片和备份默认只保存在本机
 
-YuanGUI 不会在启动或打开音乐页时扫描桌面、下载、文稿、音乐、用户主目录或其他位置。只有点击“导入音乐”并在系统面板中选择文件或文件夹后，应用才会读取其中受支持的音频；递归查找仅限用户选中的文件夹。应用使用安全作用域书签延续访问权限，不复制、移动或修改原始音乐文件。音频旁的同名 `.lrc` 会优先于现有歌词缓存和 LRCLIB。
+## 安装
 
-菜单栏音乐空态会显示当前来源对应的操作，并始终提供“打开完整播放器”入口。完整播放器中的导入按钮会随侧栏宽度自动排列，不截断标签；资料库内建名称随应用语言显示，用户自己的歌单名和歌曲信息保持原样。
+### 使用 DMG
 
-## 安装与构建
+[一键下载最新版 `YuanGUI-2.6.1.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.6.1.dmg)
 
-请在[最新发布页](https://github.com/YangChen-cn/yuangui/releases/latest)下载 DMG，将 `YuanGUI.app` 拖入“应用程序”。个人分享版使用临时签名；若首次被拦截，请按住 Control 点击“打开”，或在“系统设置 → 隐私与安全性”中允许。
+1. 打开 `YuanGUI-2.6.1.dmg`。
+2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
+3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
+4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
 
-完整权限恢复步骤见[安装与权限说明](docs/INSTALLATION.zh-CN.md)。从源码验证：
+### 从源码运行
+
+```bash
+git clone https://github.com/YangChen-cn/yuangui.git
+cd yuangui
+./script/build_and_run.sh --verify
+```
+
+脚本会停止旧进程、构建应用、生成 `dist/YuanGUI.app`，然后启动并确认进程正常运行。
+
+也可以直接使用 SwiftPM：
+
+```bash
+swift build
+swift test
+```
+
+这是 SwiftUI / AppKit 图形应用，不建议把 SwiftPM 生成的裸可执行文件作为日常启动方式；请优先使用项目提供的应用打包脚本。
+
+## AI 模型配置
+
+1. 打开“设置 → AI 对话”。
+2. 填写 OpenAI 兼容的 API 基础地址与 API Key。
+3. 点击“连接并读取模型”。
+4. 从可用模型菜单选择模型，或在下方手动填写模型名。
+5. 点击“查看或编辑角色提示词…”可以查看和修改当前提示词。
+
+不同服务商对基础地址的格式要求可能不同。应用会在同一兼容路径下访问模型列表和聊天接口。
+
+## 截图与翻译
+
+1. 在“设置 → 快捷工具”中配置区域截图、截图翻译和划词翻译的全局快捷键。
+2. 截图翻译使用 macOS Vision 在本机识别文字；截图和 OCR 中间数据只保留在内存中。
+3. 开启“将截图译文覆盖显示在原位置”后，译文会在所选截图区域内按 OCR 坐标排版；关闭后使用可编辑的普通翻译窗口。
+4. 默认翻译引擎为 `YuanGUI.Translate` 系统快捷指令，可从设置页安装；它通过 Apple 翻译工作，不需要付费 API Key。
+5. Apple 本地翻译可能需要先下载对应语言资源；在线 AI 则使用“AI 对话”中配置的 OpenAI 兼容服务。
+6. 划词读取依次尝试辅助功能选区、浏览器脚本和复制选区；如果仍未取得文字，会打开手动输入窗口。
+7. “替换原文”只在原应用、控件和选区仍与取词时一致且位置可编辑时启用，避免写回错误位置。
+
+## 音乐播放器
+
+1. 从状态栏音乐页或设置中打开完整音乐播放器。
+2. 选择 Apple Music 后，可以控制系统 Music App 的播放、进度和音量。
+3. 选择哔哩哔哩后，可以粘贴视频 URL、BV 号或 `b23.tv` 短链接导入歌曲。
+4. 如果公开视频没有匿名字幕，可以点击播放器封面右上方的账号入口，使用哔哩哔哩手机客户端扫码登录。
+5. 登录后点击侧边栏的“导入哔哩哔哩收藏夹”，可以选择自己创建或收藏的视频收藏夹并一键导入；应用会去重，并创建或更新同名本地歌单。
+6. 可以单独保存歌曲名或歌手而不影响现有歌词，也可以使用修改后的信息重新匹配，或直接导入本地 LRC 文件。
+7. 歌词偏移支持滑杆、0.1 秒步进和直接输入秒数，并按歌曲分别保存。
+8. “其他应用播放声音时自动暂停音乐”默认关闭；打开后，持续约 1 秒的外部音频会暂停当前音乐，外部声音稳定结束后才会在安全条件下恢复。
+
+播放列表、收藏、本地歌单、歌词、歌词偏移和播放进度都会保存在本机。切换播放来源不会删除已经匹配的歌词。
+
+## 关于与更新
+
+打开“设置 → 关于”可以查看当前版本、本版更新内容和 GitHub Release 更新日志。发现新版本后，可点击“一键更新”下载 DMG；应用会校验 Bundle ID、版本号和代码签名，再替换当前应用并重新启动。
+
+## 隐私与安全
+
+- API Key 只保存在本机，并使用仅当前用户可读的文件权限。
+- 聊天记录保存在本机；附件内容会发送给当前配置的 AI 服务商，但原附件文件不会写入聊天历史。
+- 哔哩哔哩登录 Cookie 和刷新令牌只保存在本机应用数据目录，并限制为当前用户可读；应用不会保存账号密码。
+- 天气功能只请求大致位置，不保存位置轨迹。
+- 清理和卸载使用允许目录、路径规范化、符号链接检查、扫描后状态复核及共享数据保护等限制。
+- 高风险或无法确认归属的项目会被跳过；软件卸载默认移入废纸篓。
+- 清空废纸篓和永久清理操作需要用户确认。
+
+## 测试
 
 ```bash
 swift test
-./script/build_and_run.sh --verify
+```
+
+当前测试套件包含 295 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
+
+- 系统指标读取与监控频率
+- 智能状态与动作切换
+- 天气解析与刷新
+- AI 接口、模型读取、附件和本地历史
+- 恋爱手账的存储格式迁移、损坏隔离、脏记录保存、附件导入、删除恢复、筛选跳转和桌宠联动
+- Apple Music、哔哩哔哩播放、登录、字幕、歌词匹配和本地音乐资料库
+- GitHub Release 解码和版本比较
+- 精灵资源和动作配置
+- 清理、卸载与路径安全
+- 桌宠布局、贴边和设置持久化
+- 截图 OCR 分组、译文对齐、覆盖层排版、缓存与翻译窗口生命周期
+- 类型安全窗口路由、桌宠动作仲裁、辅助气泡定位和音乐子 Store 关闭流程
+
+## 打包 DMG
+
+```bash
 ./script/package_dmg.sh
 ```
 
-## 许可
+默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
 
-代码采用 **GPL-3.0-only**，版权 © YangChen-cn，见 [LICENSE](LICENSE)。图标、Sprites、角色图和 `docs/media` 独立采用 [CC BY-SA 4.0](ASSET_LICENSE.md)。复用代码和服务致谢见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+```text
+dist/YuanGUI-2.6.1.dmg
+```
+
+如需 Developer ID 签名与公证，可以提供以下环境变量：
+
+```bash
+SIGNING_IDENTITY="Developer ID Application: ..." \
+NOTARY_PROFILE="your-notary-profile" \
+./script/package_dmg.sh
+```
+
+## 项目结构
+
+```text
+YuanGUI/
+├── .github/workflows/ # GitHub Actions 自动测试
+├── Package.swift
+├── Sources/YuanGUI/
+│   ├── App/          # 应用入口与菜单栏
+│   ├── Models/       # 角色、状态、天气和维护数据模型
+│   ├── Services/     # 系统指标、天气、AI、音乐、更新、存储与清理服务
+│   ├── Stores/       # 桌宠、聊天、音乐、设置和维护状态
+│   ├── Support/      # 面板、窗口、布局、资源加载与辅助逻辑
+│   ├── Views/        # SwiftUI 界面
+│   └── Resources/    # 应用图标和角色动作图片
+├── Tests/YuanGUITests/
+└── script/           # 构建、运行、性能采样和 DMG 打包脚本
+```
+
+## 开发说明
+
+- 主体为 SwiftPM macOS 可执行产品，没有依赖第三方 Swift Package。
+- `AppRuntime` 负责依赖组装，`WindowCoordinator` 负责单实例窗口和类型安全 `AppRoute`；业务 Store 不发送应用自定义全局通知。
+- 音乐由非 Observable 的 `MusicFeature` 组合六个可观察子 Store，网络、播放器、歌词和持久化依赖通过协议注入。
+- 桌宠窗口由 AppKit `NSPanel` 承载，内容使用 SwiftUI 构建。
+- 系统状态读取通过 macOS 原生接口完成。
+- 角色动作图片按需加载并使用有上限的内存缓存。
+- 当前动作效果是基于 SwiftUI 的轻量变换，不使用持续渲染循环。
+- `push` 和 Pull Request 会运行 `.github/workflows/tests.yml` 中的 `swift test`。
