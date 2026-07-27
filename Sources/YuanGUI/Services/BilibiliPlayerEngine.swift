@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 
 @MainActor
-protocol BilibiliPlaying: AnyObject {
+protocol URLMusicPlaying: AnyObject {
     var onStateChange: ((MusicPlaybackState) -> Void)? { get set }
     var onProgress: ((TimeInterval, TimeInterval) -> Void)? { get set }
     var onFinished: (() -> Void)? { get set }
@@ -17,12 +17,12 @@ protocol BilibiliPlaying: AnyObject {
     func stop()
 }
 
-private struct BilibiliPlaybackTimeoutError: LocalizedError {
-    var errorDescription: String? { "Bilibili 音频线路连接超时" }
+private struct URLMusicPlaybackTimeoutError: LocalizedError {
+    var errorDescription: String? { AppLocalizer.string("music.error.networkTimeout") }
 }
 
 @MainActor
-final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
+final class URLMusicPlayerEngine: MusicPlaybackControlling, URLMusicPlaying {
     private(set) var player = AVPlayer()
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
@@ -35,6 +35,7 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
     private var requestedPosition: TimeInterval = 0
     private var shouldAutoplay = true
     private var loadWatchdog: Task<Void, Never>?
+    private var currentLoadIsNetwork = false
     var onStateChange: ((MusicPlaybackState) -> Void)?
     var onProgress: ((TimeInterval, TimeInterval) -> Void)?
     var onFinished: (() -> Void)?
@@ -73,7 +74,11 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
         stalledObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: nil, queue: .main) { [weak self] note in
             Task { @MainActor [weak self] in
                 guard let self, note.object as? AVPlayerItem === self.player.currentItem else { return }
-                self.tryNextCandidate(after: URLError(.networkConnectionLost))
+                if self.currentLoadIsNetwork {
+                    self.tryNextCandidate(after: URLError(.networkConnectionLost))
+                } else {
+                    self.onFailure?(URLError(.cannotOpenFile))
+                }
             }
         }
     }
@@ -94,10 +99,11 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
         }
         onStateChange?(.loading)
         let url = candidateURLs[candidateIndex]
-        let asset = AVURLAsset(
-            url: url,
-            options: ["AVURLAssetHTTPHeaderFieldsKey": requestHeaders]
-        )
+        currentLoadIsNetwork = Self.isNetworkURL(url)
+        let options = currentLoadIsNetwork && !requestHeaders.isEmpty
+            ? ["AVURLAssetHTTPHeaderFieldsKey": requestHeaders]
+            : nil
+        let asset = AVURLAsset(url: url, options: options)
         let item = AVPlayerItem(asset: asset)
         itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
@@ -107,7 +113,12 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
         player.replaceCurrentItem(with: item)
         if requestedPosition > 0 { player.seek(to: CMTime(seconds: requestedPosition, preferredTimescale: 600)) }
         if shouldAutoplay { player.play() }
-        startLoadWatchdog(for: candidateIndex)
+        if currentLoadIsNetwork {
+            startLoadWatchdog(for: candidateIndex)
+        } else {
+            loadWatchdog?.cancel()
+            loadWatchdog = nil
+        }
     }
 
     private func startLoadWatchdog(for index: Int) {
@@ -116,14 +127,14 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
             try? await Task.sleep(for: .seconds(12))
             guard !Task.isCancelled, let self, self.candidateIndex == index,
                   self.player.timeControlStatus != .playing else { return }
-            self.tryNextCandidate(after: BilibiliPlaybackTimeoutError())
+            self.tryNextCandidate(after: URLMusicPlaybackTimeoutError())
         }
     }
 
     private func tryNextCandidate(after error: Error) {
         loadWatchdog?.cancel()
         loadWatchdog = nil
-        guard candidateIndex + 1 < candidateURLs.count else {
+        guard currentLoadIsNetwork, candidateIndex + 1 < candidateURLs.count else {
             onFailure?(error)
             return
         }
@@ -147,6 +158,12 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
         player.pause()
         player.replaceCurrentItem(with: nil)
         candidateURLs.removeAll()
+        currentLoadIsNetwork = false
+    }
+
+    private static func isNetworkURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
     }
 
     deinit {
@@ -156,3 +173,6 @@ final class BilibiliPlayerEngine: MusicPlaybackControlling, BilibiliPlaying {
         if let stalledObserver { NotificationCenter.default.removeObserver(stalledObserver) }
     }
 }
+
+typealias BilibiliPlaying = URLMusicPlaying
+typealias BilibiliPlayerEngine = URLMusicPlayerEngine

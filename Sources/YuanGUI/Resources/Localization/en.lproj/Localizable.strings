@@ -1103,3 +1103,4 @@
 "集中管理截图、截图翻译和划词翻译" = "Manage capture, screenshot translation, and selection translation.";
 "版本信息、更新内容与应用更新" = "Version information, release notes, and in-app updates.";
 "music.source.local" = "Local Music";
+"music.error.networkTimeout" = "The audio connection timed out.";
