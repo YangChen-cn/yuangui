@@ -548,12 +548,22 @@ struct MusicPlayerView: View {
                 .padding(.bottom, 6)
                 List(selection: $selectedTrackID) {
                     Section("资料库") {
-                        collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: music.libraryStore.playlist.count)
-                        collectionButton("收藏", systemImage: "heart.fill", id: "favorites", count: music.libraryStore.favoriteTracks.count)
+                        collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: bilibiliTracks.count)
+                        collectionButton(
+                            "收藏",
+                            systemImage: "heart.fill",
+                            id: "favorites",
+                            count: bilibiliTracks.count(where: music.isFavorite)
+                        )
                     }
                     Section {
                         ForEach(music.libraryStore.savedPlaylists) { savedPlaylist in
-                            collectionButton(savedPlaylist.name, systemImage: "music.note.house", id: "playlist:\(savedPlaylist.id.uuidString)", count: music.tracks(in: savedPlaylist).count)
+                            collectionButton(
+                                savedPlaylist.name,
+                                systemImage: "music.note.house",
+                                id: "playlist:\(savedPlaylist.id.uuidString)",
+                                count: music.tracks(in: savedPlaylist).count(where: { $0.source == .bilibili })
+                            )
                                 .contextMenu {
                                     Button("删除歌单", role: .destructive) {
                                         music.deletePlaylist(savedPlaylist)
@@ -597,7 +607,7 @@ struct MusicPlayerView: View {
                 HStack {
                     Text("\(displayedTracks.count) 首").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    if selectedCollectionID == "all", !music.libraryStore.playlist.isEmpty {
+                    if selectedCollectionID == "all", !displayedTracks.isEmpty {
                         Button("清空") { music.clearPlaylist() }.buttonStyle(.plain).foregroundStyle(.secondary)
                     }
                 }.padding(10)
@@ -912,6 +922,10 @@ struct MusicPlayerView: View {
 
     private var localTracks: [MusicTrack] {
         music.libraryStore.playlist.filter { $0.source == .local }
+    }
+
+    private var bilibiliTracks: [MusicTrack] {
+        music.libraryStore.playlist.filter { $0.source == .bilibili }
     }
 
     private func chooseLocalFiles() {

@@ -377,12 +377,12 @@ final class MusicFeature {
                 _ = activatePlaybackSource(.bilibili)
             }
             if currentTrack?.source != .bilibili { restoreBilibiliSelection() }
-        } else if newSource == .local, activePlaybackSource != nil {
-            _ = activatePlaybackSource(.local)
-            restoreSelection(for: .local)
-        } else if newSource == .appleMusic, activePlaybackSource != nil {
-            _ = activatePlaybackSource(.appleMusic)
-            clearTransientPlaybackState()
+        } else if newSource == .local {
+            if activePlaybackSource != nil { _ = activatePlaybackSource(.local) }
+            if currentTrack?.source != .local { restoreSelection(for: .local) }
+        } else if newSource == .appleMusic {
+            if activePlaybackSource != nil { _ = activatePlaybackSource(.appleMusic) }
+            if currentTrack?.source != .appleMusic { clearTransientPlaybackState() }
         }
     }
 
@@ -1046,6 +1046,7 @@ final class MusicFeature {
 
     func remove(_ track: MusicTrack) {
         let wasCurrent = currentTrack?.id == track.id
+        let removedSource = track.source
         playlist.removeAll { $0.id == track.id }
         favoriteTrackIDs.remove(track.id)
         removeCachedLyrics(for: track)
@@ -1053,8 +1054,8 @@ final class MusicFeature {
         if wasCurrent {
             bilibiliPlayer?.stop(); currentTrack = nil; currentTrackID = nil; setPlaybackState(.stopped)
             releaseScopedLocalURL()
-            lastBilibiliPosition = 0
-            if activePlaybackSource == .bilibili {
+            if removedSource == .bilibili { lastBilibiliPosition = 0 }
+            if activePlaybackSource == removedSource {
                 activePlaybackSource = nil
                 scheduleBilibiliPlayerRelease()
             }

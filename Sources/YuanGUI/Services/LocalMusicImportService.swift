@@ -88,6 +88,8 @@ actor LocalMusicImportService: LocalMusicImporting {
     }
 
     func importFiles(_ urls: [URL]) async -> LocalMusicImportResult {
+        let scopedURLs = urls.filter { $0.startAccessingSecurityScopedResource() }
+        defer { scopedURLs.forEach { $0.stopAccessingSecurityScopedResource() } }
         do {
             let files = try collectAudioFiles(from: urls)
             var tracks: [(Int, MusicTrack)] = []
@@ -144,12 +146,17 @@ actor LocalMusicImportService: LocalMusicImporting {
     func resolveURL(for track: MusicTrack) throws -> URL {
         guard let reference = track.local else { throw LocalMusicImportError.invalidTrack }
         var stale = false
-        let url = try URL(
-            resolvingBookmarkData: reference.bookmarkData,
-            options: [.withSecurityScope, .withoutUI],
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
-        )
+        let url: URL
+        do {
+            url = try URL(
+                resolvingBookmarkData: reference.bookmarkData,
+                options: [.withSecurityScope, .withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            )
+        } catch {
+            throw LocalMusicImportError.staleBookmark
+        }
         guard !stale else { throw LocalMusicImportError.staleBookmark }
         guard FileManager.default.fileExists(atPath: url.path) else { throw LocalMusicImportError.missingFile }
         return url
@@ -191,8 +198,6 @@ actor LocalMusicImportService: LocalMusicImporting {
         var seen = Set<String>()
         for url in urls {
             try Task.checkCancellation()
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
             if values.isDirectory == true {
                 let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
