@@ -100,7 +100,7 @@ final class AppRuntime {
                 return
             }
             guard await diary.flush() else {
-                diary.operationError = "日记保存失败，已取消退出"
+                diary.operationError = AppLocalizer.string("diary.error.saveBeforeQuit")
                 terminationTask = nil
                 sender.reply(toApplicationShouldTerminate: false)
                 return
@@ -114,7 +114,7 @@ final class AppRuntime {
 
     private func prepareToTerminateForUpdate() async -> Bool {
         let saved = await diary.flush()
-        if !saved { diary.operationError = "日记保存失败，更新安装已取消" }
+        if !saved { diary.operationError = AppLocalizer.string("diary.error.saveBeforeUpdate") }
         return saved
     }
 }
@@ -298,7 +298,7 @@ final class WindowCoordinator: NSObject {
         toolsMenu.addItem(withTitle: AppLocalizer.string("menu.screenshotTranslation"), action: #selector(startScreenshotTranslation), keyEquivalent: "")
         toolsMenu.addItem(withTitle: AppLocalizer.string("menu.translateSelection"), action: #selector(translateSelection), keyEquivalent: "")
         toolsMenu.addItem(NSMenuItem.separator())
-        let diaryItem = toolsMenu.addItem(withTitle: "手帐本", action: #selector(showDiaryFromMenu), keyEquivalent: "d")
+        let diaryItem = toolsMenu.addItem(withTitle: AppLocalizer.string("手帐本"), action: #selector(showDiaryFromMenu), keyEquivalent: "d")
         diaryItem.keyEquivalentModifierMask = [.command]
         for item in toolsMenu.items { item.target = self }
         toolsItem.submenu = toolsMenu
@@ -310,7 +310,7 @@ final class WindowCoordinator: NSObject {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(
             systemSymbolName: "pawprint.fill",
-            accessibilityDescription: "元圭与 VCC"
+            accessibilityDescription: AppLocalizer.string("元圭与 VCC")
         )
         statusItem.button?.target = self
         statusItem.button?.action = #selector(toggleDashboard)

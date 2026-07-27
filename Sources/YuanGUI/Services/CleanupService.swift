@@ -168,7 +168,7 @@ struct CleanupScanner: CleanupScanning {
                         progress(MaintenanceScanProgress(
                             completed: value,
                             total: total,
-                            message: "正在扫描\(rule.category.title)…"
+                            message: AppLocalizer.format("maintenance.progress.scanningCategory", rule.category.title)
                         ))
                     }
                     return laneResults
@@ -181,7 +181,7 @@ struct CleanupScanner: CleanupScanning {
 
         if !Task.isCancelled {
             candidates += scanOrphanedData(excluding: paths)
-            progress(MaintenanceScanProgress(completed: total, total: total, message: "正在整理扫描结果…"))
+            progress(MaintenanceScanProgress(completed: total, total: total, message: AppLocalizer.string("maintenance.progress.organizing")))
         }
         return deduplicated(candidates).sorted { $0.byteCount > $1.byteCount }
     }
@@ -241,21 +241,21 @@ struct CleanupScanner: CleanupScanning {
                 var warnings: [String] = []
                 var blocked = false
                 if management == .homebrew {
-                    warnings.append("此应用由 Homebrew 管理，请优先使用 Homebrew 卸载")
+                    warnings.append(AppLocalizer.string("maintenance.warning.homebrew"))
                     blocked = true
                 } else if management == .setapp {
-                    warnings.append("此应用由 Setapp 管理，请在 Setapp 中卸载")
+                    warnings.append(AppLocalizer.string("maintenance.warning.setapp"))
                     blocked = true
                 }
                 if hasSystemLevelComponents(app: item.url, bundleID: bundleID) {
-                    warnings.append("检测到系统扩展或特权后台组件，请使用应用官方卸载器")
+                    warnings.append(AppLocalizer.string("maintenance.warning.systemComponent"))
                     blocked = true
                 }
                 records.append((item.url, item.source, name, bundleID, metadata, management, warnings, blocked))
                 progress(MaintenanceScanProgress(
                     completed: index + 1,
                     total: total,
-                    message: "正在读取 \(name)…"
+                    message: AppLocalizer.format("maintenance.progress.readingApp", name)
                 ))
             }
             metadataCache.persist(fileManager: fileManager)
@@ -265,7 +265,7 @@ struct CleanupScanner: CleanupScanning {
                 let siblingExists = (bundleCounts[record.bundleID] ?? 0) > 1
                 var warnings = record.warnings
                 if siblingExists {
-                    warnings.append("另有应用使用相同 Bundle ID，共享数据将全部保留")
+                    warnings.append(AppLocalizer.string("maintenance.warning.sharedBundleID"))
                 }
                 let components = uninstallComponents(
                     app: record.url,
@@ -302,32 +302,32 @@ struct CleanupScanner: CleanupScanning {
             CleanupRule(
                 root: library.appendingPathComponent("Caches"), category: .appCache,
                 disposition: .permanent, minimumAgeDays: nil, risk: .recommended,
-                selectedByDefault: true, reason: "应用可重新生成的缓存"
+                selectedByDefault: true, reason: AppLocalizer.string("maintenance.reason.appCache")
             ),
             CleanupRule(
                 root: library.appendingPathComponent("Logs"), category: .oldLog,
                 disposition: .permanent, minimumAgeDays: 7, risk: .recommended,
-                selectedByDefault: true, reason: "超过 7 天的应用日志"
+                selectedByDefault: true, reason: AppLocalizer.string("maintenance.reason.oldLog")
             ),
             CleanupRule(
                 root: library.appendingPathComponent("Logs/DiagnosticReports"), category: .crashReport,
                 disposition: .permanent, minimumAgeDays: 14, risk: .recommended,
-                selectedByDefault: true, reason: "超过 14 天的崩溃与诊断报告"
+                selectedByDefault: true, reason: AppLocalizer.string("maintenance.reason.crashReport")
             ),
             CleanupRule(
                 root: temporaryDirectoryOverride ?? fileManager.temporaryDirectory, category: .temporary,
                 disposition: .permanent, minimumAgeDays: 7, risk: .review,
-                selectedByDefault: false, reason: "超过 7 天的用户临时项目"
+                selectedByDefault: false, reason: AppLocalizer.string("maintenance.reason.temporary")
             ),
             CleanupRule(
                 root: library.appendingPathComponent("Developer/Xcode/DerivedData"), category: .developerCache,
                 disposition: .permanent, minimumAgeDays: nil, risk: .review,
-                selectedByDefault: false, reason: "Xcode 可重新生成的构建产物"
+                selectedByDefault: false, reason: AppLocalizer.string("maintenance.reason.xcodeBuild")
             ),
             CleanupRule(
                 root: library.appendingPathComponent("Developer/Xcode/DerivedData/ModuleCache.noindex"), category: .developerCache,
                 disposition: .permanent, minimumAgeDays: nil, risk: .review,
-                selectedByDefault: false, reason: "Xcode 可重新生成的模块缓存"
+                selectedByDefault: false, reason: AppLocalizer.string("maintenance.reason.xcodeModuleCache")
             )
         ]
     }
@@ -340,15 +340,15 @@ struct CleanupScanner: CleanupScanning {
         let home = homeDirectory
         let library = userLibraryDirectory
         let roots: [(URL, String)] = [
-            (home.appendingPathComponent(".npm/_cacache"), "npm 可重新下载的缓存"),
-            (home.appendingPathComponent(".cache/pip"), "pip 可重新下载的缓存"),
-            (home.appendingPathComponent(".cache/uv"), "uv 可重新下载的缓存"),
-            (home.appendingPathComponent(".cargo/registry"), "Cargo 可重新下载的缓存"),
-            (home.appendingPathComponent("go/pkg/mod/cache"), "Go 模块可重新下载的缓存"),
-            (home.appendingPathComponent(".gradle/caches"), "Gradle 可重新下载的缓存"),
-            (home.appendingPathComponent("Library/Caches/CocoaPods"), "CocoaPods 可重新下载的缓存"),
-            (library.appendingPathComponent("Caches/Homebrew"), "Homebrew 下载缓存"),
-            (library.appendingPathComponent("Developer/Xcode/DerivedData"), "Xcode 可重新生成的构建产物")
+            (home.appendingPathComponent(".npm/_cacache"), "npm"),
+            (home.appendingPathComponent(".cache/pip"), "pip"),
+            (home.appendingPathComponent(".cache/uv"), "uv"),
+            (home.appendingPathComponent(".cargo/registry"), "Cargo"),
+            (home.appendingPathComponent("go/pkg/mod/cache"), "Go module"),
+            (home.appendingPathComponent(".gradle/caches"), "Gradle"),
+            (home.appendingPathComponent("Library/Caches/CocoaPods"), "CocoaPods"),
+            (library.appendingPathComponent("Caches/Homebrew"), "Homebrew"),
+            (library.appendingPathComponent("Developer/Xcode/DerivedData"), "Xcode DerivedData")
         ]
         return roots.compactMap { root, reason in
             guard !Task.isCancelled,
@@ -367,7 +367,7 @@ struct CleanupScanner: CleanupScanning {
                 modifiedAt: values?.contentModificationDate,
                 risk: .review,
                 confidence: .exact,
-                reason: reason + "，默认不选",
+                reason: AppLocalizer.format("maintenance.reason.rebuildableCache", reason),
                 selectedByDefault: false
             )
         }
@@ -413,7 +413,7 @@ struct CleanupScanner: CleanupScanning {
                             modifiedAt: values?.contentModificationDate,
                             risk: .review,
                             confidence: .inferred,
-                            reason: "项目中可重新生成的构建产物，默认移入废纸篓",
+                            reason: AppLocalizer.string("maintenance.reason.projectArtifact"),
                             selectedByDefault: false,
                             executionRoot: normalizedRoot
                         ))
@@ -451,7 +451,7 @@ struct CleanupScanner: CleanupScanning {
                     modifiedAt: values?.contentModificationDate,
                     risk: .review,
                     confidence: .inferred,
-                    reason: "项目中可重新生成的构建产物，默认移入废纸篓",
+                    reason: AppLocalizer.string("maintenance.reason.projectArtifact"),
                     selectedByDefault: false,
                     executionRoot: normalizedRoot
                 ))
@@ -493,7 +493,7 @@ struct CleanupScanner: CleanupScanning {
                     modifiedAt: values?.contentModificationDate,
                     risk: .review,
                     confidence: .exact,
-                    reason: "超过 30 天且大于 10 MB 的安装包，默认移入废纸篓",
+                    reason: AppLocalizer.string("maintenance.reason.oldInstaller"),
                     selectedByDefault: false,
                     executionRoot: root
                 ))
@@ -535,7 +535,7 @@ struct CleanupScanner: CleanupScanning {
                 modifiedAt: values?.contentModificationDate,
                 risk: risk,
                 confidence: .exact,
-                reason: browser ? "浏览器缓存可能包含登录状态，默认不选" : rule.reason,
+                reason: browser ? AppLocalizer.string("maintenance.reason.browserCache") : rule.reason,
                 selectedByDefault: selected
             )
         }
@@ -583,7 +583,7 @@ struct CleanupScanner: CleanupScanning {
                     modifiedAt: values?.contentModificationDate,
                     risk: .review,
                     confidence: .inferred,
-                    reason: "未找到拥有此 Bundle ID 的已安装应用，需人工确认",
+                    reason: AppLocalizer.string("maintenance.reason.orphanedData"),
                     selectedByDefault: false
                 ))
             }
@@ -698,7 +698,7 @@ struct CleanupScanner: CleanupScanning {
             byteCount: appSize,
             risk: .recommended,
             confidence: .exact,
-            reason: "选中的应用本体",
+            reason: AppLocalizer.string("maintenance.reason.selectedApp"),
             selectedByDefault: true
         )]
         guard includeResiduals, isValidBundleIdentifier(bundleID) else { return components }
@@ -708,17 +708,17 @@ struct CleanupScanner: CleanupScanning {
         identifiers.formUnion(embeddedBundleIdentifiers(in: app))
         for identifier in identifiers {
             let exactPaths: [(String, UninstallComponentKind, String)] = [
-                ("Application Support/\(identifier)", .applicationSupport, "Bundle ID 精确匹配的应用数据"),
-                ("Caches/\(identifier)", .cache, "Bundle ID 精确匹配的缓存"),
-                ("Logs/\(identifier)", .log, "Bundle ID 精确匹配的日志"),
-                ("Preferences/\(identifier).plist", .preference, "Bundle ID 精确匹配的偏好设置"),
-                ("Saved Application State/\(identifier).savedState", .savedState, "Bundle ID 精确匹配的窗口状态"),
-                ("WebKit/\(identifier)", .webData, "Bundle ID 精确匹配的 WebKit 数据"),
-                ("HTTPStorages/\(identifier)", .webData, "Bundle ID 精确匹配的网络缓存"),
-                ("HTTPStorages/\(identifier).binarycookies", .webData, "Bundle ID 精确匹配的网络缓存"),
-                ("Containers/\(identifier)", .container, "Bundle ID 精确匹配的应用容器"),
-                ("Application Scripts/\(identifier)", .applicationScript, "Bundle ID 精确匹配的应用脚本"),
-                ("LaunchAgents/\(identifier).plist", .launchAgent, "Bundle ID 精确匹配的用户后台项")
+                ("Application Support/\(identifier)", .applicationSupport, AppLocalizer.string("maintenance.reason.exactApplicationData")),
+                ("Caches/\(identifier)", .cache, AppLocalizer.string("maintenance.reason.exactCache")),
+                ("Logs/\(identifier)", .log, AppLocalizer.string("maintenance.reason.exactLog")),
+                ("Preferences/\(identifier).plist", .preference, AppLocalizer.string("maintenance.reason.exactPreference")),
+                ("Saved Application State/\(identifier).savedState", .savedState, AppLocalizer.string("maintenance.reason.exactSavedState")),
+                ("WebKit/\(identifier)", .webData, AppLocalizer.string("maintenance.reason.exactWebData")),
+                ("HTTPStorages/\(identifier)", .webData, AppLocalizer.string("maintenance.reason.exactNetworkCache")),
+                ("HTTPStorages/\(identifier).binarycookies", .webData, AppLocalizer.string("maintenance.reason.exactNetworkCache")),
+                ("Containers/\(identifier)", .container, AppLocalizer.string("maintenance.reason.exactContainer")),
+                ("Application Scripts/\(identifier)", .applicationScript, AppLocalizer.string("maintenance.reason.exactApplicationScript")),
+                ("LaunchAgents/\(identifier).plist", .launchAgent, AppLocalizer.string("maintenance.reason.exactLaunchAgent"))
             ]
             for item in exactPaths {
                 let url = library.appendingPathComponent(item.0)
@@ -738,7 +738,7 @@ struct CleanupScanner: CleanupScanning {
                 for url in items where url.lastPathComponent.hasPrefix(identifier + ".") && url.pathExtension == "plist" {
                     components.append(component(
                         url: url, kind: .launchAgent, risk: .recommended, confidence: .exact,
-                        reason: "Bundle ID 边界匹配的用户后台项", selectedByDefault: true
+                        reason: AppLocalizer.string("maintenance.reason.boundaryLaunchAgent"), selectedByDefault: true
                     ))
                 }
             }
@@ -748,7 +748,7 @@ struct CleanupScanner: CleanupScanning {
                 for url in items where url.lastPathComponent == identifier || url.lastPathComponent.hasSuffix(".\(identifier)") {
                     components.append(component(
                         url: url, kind: .sharedContainer, risk: .protected, confidence: .shared,
-                        reason: "共享容器可能同时属于其他应用，仅展示不处理", selectedByDefault: false
+                        reason: AppLocalizer.string("maintenance.reason.sharedContainer"), selectedByDefault: false
                     ))
                 }
             }
@@ -765,7 +765,7 @@ struct CleanupScanner: CleanupScanning {
                 guard fileManager.fileExists(atPath: url.path) else { continue }
                 components.append(component(
                     url: url, kind: item.1, risk: .review, confidence: .inferred,
-                    reason: "仅按应用名称推断，可能与其他软件共享", selectedByDefault: false
+                    reason: AppLocalizer.string("maintenance.reason.inferredByName"), selectedByDefault: false
                 ))
             }
         }
@@ -776,7 +776,7 @@ struct CleanupScanner: CleanupScanning {
             for url in items where url.lastPathComponent.hasPrefix(name + "_") || url.lastPathComponent.hasPrefix(compactName + "_") {
                 components.append(component(
                     url: url, kind: .crashReport, risk: .review, confidence: .inferred,
-                    reason: "按应用可执行名称匹配的崩溃记录", selectedByDefault: false
+                    reason: AppLocalizer.string("maintenance.reason.executableCrashReport"), selectedByDefault: false
                 ))
             }
         }
@@ -955,7 +955,7 @@ final class NativeMaintenanceService: MaintenanceHandling {
             do {
                 let safe = try validatorForCandidate(candidate).validate(candidate.url)
                 guard candidate.scannedIdentity.stillMatches(safe, fileManager: fileManager) else {
-                    let message = "扫描后内容已变化，请重新扫描"
+                    let message = AppLocalizer.string("maintenance.error.changedAfterScan")
                     skipped.append("\(candidate.displayName)：\(message)")
                     results.append(itemResult(candidate, outcome: .skipped, message: message))
                     continue
@@ -978,7 +978,7 @@ final class NativeMaintenanceService: MaintenanceHandling {
 
         let operation = MaintenanceOperation(
             kind: .cleanup,
-            title: "空间清理",
+            title: AppLocalizer.string("maintenance.operation.cleanup"),
             itemCount: results.filter { $0.outcome == .deleted || $0.outcome == .trashed }.count,
             reclaimedBytes: permanentBytes + trashedBytes,
             skipped: skipped,
@@ -1000,7 +1000,7 @@ final class NativeMaintenanceService: MaintenanceHandling {
 
         for app in applications {
             guard !app.removalBlocked else {
-                let message = app.warnings.first ?? "请使用官方卸载器"
+                let message = app.warnings.first ?? AppLocalizer.string("maintenance.warning.officialUninstaller")
                 skipped.append("\(app.name)：\(message)")
                 results.append(applicationResult(app, outcome: .skipped, message: message))
                 continue
@@ -1008,20 +1008,20 @@ final class NativeMaintenanceService: MaintenanceHandling {
             guard BundleIdentifierValidator.isValid(app.bundleIdentifier),
                   !app.bundleIdentifier.hasPrefix("com.apple."),
                   app.bundleIdentifier != "com.yang.yuangui" else {
-                let message = "Bundle ID 无效或属于受保护应用"
+                let message = AppLocalizer.string("maintenance.error.invalidBundleID")
                 skipped.append("\(app.name)：\(message)")
                 results.append(applicationResult(app, outcome: .skipped, message: message))
                 continue
             }
             guard isApplicationStillSafe(app) else {
-                let message = "应用位置或身份已变化，请重新扫描"
+                let message = AppLocalizer.string("maintenance.error.appChangedAfterScan")
                 skipped.append("\(app.name)：\(message)")
                 results.append(applicationResult(app, outcome: .skipped, message: message))
                 continue
             }
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleIdentifier)
             if !running.isEmpty {
-                let message = "应用仍在运行，请退出后重新扫描"
+                let message = AppLocalizer.string("maintenance.error.appRunning")
                 skipped.append("\(app.name)：\(message)")
                 results.append(applicationResult(app, outcome: .skipped, message: message))
                 continue
@@ -1032,8 +1032,8 @@ final class NativeMaintenanceService: MaintenanceHandling {
             for component in app.components {
                 if component.risk == .protected || (siblingExists && component.kind != .application) {
                     let message = component.risk == .protected
-                        ? "共享或受保护组件不自动处理"
-                        : "检测到相同 Bundle ID 的另一个版本，共享状态已保留"
+                        ? AppLocalizer.string("maintenance.error.sharedOrProtectedComponent")
+                        : AppLocalizer.string("maintenance.error.sharedBundleID")
                     skipped.append("\(app.name) · \(component.kind.title)：\(message)")
                     results.append(MaintenanceItemResult(
                         path: component.url.path,
@@ -1087,7 +1087,7 @@ final class NativeMaintenanceService: MaintenanceHandling {
 
         let operation = MaintenanceOperation(
             kind: .uninstall,
-            title: "软件卸载",
+            title: AppLocalizer.string("maintenance.operation.uninstall"),
             itemCount: completedApps,
             reclaimedBytes: trashedBytes,
             skipped: skipped,
@@ -1207,6 +1207,6 @@ private enum MaintenanceExecutionError: LocalizedError {
     case changedSinceScan
 
     var errorDescription: String? {
-        "扫描后内容已变化，请重新扫描"
+        AppLocalizer.string("maintenance.error.changedAfterScan")
     }
 }

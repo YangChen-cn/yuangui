@@ -24,14 +24,14 @@ enum SafePathError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .empty: return "路径为空"
-        case .relative: return "只允许绝对路径"
-        case .traversal: return "路径包含不安全的上级跳转"
-        case .controlCharacter: return "路径包含控制字符"
-        case .symbolicLink: return "拒绝处理符号链接"
-        case .protectedPath(let name): return "受保护内容：\(name)"
-        case .outsideAllowedRoots: return "路径不在允许清理的目录中"
-        case .rootItself: return "不能清理目录根本身"
+        case .empty: return AppLocalizer.string("maintenance.error.emptyPath")
+        case .relative: return AppLocalizer.string("maintenance.error.relativePath")
+        case .traversal: return AppLocalizer.string("maintenance.error.pathTraversal")
+        case .controlCharacter: return AppLocalizer.string("maintenance.error.controlCharacter")
+        case .symbolicLink: return AppLocalizer.string("maintenance.error.symbolicLink")
+        case .protectedPath(let name): return AppLocalizer.format("maintenance.error.protectedPath", name)
+        case .outsideAllowedRoots: return AppLocalizer.string("maintenance.error.outsideAllowedRoots")
+        case .rootItself: return AppLocalizer.string("maintenance.error.rootItself")
         }
     }
 }

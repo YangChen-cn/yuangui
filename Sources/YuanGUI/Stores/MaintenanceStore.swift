@@ -28,7 +28,7 @@ final class MaintenanceStore: ObservableObject {
     @Published var sortOrder: SortOrder = .size
     @Published private(set) var isScanning = false
     @Published private(set) var isWorking = false
-    @Published private(set) var message = "VCC 准备好扫描啦，master 随时叫我们～"
+    @Published private(set) var message = AppLocalizer.string("maintenance.status.ready")
     @Published private(set) var whitelistedPaths: [String]
     @Published private(set) var projectScanRoots: [String]
     @Published private(set) var enabledCleanupCategories: Set<CleanupCategory>
@@ -65,7 +65,8 @@ final class MaintenanceStore: ObservableObject {
         self.whitelistedPaths = defaults.stringArray(forKey: "maintenanceWhitelist") ?? []
         self.projectScanRoots = defaults.stringArray(forKey: "maintenanceProjectRoots")
             ?? CleanupScanConfiguration.defaults().projectRoots
-        let storedCategories = defaults.stringArray(forKey: "maintenanceEnabledCategories") ?? CleanupCategory.allCases.map(\.rawValue)
+        let storedCategories = defaults.stringArray(forKey: "maintenanceEnabledCategories")
+            ?? CleanupScanConfiguration.defaultEnabledCategories.map(\.rawValue)
         self.enabledCleanupCategories = Set(storedCategories.compactMap(CleanupCategory.init(rawValue:)))
     }
 
@@ -125,7 +126,7 @@ final class MaintenanceStore: ObservableObject {
         guard !isScanning else { return }
         isScanning = true
         scanProgress = nil
-        message = "VCC 正在认真扫描可以清理的内容…"
+        message = AppLocalizer.string("maintenance.status.scanningCleanup")
         pet.beginMaintenance(message: message)
         let scanner = scanner ?? CleanupScanner()
         let found = await scanner.scan(configuration: scanConfiguration) { [weak self] progress in
@@ -137,7 +138,7 @@ final class MaintenanceStore: ObservableObject {
         guard !Task.isCancelled else {
             isScanning = false
             scanProgress = nil
-            message = "扫描已取消，没有处理任何文件。"
+            message = AppLocalizer.string("maintenance.status.cleanupScanCancelled")
             pet.endMaintenance(message: message, success: false)
             return
         }
@@ -146,8 +147,8 @@ final class MaintenanceStore: ObservableObject {
         isScanning = false
         scanProgress = nil
         message = found.isEmpty
-            ? "没有发现需要清理的内容，Mac 很干净～"
-            : "VCC 扫描到了这些可以清理的内容，master 要看看吗？"
+            ? AppLocalizer.string("maintenance.status.nothingToClean")
+            : AppLocalizer.string("maintenance.status.cleanupScanComplete")
         pet.endMaintenance(message: message, success: false)
     }
 
@@ -155,7 +156,7 @@ final class MaintenanceStore: ObservableObject {
         guard !isScanning else { return }
         isScanning = true
         scanProgress = nil
-        message = "VCC 正在清点 Mac 里的软件…"
+        message = AppLocalizer.string("maintenance.status.scanningApps")
         pet.beginMaintenance(message: message)
         let scanner = scanner ?? CleanupScanner()
         applications = await scanner.scanApplications { [weak self] progress in
@@ -167,7 +168,7 @@ final class MaintenanceStore: ObservableObject {
         guard !Task.isCancelled else {
             isScanning = false
             scanProgress = nil
-            message = "扫描已取消，没有处理任何应用。"
+            message = AppLocalizer.string("maintenance.status.appScanCancelled")
             pet.endMaintenance(message: message, success: false)
             return
         }
@@ -175,7 +176,7 @@ final class MaintenanceStore: ObservableObject {
         selectedUninstallComponentIDs = []
         isScanning = false
         scanProgress = nil
-        message = "VCC 扫描到了这些软件，master 要卸载吗？"
+        message = AppLocalizer.string("maintenance.status.appScanComplete")
         pet.endMaintenance(message: message, success: false)
     }
 
@@ -183,7 +184,7 @@ final class MaintenanceStore: ObservableObject {
         let selected = selectedCleanup
         guard !selected.isEmpty, !isWorking else { return }
         isWorking = true
-        message = "元圭和 VCC 正在一起整理，请稍等一下～"
+        message = AppLocalizer.string("maintenance.status.cleaning")
         pet.beginMaintenance(message: message)
         let handler = handler ?? NativeMaintenanceService()
         let result = await handler.clean(selected)
@@ -199,7 +200,7 @@ final class MaintenanceStore: ObservableObject {
         let selected = selectedApplications
         guard !selected.isEmpty, !isWorking else { return }
         isWorking = true
-        message = "VCC 正在把选中的软件送进废纸篓…"
+        message = AppLocalizer.string("maintenance.status.uninstalling")
         pet.beginMaintenance(message: message)
         let handler = handler ?? NativeMaintenanceService()
         let result = await handler.uninstall(selected)
@@ -311,18 +312,18 @@ final class MaintenanceStore: ObservableObject {
         )
         if result.itemCount > 0 {
             if (result.permanentlyDeletedBytes ?? 0) > 0, (result.trashedBytes ?? 0) > 0 {
-                message = "已永久释放 \(permanent)，另有 \(trashed) 移入废纸篓～"
+                message = AppLocalizer.format("maintenance.result.deletedAndTrashed", permanent, trashed)
             } else if (result.permanentlyDeletedBytes ?? 0) > 0 {
-                message = "元圭和 VCC 已永久释放 \(permanent)，Mac 轻松多啦～"
+                message = AppLocalizer.format("maintenance.result.deleted", permanent)
             } else {
-                message = "已将 \(trashed) 移入废纸篓，清空后即可释放空间～"
+                message = AppLocalizer.format("maintenance.result.trashed", trashed)
             }
             pet.endMaintenance(message: message, success: true)
         } else if let error = result.errors.first {
-            message = "这次没有清理成功：\(error)"
+            message = AppLocalizer.format("maintenance.result.failed", error)
             pet.endMaintenance(message: message, success: false)
         } else {
-            message = "没有需要处理的项目～"
+            message = AppLocalizer.string("maintenance.result.noItems")
             pet.endMaintenance(message: message, success: false)
         }
     }

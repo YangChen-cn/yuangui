@@ -3,6 +3,16 @@ import XCTest
 @testable import YuanGUI
 
 final class MaintenanceTests: XCTestCase {
+    func testDefaultCleanupConfigurationExcludesReviewCategories() {
+        let configuration = CleanupScanConfiguration()
+        XCTAssertEqual(configuration.enabledCategories, [.appCache, .oldLog, .crashReport])
+        XCTAssertFalse(configuration.enabledCategories.contains(.browserCache))
+        XCTAssertFalse(configuration.enabledCategories.contains(.developerCache))
+        XCTAssertFalse(configuration.enabledCategories.contains(.projectBuildArtifact))
+        XCTAssertFalse(configuration.enabledCategories.contains(.oldInstallerPackage))
+        XCTAssertFalse(configuration.enabledCategories.contains(.orphanedAppData))
+    }
+
     func testSafePathValidatorAcceptsChildAndRejectsRootTraversalAndSymlink() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("SafePathTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

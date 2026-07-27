@@ -4,6 +4,7 @@ import SwiftUI
 struct MaintenanceView: View {
     @ObservedObject var store: MaintenanceStore
     @State private var expandedApplications: Set<UUID> = []
+    @State private var showsInstallerPermissionExplanation = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -68,24 +69,20 @@ struct MaintenanceView: View {
 
     private var cleanupPage: some View {
         VStack(spacing: 10) {
-            HStack {
-                Button("扫描可清理空间") { Task { await store.scanCleanup() } }
-                    .buttonStyle(.borderedProminent).tint(.pink)
-                    .disabled(store.isScanning || store.isWorking)
-                Button("全选推荐项") { store.selectRecommendedCleanup() }
-                    .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
-                commonToolbar
-                Spacer()
-                Text("已选 \(size(store.selectedCleanupBytes))")
-                    .font(.caption).foregroundStyle(.secondary)
-                whitelistMenu
-                scanScopeMenu
-                Button("开始清理…") { confirmCleanup() }
-                    .disabled(store.selectedCleanupIDs.isEmpty || store.isWorking)
-            }
+            cleanupToolbar
 
             if store.cleanupCandidates.isEmpty {
-                ContentUnavailableView("等待扫描", systemImage: "sparkles", description: Text("只扫描当前用户的安全缓存与残留目录"))
+                ContentUnavailableView {
+                    Label(AppLocalizer.string("maintenance.welcome.title"), systemImage: "sparkles")
+                } description: {
+                    Text(AppLocalizer.string("maintenance.welcome.description"))
+                } actions: {
+                    Button(AppLocalizer.string("maintenance.welcome.start")) {
+                        Task { await store.scanCleanup() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(store.isScanning || store.isWorking)
+                }
             } else {
                 List {
                     Section("分类摘要") {
@@ -95,7 +92,7 @@ struct MaintenanceView: View {
                                 HStack {
                                     Text(category.title)
                                     Spacer()
-                                    Text("\(values.count) 项 · \(size(values.reduce(0) { $0 + $1.byteCount }))")
+                                    Text(AppLocalizer.format("maintenance.ui.itemCountSize", values.count, size(values.reduce(0) { $0 + $1.byteCount })))
                                         .foregroundStyle(.secondary)
                                 }
                                 .font(.caption)
@@ -105,7 +102,7 @@ struct MaintenanceView: View {
                     ForEach(MaintenanceRisk.allCases, id: \.self) { risk in
                         let candidates = store.visibleCleanupCandidates.filter { $0.risk == risk }
                         if !candidates.isEmpty {
-                            Section("\(risk.title) · \(candidates.count) 项") {
+                            Section(AppLocalizer.format("maintenance.ui.riskCount", risk.title, candidates.count)) {
                                 ForEach(candidates) { candidate in cleanupRow(candidate) }
                             }
                         }
@@ -113,6 +110,77 @@ struct MaintenanceView: View {
                 }
             }
         }
+    }
+
+    private var cleanupToolbar: some View {
+        GeometryReader { proxy in
+            Group {
+                if proxy.size.width >= 940 {
+                    fullCleanupToolbar
+                } else {
+                    compactCleanupToolbar
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+        .frame(height: 34)
+    }
+
+    private var fullCleanupToolbar: some View {
+        HStack(spacing: 8) {
+            scanCleanupButton
+            Button("全选推荐项") { store.selectRecommendedCleanup() }
+                .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
+            commonToolbar
+            Spacer(minLength: 0)
+            selectedCleanupSize
+            whitelistMenu
+            scanScopeMenu
+            startCleanupButton
+        }
+    }
+
+    private var compactCleanupToolbar: some View {
+        HStack(spacing: 8) {
+            scanCleanupButton
+            Menu {
+                Button("全选推荐项") { store.selectRecommendedCleanup() }
+                    .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
+                Picker("排序", selection: $store.sortOrder) {
+                    ForEach(MaintenanceStore.SortOrder.allCases) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+                Divider()
+                whitelistMenu
+                scanScopeMenu
+            } label: {
+                Label(AppLocalizer.string("maintenance.ui.options"), systemImage: "slider.horizontal.3")
+            }
+            Spacer(minLength: 0)
+            selectedCleanupSize
+            startCleanupButton
+        }
+    }
+
+    private var scanCleanupButton: some View {
+        Button("扫描可清理空间") { Task { await store.scanCleanup() } }
+            .buttonStyle(.borderedProminent)
+            .tint(.pink)
+            .disabled(store.isScanning || store.isWorking)
+    }
+
+    private var startCleanupButton: some View {
+        Button("开始清理…") { confirmCleanup() }
+            .disabled(store.selectedCleanupIDs.isEmpty || store.isWorking)
+    }
+
+    private var selectedCleanupSize: some View {
+        Text(AppLocalizer.format("maintenance.ui.selectedSize", size(store.selectedCleanupBytes)))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     private var whitelistMenu: some View {
@@ -139,7 +207,15 @@ struct MaintenanceView: View {
                 ForEach(CleanupCategory.allCases, id: \.self) { category in
                     Toggle(category.title, isOn: Binding(
                         get: { store.enabledCleanupCategories.contains(category) },
-                        set: { store.setCategory(category, enabled: $0) }
+                        set: { enabled in
+                            if category == .oldInstallerPackage,
+                               enabled,
+                               !store.enabledCleanupCategories.contains(category) {
+                                showsInstallerPermissionExplanation = true
+                            } else {
+                                store.setCategory(category, enabled: enabled)
+                            }
+                        }
                     ))
                 }
             }
@@ -159,6 +235,17 @@ struct MaintenanceView: View {
             Text("项目产物和旧安装包默认不选，并只会移入废纸篓。")
         } label: {
             Label("扫描范围", systemImage: "folder.badge.gearshape")
+        }
+        .alert(
+            AppLocalizer.string("maintenance.installerPermission.title"),
+            isPresented: $showsInstallerPermissionExplanation
+        ) {
+            Button(AppLocalizer.string("maintenance.installerPermission.enable")) {
+                store.setCategory(.oldInstallerPackage, enabled: true)
+            }
+            Button(AppLocalizer.string("取消"), role: .cancel) { }
+        } message: {
+            Text(AppLocalizer.string("maintenance.installerPermission.message"))
         }
     }
 
@@ -200,7 +287,7 @@ struct MaintenanceView: View {
                 if let date = candidate.modifiedAt {
                     Text(date, style: .date).font(.caption2).foregroundStyle(.secondary)
                 }
-                Text(candidate.disposition == .permanent ? "永久释放" : "清空废纸篓后释放")
+                Text(AppLocalizer.string(candidate.disposition == .permanent ? "永久释放" : "清空废纸篓后释放"))
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -215,7 +302,7 @@ struct MaintenanceView: View {
                     .disabled(store.isScanning || store.isWorking)
                 commonToolbar
                 Spacer()
-                Text("已选 \(size(store.selectedUninstallBytes))")
+                Text(AppLocalizer.format("maintenance.ui.selectedSize", size(store.selectedUninstallBytes)))
                     .font(.caption).foregroundStyle(.secondary)
                 Button("移入废纸篓…") { confirmUninstall() }
                     .disabled(store.selectedApplicationIDs.isEmpty || store.isWorking)
@@ -273,7 +360,7 @@ struct MaintenanceView: View {
             Spacer()
             VStack(alignment: .trailing) {
                 Text(size(application.reclaimableByteCount)).monospacedDigit()
-                Text("\(application.components.count) 个组件").font(.caption2).foregroundStyle(.secondary)
+                Text(AppLocalizer.format("maintenance.ui.componentCount", application.components.count)).font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -345,22 +432,28 @@ struct MaintenanceView: View {
         let permanentBytes = permanentItems.reduce(0) { $0 + $1.byteCount }
         let trashBytes = trashItems.reduce(0) { $0 + $1.byteCount }
         let alert = NSAlert()
-        alert.messageText = "让元圭和 VCC 开始清理？"
-        alert.informativeText = "永久删除：\(permanentItems.count) 项，预计释放 \(size(permanentBytes))。\n移入废纸篓：\(trashItems.count) 项，清空后可释放 \(size(trashBytes))。\n状态变化、符号链接或越界路径会自动跳过。"
+        alert.messageText = AppLocalizer.string("让元圭和 VCC 开始清理？")
+        alert.informativeText = AppLocalizer.format(
+            "maintenance.confirm.cleanup.message",
+            permanentItems.count,
+            size(permanentBytes),
+            trashItems.count,
+            size(trashBytes)
+        )
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "开始清理")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: AppLocalizer.string("开始清理"))
+        alert.addButton(withTitle: AppLocalizer.string("取消"))
         if alert.runModal() == .alertFirstButtonReturn { Task { await store.cleanSelected() } }
     }
 
     private func confirmUninstall() {
-        let names = store.selectedApplications.map(\.name).joined(separator: "、")
+        let names = store.selectedApplications.map(\.name).joined(separator: AppLocalizer.string("maintenance.list.separator"))
         let alert = NSAlert()
-        alert.messageText = "把这些软件移入废纸篓？"
-        alert.informativeText = "\(names)\n所选应用本体和用户级组件共约 \(size(store.selectedUninstallBytes))，将统一移入废纸篓。受保护、共享或扫描后发生变化的项目会跳过。"
+        alert.messageText = AppLocalizer.string("把这些软件移入废纸篓？")
+        alert.informativeText = AppLocalizer.format("maintenance.confirm.uninstall.message", names, size(store.selectedUninstallBytes))
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "移入废纸篓")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: AppLocalizer.string("移入废纸篓"))
+        alert.addButton(withTitle: AppLocalizer.string("取消"))
         if alert.runModal() == .alertFirstButtonReturn { Task { await store.uninstallSelected() } }
     }
 

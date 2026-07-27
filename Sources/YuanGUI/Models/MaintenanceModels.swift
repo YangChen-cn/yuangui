@@ -103,6 +103,7 @@ enum CleanupCategory: String, Codable, CaseIterable {
 
 struct CleanupScanConfiguration: Codable, Equatable {
     static let defaultProjectFolderNames = ["Developer", "Projects", "GitHub", "Code", "Workspace"]
+    static let defaultEnabledCategories: Set<CleanupCategory> = [.appCache, .oldLog, .crashReport]
 
     var projectRoots: [String]
     var whitelistedPaths: [String]
@@ -111,7 +112,7 @@ struct CleanupScanConfiguration: Codable, Equatable {
     init(
         projectRoots: [String] = [],
         whitelistedPaths: [String] = [],
-        enabledCategories: Set<CleanupCategory> = Set(CleanupCategory.allCases)
+        enabledCategories: Set<CleanupCategory> = CleanupScanConfiguration.defaultEnabledCategories
     ) {
         self.projectRoots = projectRoots
         self.whitelistedPaths = whitelistedPaths
@@ -171,7 +172,7 @@ struct CleanupCandidate: Identifiable, Codable, Equatable {
         self.modifiedAt = modifiedAt
         self.risk = risk ?? (category.selectedByDefault ? .recommended : .review)
         self.confidence = confidence
-        self.reason = reason ?? "\(AppLocalizer.string("符合")) \(category.title) \(AppLocalizer.string("规则"))"
+        self.reason = reason ?? AppLocalizer.format("maintenance.reason.matchesCategory", category.title)
         self.selectedByDefault = selectedByDefault ?? category.selectedByDefault
         self.scannedIdentity = scannedIdentity ?? .capture(url)
         self.executionRoot = executionRoot
@@ -311,12 +312,12 @@ struct ApplicationCandidate: Identifiable, Equatable {
             components: [
                 UninstallComponent(
                     url: url, kind: .application, byteCount: byteCount, risk: .recommended,
-                    confidence: .exact, reason: "选中的应用本体", selectedByDefault: true
+                    confidence: .exact, reason: AppLocalizer.string("maintenance.reason.selectedApp"), selectedByDefault: true
                 )
             ] + residuals.map {
                 UninstallComponent(
                     url: $0, kind: .applicationSupport, byteCount: 0, risk: .review,
-                    confidence: .exact, reason: "已确认的用户级残留", selectedByDefault: true
+                    confidence: .exact, reason: AppLocalizer.string("maintenance.reason.confirmedUserResidual"), selectedByDefault: true
                 )
             },
             source: .systemApplications,
