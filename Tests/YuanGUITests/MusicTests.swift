@@ -629,11 +629,28 @@ final class MusicTests: XCTestCase {
 
     func testPlayModesHaveStableUserFacingLabels() {
         XCTAssertEqual(MusicPlayMode.allCases.map(\.title), ["顺序播放", "单曲循环", "列表循环", "随机播放"])
-        XCTAssertEqual(MusicSource.allCases.map(\.title), ["Apple Music", "哔哩哔哩"])
+        XCTAssertEqual(MusicSource.ordered(for: .english), [.appleMusic, .local, .bilibili])
+        XCTAssertEqual(MusicSource.ordered(for: .simplifiedChinese), [.appleMusic, .bilibili, .local])
         XCTAssertEqual(
             LyricsFontStyle.allCases.map(\.title),
             ["圆体", "系统字体", "衬线体", "等宽体", "苹方", "宋体", "楷体", "黑体"]
         )
+    }
+
+    @MainActor
+    func testNewUserDefaultsToAppleMusicAndSavedSourceIsPreserved() async {
+        let suiteName = "MusicSourceDefaults-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var feature = MusicFeature(defaults: defaults, library: RecordingMusicLibraryCoordinator())
+        XCTAssertEqual(feature.playback.source, .appleMusic)
+        await feature.shutdown()
+
+        defaults.set(MusicSource.local.rawValue, forKey: "musicSource")
+        feature = MusicFeature(defaults: defaults, library: RecordingMusicLibraryCoordinator())
+        XCTAssertEqual(feature.playback.source, .local)
+        await feature.shutdown()
     }
 
     func testSequentialPlaybackQueueOnlyContainsTracksAfterCurrent() throws {

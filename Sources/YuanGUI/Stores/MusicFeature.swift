@@ -360,6 +360,9 @@ final class MusicFeature {
             // leaving the old Apple Music metadata visible.
             if activePlaybackSource == .appleMusic { _ = activatePlaybackSource(.bilibili) }
             if currentTrack?.source != .bilibili { restoreBilibiliSelection() }
+        } else if newSource == .local, activePlaybackSource != nil {
+            _ = activatePlaybackSource(.local)
+            clearTransientPlaybackState()
         }
     }
 
@@ -376,12 +379,16 @@ final class MusicFeature {
             bilibiliLoadTask = nil
             bilibiliPlayer?.pause()
             scheduleBilibiliPlayerRelease()
+        case .local:
+            break
         case nil:
             break
         }
         switch newSource {
         case .appleMusic:
             break
+        case .local:
+            Task { [appleMusic] in await appleMusic.pause() }
         case .bilibili:
             Task { [appleMusic] in await appleMusic.pause() }
             if volume != bilibiliVolume { volume = bilibiliVolume }
@@ -483,6 +490,8 @@ final class MusicFeature {
             } else {
                 bilibiliPlayer.playPause()
             }
+        case .local:
+            break
         }
     }
 
@@ -498,7 +507,7 @@ final class MusicFeature {
         if playbackSource == .appleMusic {
             lastAppleClockTime = Date.timeIntervalSinceReferenceDate
             Task { [appleMusic] in await appleMusic.seek(to: target) }
-        } else {
+        } else if playbackSource == .bilibili {
             bilibiliPlayer?.seek(to: target)
         }
         updateLyric()
@@ -519,8 +528,9 @@ final class MusicFeature {
 
     func setVolume(_ newValue: Double) {
         volume = min(max(newValue, 0), 1)
-        if playbackSource == .appleMusic { Task { [appleMusic, volume] in await appleMusic.setVolume(volume) } }
-        else {
+        if playbackSource == .appleMusic {
+            Task { [appleMusic, volume] in await appleMusic.setVolume(volume) }
+        } else if playbackSource == .bilibili {
             bilibiliVolume = volume
             bilibiliPlayer?.setVolume(volume)
             defaults.set(volume, forKey: "bilibiliMusicVolume")
@@ -797,6 +807,8 @@ final class MusicFeature {
             Task { [appleMusic] in await appleMusic.pause() }
         case .bilibili:
             bilibiliPlayer?.pause()
+        case .local:
+            break
         }
     }
 
@@ -815,6 +827,8 @@ final class MusicFeature {
         case .bilibili:
             guard let bilibiliPlayer, bilibiliPlayer.hasLoadedItem else { return }
             bilibiliPlayer.play()
+        case .local:
+            break
         }
     }
 

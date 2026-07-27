@@ -2,11 +2,36 @@ import Foundation
 
 enum MusicSource: String, Codable, CaseIterable, Identifiable, Sendable {
     case appleMusic
+    case local
     case bilibili
 
     var id: String { rawValue }
-    var title: String { self == .appleMusic ? "Apple Music" : AppLocalizer.string("哔哩哔哩") }
-    var systemImage: String { self == .appleMusic ? "music.note" : "play.tv.fill" }
+
+    static var allCases: [MusicSource] {
+        ordered(for: AppLocalizer.effectiveLanguage)
+    }
+
+    static func ordered(for language: AppLanguage) -> [MusicSource] {
+        language == .simplifiedChinese
+            ? [.appleMusic, .bilibili, .local]
+            : [.appleMusic, .local, .bilibili]
+    }
+
+    var title: String {
+        switch self {
+        case .appleMusic: "Apple Music"
+        case .local: AppLocalizer.string("music.source.local")
+        case .bilibili: AppLocalizer.string("哔哩哔哩")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .appleMusic: "music.note"
+        case .local: "internaldrive"
+        case .bilibili: "play.tv.fill"
+        }
+    }
 }
 
 enum MusicPlaybackState: Equatable, Sendable {
@@ -176,6 +201,8 @@ struct MusicTrack: Codable, Identifiable, Hashable, Sendable {
         switch source {
         case .bilibili:
             return id
+        case .local:
+            return "lyrics:\(id)"
         case .appleMusic:
             return "lyrics:apple:\(Self.normalizedLyricsMetadata(title))\u{1F}\(Self.normalizedLyricsMetadata(artist))"
         }

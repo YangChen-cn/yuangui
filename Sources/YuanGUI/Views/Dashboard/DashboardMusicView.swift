@@ -162,6 +162,8 @@ struct DashboardMusicView: View {
         switch DashboardMusicSourceAction.resolve(source) {
         case .connectAppleMusic:
             music.connectAppleMusic()
+        case .selectLocal:
+            music.setSource(.local)
         case .selectBilibili:
             music.setSource(.bilibili)
         }

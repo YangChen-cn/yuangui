@@ -144,6 +144,10 @@ final class DashboardTests: XCTestCase {
             .connectAppleMusic
         )
         XCTAssertEqual(
+            DashboardMusicSourceAction.resolve(.local),
+            .selectLocal
+        )
+        XCTAssertEqual(
             DashboardMusicSourceAction.resolve(.bilibili),
             .selectBilibili
         )
