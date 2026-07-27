@@ -210,8 +210,8 @@ struct DashboardCompactActionLabel: View {
                 .foregroundStyle(role.color)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                Text(subtitle)
+                Text(AppLocalizer.string(title))
+                Text(AppLocalizer.string(subtitle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

@@ -20,7 +20,7 @@ struct PetStatusBubble: View {
                     .font(.system(size: 19 * visualScale, weight: .bold))
                     .foregroundStyle(stateColor)
                     .symbolEffect(.bounce, value: store.smartState)
-                Text(message)
+                Text(AppLocalizer.string(message))
                     .font(.system(size: max(10, 12 * visualScale), weight: .bold, design: .rounded))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -43,9 +43,9 @@ struct PetStatusBubble: View {
             }
 
             HStack(spacing: 6 * visualScale) {
-                metric("CPU", value: cpuText, icon: "cpu", tint: .pink)
-                metric("内存", value: memoryText, icon: "memorychip", tint: .purple)
-                metric("电量", value: batteryText, icon: batteryIcon, tint: batteryTint)
+                metric(AppLocalizer.string("CPU"), value: cpuText, icon: "cpu", tint: .pink)
+                metric(AppLocalizer.string("内存"), value: memoryText, icon: "memorychip", tint: .purple)
+                metric(AppLocalizer.string("电量"), value: batteryText, icon: batteryIcon, tint: batteryTint)
             }
         }
         .padding(.horizontal, 13 * visualScale)

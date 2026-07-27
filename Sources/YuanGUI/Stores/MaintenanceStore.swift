@@ -37,16 +37,22 @@ final class MaintenanceStore: ObservableObject {
     @Published private(set) var quickCompleted = false
     @Published private(set) var scanProgress: MaintenanceScanProgress?
 
-    private let scanner: CleanupScanning
-    private let handler: MaintenanceHandling
+    /// An injected scanner is retained for tests. The production scanner is deliberately
+    /// created only when the user starts a cleanup scan, so presenting the companion
+    /// never touches protected folders such as Desktop or Downloads.
+    private let scanner: CleanupScanning?
+    /// Like scanning, destructive-operation support is created only after the user
+    /// confirms an operation. Its path validator must not inspect protected folders
+    /// while the companion is merely being presented.
+    private let handler: MaintenanceHandling?
     private let logger: MaintenanceLogging
     private let pet: PetStore
     private let defaults: UserDefaults
 
     init(
         pet: PetStore,
-        scanner: CleanupScanning = CleanupScanner(),
-        handler: MaintenanceHandling = NativeMaintenanceService(),
+        scanner: CleanupScanning? = nil,
+        handler: MaintenanceHandling? = nil,
         logger: MaintenanceLogging = MaintenanceLogStore(),
         defaults: UserDefaults = .standard
     ) {
@@ -121,6 +127,7 @@ final class MaintenanceStore: ObservableObject {
         scanProgress = nil
         message = "VCC 正在认真扫描可以清理的内容…"
         pet.beginMaintenance(message: message)
+        let scanner = scanner ?? CleanupScanner()
         let found = await scanner.scan(configuration: scanConfiguration) { [weak self] progress in
             Task { @MainActor in
                 self?.scanProgress = progress
@@ -150,6 +157,7 @@ final class MaintenanceStore: ObservableObject {
         scanProgress = nil
         message = "VCC 正在清点 Mac 里的软件…"
         pet.beginMaintenance(message: message)
+        let scanner = scanner ?? CleanupScanner()
         applications = await scanner.scanApplications { [weak self] progress in
             Task { @MainActor in
                 self?.scanProgress = progress
@@ -177,6 +185,7 @@ final class MaintenanceStore: ObservableObject {
         isWorking = true
         message = "元圭和 VCC 正在一起整理，请稍等一下～"
         pet.beginMaintenance(message: message)
+        let handler = handler ?? NativeMaintenanceService()
         let result = await handler.clean(selected)
         finish(result)
         let completedPaths = Set((result.results ?? []).filter {
@@ -192,6 +201,7 @@ final class MaintenanceStore: ObservableObject {
         isWorking = true
         message = "VCC 正在把选中的软件送进废纸篓…"
         pet.beginMaintenance(message: message)
+        let handler = handler ?? NativeMaintenanceService()
         let result = await handler.uninstall(selected)
         finish(result)
         let completedPaths = Set((result.results ?? []).filter { $0.outcome == .trashed }.map(\.path))

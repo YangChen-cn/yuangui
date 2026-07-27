@@ -33,12 +33,12 @@ struct PetSettingsView: View {
             DashboardPetAvatarView(mode: pet.mode)
                 .scaleEffect(1.08)
             VStack(alignment: .leading, spacing: 4) {
-                Text(pet.mode.title)
+                Text(AppLocalizer.string(pet.mode.title))
                     .font(.headline)
-                Text("大小 \(Int((pet.petScale * 100).rounded()))% · \(pet.dashboardStyle.title)")
+                Text("\(AppLocalizer.string("大小")) \(Int((pet.petScale * 100).rounded()))% · \(AppLocalizer.string(pet.dashboardStyle.title))")
                     .foregroundStyle(.secondary)
                 Label(
-                    pet.showsSystemStatus ? "迷你状态已显示" : "迷你状态已隐藏",
+                    AppLocalizer.string(pet.showsSystemStatus ? "迷你状态已显示" : "迷你状态已隐藏"),
                     systemImage: pet.showsSystemStatus ? "checkmark.circle.fill" : "circle"
                 )
                 .font(.caption)
@@ -197,7 +197,7 @@ struct PetSettingsView: View {
                 Button("打开系统设置", action: loginItem.openSystemSettings)
             }
         } else if let message = loginItem.message {
-            Text(message)
+            Text(AppLocalizer.string(message))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -250,7 +250,7 @@ struct PetSettingsView: View {
     }
 
     private func hourPicker(_ title: String, selection: Binding<Int>) -> some View {
-        Picker(title, selection: selection) {
+        Picker(AppLocalizer.string(title), selection: selection) {
             ForEach(0..<24, id: \.self) { hour in
                 Text(String(format: "%02d:00", hour)).tag(hour * 60)
             }

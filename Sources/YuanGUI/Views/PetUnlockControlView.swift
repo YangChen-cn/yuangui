@@ -19,8 +19,8 @@ struct PetUnlockControlView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("解锁桌宠，恢复点击和拖动")
-        .accessibilityLabel("解锁桌宠")
+        .help(AppLocalizer.string("解锁桌宠，恢复点击和拖动"))
+        .accessibilityLabel(AppLocalizer.string("解锁桌宠"))
         .frame(
             width: PetLayout.lockedControlPanelSize.width,
             height: PetLayout.lockedControlPanelSize.height

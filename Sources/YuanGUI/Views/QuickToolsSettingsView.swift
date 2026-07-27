@@ -94,7 +94,7 @@ struct QuickToolsSettingsView: View {
             }
 
             if let message = controller.message {
-                Section { Text(message).font(.caption).foregroundStyle(.secondary) }
+                Section { Text(AppLocalizer.string(message)).font(.caption).foregroundStyle(.secondary) }
             }
             }
             .formStyle(.grouped)

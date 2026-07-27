@@ -243,7 +243,7 @@ struct SettingsView: View {
             Form {
                 Section("陪伴式专注") {
                 Stepper(
-                    "专注时长：\(focusTimer.durationMinutes) 分钟",
+                    AppLocalizer.format("focus.duration", focusTimer.durationMinutes),
                     value: Binding(
                         get: { focusTimer.durationMinutes },
                         set: focusTimer.setDurationMinutes

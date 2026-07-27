@@ -21,7 +21,7 @@ struct PetEdgeMiniStatusView: View {
             if let message {
                 Divider()
                     .opacity(0.45)
-                Text(message)
+                Text(AppLocalizer.string(message))
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

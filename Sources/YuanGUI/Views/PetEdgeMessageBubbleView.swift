@@ -4,7 +4,7 @@ struct PetEdgeMessageBubbleView: View {
     let message: String
 
     var body: some View {
-        Text(message)
+        Text(AppLocalizer.string(message))
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .multilineTextAlignment(.leading)
             .lineLimit(2)

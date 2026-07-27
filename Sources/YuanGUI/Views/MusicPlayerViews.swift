@@ -874,7 +874,7 @@ struct BilibiliFavoriteImportSheet: View {
                 }
             } else if let message = music.bilibiliImportStore.favoriteMessage,
                       !music.bilibiliImportStore.favoriteFolders.isEmpty {
-                Text(message)
+                Text(AppLocalizer.string(message))
                     .font(.caption)
                     .foregroundStyle(message.hasPrefix("已从") ? Color.green : Color.orange)
             }
@@ -1005,13 +1005,13 @@ struct BilibiliLoginSheet: View {
 
     private var loginStatusText: String {
         switch music.bilibiliAccountStore.loginPhase {
-        case .loggedOut: return "尚未登录"
-        case .requestingQRCode: return "正在连接哔哩哔哩…"
-        case .waitingForScan: return "等待扫码"
-        case .waitingForConfirmation: return "已扫码，请在手机上确认"
-        case .expired: return "二维码已失效，请刷新"
-        case .loggedIn: return "登录成功"
-        case .failed(let message): return message
+        case .loggedOut: return AppLocalizer.string("尚未登录")
+        case .requestingQRCode: return AppLocalizer.string("正在连接哔哩哔哩…")
+        case .waitingForScan: return AppLocalizer.string("等待扫码")
+        case .waitingForConfirmation: return AppLocalizer.string("已扫码，请在手机上确认")
+        case .expired: return AppLocalizer.string("二维码已失效，请刷新")
+        case .loggedIn: return AppLocalizer.string("登录成功")
+        case .failed(let message): return AppLocalizer.string(message)
         }
     }
 
@@ -1101,7 +1101,7 @@ private struct LyricsSearchSheet: View {
             }
             .formStyle(.grouped)
             if let message = music.lyricsStore.searchMessage {
-                Text(message)
+                Text(AppLocalizer.string(message))
                     .font(.caption)
                     .foregroundStyle(message.hasPrefix("已") ? .green : .orange)
             }

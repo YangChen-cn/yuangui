@@ -46,19 +46,27 @@ struct DiaryBackupSettingsView: View {
                 }
             }
             LabeledContent("备份数量") {
-                Text("\(diary.backupStatus.backupCount) 个")
+                Text(AppLocalizer.format("backup.count", diary.backupStatus.backupCount))
                     .monospacedDigit()
             }
-            Text(
-                "每日 \(diary.backupStatus.dailyCount) 个 · 每周 \(diary.backupStatus.weeklyCount) 个"
-                    + (diary.backupStatus.manualCount > 0 ? " · 手动 \(diary.backupStatus.manualCount) 个" : "")
-            )
+            Text(backupBreakdown)
             .font(.caption)
             .foregroundStyle(.secondary)
             Text("日记发生变化并保存成功后，每天最多自动备份一次；保留最近 7 个每日备份和 4 个每周备份。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var backupBreakdown: String {
+        var parts = [
+            AppLocalizer.format("backup.dailyCount", diary.backupStatus.dailyCount),
+            AppLocalizer.format("backup.weeklyCount", diary.backupStatus.weeklyCount)
+        ]
+        if diary.backupStatus.manualCount > 0 {
+            parts.append(AppLocalizer.format("backup.manualCount", diary.backupStatus.manualCount))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var actionSection: some View {

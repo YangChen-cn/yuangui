@@ -565,7 +565,7 @@ final class PetStore: ObservableObject {
         dismissAmbientMessage()
         let token = UUID()
         toastToken = token
-        toast = message
+        toast = AppLocalizer.string(message)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { [weak self] in
             guard let self, self.toastToken == token else { return }
             self.toast = nil
@@ -752,12 +752,21 @@ final class PetStore: ObservableObject {
         case .lowBattery:
             showLowBatteryMessage()
         case .memoryPressure:
-            showAmbientMessage("master，现在内存有点挤，元圭陪你看看要不要休息一下应用吧～")
+            showAmbientMessage(AppLocalizer.effectiveLanguage == .english
+                ? "Memory is getting tight. Let's close a few apps for a breather."
+                : "master，现在内存有点挤，元圭陪你看看要不要休息一下应用吧～")
         case .charging:
             if let minutes = monitor.snapshot.battery?.timeRemainingMinutes, minutes > 0 {
-                showAmbientMessage("正在充电，再过约 \(ambientDurationText(minutes))就满啦～")
+                let duration = AppLocalizer.effectiveLanguage == .english
+                    ? ambientDurationTextEnglish(minutes)
+                    : ambientDurationText(minutes)
+                showAmbientMessage(AppLocalizer.effectiveLanguage == .english
+                    ? "Charging now—about \(duration) until full."
+                    : "正在充电，再过约 \(duration)就满啦～")
             } else {
-                showAmbientMessage("充电中，元圭和 VCC 正在陪 Mac 补充能量～")
+                showAmbientMessage(AppLocalizer.effectiveLanguage == .english
+                    ? "Charging now—YuanGUI and VCC are keeping your Mac company."
+                    : "充电中，元圭和 VCC 正在陪 Mac 补充能量～")
             }
         case .rainy:
             if let snapshot = weather.snapshot,
@@ -768,10 +777,14 @@ final class PetStore: ObservableObject {
                ).randomElement() {
                 showAmbientMessage(message, duration: 10)
             } else {
-                showAmbientMessage("外面下雨啦，master 出门记得带伞，VCC 不可以踩水坑哦～")
+                showAmbientMessage(AppLocalizer.effectiveLanguage == .english
+                    ? "It's raining outside—remember your umbrella, and VCC says no puddles!"
+                    : "外面下雨啦，master 出门记得带伞，VCC 不可以踩水坑哦～")
             }
         case .bedtime:
-            showAmbientMessage("夜深了，master 该休息啦，元圭和 VCC 陪你说晚安～")
+            showAmbientMessage(AppLocalizer.effectiveLanguage == .english
+                ? "It's getting late. Time to rest—good night from YuanGUI and VCC."
+                : "夜深了，master 该休息啦，元圭和 VCC 陪你说晚安～")
         case .normal:
             break
         }
@@ -780,8 +793,10 @@ final class PetStore: ObservableObject {
     private func showLowBatteryMessage() {
         let percent = monitor.snapshot.battery?.chargeFraction
             .map(MetricFormatting.percent)
-            ?? "未知"
-        showAmbientMessage("master，Mac 当前电量 \(percent)，VCC 正叼着充电线跑来～")
+            ?? AppLocalizer.string("未知")
+        showAmbientMessage(AppLocalizer.effectiveLanguage == .english
+            ? "Your Mac is at \(percent). VCC is bringing the charging cable!"
+            : "master，Mac 当前电量 \(percent)，VCC 正叼着充电线跑来～")
     }
 
     private func isUrgentSmartState(
@@ -910,6 +925,14 @@ final class PetStore: ObservableObject {
         if hours > 0, minutes > 0 { return "\(hours)小时\(minutes)分钟" }
         if hours > 0 { return "\(hours)小时" }
         return "\(minutes)分钟"
+    }
+
+    private func ambientDurationTextEnglish(_ totalMinutes: Int) -> String {
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours > 0, minutes > 0 { return "\(hours)h \(minutes)m" }
+        if hours > 0 { return "\(hours)h" }
+        return "\(minutes)m"
     }
 
     private func evaluateSmartState(at date: Date = Date()) {

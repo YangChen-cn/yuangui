@@ -42,7 +42,8 @@ struct PetBottomControlsView: View {
             }
             .buttonStyle(.plain)
             .onHover { setTip($0 ? (store.shouldShowPetBubble ? "隐藏迷你监控" : "显示迷你监控") : nil) }
-            .help(store.shouldShowPetBubble ? "隐藏桌宠迷你监控" : "显示 CPU、内存和电量迷你监控")
+            .help(AppLocalizer.string(store.shouldShowPetBubble ? "隐藏桌宠迷你监控" : "显示 CPU、内存和电量迷你监控"))
+            .accessibilityLabel(AppLocalizer.string(store.shouldShowPetBubble ? "隐藏迷你监控" : "显示迷你监控"))
 
             Button {
                 appActions.open(.chat)
@@ -51,14 +52,16 @@ struct PetBottomControlsView: View {
             }
             .buttonStyle(.plain)
             .onHover { setTip($0 ? (chat.isPresented ? "收起 AI 对话" : "打开 AI 对话") : nil) }
-            .help(chat.isPresented ? "收起 AI 输入框" : "和元圭、VCC 聊天，可粘贴图片或添加文件")
+            .help(AppLocalizer.string(chat.isPresented ? "收起 AI 输入框" : "和元圭、VCC 聊天，可粘贴图片或添加文件"))
+            .accessibilityLabel(AppLocalizer.string(chat.isPresented ? "收起 AI 对话" : "打开 AI 对话"))
 
             Button { isMiniPlayerPresented.toggle() } label: {
                 toolIcon("music.note", tint: .purple, selected: music.playback.isPlaying)
             }
             .buttonStyle(.plain)
             .onHover { setTip($0 ? (music.playback.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
-            .help("YuanGUI 音乐播放器")
+            .help(AppLocalizer.string("YuanGUI 音乐播放器"))
+            .accessibilityLabel(AppLocalizer.string(music.playback.isPlaying ? "正在播放音乐" : "打开迷你播放器"))
             .popover(isPresented: $isMiniPlayerPresented, arrowEdge: .bottom) {
                 MiniMusicPlayerView(music: music)
             }
@@ -70,7 +73,8 @@ struct PetBottomControlsView: View {
             }
             .buttonStyle(.plain)
             .onHover { setTip($0 ? "快速记录" : nil) }
-            .help("快速记录这一刻")
+            .help(AppLocalizer.string("快速记录这一刻"))
+            .accessibilityLabel(AppLocalizer.string("快速记录"))
 
             Button { store.toggleInteractionLock() } label: {
                 toolIcon(
@@ -81,7 +85,8 @@ struct PetBottomControlsView: View {
             }
             .buttonStyle(.plain)
             .onHover { setTip($0 ? "锁定并允许穿透" : nil) }
-            .help("锁定桌宠：主体允许点击穿透，悬停仍可唤出解锁按钮")
+            .help(AppLocalizer.string("锁定桌宠：主体允许点击穿透，悬停仍可唤出解锁按钮"))
+            .accessibilityLabel(AppLocalizer.string("锁定并允许穿透"))
 
         }
         .padding(PetLayout.bottomToolbarPanelPadding)

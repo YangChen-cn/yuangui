@@ -171,7 +171,7 @@ struct CleanupCandidate: Identifiable, Codable, Equatable {
         self.modifiedAt = modifiedAt
         self.risk = risk ?? (category.selectedByDefault ? .recommended : .review)
         self.confidence = confidence
-        self.reason = reason ?? "符合\(category.title)规则"
+        self.reason = reason ?? "\(AppLocalizer.string("符合")) \(category.title) \(AppLocalizer.string("规则"))"
         self.selectedByDefault = selectedByDefault ?? category.selectedByDefault
         self.scannedIdentity = scannedIdentity ?? .capture(url)
         self.executionRoot = executionRoot
@@ -195,19 +195,19 @@ enum UninstallComponentKind: String, Codable, CaseIterable {
 
     var title: String {
         switch self {
-        case .application: return "应用本体"
-        case .cache: return "缓存"
-        case .log: return "日志"
-        case .preference: return "偏好设置"
-        case .applicationSupport: return "应用数据"
-        case .savedState: return "保存状态"
-        case .webData: return "网页数据"
-        case .container: return "应用容器"
-        case .applicationScript: return "应用脚本"
-        case .crashReport: return "崩溃记录"
-        case .launchAgent: return "用户后台项"
-        case .sharedContainer: return "共享容器"
-        case .systemResidual: return "系统级残留"
+        case .application: return AppLocalizer.string("应用本体")
+        case .cache: return AppLocalizer.string("缓存")
+        case .log: return AppLocalizer.string("日志")
+        case .preference: return AppLocalizer.string("偏好设置")
+        case .applicationSupport: return AppLocalizer.string("应用数据")
+        case .savedState: return AppLocalizer.string("保存状态")
+        case .webData: return AppLocalizer.string("网页数据")
+        case .container: return AppLocalizer.string("应用容器")
+        case .applicationScript: return AppLocalizer.string("应用脚本")
+        case .crashReport: return AppLocalizer.string("崩溃记录")
+        case .launchAgent: return AppLocalizer.string("用户后台项")
+        case .sharedContainer: return AppLocalizer.string("共享容器")
+        case .systemResidual: return AppLocalizer.string("系统级残留")
         }
     }
 }
@@ -254,10 +254,10 @@ enum ApplicationSource: String, Equatable {
 
     var title: String {
         switch self {
-        case .systemApplications: return "应用程序"
-        case .utilities: return "实用工具"
+        case .systemApplications: return AppLocalizer.string("应用程序")
+        case .utilities: return AppLocalizer.string("实用工具")
         case .setapp: return "Setapp"
-        case .userApplications: return "用户应用"
+        case .userApplications: return AppLocalizer.string("用户应用")
         }
     }
 }
@@ -269,9 +269,9 @@ enum ApplicationManagement: String, Equatable {
 
     var title: String {
         switch self {
-        case .direct: return "普通安装"
-        case .homebrew: return "Homebrew 管理"
-        case .setapp: return "Setapp 管理"
+        case .direct: return AppLocalizer.string("普通安装")
+        case .homebrew: return AppLocalizer.string("Homebrew 管理")
+        case .setapp: return AppLocalizer.string("Setapp 管理")
         }
     }
 }

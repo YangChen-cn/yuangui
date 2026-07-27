@@ -23,10 +23,10 @@ struct SettingsPageHeader: View {
                 .background(accent.opacity(0.12), in: .rect(cornerRadius: 11))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(AppLocalizer.string(title))
                     .font(.title3)
                     .bold()
-                Text(subtitle)
+                Text(AppLocalizer.string(subtitle))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -45,7 +45,7 @@ struct SettingsSectionCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsDesign.sectionSpacing) {
-            Label(title, systemImage: systemImage)
+            Label(AppLocalizer.string(title), systemImage: systemImage)
                 .font(.headline)
                 .foregroundStyle(.secondary)
             content

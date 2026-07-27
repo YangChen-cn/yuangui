@@ -72,7 +72,7 @@ struct ScreenshotEditorView: View {
         HStack(spacing: 10) {
             if store.isExporting { ProgressView().controlSize(.small) }
             if let message = store.message {
-                Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(AppLocalizer.string(message)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             Button("取消", action: close)

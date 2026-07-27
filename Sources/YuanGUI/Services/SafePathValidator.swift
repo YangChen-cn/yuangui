@@ -91,8 +91,6 @@ struct SafePathValidator {
             home.appendingPathComponent(".cargo/registry"),
             home.appendingPathComponent("go/pkg/mod/cache"),
             home.appendingPathComponent(".gradle/caches"),
-            home.appendingPathComponent("Downloads"),
-            home.appendingPathComponent("Desktop"),
             fm.temporaryDirectory
         ]
     }

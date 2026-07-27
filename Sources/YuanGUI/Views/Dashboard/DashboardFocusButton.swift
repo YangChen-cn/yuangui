@@ -7,12 +7,12 @@ struct DashboardFocusButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: "timer")
+            Label(AppLocalizer.string(title), systemImage: "timer")
                 .font(.caption)
         }
         .dashboardSystemGlassButton(isProminent: isRunning)
         .controlSize(.small)
-        .help(isRunning ? "专注中：\(title)" : "打开番茄钟")
-        .accessibilityLabel(isRunning ? "番茄钟，剩余 \(title)" : "打开番茄钟")
+        .help(isRunning ? "\(AppLocalizer.string("专注中"))：\(AppLocalizer.string(title))" : AppLocalizer.string("打开番茄钟"))
+        .accessibilityLabel(isRunning ? "\(AppLocalizer.string("番茄钟"))，\(AppLocalizer.string("剩余")) \(AppLocalizer.string(title))" : AppLocalizer.string("打开番茄钟"))
     }
 }

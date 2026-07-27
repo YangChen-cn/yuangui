@@ -35,7 +35,7 @@ struct MaintenanceView: View {
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(.pink)
                     .symbolEffect(.bounce, value: store.message)
-                Text(store.message).font(.system(size: 14, weight: .bold, design: .rounded))
+                Text(AppLocalizer.string(store.message)).font(.system(size: 14, weight: .bold, design: .rounded))
                 Spacer()
                 if store.isScanning || store.isWorking { ProgressView().controlSize(.small) }
             }
@@ -191,7 +191,7 @@ struct MaintenanceView: View {
                     Text(candidate.displayName).font(.headline).lineLimit(1)
                     Text(candidate.confidence.title).font(.caption2).foregroundStyle(.secondary)
                 }
-                Text(candidate.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(AppLocalizer.string(candidate.reason)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Text(candidate.url.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
             }
             Spacer()
@@ -291,7 +291,7 @@ struct MaintenanceView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(component.kind.title) · \(component.risk.title) · \(component.confidence.title)")
                     .font(.caption).fontWeight(.medium)
-                Text(component.reason).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                Text(AppLocalizer.string(component.reason)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 Text(component.url.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
             }
             Spacer()

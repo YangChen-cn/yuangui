@@ -9,9 +9,9 @@ enum PetMode: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .yuanGui: return "元圭"
+        case .yuanGui: return AppLocalizer.string("元圭")
         case .vcc: return "VCC"
-        case .duo: return "一起"
+        case .duo: return AppLocalizer.string("一起")
         }
     }
 
@@ -27,14 +27,14 @@ enum PetMode: Int, CaseIterable, Identifiable {
         switch self {
         case .yuanGui:
             return [
-                .init(file: "01-idle", label: "陪着你"),
-                .init(file: "02-wave", label: "嗨～"),
-                .init(file: "03-curious", label: "在想什么？"),
-                .init(file: "04-hop", label: "好耶！"),
-                .init(file: "05-read", label: "安静读会儿书"),
-                .init(file: "06-system-meter", label: "系统状态交给我"),
-                .init(file: "07-yawn", label: "该休息一下啦"),
-                .init(file: "08-finger-heart", label: "给你一颗心")
+                .init(file: "01-idle", label: AppLocalizer.string("陪着你")),
+                .init(file: "02-wave", label: AppLocalizer.string("嗨～")),
+                .init(file: "03-curious", label: AppLocalizer.string("在想什么？")),
+                .init(file: "04-hop", label: AppLocalizer.string("好耶！")),
+                .init(file: "05-read", label: AppLocalizer.string("安静读会儿书")),
+                .init(file: "06-system-meter", label: AppLocalizer.string("系统状态交给我")),
+                .init(file: "07-yawn", label: AppLocalizer.string("该休息一下啦")),
+                .init(file: "08-finger-heart", label: AppLocalizer.string("给你一颗心"))
             ]
         case .vcc:
             return [
@@ -66,6 +66,11 @@ struct PetAction: Identifiable, Hashable {
     let file: String
     let label: String
     var id: String { file }
+
+    init(file: String, label: String) {
+        self.file = file
+        self.label = AppLocalizer.string(label)
+    }
 }
 
 enum SmartPetState: String, Equatable {
@@ -144,7 +149,7 @@ enum UrgentReminderMode: String, CaseIterable, Identifiable {
     case interval
 
     var id: String { rawValue }
-    var title: String { self == .persistent ? "常驻提醒" : "间隔提醒" }
+    var title: String { AppLocalizer.string(self == .persistent ? "常驻提醒" : "间隔提醒") }
 }
 
 extension PetMode {

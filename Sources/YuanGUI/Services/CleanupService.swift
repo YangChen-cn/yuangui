@@ -494,7 +494,8 @@ struct CleanupScanner: CleanupScanning {
                     risk: .review,
                     confidence: .exact,
                     reason: "超过 30 天且大于 10 MB 的安装包，默认移入废纸篓",
-                    selectedByDefault: false
+                    selectedByDefault: false,
+                    executionRoot: root
                 ))
             }
         }

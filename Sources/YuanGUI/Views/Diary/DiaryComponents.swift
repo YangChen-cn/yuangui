@@ -5,7 +5,7 @@ struct DiarySectionLabel: View {
     let systemImage: String
 
     var body: some View {
-        Label(title, systemImage: systemImage)
+        Label(AppLocalizer.string(title), systemImage: systemImage)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
@@ -27,7 +27,7 @@ struct DiaryTagChip: View {
                         .font(.caption2.weight(.bold))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("移除标签 \(tag)")
+                .accessibilityLabel("\(AppLocalizer.string("移除标签")) \(tag)")
             }
         }
         .font(.caption)
@@ -47,12 +47,12 @@ struct DiaryEmptyState: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label(title, systemImage: systemImage)
+            Label(AppLocalizer.string(title), systemImage: systemImage)
         } description: {
-            Text(message)
+            Text(AppLocalizer.string(message))
         } actions: {
             if let actionTitle, let action {
-                Button(actionTitle, systemImage: "square.and.pencil", action: action)
+                Button(AppLocalizer.string(actionTitle), systemImage: "square.and.pencil", action: action)
                     .buttonStyle(.borderedProminent)
                     .tint(.diaryAccent)
             }
@@ -69,18 +69,18 @@ struct DiarySaveStatusView: View {
         case .idle:
             EmptyView()
         case .saving:
-            Label("正在保存", systemImage: "arrow.triangle.2.circlepath")
+            Label(AppLocalizer.string("正在保存"), systemImage: "arrow.triangle.2.circlepath")
                 .foregroundStyle(.secondary)
         case .saved:
-            Label("已保存", systemImage: "checkmark.circle.fill")
+            Label(AppLocalizer.string("已保存"), systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
         case .failed(let message):
             Button(action: retry) {
-                Label("保存失败", systemImage: "exclamationmark.triangle.fill")
+                Label(AppLocalizer.string("保存失败"), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             }
             .buttonStyle(.plain)
-            .help("点按重试：\(message)")
+            .help("\(AppLocalizer.string("点按重试"))：\(message)")
         }
     }
 }

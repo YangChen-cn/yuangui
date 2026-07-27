@@ -11,9 +11,9 @@ enum QuickToolAction: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .regionScreenshot: "区域截图"
-        case .screenshotTranslation: "截图翻译"
-        case .translateSelection: "翻译所选文字"
+        case .regionScreenshot: AppLocalizer.string("区域截图")
+        case .screenshotTranslation: AppLocalizer.string("截图翻译")
+        case .translateSelection: AppLocalizer.string("翻译所选文字")
         }
     }
 }
@@ -109,13 +109,13 @@ enum QuickToolLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .simplifiedChinese: "简体中文"
-        case .english: "英语"
-        case .japanese: "日语"
-        case .korean: "韩语"
-        case .french: "法语"
-        case .german: "德语"
-        case .spanish: "西班牙语"
+        case .simplifiedChinese: AppLocalizer.string("简体中文")
+        case .english: AppLocalizer.string("英语")
+        case .japanese: AppLocalizer.string("日语")
+        case .korean: AppLocalizer.string("韩语")
+        case .french: AppLocalizer.string("法语")
+        case .german: AppLocalizer.string("德语")
+        case .spanish: AppLocalizer.string("西班牙语")
         }
     }
 }
@@ -129,9 +129,9 @@ enum TranslationEngine: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .systemShortcut: "系统快捷指令"
-        case .system: "系统离线"
-        case .onlineAI: "在线 AI"
+        case .systemShortcut: AppLocalizer.string("系统快捷指令")
+        case .system: AppLocalizer.string("系统离线")
+        case .onlineAI: AppLocalizer.string("在线 AI")
         }
     }
 }
@@ -150,14 +150,14 @@ enum ScreenshotTool: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .pen: "画笔"
-        case .highlighter: "高亮"
-        case .line: "直线"
-        case .arrow: "箭头"
-        case .rectangle: "矩形"
-        case .ellipse: "椭圆"
-        case .text: "文字"
-        case .mosaic: "马赛克"
+        case .pen: AppLocalizer.string("画笔")
+        case .highlighter: AppLocalizer.string("高亮")
+        case .line: AppLocalizer.string("直线")
+        case .arrow: AppLocalizer.string("箭头")
+        case .rectangle: AppLocalizer.string("矩形")
+        case .ellipse: AppLocalizer.string("椭圆")
+        case .text: AppLocalizer.string("文字")
+        case .mosaic: AppLocalizer.string("马赛克")
         }
     }
 

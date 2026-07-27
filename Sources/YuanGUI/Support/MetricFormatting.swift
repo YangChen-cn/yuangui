@@ -16,7 +16,9 @@ enum MetricFormatting {
 
     static func uptime(_ interval: TimeInterval) -> String {
         let totalHours = max(Int(interval) / 3600, 0)
-        if totalHours >= 24 { return "\(totalHours / 24)天\(totalHours % 24)小时" }
-        return "\(totalHours)小时"
+        if totalHours >= 24 {
+            return AppLocalizer.format("metric.uptime.daysHours", totalHours / 24, totalHours % 24)
+        }
+        return AppLocalizer.format("metric.uptime.hours", totalHours)
     }
 }

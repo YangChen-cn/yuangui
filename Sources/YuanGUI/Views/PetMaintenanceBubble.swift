@@ -47,7 +47,7 @@ struct PetMaintenanceBubble: View {
             Image(systemName: store.quickMode == .cleanup ? "sparkles" : "shippingbox.fill")
                 .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(.pink)
-            Text(store.message)
+            Text(AppLocalizer.string(store.message))
                 .font(.system(size: 12.5, weight: .bold, design: .rounded))
                 .lineLimit(2)
             Spacer()
@@ -122,7 +122,7 @@ struct PetMaintenanceBubble: View {
                     .foregroundStyle(candidate.disposition == .permanent ? .orange : .blue)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(candidate.displayName).font(.system(size: 10.5, weight: .semibold, design: .rounded)).lineLimit(1)
-                    Text("\(candidate.category.title) · \(candidate.reason)")
+                    Text("\(candidate.category.title) · \(AppLocalizer.string(candidate.reason))")
                         .font(.system(size: 8.5, design: .rounded)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()

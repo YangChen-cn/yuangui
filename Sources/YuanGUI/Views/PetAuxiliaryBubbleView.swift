@@ -46,9 +46,9 @@ struct PetAuxiliaryBubbleView: View {
     private var musicAlertText: String? {
         guard store.urgentReminderVisible else { return nil }
         switch store.smartState {
-        case .lowBattery: return "低电量"
-        case .memoryPressure: return "内存紧张"
-        case .charging: return "充电中"
+        case .lowBattery: return AppLocalizer.string("低电量")
+        case .memoryPressure: return AppLocalizer.string("内存紧张")
+        case .charging: return AppLocalizer.string("充电中")
         default: return nil
         }
     }

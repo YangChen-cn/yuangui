@@ -5,7 +5,7 @@ enum MusicSource: String, Codable, CaseIterable, Identifiable, Sendable {
     case bilibili
 
     var id: String { rawValue }
-    var title: String { self == .appleMusic ? "Apple Music" : "哔哩哔哩" }
+    var title: String { self == .appleMusic ? "Apple Music" : AppLocalizer.string("哔哩哔哩") }
     var systemImage: String { self == .appleMusic ? "music.note" : "play.tv.fill" }
 }
 
@@ -28,10 +28,10 @@ enum MusicPlayMode: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .sequential: return "顺序播放"
-        case .repeatOne: return "单曲循环"
-        case .repeatAll: return "列表循环"
-        case .shuffle: return "随机播放"
+        case .sequential: return AppLocalizer.string("顺序播放")
+        case .repeatOne: return AppLocalizer.string("单曲循环")
+        case .repeatAll: return AppLocalizer.string("列表循环")
+        case .shuffle: return AppLocalizer.string("随机播放")
         }
     }
     var systemImage: String {
@@ -142,14 +142,14 @@ enum LyricsFontStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .rounded: return "圆体"
-        case .system: return "系统字体"
-        case .serif: return "衬线体"
-        case .monospaced: return "等宽体"
-        case .pingFang: return "苹方"
-        case .songti: return "宋体"
-        case .kaiti: return "楷体"
-        case .heiti: return "黑体"
+        case .rounded: return AppLocalizer.string("圆体")
+        case .system: return AppLocalizer.string("系统字体")
+        case .serif: return AppLocalizer.string("衬线体")
+        case .monospaced: return AppLocalizer.string("等宽体")
+        case .pingFang: return AppLocalizer.string("苹方")
+        case .songti: return AppLocalizer.string("宋体")
+        case .kaiti: return AppLocalizer.string("楷体")
+        case .heiti: return AppLocalizer.string("黑体")
         }
     }
 }

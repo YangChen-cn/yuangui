@@ -11,7 +11,7 @@ struct DashboardNetworkMetricRow: View {
                 .foregroundStyle(.blue)
                 .frame(width: 18)
                 .accessibilityHidden(true)
-            Text("网络")
+            Text(AppLocalizer.string("网络"))
                 .font(.caption)
                 .bold()
                 .frame(width: 34, alignment: .leading)
@@ -21,7 +21,7 @@ struct DashboardNetworkMetricRow: View {
                 NetworkRateValue(direction: .upload, value: upload)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text(unavailableText)
+                Text(AppLocalizer.string(unavailableText))
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -34,9 +34,9 @@ struct DashboardNetworkMetricRow: View {
 
     private var accessibilityText: String {
         guard let download, let upload else {
-            return "网络，\(unavailableText)"
+            return "\(AppLocalizer.string("网络"))，\(AppLocalizer.string(unavailableText))"
         }
-        return "网络，下载 \(download)，上传 \(upload)"
+        return "\(AppLocalizer.string("网络"))，\(AppLocalizer.string("下载")) \(download)，\(AppLocalizer.string("上传")) \(upload)"
     }
 }
 
@@ -45,7 +45,7 @@ private struct NetworkRateValue: View {
         case download
         case upload
 
-        var title: String { self == .download ? "下载" : "上传" }
+        var title: String { AppLocalizer.string(self == .download ? "下载" : "上传") }
         var systemImage: String { self == .download ? "arrow.down" : "arrow.up" }
         var color: Color { self == .download ? .blue : .green }
     }

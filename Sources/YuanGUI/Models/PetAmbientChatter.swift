@@ -7,6 +7,9 @@ enum PetAmbientChatter {
         weather: WeatherSnapshot?,
         locationName: String? = nil
     ) -> [String] {
+        if AppLocalizer.effectiveLanguage == .english {
+            return englishCandidates(mode: mode, system: system, weather: weather, locationName: locationName)
+        }
         var messages = idleMessages(for: mode)
 
         if let weather {
@@ -31,6 +34,9 @@ enum PetAmbientChatter {
         weather: WeatherSnapshot,
         locationName: String? = nil
     ) -> [String] {
+        if AppLocalizer.effectiveLanguage == .english {
+            return englishWeatherAnnouncements(mode: mode, weather: weather, locationName: locationName)
+        }
         let place = locationName.map { "\($0)" } ?? "外面"
         let temperature = Int(weather.temperature.rounded())
         let apparent = Int(weather.apparentTemperature.rounded())
@@ -219,5 +225,36 @@ enum PetAmbientChatter {
         if hours > 0, minutes > 0 { return "\(hours)小时\(minutes)分钟" }
         if hours > 0 { return "\(hours)小时" }
         return "\(minutes)分钟"
+    }
+
+    private static func englishCandidates(mode: PetMode, system: SystemSnapshot, weather: WeatherSnapshot?, locationName: String?) -> [String] {
+        let companion = mode == .vcc ? "VCC" : mode == .yuanGui ? "YuanGUI" : "YuanGUI and VCC"
+        var messages = [
+            "\(companion) is here with you.",
+            "You’ve been working hard. Take a sip of water and stretch.",
+            "One thing at a time—you’re doing well.",
+            "Save your work before the next task.",
+            "Look away from the screen for a moment and rest your eyes."
+        ]
+        if let weather {
+            let place = locationName ?? "outside"
+            messages += englishWeatherAnnouncements(mode: mode, weather: weather, locationName: place)
+        }
+        if let battery = system.battery, battery.isPresent {
+            if battery.isCharging { messages.append("Your Mac is charging. We’ll keep you company.") }
+            else if let percent = battery.chargeFraction.map({ Int(($0 * 100).rounded()) }), percent <= 25 {
+                messages.append("Your Mac battery is at \(percent)%. Time to plug in.")
+            }
+        }
+        return messages
+    }
+
+    private static func englishWeatherAnnouncements(mode: PetMode, weather: WeatherSnapshot, locationName: String?) -> [String] {
+        let place = locationName ?? "outside"
+        let temperature = Int(weather.temperature.rounded())
+        if weather.isRainy { return ["It’s raining in \(place). Remember an umbrella!"] }
+        if weather.apparentTemperature >= 30 { return ["It feels like \(Int(weather.apparentTemperature.rounded()))° in \(place). Stay hydrated."] }
+        if weather.apparentTemperature <= 10 { return ["It’s \(temperature)° in \(place). Keep warm."] }
+        return ["Weather update for \(place): \(temperature)°, \(weather.condition.title)."]
     }
 }

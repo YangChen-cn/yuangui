@@ -13,7 +13,7 @@ struct PetAmbientBubble: View {
                 .frame(width: 28 * visualScale, height: 28 * visualScale)
                 .background(.pink.opacity(0.13), in: Circle())
 
-            Text(store.ambientMessage ?? "")
+            Text(AppLocalizer.string(store.ambientMessage ?? ""))
                 .font(.system(size: max(10, 12.5 * visualScale), weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(3)
@@ -27,8 +27,8 @@ struct PetAmbientBubble: View {
             }
             .yuanSystemGlassButton()
             .controlSize(.mini)
-            .help("收起这句话")
-            .accessibilityLabel("收起这句话")
+            .help(AppLocalizer.string("收起这句话"))
+            .accessibilityLabel(AppLocalizer.string("收起这句话"))
         }
         .padding(.horizontal, 13 * visualScale)
         .padding(.vertical, 11 * visualScale)

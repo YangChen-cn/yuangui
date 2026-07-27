@@ -131,7 +131,7 @@ struct TranslationEditorView: View {
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 9))
             if case let .failed(message) = store.state {
                 HStack {
-                    Text(message).font(.caption).foregroundStyle(.red)
+                    Text(AppLocalizer.string(message)).font(.caption).foregroundStyle(.red)
                     Spacer()
                     if store.canInstallShortcut {
                         Button("添加快捷指令", action: store.installShortcut)
@@ -145,7 +145,7 @@ struct TranslationEditorView: View {
     private var footer: some View {
         HStack(spacing: 10) {
             if let message = store.message {
-                Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(AppLocalizer.string(message)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             if !store.targetSnapshot.canReplace {
                 Text(store.replacementHint)

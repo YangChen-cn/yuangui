@@ -2,6 +2,9 @@ import Foundation
 
 enum PetStatusMessageResolver {
     static func message(snapshot: SystemSnapshot, smartState: SmartPetState) -> String {
+        if AppLocalizer.effectiveLanguage == .english {
+            return englishMessage(snapshot: snapshot, smartState: smartState)
+        }
         switch smartState {
         case .lowBattery:
             let value = snapshot.battery?.chargeFraction.map(MetricFormatting.percent) ?? "很低"
@@ -44,5 +47,24 @@ enum PetStatusMessageResolver {
         }
 
         return "Mac 状态不错，我会帮你看着～"
+    }
+
+    private static func englishMessage(snapshot: SystemSnapshot, smartState: SmartPetState) -> String {
+        switch smartState {
+        case .lowBattery:
+            return "Battery is low. Connect power when you can."
+        case .memoryPressure:
+            return "Memory use is high. Consider taking a break or closing an app."
+        case .charging:
+            return "Charging now—energy is coming back."
+        case .rainy:
+            return "It’s raining. Remember an umbrella!"
+        case .bedtime:
+            return "It’s late. Time to get some rest."
+        case .normal:
+            if let cpu = snapshot.cpu, cpu.total >= 0.80 { return "CPU is busy. Let your Mac catch its breath." }
+            if snapshot.battery?.isCharging == true { return "Charging now—energy is coming back." }
+            return "Your Mac looks good. I’ll keep an eye on it."
+        }
     }
 }

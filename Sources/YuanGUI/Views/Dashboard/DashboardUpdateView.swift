@@ -30,13 +30,13 @@ struct DashboardUpdateView: View {
 
     private var subtitle: String {
         switch updater.state {
-        case .idle: "尚未检查"
-        case .checking: "正在检查…"
-        case .upToDate: "当前已是最新版"
-        case .available: "发现 \(updater.latestRelease?.version ?? "新版本")"
-        case .downloading: "正在下载…"
-        case .installing: "正在安装…"
-        case .failed: "失败，点按查看"
+        case .idle: AppLocalizer.string("尚未检查")
+        case .checking: AppLocalizer.string("正在检查…")
+        case .upToDate: AppLocalizer.string("当前已是最新版")
+        case .available: "\(AppLocalizer.string("发现")) \(updater.latestRelease?.version ?? AppLocalizer.string("新版本"))"
+        case .downloading: AppLocalizer.string("正在下载…")
+        case .installing: AppLocalizer.string("正在安装…")
+        case .failed: AppLocalizer.string("失败，点按查看")
         }
     }
 
@@ -56,7 +56,7 @@ struct DashboardUpdateView: View {
     }
 
     private var help: String {
-        if case .failed(let message) = updater.state { return "更新失败：\(message)" }
+        if case .failed(let message) = updater.state { return "\(AppLocalizer.string("更新失败"))：\(message)" }
         return subtitle
     }
 

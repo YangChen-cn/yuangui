@@ -75,7 +75,7 @@ struct PetRootView: View {
 
             VStack(spacing: -12) {
                 if let toast = store.toast {
-                    Text(toast)
+                    Text(AppLocalizer.string(toast))
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 13)
                         .padding(.vertical, 8)
@@ -242,18 +242,21 @@ struct PetRootView: View {
             }
         } label: {
             Text(store.mode.title)
-                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                .font(.system(size: 10.5, weight: .bold, design: .rounded))
                 .lineLimit(1)
-                .frame(width: 42, height: 24)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, minHeight: 24)
                 .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 0.7))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
         .menuStyle(.borderlessButton)
-        .frame(width: PetLayout.compactSideControlsWidth, height: 26)
+        // The side-control column stays compact so it cannot overlap the toolbar.
+        // This label may extend into the transparent space beside the character.
+        .frame(width: 76, height: 26)
         .onHover { setSideToolHover(.role, hovering: $0) }
         .overlay { sideHoverLabel(for: .role) }
-        .help("切换桌宠角色")
+        .help(AppLocalizer.string("切换桌宠角色"))
     }
 
     private var compactSideControls: some View {
@@ -271,7 +274,7 @@ struct PetRootView: View {
             .buttonStyle(.plain)
             .onHover { setSideToolHover(.cleanup, hovering: $0) }
             .overlay { sideHoverLabel(for: .cleanup) }
-            .help("空间清理")
+            .help(AppLocalizer.string("空间清理"))
             .opacity(showsInteractiveSideControls ? 1 : 0)
             .allowsHitTesting(showsInteractiveSideControls)
 
@@ -281,7 +284,7 @@ struct PetRootView: View {
             .buttonStyle(.plain)
             .onHover { setSideToolHover(.uninstall, hovering: $0) }
             .overlay { sideHoverLabel(for: .uninstall) }
-            .help("软件卸载")
+            .help(AppLocalizer.string("软件卸载"))
             .opacity(showsInteractiveSideControls ? 1 : 0)
             .allowsHitTesting(showsInteractiveSideControls)
         }
@@ -328,7 +331,9 @@ struct PetRootView: View {
         .allowsHitTesting(!store.interactionLocked)
         .onHover { setSideToolHover(.focus, hovering: $0) }
         .overlay { sideHoverLabel(for: .focus) }
-        .help(hasActiveFocusCountdown ? "专注中：\(focusTimer.timeText)" : "打开番茄钟")
+        .help(hasActiveFocusCountdown
+            ? "\(AppLocalizer.string("专注中"))：\(focusTimer.timeText)"
+            : AppLocalizer.string("打开番茄钟"))
         .popover(isPresented: $showsFocusPopover, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
             FocusTimerControlView(timer: focusTimer) { }
         }
@@ -363,7 +368,7 @@ struct PetRootView: View {
                 .buttonStyle(.plain)
                 .onHover { setSideToolHover(.cleanup, hovering: $0) }
                 .overlay { sideHoverLabel(for: .cleanup) }
-                .help("空间清理：扫描可安全清理的缓存、日志和临时文件")
+                .help(AppLocalizer.string("空间清理：扫描可安全清理的缓存、日志和临时文件"))
                 .offset(x: sideControlsOnRight ? 7 : -7)
 
                 Button {
@@ -374,7 +379,7 @@ struct PetRootView: View {
                 .buttonStyle(.plain)
                 .onHover { setSideToolHover(.uninstall, hovering: $0) }
                 .overlay { sideHoverLabel(for: .uninstall) }
-                .help("软件卸载：查找应用及其可确认的用户级残留")
+                .help(AppLocalizer.string("软件卸载：查找应用及其可确认的用户级残留"))
                 .offset(x: sideControlsOnRight ? -7 : 7)
         }
         .animation(.easeOut(duration: 0.14), value: hoveredSideTool)

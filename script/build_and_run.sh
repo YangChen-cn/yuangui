@@ -17,6 +17,12 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
+# This repository is itself stored beneath ~/Desktop. Running the bundle directly
+# from dist would make macOS authorize the app reading its own bundle as Desktop
+# folder access. Keep the distributable bundle in dist, but launch a temporary
+# copy outside protected user folders for local development.
+RUN_STAGING_DIR="/private/tmp/${APP_NAME}-run-${UID}"
+RUN_BUNDLE="$RUN_STAGING_DIR/$APP_NAME.app"
 
 if [[ "$MODE" != "build-only" && "$MODE" != "--build-only" ]]; then
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -98,7 +104,10 @@ PLIST
 /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
 
 open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+  rm -rf "$RUN_BUNDLE"
+  mkdir -p "$RUN_STAGING_DIR"
+  /usr/bin/ditto "$APP_BUNDLE" "$RUN_BUNDLE"
+  /usr/bin/open -n "$RUN_BUNDLE"
 }
 
 case "$MODE" in
