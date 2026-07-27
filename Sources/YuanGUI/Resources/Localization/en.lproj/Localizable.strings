@@ -1202,6 +1202,7 @@
 "music.local.error.missing" = "The local audio file could not be found.";
 "music.local.error.staleBookmark" = "Access to this file has expired. Relocate the file to restore access.";
 "music.local.error.invalid" = "This audio file could not be read.";
+"music.local.error.securityScope" = "YuanGUI could not access this local audio file.";
 "music.lyrics.localFile" = "Local LRC";
 "music.library.trackCount" = "%ld songs";
 "music.queue.remainingCount" = "%ld more";

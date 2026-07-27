@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import Foundation
 
-typealias BilibiliPlayerFactory = @MainActor () -> any BilibiliPlaying
+typealias URLMusicPlayerFactory = @MainActor () -> any URLMusicPlaying
 
 @MainActor
 final class MusicPlaybackProgress: ObservableObject {
@@ -38,10 +38,10 @@ final class MusicFeature {
     private let bilibili: any BilibiliMusicProviding
     private let bilibiliAccountService = BilibiliAccountService()
     private let bilibiliFavoritesService = BilibiliFavoritesService()
-    private let makeBilibiliPlayer: BilibiliPlayerFactory
-    private var bilibiliPlayer: (any BilibiliPlaying)?
-    private var bilibiliPlayerReleaseTask: Task<Void, Never>?
-    private let bilibiliPlayerReleaseDelay: Duration
+    private let makeURLMusicPlayer: URLMusicPlayerFactory
+    private var urlPlayer: (any URLMusicPlaying)?
+    private var urlPlayerReleaseTask: Task<Void, Never>?
+    private let urlPlayerReleaseDelay: Duration
     private let lyricsService: any LyricsProviding
     private let localMusicImporter: any LocalMusicImporting
     private let library: any MusicLibraryCoordinating
@@ -72,10 +72,12 @@ final class MusicFeature {
     private var persistenceRevision: UInt64 = 0
     private var lyricLoadRevision: UInt64 = 0
     private var lastAppleClockTime: TimeInterval?
-    private var bilibiliPlaybackQueue = BilibiliPlaybackQueue()
+    private var musicPlaybackQueue = MusicPlaybackQueue()
     private var appleMusicWorkspaceObservers: [NSObjectProtocol] = []
     private var pausedForExternalAudio = false
     private var scopedLocalURL: URL?
+    private var loadedURLTrackID: String?
+    private var loadedURLSource: MusicSource?
     var onExternalAudioResumeCancelled: (() -> Void)?
     var onExternalAudioManualControl: (() -> Void)?
     var blocksAutomaticPlaybackForExternalAudio: (() -> Bool)?
@@ -84,12 +86,12 @@ final class MusicFeature {
         defaults: UserDefaults = .standard,
         appleMusic: any AppleMusicProviding = AppleMusicController(),
         bilibili: any BilibiliMusicProviding = BilibiliClient(),
-        bilibiliPlayer: (any BilibiliPlaying)? = nil,
-        bilibiliPlayerFactory: @escaping BilibiliPlayerFactory = { BilibiliPlayerEngine() },
+        urlPlayer: (any URLMusicPlaying)? = nil,
+        urlPlayerFactory: @escaping URLMusicPlayerFactory = { URLMusicPlayerEngine() },
         lyricsService: any LyricsProviding = LyricsService(),
         localMusicImporter: any LocalMusicImporting = LocalMusicImportService(),
         library: any MusicLibraryCoordinating = MusicLibraryActor(),
-        bilibiliPlayerReleaseDelay: Duration = .seconds(60)
+        urlPlayerReleaseDelay: Duration = .seconds(60)
     ) {
         let source = MusicSource(rawValue: defaults.string(forKey: "musicSource") ?? "") ?? .appleMusic
         let savedBilibiliVolume = defaults.object(forKey: "bilibiliMusicVolume") as? Double ?? 0.8
@@ -97,9 +99,9 @@ final class MusicFeature {
         self.defaults = defaults
         self.appleMusic = appleMusic
         self.bilibili = bilibili
-        self.bilibiliPlayer = bilibiliPlayer
-        self.makeBilibiliPlayer = bilibiliPlayerFactory
-        self.bilibiliPlayerReleaseDelay = bilibiliPlayerReleaseDelay
+        self.urlPlayer = urlPlayer
+        self.makeURLMusicPlayer = urlPlayerFactory
+        self.urlPlayerReleaseDelay = urlPlayerReleaseDelay
         self.lyricsService = lyricsService
         self.localMusicImporter = localMusicImporter
         self.library = library
@@ -115,7 +117,7 @@ final class MusicFeature {
         localImportStore = LocalMusicImportStore()
         self.bilibiliVolume = savedBilibiliVolume
         self.localVolume = savedLocalVolume
-        if let bilibiliPlayer { configureBilibiliPlayer(bilibiliPlayer) }
+        if let urlPlayer { configureURLMusicPlayer(urlPlayer) }
         installAppleMusicWorkspaceObservers()
         refreshBilibiliAccount()
         libraryRestoreTask = Task { [weak self] in
@@ -123,7 +125,7 @@ final class MusicFeature {
         }
     }
 
-    private func configureBilibiliPlayer(_ player: any BilibiliPlaying) {
+    private func configureURLMusicPlayer(_ player: any URLMusicPlaying) {
         player.setVolume(bilibiliVolume)
         player.onStateChange = { [weak self] state in
             guard let self, self.activePlaybackSource == .bilibili || self.activePlaybackSource == .local else { return }
@@ -141,36 +143,37 @@ final class MusicFeature {
         player.onFailure = { [weak self] error in self?.handleURLPlayerFailure(error) }
     }
 
-    private func ensureBilibiliPlayer() -> any BilibiliPlaying {
-        bilibiliPlayerReleaseTask?.cancel()
-        bilibiliPlayerReleaseTask = nil
-        if let bilibiliPlayer { return bilibiliPlayer }
-        let player = makeBilibiliPlayer()
-        configureBilibiliPlayer(player)
-        bilibiliPlayer = player
+    private func ensureURLMusicPlayer() -> any URLMusicPlaying {
+        urlPlayerReleaseTask?.cancel()
+        urlPlayerReleaseTask = nil
+        if let urlPlayer { return urlPlayer }
+        let player = makeURLMusicPlayer()
+        configureURLMusicPlayer(player)
+        urlPlayer = player
         return player
     }
 
-    private func unloadBilibiliPlayer() {
+    private func unloadURLMusicPlayer() {
         releaseScopedLocalURL()
-        bilibiliPlayer?.onStateChange = nil
-        bilibiliPlayer?.onProgress = nil
-        bilibiliPlayer?.onFinished = nil
-        bilibiliPlayer?.onFailure = nil
-        bilibiliPlayer?.stop()
-        bilibiliPlayer = nil
+        urlPlayer?.onStateChange = nil
+        urlPlayer?.onProgress = nil
+        urlPlayer?.onFinished = nil
+        urlPlayer?.onFailure = nil
+        urlPlayer?.stop()
+        clearLoadedURLIdentity()
+        urlPlayer = nil
     }
 
-    private func scheduleBilibiliPlayerRelease() {
-        guard bilibiliPlayer != nil else { return }
-        bilibiliPlayerReleaseTask?.cancel()
-        let releaseDelay = bilibiliPlayerReleaseDelay
-        bilibiliPlayerReleaseTask = Task { @MainActor [weak self] in
+    private func scheduleURLMusicPlayerRelease() {
+        guard urlPlayer != nil else { return }
+        urlPlayerReleaseTask?.cancel()
+        let releaseDelay = urlPlayerReleaseDelay
+        urlPlayerReleaseTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: releaseDelay) } catch { return }
             guard let self, !Task.isCancelled else { return }
-            self.bilibiliPlayerReleaseTask = nil
+            self.urlPlayerReleaseTask = nil
             guard self.activePlaybackSource != .bilibili else { return }
-            self.unloadBilibiliPlayer()
+            self.unloadURLMusicPlayer()
         }
     }
 
@@ -384,7 +387,7 @@ final class MusicFeature {
             if activePlaybackSource != nil { _ = activatePlaybackSource(.appleMusic) }
             if currentTrack?.source != .appleMusic { clearTransientPlaybackState() }
         }
-        rebuildBilibiliPlaybackQueue()
+        rebuildMusicPlaybackQueue()
     }
 
     @discardableResult
@@ -398,13 +401,16 @@ final class MusicFeature {
             lastBilibiliPosition = position
             bilibiliLoadTask?.cancel()
             bilibiliLoadTask = nil
-            bilibiliPlayer?.pause()
-            scheduleBilibiliPlayerRelease()
+            urlPlayer?.stop()
+            clearLoadedURLIdentity()
+            scheduleURLMusicPlayerRelease()
         case .local:
             localLoadTask?.cancel()
             localLoadTask = nil
-            bilibiliPlayer?.pause()
+            urlPlayer?.stop()
+            clearLoadedURLIdentity()
             releaseScopedLocalURL()
+            scheduleURLMusicPlayerRelease()
         case nil:
             break
         }
@@ -414,11 +420,11 @@ final class MusicFeature {
         case .local:
             Task { [appleMusic] in await appleMusic.pause() }
             if volume != localVolume { volume = localVolume }
-            bilibiliPlayer?.setVolume(localVolume)
+            urlPlayer?.setVolume(localVolume)
         case .bilibili:
             Task { [appleMusic] in await appleMusic.pause() }
             if volume != bilibiliVolume { volume = bilibiliVolume }
-            bilibiliPlayer?.setVolume(bilibiliVolume)
+            urlPlayer?.setVolume(bilibiliVolume)
         }
         activePlaybackSource = newSource
         return true
@@ -504,28 +510,28 @@ final class MusicFeature {
                 self?.scheduleAppleRefresh()
             }
         case .bilibili:
-            guard let bilibiliPlayer else {
+            guard let urlPlayer else {
                 if let currentTrack { play(currentTrack, at: position) }
                 else if let first = playlist.first { play(first) }
                 return
             }
-            if let currentTrack, !bilibiliPlayer.hasLoadedItem {
+            if let currentTrack, !hasLoadedCurrentURLTrack(currentTrack) {
                 play(currentTrack, at: position)
             } else if currentTrack == nil, let first = playlist.first {
                 play(first)
             } else {
-                bilibiliPlayer.playPause()
+                urlPlayer.playPause()
             }
         case .local:
-            guard let bilibiliPlayer else {
+            guard let urlPlayer else {
                 if let currentTrack, currentTrack.source == .local { play(currentTrack, at: position) }
                 else if let first = playlist.first(where: { $0.source == .local }) { play(first) }
                 return
             }
-            if let currentTrack, !bilibiliPlayer.hasLoadedItem {
+            if let currentTrack, !hasLoadedCurrentURLTrack(currentTrack) {
                 play(currentTrack, at: position)
             } else {
-                bilibiliPlayer.playPause()
+                urlPlayer.playPause()
             }
         }
     }
@@ -543,7 +549,7 @@ final class MusicFeature {
             lastAppleClockTime = Date.timeIntervalSinceReferenceDate
             Task { [appleMusic] in await appleMusic.seek(to: target) }
         } else if playbackSource == .bilibili || playbackSource == .local {
-            bilibiliPlayer?.seek(to: target)
+            urlPlayer?.seek(to: target)
         }
         updateLyric()
     }
@@ -567,11 +573,11 @@ final class MusicFeature {
             Task { [appleMusic, volume] in await appleMusic.setVolume(volume) }
         } else if playbackSource == .bilibili {
             bilibiliVolume = volume
-            bilibiliPlayer?.setVolume(volume)
+            urlPlayer?.setVolume(volume)
             defaults.set(volume, forKey: "bilibiliMusicVolume")
         } else {
             localVolume = volume
-            bilibiliPlayer?.setVolume(volume)
+            urlPlayer?.setVolume(volume)
             defaults.set(volume, forKey: "localMusicVolume")
         }
     }
@@ -579,7 +585,7 @@ final class MusicFeature {
     func setPlayMode(_ mode: MusicPlayMode) {
         guard playMode != mode else { return }
         playMode = mode
-        rebuildBilibiliPlaybackQueue()
+        rebuildMusicPlaybackQueue()
         persistLibrary()
     }
 
@@ -614,7 +620,7 @@ final class MusicFeature {
             if !added.isEmpty {
                 setSource(.local)
                 if currentTrack?.source != .local { restoreSelection(for: .local) }
-                rebuildBilibiliPlaybackQueue()
+                rebuildMusicPlaybackQueue()
                 persistLibrary()
             }
         }
@@ -657,7 +663,7 @@ final class MusicFeature {
                 for track in tracks where !playlist.contains(where: { $0.id == track.id }) {
                     playlist.append(track); added.append(track)
                 }
-                if !added.isEmpty { rebuildBilibiliPlaybackQueue() }
+                if !added.isEmpty { rebuildMusicPlaybackQueue() }
                 importText = ""
                 setSource(.bilibili)
                 persistLibrary()
@@ -778,7 +784,7 @@ final class MusicFeature {
                 let existingIDs = Set(playlist.map(\.id))
                 let added = tracks.filter { !existingIDs.contains($0.id) }
                 playlist.append(contentsOf: added)
-                if !added.isEmpty { rebuildBilibiliPlaybackQueue() }
+                if !added.isEmpty { rebuildMusicPlaybackQueue() }
                 updateLocalPlaylist(named: folder.title, with: tracks)
                 setSource(.bilibili)
                 persistLibrary()
@@ -920,9 +926,9 @@ final class MusicFeature {
             setPlaybackState(.paused)
             Task { [appleMusic] in await appleMusic.pause() }
         case .bilibili:
-            bilibiliPlayer?.pause()
+            urlPlayer?.pause()
         case .local:
-            bilibiliPlayer?.pause()
+            urlPlayer?.pause()
         }
     }
 
@@ -939,11 +945,13 @@ final class MusicFeature {
                 self?.scheduleAppleRefresh()
             }
         case .bilibili:
-            guard let bilibiliPlayer, bilibiliPlayer.hasLoadedItem else { return }
-            bilibiliPlayer.play()
+            guard let currentTrack, hasLoadedCurrentURLTrack(currentTrack) else { return }
+            guard let urlPlayer else { return }
+            urlPlayer.play()
         case .local:
-            guard let bilibiliPlayer, bilibiliPlayer.hasLoadedItem else { return }
-            bilibiliPlayer.play()
+            guard let currentTrack, hasLoadedCurrentURLTrack(currentTrack) else { return }
+            guard let urlPlayer else { return }
+            urlPlayer.play()
         }
     }
 
@@ -965,10 +973,10 @@ final class MusicFeature {
     ) {
         guard track.source == .bilibili else { return }
         activatePlaybackSource(.bilibili)
-        _ = ensureBilibiliPlayer()
+        _ = ensureURLMusicPlayer()
         currentTrack = track
         currentTrackID = track.id
-        if rebuildQueue { rebuildBilibiliPlaybackQueue() }
+        if rebuildQueue { rebuildMusicPlaybackQueue() }
         lastBilibiliPosition = savedPosition
         playbackProgress.reset(position: savedPosition, duration: track.duration)
         setPlaybackState(.loading)
@@ -985,11 +993,11 @@ final class MusicFeature {
     ) {
         guard track.source == .local else { return }
         activatePlaybackSource(.local)
-        let player = ensureBilibiliPlayer()
+        let player = ensureURLMusicPlayer()
         player.setVolume(localVolume)
         currentTrack = track
         currentTrackID = track.id
-        if rebuildQueue { rebuildBilibiliPlaybackQueue() }
+        if rebuildQueue { rebuildMusicPlaybackQueue() }
         playbackProgress.reset(position: savedPosition, duration: track.duration)
         setPlaybackState(.loading)
         localImportStore.errorMessage = nil
@@ -1004,9 +1012,13 @@ final class MusicFeature {
                       activePlaybackSource == .local,
                       currentTrack?.id == track.id else { return }
                 releaseScopedLocalURL()
-                _ = url.startAccessingSecurityScopedResource()
+                guard url.startAccessingSecurityScopedResource() else {
+                    throw LocalMusicImportError.securityScopeUnavailable
+                }
                 scopedLocalURL = url
                 player.load(urls: [url], headers: [:], position: savedPosition, autoplay: true)
+                loadedURLTrackID = track.id
+                loadedURLSource = .local
                 persistLibrary()
             } catch {
                 guard !Task.isCancelled else { return }
@@ -1026,6 +1038,17 @@ final class MusicFeature {
         scopedLocalURL = nil
     }
 
+    private func clearLoadedURLIdentity() {
+        loadedURLTrackID = nil
+        loadedURLSource = nil
+    }
+
+    private func hasLoadedCurrentURLTrack(_ track: MusicTrack) -> Bool {
+        urlPlayer?.hasLoadedItem == true
+            && loadedURLTrackID == track.id
+            && loadedURLSource == track.source
+    }
+
     private func loadBilibiliTrack(_ track: MusicTrack, position savedPosition: TimeInterval) {
         bilibiliLoadTask?.cancel()
         bilibiliLoadTask = Task { [weak self] in
@@ -1036,13 +1059,15 @@ final class MusicFeature {
                 guard !Task.isCancelled,
                       activePlaybackSource == .bilibili,
                       currentTrack?.id == track.id else { return }
-                guard let bilibiliPlayer else { return }
-                bilibiliPlayer.load(
+                guard let urlPlayer else { return }
+                urlPlayer.load(
                     urls: location.candidates,
                     headers: headers,
                     position: savedPosition,
                     autoplay: true
                 )
+                loadedURLTrackID = track.id
+                loadedURLSource = .bilibili
                 persistLibrary()
             } catch {
                 guard !Task.isCancelled, activePlaybackSource == .bilibili else { return }
@@ -1061,17 +1086,17 @@ final class MusicFeature {
         removeCachedLyrics(for: track)
         for index in savedPlaylists.indices { savedPlaylists[index].trackIDs.removeAll { $0 == track.id } }
         if wasCurrent {
-            bilibiliPlayer?.stop(); currentTrack = nil; currentTrackID = nil; setPlaybackState(.stopped)
+            urlPlayer?.stop(); clearLoadedURLIdentity(); currentTrack = nil; currentTrackID = nil; setPlaybackState(.stopped)
             releaseScopedLocalURL()
             if removedSource == .bilibili { lastBilibiliPosition = 0 }
             if activePlaybackSource == removedSource {
                 activePlaybackSource = nil
-                scheduleBilibiliPlayerRelease()
+                scheduleURLMusicPlayerRelease()
             }
             playbackProgress.reset(); cancelLyricLoad()
             lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
         }
-        rebuildBilibiliPlaybackQueue()
+        rebuildMusicPlaybackQueue()
         persistLibrary()
     }
 
@@ -1087,19 +1112,20 @@ final class MusicFeature {
             savedPlaylists[index].trackIDs.removeAll { removedIDs.contains($0) }
         }
         if currentTrack?.source == source {
-            bilibiliPlayer?.stop()
+            urlPlayer?.stop()
+            clearLoadedURLIdentity()
             releaseScopedLocalURL()
             currentTrackID = nil
         }
         if source == .bilibili { lastBilibiliPosition = 0 }
         if activePlaybackSource == source || currentTrack?.source == source {
             activePlaybackSource = nil
-            scheduleBilibiliPlayerRelease()
+            scheduleURLMusicPlayerRelease()
             currentTrack = nil; setPlaybackState(.stopped)
             playbackProgress.reset(); cancelLyricLoad()
             lyrics = nil; currentLyric = nil; nextLyric = nil; currentLyricIndex = nil
         }
-        rebuildBilibiliPlaybackQueue()
+        rebuildMusicPlaybackQueue()
         persistLibrary()
     }
 
@@ -1328,12 +1354,12 @@ final class MusicFeature {
         libraryRestoreTask?.cancel()
         stopAppleSyncTask()
         stopAppleClock()
-        bilibiliPlayerReleaseTask?.cancel()
-        bilibiliPlayerReleaseTask = nil
+        urlPlayerReleaseTask?.cancel()
+        urlPlayerReleaseTask = nil
         appleRefreshTask?.cancel(); appleArtworkTask?.cancel(); bilibiliImportResultTask?.cancel()
         lyricLoadTask?.cancel(); lyricsSearchTask?.cancel(); bilibiliLoadTask?.cancel(); bilibiliLoginTask?.cancel(); bilibiliFavoriteTask?.cancel()
         localImportTask?.cancel(); localLoadTask?.cancel()
-        unloadBilibiliPlayer()
+        unloadURLMusicPlayer()
         appleMusicWorkspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         appleMusicWorkspaceObservers.removeAll()
         persistenceRevision &+= 1
@@ -1500,10 +1526,10 @@ final class MusicFeature {
         let sourcePlaylist = playlist.filter { $0.source == controlSource }
         guard !sourcePlaylist.isEmpty else { return }
         let targetID = delta < 0
-            ? bilibiliPlaybackQueue.previousTrackID(
+            ? musicPlaybackQueue.previousTrackID(
                 playlist: sourcePlaylist, currentTrackID: currentTrack?.id, mode: playMode
             )
-            : bilibiliPlaybackQueue.nextTrackID(
+            : musicPlaybackQueue.nextTrackID(
                 playlist: sourcePlaylist, currentTrackID: currentTrack?.id, mode: playMode
             )
         publishUpcomingTracks()
@@ -1526,6 +1552,7 @@ final class MusicFeature {
     }
 
     private func handleURLPlayerFailure(_ error: Error) {
+        clearLoadedURLIdentity()
         if activePlaybackSource == .local {
             setPlaybackState(.failed(error.localizedDescription))
             localImportStore.errorMessage = error.localizedDescription
@@ -1716,7 +1743,7 @@ final class MusicFeature {
         lyricOffsets = snapshot.lyricOffsets
         lyricsByTrackID = snapshot.lyricsByTrackID
         currentTrackID = snapshot.currentTrackID
-        rebuildBilibiliPlaybackQueue()
+        rebuildMusicPlaybackQueue()
         lastBilibiliPosition = snapshot.lastPosition
         if browsingSource == .bilibili || browsingSource == .local {
             restoreSelection(for: browsingSource, position: snapshot.lastPosition)
@@ -1760,8 +1787,8 @@ final class MusicFeature {
         Task { await library.scheduleSave(snapshot, revision: revision) }
     }
 
-    private func rebuildBilibiliPlaybackQueue() {
-        bilibiliPlaybackQueue.rebuild(
+    private func rebuildMusicPlaybackQueue() {
+        musicPlaybackQueue.rebuild(
             playlist: playlist.filter { $0.source == (currentTrack?.source ?? browsingSource) },
             currentTrackID: currentTrackID,
             mode: playMode
@@ -1770,7 +1797,7 @@ final class MusicFeature {
     }
 
     private func publishUpcomingTracks() {
-        let ids = bilibiliPlaybackQueue.upcomingTrackIDs
+        let ids = musicPlaybackQueue.upcomingTrackIDs
         if upcomingTrackIDs != ids { upcomingTrackIDs = ids }
     }
 

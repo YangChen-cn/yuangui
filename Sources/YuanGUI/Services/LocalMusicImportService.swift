@@ -16,6 +16,7 @@ enum LocalMusicImportError: LocalizedError, Equatable {
     case missingFile
     case staleBookmark
     case invalidTrack
+    case securityScopeUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +24,7 @@ enum LocalMusicImportError: LocalizedError, Equatable {
         case .missingFile: AppLocalizer.string("music.local.error.missing")
         case .staleBookmark: AppLocalizer.string("music.local.error.staleBookmark")
         case .invalidTrack: AppLocalizer.string("music.local.error.invalid")
+        case .securityScopeUnavailable: AppLocalizer.string("music.local.error.securityScope")
         }
     }
 }

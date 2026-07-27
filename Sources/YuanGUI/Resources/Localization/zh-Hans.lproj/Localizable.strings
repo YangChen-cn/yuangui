@@ -1196,6 +1196,7 @@
 "music.local.error.missing" = "找不到本地音频文件。";
 "music.local.error.staleBookmark" = "文件访问权限已失效，请重新定位文件。";
 "music.local.error.invalid" = "无法读取这个音频文件。";
+"music.local.error.securityScope" = "元圭无法访问这个本地音频文件。";
 "music.lyrics.localFile" = "本地 LRC";
 "music.library.trackCount" = "%ld 首";
 "music.queue.remainingCount" = "还有 %ld 首";

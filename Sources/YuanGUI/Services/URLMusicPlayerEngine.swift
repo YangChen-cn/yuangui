@@ -173,6 +173,3 @@ final class URLMusicPlayerEngine: MusicPlaybackControlling, URLMusicPlaying {
         if let stalledObserver { NotificationCenter.default.removeObserver(stalledObserver) }
     }
 }
-
-typealias BilibiliPlaying = URLMusicPlaying
-typealias BilibiliPlayerEngine = URLMusicPlayerEngine

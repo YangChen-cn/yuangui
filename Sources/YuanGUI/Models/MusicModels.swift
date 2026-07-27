@@ -165,8 +165,6 @@ struct MusicPlaybackQueue: Equatable {
     }
 }
 
-typealias BilibiliPlaybackQueue = MusicPlaybackQueue
-
 enum LyricsFontStyle: String, CaseIterable, Identifiable {
     case rounded
     case system

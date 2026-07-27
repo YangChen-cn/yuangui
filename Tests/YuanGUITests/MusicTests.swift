@@ -59,7 +59,7 @@ final class MusicTests: XCTestCase {
         let track = try XCTUnwrap(tracks.first)
         let location = try await client.audioLocation(for: track)
         let headers = await client.playbackHeaders()
-        let player = BilibiliPlayerEngine()
+        let player = URLMusicPlayerEngine()
         let started = expectation(description: "Bilibili audio starts")
         var playbackError: Error?
         player.onStateChange = { state in
@@ -692,7 +692,7 @@ final class MusicTests: XCTestCase {
 
     func testSequentialPlaybackQueueOnlyContainsTracksAfterCurrent() throws {
         let tracks = makeQueueTracks(count: 4)
-        var queue = BilibiliPlaybackQueue()
+        var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[1].id, mode: .sequential)
 
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[2].id, tracks[3].id])
@@ -702,7 +702,7 @@ final class MusicTests: XCTestCase {
 
     func testRepeatOneQueueOnlyContainsCurrentTrack() {
         let tracks = makeQueueTracks(count: 3)
-        var queue = BilibiliPlaybackQueue()
+        var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[1].id, mode: .repeatOne)
 
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id])
@@ -712,7 +712,7 @@ final class MusicTests: XCTestCase {
 
     func testRepeatAllQueueWrapsAndShrinksAsTracksPlay() {
         let tracks = makeQueueTracks(count: 4)
-        var queue = BilibiliPlaybackQueue()
+        var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[2].id, mode: .repeatAll)
 
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[3].id, tracks[0].id, tracks[1].id])
@@ -722,7 +722,7 @@ final class MusicTests: XCTestCase {
 
     func testRepeatAllQueuePreparesTheNextCycleBeforeCurrentCycleEnds() throws {
         let tracks = makeQueueTracks(count: 3)
-        var queue = BilibiliPlaybackQueue()
+        var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[0].id, mode: .repeatAll)
 
         let second = try XCTUnwrap(queue.nextTrackID(
@@ -739,7 +739,7 @@ final class MusicTests: XCTestCase {
 
     func testShuffleQueueIsStableAndDrivesActualNextTrack() throws {
         let tracks = makeQueueTracks(count: 6)
-        var queue = BilibiliPlaybackQueue()
+        var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[2].id, mode: .shuffle)
         let scheduled = queue.upcomingTrackIDs
 
@@ -754,7 +754,7 @@ final class MusicTests: XCTestCase {
 
     func testPlaybackQueuePreviousRestoresConsumedTrack() throws {
         let tracks = makeQueueTracks(count: 3)
-        var queue = BilibiliPlaybackQueue()
+        var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[0].id, mode: .sequential)
         let next = try XCTUnwrap(queue.nextTrackID(
             playlist: tracks, currentTrackID: tracks[0].id, mode: .sequential
@@ -813,7 +813,7 @@ final class MusicTests: XCTestCase {
         let importer = StubLocalMusicImporter(resolveError: .missingFile)
         let feature = MusicFeature(
             defaults: defaults,
-            bilibiliPlayer: RecordingBilibiliPlayer(),
+            urlPlayer: RecordingURLMusicPlayer(),
             localMusicImporter: importer,
             library: RecordingMusicLibraryCoordinator()
         )
@@ -831,7 +831,7 @@ final class MusicTests: XCTestCase {
         let track = makeLocalTrack(id: "local:stale", filename: "stale.m4a")
         let feature = MusicFeature(
             defaults: UserDefaults(suiteName: "LocalStale-\(UUID().uuidString)")!,
-            bilibiliPlayer: RecordingBilibiliPlayer(),
+            urlPlayer: RecordingURLMusicPlayer(),
             localMusicImporter: StubLocalMusicImporter(resolveError: .staleBookmark),
             library: RecordingMusicLibraryCoordinator()
         )
@@ -870,14 +870,14 @@ final class MusicTests: XCTestCase {
     func testLocalProgressUpdatesLyricsAndSwitchingSourcePausesURLPlayer() async {
         let defaults = UserDefaults(suiteName: "LocalPlayback-\(UUID().uuidString)")!
         let track = makeLocalTrack(id: "local:playing", filename: "playing.mp3")
-        let player = RecordingBilibiliPlayer()
+        let player = RecordingURLMusicPlayer()
         let importer = StubLocalMusicImporter(
             localLyrics: LyricsParser.parseLRC("[00:01.00]当前歌词", source: "Local LRC")
         )
         let feature = MusicFeature(
             defaults: defaults,
             appleMusic: StubAppleMusicProvider(),
-            bilibiliPlayer: player,
+            urlPlayer: player,
             localMusicImporter: importer,
             library: RecordingMusicLibraryCoordinator()
         )
@@ -888,7 +888,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(feature.lyricsStore.currentLine?.text, "当前歌词")
 
         feature.connectAppleMusic()
-        XCTAssertGreaterThanOrEqual(player.pauseCount, 1)
+        XCTAssertGreaterThanOrEqual(player.stopCount, 1)
         await feature.shutdown()
     }
 
@@ -902,10 +902,10 @@ final class MusicTests: XCTestCase {
         defaults.set(true, forKey: "musicLyricsVisible")
         defaults.set(true, forKey: "musicLyricsPanelLocked")
         let persistence = RecordingMusicLibraryCoordinator()
-        let player = RecordingBilibiliPlayer()
+        let player = RecordingURLMusicPlayer()
         let feature = MusicFeature(
             defaults: defaults,
-            bilibiliPlayer: player,
+            urlPlayer: player,
             library: persistence
         )
 
@@ -926,17 +926,17 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testMusicFeatureDefersBilibiliPlayerUntilPlayback() async {
+    func testMusicFeatureDefersURLMusicPlayerUntilPlayback() async {
         let suiteName = "MusicLazyPlayerTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         var factoryCalls = 0
-        let player = RecordingBilibiliPlayer()
+        let player = RecordingURLMusicPlayer()
         let feature = MusicFeature(
             defaults: defaults,
             bilibili: StubBilibiliMusicProvider(),
-            bilibiliPlayerFactory: {
+            urlPlayerFactory: {
                 factoryCalls += 1
                 return player
             },
@@ -966,23 +966,23 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testBilibiliPlayerReleaseIsDelayedAndCancelledByPlayback() async {
+    func testURLMusicPlayerReleaseIsDelayedAndCancelledByPlayback() async {
         let suiteName = "MusicPlayerReleaseTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         var factoryCalls = 0
-        let firstPlayer = RecordingBilibiliPlayer()
+        let firstPlayer = RecordingURLMusicPlayer()
         let feature = MusicFeature(
             defaults: defaults,
             appleMusic: StubAppleMusicProvider(),
             bilibili: StubBilibiliMusicProvider(),
-            bilibiliPlayerFactory: {
+            urlPlayerFactory: {
                 factoryCalls += 1
-                return factoryCalls == 1 ? firstPlayer : RecordingBilibiliPlayer()
+                return factoryCalls == 1 ? firstPlayer : RecordingURLMusicPlayer()
             },
             library: RecordingMusicLibraryCoordinator(),
-            bilibiliPlayerReleaseDelay: .milliseconds(20)
+            urlPlayerReleaseDelay: .milliseconds(20)
         )
         let track = MusicTrack(
             id: "release-bilibili-track",
@@ -1003,7 +1003,7 @@ final class MusicTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(40))
 
         XCTAssertEqual(factoryCalls, 1)
-        XCTAssertEqual(firstPlayer.stopCount, 0)
+        XCTAssertEqual(firstPlayer.stopCount, 1)
 
         feature.connectAppleMusic()
         try? await Task.sleep(for: .milliseconds(40))
@@ -1026,7 +1026,7 @@ final class MusicTests: XCTestCase {
         let library = StaticMusicLibraryCoordinator(snapshot: MusicLibrarySnapshot(
             playlist: [track], currentTrackID: track.id, lastPosition: 42
         ))
-        let feature = MusicFeature(defaults: defaults, bilibiliPlayer: RecordingBilibiliPlayer(), library: library)
+        let feature = MusicFeature(defaults: defaults, urlPlayer: RecordingURLMusicPlayer(), library: library)
         for _ in 0..<8 { await Task.yield() }
 
         feature.setSource(.bilibili)
@@ -1052,9 +1052,10 @@ final class MusicTests: XCTestCase {
             playMode: .sequential,
             currentTrackID: local.id
         ))
+        let player = RecordingURLMusicPlayer()
         let feature = MusicFeature(
             defaults: defaults,
-            bilibiliPlayer: RecordingBilibiliPlayer(),
+            urlPlayer: player,
             library: library
         )
         for _ in 0..<8 { await Task.yield() }
@@ -1192,7 +1193,7 @@ private struct StubAppleMusicProvider: AppleMusicProviding {
 }
 
 @MainActor
-private final class RecordingBilibiliPlayer: BilibiliPlaying {
+private final class RecordingURLMusicPlayer: URLMusicPlaying {
     var onStateChange: ((MusicPlaybackState) -> Void)?
     var onProgress: ((TimeInterval, TimeInterval) -> Void)?
     var onFinished: (() -> Void)?
