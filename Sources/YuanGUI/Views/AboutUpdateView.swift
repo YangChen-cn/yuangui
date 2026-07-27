@@ -9,8 +9,8 @@ struct AboutUpdateView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 SettingsPageHeader(
-                    title: "关于",
-                    subtitle: "版本信息、更新内容与应用更新",
+                    title: AppLocalizer.string("关于"),
+                    subtitle: AppLocalizer.string("版本信息、更新内容与应用更新"),
                     systemImage: "info.circle.fill",
                     accent: .blue
                 )
@@ -19,7 +19,7 @@ struct AboutUpdateView: View {
                         .resizable()
                         .frame(width: 72, height: 72)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("元圭与 VCC")
+                        Text(AppLocalizer.string("元圭与 VCC"))
                             .font(.title2.bold())
                         Text("版本 \(AppVersionInfo.version)（\(AppVersionInfo.build)）")
                             .foregroundStyle(.secondary)
@@ -72,6 +72,23 @@ struct AboutUpdateView: View {
                                 }
                             }
                             releaseNotes(release.body)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                }
+
+                GroupBox(AppLocalizer.string("about.legal")) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text(AppLocalizer.string("about.license"))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(AppLocalizer.string("about.notice"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button("GPL-3.0-only") { openLegalDocument("LICENSE") }
+                            Button("Asset license") { openLegalDocument("ASSET_LICENSE", extension: "md") }
+                            Button("Third-party notices") { openLegalDocument("THIRD_PARTY_NOTICES", extension: "md") }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -163,6 +180,11 @@ struct AboutUpdateView: View {
 
     private func renderedInlineMarkdown(_ source: String) -> AttributedString {
         (try? AttributedString(markdown: source)) ?? AttributedString(source)
+    }
+
+    private func openLegalDocument(_ name: String, extension fileExtension: String? = nil) {
+        guard let url = Bundle.main.url(forResource: name, withExtension: fileExtension, subdirectory: "Legal") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

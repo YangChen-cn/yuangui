@@ -6,7 +6,7 @@ struct DashboardSecondaryMetrics: View {
     var body: some View {
         VStack(spacing: 0) {
             DashboardCompactMetricRow(
-                title: "磁盘",
+                title: AppLocalizer.string("磁盘"),
                 systemImage: "internaldrive",
                 primaryValue: diskPrimary,
                 detail: diskDetail,
@@ -34,20 +34,20 @@ struct DashboardSecondaryMetrics: View {
     }
 
     private var diskPrimary: String {
-        snapshot.disk.map { "\(MetricFormatting.bytes($0.free)) 可用" }
+        snapshot.disk.map { "\(MetricFormatting.bytes($0.free)) \(AppLocalizer.string("可用"))" }
             ?? availability(.disk)
     }
 
     private var diskDetail: String {
-        snapshot.disk.map { "共 \(MetricFormatting.bytes($0.total))" } ?? ""
+        snapshot.disk.map { "\(AppLocalizer.string("共")) \(MetricFormatting.bytes($0.total))" } ?? ""
     }
 
     private var diskStatus: String {
         guard snapshot.disk != nil else { return "" }
-        return diskSeverity == .normal ? "" : "空间偏少"
+        return diskSeverity == .normal ? "" : AppLocalizer.string("空间偏少")
     }
 
     private func availability(_ identifier: MetricIdentifier) -> String {
-        snapshot.isAvailable(identifier) ? "等待首次采样" : "暂不可用"
+        AppLocalizer.string(snapshot.isAvailable(identifier) ? "等待首次采样" : "暂不可用")
     }
 }

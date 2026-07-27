@@ -130,9 +130,9 @@ enum DashboardSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: "概览"
-        case .music: "音乐"
-        case .tools: "工具"
+        case .overview: AppLocalizer.string("概览")
+        case .music: AppLocalizer.string("音乐")
+        case .tools: AppLocalizer.string("工具")
         }
     }
 
@@ -164,12 +164,12 @@ struct DashboardSmartStatePresentation: Equatable {
 
     static func resolve(_ state: SmartPetState) -> Self {
         switch state {
-        case .normal: .init(title: "一切平稳", systemImage: "checkmark.circle", severity: .normal)
-        case .lowBattery: .init(title: "低电量", systemImage: "battery.25percent", severity: .warning)
-        case .memoryPressure: .init(title: "内存紧张", systemImage: "memorychip.fill", severity: .critical)
-        case .charging: .init(title: "充电中", systemImage: "bolt.fill", severity: .informational)
-        case .rainy: .init(title: "下雨了", systemImage: "umbrella.fill", severity: .informational)
-        case .bedtime: .init(title: "该休息了", systemImage: "moon.zzz.fill", severity: .informational)
+        case .normal: .init(title: AppLocalizer.string("一切平稳"), systemImage: "checkmark.circle", severity: .normal)
+        case .lowBattery: .init(title: AppLocalizer.string("低电量"), systemImage: "battery.25percent", severity: .warning)
+        case .memoryPressure: .init(title: AppLocalizer.string("内存紧张"), systemImage: "memorychip.fill", severity: .critical)
+        case .charging: .init(title: AppLocalizer.string("充电中"), systemImage: "bolt.fill", severity: .informational)
+        case .rainy: .init(title: AppLocalizer.string("下雨了"), systemImage: "umbrella.fill", severity: .informational)
+        case .bedtime: .init(title: AppLocalizer.string("该休息了"), systemImage: "moon.zzz.fill", severity: .informational)
         }
     }
 }

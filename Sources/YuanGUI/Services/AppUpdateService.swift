@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "2.6.1"
-    static let fallbackBuild = "15"
+    static let fallbackVersion = "2.7.0"
+    static let fallbackBuild = "16"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -14,11 +14,10 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlights = [
-        "元圭 2.6.1：修复已开启的桌面歌词在重启后未恢复的问题。",
-        "修复修改番茄钟倒计时时间可能导致应用闪退的问题。",
-        "优化冷启动和常驻内存占用，延迟创建和释放不常用的窗口、音乐播放器与后台任务。",
-        "修复桌宠贴边切换角色、歌词条宽度和歌词交互中的几个显示与生命周期问题。",
-        "继续提升音乐播放、桌宠窗口和系统监控在长时间运行下的稳定性。"
+        "YuanGUI 2.7.0: English and Simplified Chinese app localization with an explicit language preference.",
+        "Cleanup adds conservative developer-cache, project-artifact, and old-installer review rules.",
+        "Project artifacts and installers are sent to the Trash; running apps are never force-quit.",
+        "Bundled GPL-3.0-only, asset-license, and third-party-notice documents improve release transparency."
     ]
 }
 

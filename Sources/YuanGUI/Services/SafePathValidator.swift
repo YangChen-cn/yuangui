@@ -40,7 +40,9 @@ struct SafePathValidator {
     let allowedRoots: [URL]
     private let protectedFragments = [
         "Keychains", "/Messages", "/Notes", "Mobile Documents", "Group Containers",
-        "CloudStorage", "com.yang.yuangui", "/YuanGUI/", "Safari/History", "Cookies"
+        "CloudStorage", "com.yang.yuangui", "/YuanGUI/", "Safari/History", "Cookies",
+        "MDM", "CrowdStrike", "Sentinel", "Jamf", "Kandji", "1Password", "Bitwarden",
+        "Input Methods", "Google Drive", "Dropbox", "OneDrive", "Ollama", "HuggingFace"
     ]
 
     init(allowedRoots: [URL] = SafePathValidator.defaultAllowedRoots) {
@@ -68,6 +70,7 @@ struct SafePathValidator {
 
     static var defaultAllowedRoots: [URL] {
         let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
         let library = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]
         return [
             library.appendingPathComponent("Caches"),
@@ -81,6 +84,15 @@ struct SafePathValidator {
             library.appendingPathComponent("Application Scripts"),
             library.appendingPathComponent("LaunchAgents"),
             library.appendingPathComponent("Developer/Xcode/DerivedData"),
+            library.appendingPathComponent("Caches/Homebrew"),
+            home.appendingPathComponent(".npm/_cacache"),
+            home.appendingPathComponent(".cache/pip"),
+            home.appendingPathComponent(".cache/uv"),
+            home.appendingPathComponent(".cargo/registry"),
+            home.appendingPathComponent("go/pkg/mod/cache"),
+            home.appendingPathComponent(".gradle/caches"),
+            home.appendingPathComponent("Downloads"),
+            home.appendingPathComponent("Desktop"),
             fm.temporaryDirectory
         ]
     }

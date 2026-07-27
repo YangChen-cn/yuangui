@@ -55,7 +55,8 @@ final class QuickToolsSettingsStore: ObservableObject {
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Pictures/YuanGUI Screenshots", isDirectory: true).path
         screenshotTranslationOverlayEnabled = defaults.bool(forKey: Key.screenshotTranslationOverlayEnabled)
-        nonChineseTarget = QuickToolLanguage(rawValue: defaults.string(forKey: Key.nonChineseTarget) ?? "") ?? .simplifiedChinese
+        nonChineseTarget = QuickToolLanguage(rawValue: defaults.string(forKey: Key.nonChineseTarget) ?? "")
+            ?? (AppLocalizer.effectiveLanguage == .simplifiedChinese ? .simplifiedChinese : .english)
         chineseTarget = QuickToolLanguage(rawValue: defaults.string(forKey: Key.chineseTarget) ?? "") ?? .english
         translationEngine = TranslationEngine(rawValue: defaults.string(forKey: Key.translationEngine) ?? "") ?? .systemShortcut
 

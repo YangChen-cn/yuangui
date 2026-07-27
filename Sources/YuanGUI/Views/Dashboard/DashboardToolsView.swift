@@ -27,7 +27,7 @@ struct DashboardToolsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 9) {
-                Text("常用工具")
+                Text(AppLocalizer.string("常用工具"))
                     .font(.caption)
                     .bold()
                 LazyVGrid(
@@ -48,7 +48,7 @@ struct DashboardToolsView: View {
                     }
                 }
                 .modifier(DashboardQuickActionGlassContainerModifier())
-                Text("更多工具")
+                Text(AppLocalizer.string("更多工具"))
                     .font(.caption)
                     .bold()
                     .padding(.top, 2)
@@ -113,9 +113,9 @@ struct DashboardQuickAction: View {
                 Image(systemName: systemImage)
                     .font(.title3)
                     .foregroundStyle(role.color)
-                Text(title)
+                Text(AppLocalizer.string(title))
                     .bold()
-                Text(subtitle)
+                Text(AppLocalizer.string(subtitle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -132,7 +132,7 @@ struct DashboardQuickAction: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .accessibilityLabel("\(title)，\(subtitle)")
+        .accessibilityLabel("\(AppLocalizer.string(title))，\(AppLocalizer.string(subtitle))")
     }
 
 }

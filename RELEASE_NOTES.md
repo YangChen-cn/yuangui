@@ -1,113 +1,22 @@
-# 元圭与 VCC 2.6.1
+# YuanGUI release notes
 
-## 2.6.1 稳定性与性能优化
+[简体中文](RELEASE_NOTES.zh-CN.md)
 
-### 稳定性修复
+## 2.7.0 — English localization and global-release preparation
 
-- 修复已开启的桌面歌词在应用重启后不会自动出现的问题；启动时会根据持久化显示状态主动恢复歌词窗口。
-- 修复修改番茄钟倒计时时间可能导致应用闪退的问题；时长更新继续经过边界校验和持久化入口。
-- 修复桌宠贴边时更换角色可能残留旧角色贴边动画的问题。
-- 修复桌宠跟唱歌词条宽度固定、短歌词右侧留出过大空白的问题，让宽度随实际文字内容变化。
+- Added English and Simplified Chinese resource bundles, a System/English/Simplified Chinese preference, localized app metadata, and restart guidance.
+- New English installations use an English companion prompt, English place-name lookup, and non-English-to-English translation defaults. Existing prompts and translation settings are retained.
+- Cleanup House now reviews reproducible developer caches, project build artifacts, and old installer packages. The latter two are moved to the Trash only.
+- Added conservative project-root management, category summaries, hard-link-aware size accounting, stronger scan-time identity checks, expanded protected software/data rules, and “quit then rescan” behavior for running apps.
+- Added English/Chinese installation and permission guides, GPL-3.0-only and asset licensing materials, third-party notices, and DMG legal documents.
 
-### 性能优化
+## 2.6.1 — Stability and performance
 
-- 延迟创建桌面歌词窗口和不常用的桌宠辅助面板，减少启动阶段的窗口与 SwiftUI 视图树开销。
-- 哔哩哔哩播放器改为按需创建，Apple Music 后台同步和时钟任务改为按活动状态运行。
-- 关闭较重窗口后释放窗口和视图树，并延迟释放贴边预览与播放器资源，降低常驻内存占用和后台唤醒次数。
-- 拖拽贴边预览复用状态对象，避免鼠标移动期间反复重建 `NSHostingView`。
+- Restored persisted desktop lyrics after relaunch and fixed focus-timer duration stability.
+- Reduced startup and resident-memory work by creating heavy windows and background tasks on demand.
+- Improved desktop-pet edge behavior, lyrics sizing, music playback, and long-running monitoring stability.
 
-### 验证
+## 2.6.0 — Edge storage and Liquid Glass
 
-- 全量 `swift test` 通过，网络集成测试默认跳过。
-- Release 构建、Bundle ID、版本号、代码签名、DMG 镜像和 SHA-256 已校验。
-
-## 2.6.0 贴边收纳与 Liquid Glass 更新
-
-### 数据可靠性
-
-- 修复日记自动保存竞态：保存等待期间产生的新编辑会保留独立修订号，旧保存完成后不会误清除最新待保存状态；关闭、备份和切换数据前会持续保存到状态稳定。
-- 日记成功保存后每天最多自动备份一次，保留最近 7 个每日备份和 4 个每周备份；设置页可查看状态、立即备份、打开目录和恢复备份。
-- 修复 AI 回复在等待期间切换会话后可能写入错误会话的问题；流式内容、最终回复和错误均绑定到发起请求时的会话。
-- 修复异步加载聊天历史时沿用旧数组下标的问题；加载结果返回后重新按会话 ID 定位，被删除或已更新的会话不会被旧数据覆盖。
-- 修复修改番茄钟倒计时时间可能导致应用闪退的问题；时长更新统一经过边界校验和持久化入口。
-
-### 界面与交互
-
-- 统一设置页顶部说明和分区视觉，桌宠设置拆分为外观、陪伴、提醒、桌面行为与高级设置。
-- 新增桌宠左右贴边收纳：使用角色真实可见区域判断 56 px 磁吸预览和 28 px 松手收纳，贴边后显示透明角色探头，悬停稍微探出；点击恢复时限制透明面板的越界量，确保角色完整返回且不会离屏幕边缘过远。
-- 贴边探头支持独立的鼠标穿透迷你监控，紧凑显示 CPU、内存和电量；低电量、内存压力、下雨及睡眠时间等智能状态可主动探头提醒，提醒文字 1 秒后自动消失。
-- 日记正文支持直接粘贴剪贴板图片，监听仅在正文编辑器获得焦点时生效，不影响标题、地点和标签输入。
-- 优化状态栏网络上下行信息的字号、对齐和层级。
-- Apple Music 音乐页使用独立的紧凑高度，切换 Apple Music 与哔哩哔哩播放源时会立即调整状态栏面板尺寸。
-- 桌宠迷你状态气泡与桌宠使用一致的跨桌面和全屏空间行为。
-- 修复首次打开状态栏或迷你监控时，缺少 CPU 基线样本导致瞬时显示异常高占用的问题。
-
-### Liquid Glass 实验与桌宠悬浮层
-
-- 新增 Liquid Glass 面板主题并作为本实验分支默认主题；macOS 26 使用原生 `glassEffect` 与玻璃按钮，macOS 15–25 保留系统 Material 降级。
-- 重做状态栏玻璃层级、页签、番茄钟、底部控制和工具入口，避免玻璃卡片层层嵌套；状态栏仍保留概览、音乐和工具各自的紧凑高度。
-- 桌宠状态气泡、主动对白、迷你监控和迷你音乐播放器统一为轻量玻璃悬浮层；歌词气泡出现时隐藏重复的独立音符。
-- 桌面歌词主体改为透明度可调的细条，仅控制按钮使用 Liquid Glass；弱化主歌词阴影和副歌词亮度，并新增苹方、宋体、楷体、黑体字体。
-- 低电量提醒分级：11%–20% 显示包含具体百分比的限时气泡并每 5 分钟重复，10% 及以下保持常驻提醒。
-- 修复桌宠靠屏幕边缘打开 AI 对话时的位置保存竞态：在聊天状态发布前同步记录原点，关闭时即使窗口已提前缩小也继续恢复，并允许桌宠周围透明留白合法越过屏幕边缘。
-
-### 验证
-
-- `swift build` 通过，无新增编译警告。
-- 完整 Swift 测试由 GitHub Actions 在 macOS 26 runner 上执行。
-- Release DMG 使用 Release 配置构建、签名并验证镜像完整性。
-
-## 2.5.0 恋爱手账与陪伴体验升级
-
-### 元圭恋爱手账
-
-- 新增原生 macOS 三栏日记界面，统一侧栏筛选、时间线选择和右侧编辑状态。
-- 支持快速记录、标题、正文、心情、标签、天气、地点、播放中的音乐和照片；快速记录可继续进入完整编辑。
-- 心情选择器扩展为 16 种表情；完整日记显示记录时间，心情位于日期右侧，“那一刻”元数据位于标题上方。
-- 地点可以读取天气系统的当前位置，读取后仍可直接编辑。
-- 支持月份和日期跳转、日历、照片墙、那年今日、收藏、搜索、Markdown 预览和最近删除。
-- 照片支持文件选择器、拖放和剪贴板导入；原图与缩略图分离保存，预览支持缩放和完整显示。
-- 提供 Markdown 阅读版、带版本 JSON 和 ZIP 完整备份导出。
-
-### 数据安全
-
-- 日记仓库改为 actor，支持注入临时存储目录，避免测试访问真实用户数据。
-- 日记文件使用带格式版本的 envelope，兼容读取旧版裸 JSON。
-- 单个损坏日记会隔离到恢复目录，其余内容继续加载；脏记录按实际修改 ID 保存，失败记录保留重试状态。
-- 备份包含 manifest、相对目录结构和 SHA-256 校验；恢复前验证候选数据，失败时保留当前数据并回滚。
-- 删除先移动到最近删除，支持恢复和彻底删除；附件引用持久化成功后才清理文件。
-
-### 桌宠联动
-
-- 桌宠底栏打开快速记录，菜单栏和完整日记入口打开完整手账。
-- 快速记录打开时固定当前时间、天气和音乐快照；暂停或停止的音乐不会写入日记。
-- 自动保存不再触发桌宠提示；完整编辑完成、切换日记、关闭窗口或快速记录明确保存后才提示一次。
-- 元圭、VCC 和一起模式使用不同的日记保存台词。
-
-### 状态栏快速控制中心
-
-- 状态栏面板重构为概览、音乐和工具三个区域，在紧凑尺寸内保留天气、系统状态、播放控制和常用工具。
-- 概览页持续刷新 CPU、内存、磁盘、网络、电池和运行时间，并针对不同页面使用独立面板高度。
-- 音乐页可预览后续八首歌曲；切换 Apple Music 时继续调用可靠的系统连接与播放控制。
-- 修复状态栏首击不稳定、工具页滚动穿透和监控数据需要重新打开才能刷新的问题。
-
-### 验证
-
-- 日记专项测试 56 项通过。
-- `./script/build_and_run.sh --build-only` 通过。
-- `./script/build_and_run.sh --verify` 通过。
-
-## 历史版本：2.1.0 音乐播放体验升级
-
-- 新增“其他应用播放声音时自动暂停音乐”。功能默认关闭，可在设置页或状态栏音乐页开启；外部声音持续约 1 秒才暂停，稳定停止约 2.5 秒后才尝试恢复。
-- 支持 Apple Music 和哔哩哔哩播放源；自动恢复只针对本功能暂停的音乐，手动播放、暂停、切歌、拖动进度或切换音源都会取消恢复资格。
-- 状态栏音乐页与完整播放器均加入独立音量拖动条；切换到哔哩哔哩时会显示该来源上次播放的歌曲。
-- 增加 Core Audio 外部输出和自动暂停状态机日志，方便诊断浏览器等应用保留输出流时的恢复延迟。
-
-## 历史重要更新
-
-- 桌宠锁定改为紧凑解锁按钮，桌宠辅助气泡不再改变角色位置，动作优先级更加稳定。
-- 截图翻译采用结构化 OCR 与语义批量翻译，支持稳定缩放、完整译文布局和复杂页面文字覆盖。
-- 音乐播放器支持 Apple Music、哔哩哔哩导入、歌词匹配与本地歌单；应用内更新可校验并安装 GitHub Release 的 DMG。
-
-支持 macOS 15 或更高版本。此 DMG 为个人分享版，使用临时签名。
+- Added safer diary persistence and automatic backup/restore workflows.
+- Added edge docking, compact monitoring, and macOS 26 Liquid Glass with a Material fallback on macOS 15–25.

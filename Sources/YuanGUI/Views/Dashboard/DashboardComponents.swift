@@ -92,7 +92,7 @@ struct DashboardStatusLabel: View {
     let presentation: DashboardSmartStatePresentation
 
     var body: some View {
-        Label(presentation.title, systemImage: presentation.systemImage)
+            Label(AppLocalizer.string(presentation.title), systemImage: presentation.systemImage)
             .font(.caption)
             .foregroundStyle(presentation.severity.color)
             .labelStyle(.titleAndIcon)
@@ -108,7 +108,7 @@ struct DashboardToggleButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label(AppLocalizer.string(title), systemImage: systemImage)
                 .labelStyle(.titleAndIcon)
                 .font(.caption)
                 .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
@@ -116,8 +116,8 @@ struct DashboardToggleButton: View {
         }
         .dashboardSystemGlassButton()
         .controlSize(.small)
-        .help("\(title)：\(isOn ? "开" : "关")")
-        .accessibilityValue(isOn ? "开" : "关")
+        .help("\(AppLocalizer.string(title)): \(isOn ? AppLocalizer.string("开") : AppLocalizer.string("关"))")
+        .accessibilityValue(isOn ? AppLocalizer.string("开") : AppLocalizer.string("关"))
     }
 }
 
@@ -128,9 +128,9 @@ struct DashboardEmptyState: View {
 
     var body: some View {
         ContentUnavailableView(
-            title,
+            AppLocalizer.string(title),
             systemImage: systemImage,
-            description: Text(description)
+            description: Text(AppLocalizer.string(description))
         )
         .controlSize(.small)
     }

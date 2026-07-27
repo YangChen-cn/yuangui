@@ -79,6 +79,7 @@ struct MaintenanceView: View {
                 Text("已选 \(size(store.selectedCleanupBytes))")
                     .font(.caption).foregroundStyle(.secondary)
                 whitelistMenu
+                scanScopeMenu
                 Button("开始清理…") { confirmCleanup() }
                     .disabled(store.selectedCleanupIDs.isEmpty || store.isWorking)
             }
@@ -87,6 +88,20 @@ struct MaintenanceView: View {
                 ContentUnavailableView("等待扫描", systemImage: "sparkles", description: Text("只扫描当前用户的安全缓存与残留目录"))
             } else {
                 List {
+                    Section("分类摘要") {
+                        ForEach(CleanupCategory.allCases, id: \.self) { category in
+                            let values = store.cleanupCandidates.filter { $0.category == category }
+                            if !values.isEmpty {
+                                HStack {
+                                    Text(category.title)
+                                    Spacer()
+                                    Text("\(values.count) 项 · \(size(values.reduce(0) { $0 + $1.byteCount }))")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .font(.caption)
+                            }
+                        }
+                    }
                     ForEach(MaintenanceRisk.allCases, id: \.self) { risk in
                         let candidates = store.visibleCleanupCandidates.filter { $0.risk == risk }
                         if !candidates.isEmpty {
@@ -115,6 +130,46 @@ struct MaintenanceView: View {
             }
         } label: {
             Label("白名单", systemImage: "hand.raised")
+        }
+    }
+
+    private var scanScopeMenu: some View {
+        Menu {
+            Section("扫描类别") {
+                ForEach(CleanupCategory.allCases, id: \.self) { category in
+                    Toggle(category.title, isOn: Binding(
+                        get: { store.enabledCleanupCategories.contains(category) },
+                        set: { store.setCategory(category, enabled: $0) }
+                    ))
+                }
+            }
+            Section("项目扫描位置") {
+                if store.projectScanRoots.isEmpty {
+                    Text("未设置项目目录")
+                } else {
+                    ForEach(store.projectScanRoots, id: \.self) { path in
+                        Button("移除：\(URL(fileURLWithPath: path).lastPathComponent)") {
+                            store.removeProjectScanRoot(path)
+                        }
+                    }
+                }
+                Divider()
+                Button("添加项目目录…") { chooseProjectRoot() }
+            }
+            Text("项目产物和旧安装包默认不选，并只会移入废纸篓。")
+        } label: {
+            Label("扫描范围", systemImage: "folder.badge.gearshape")
+        }
+    }
+
+    private func chooseProjectRoot() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "添加"
+        if panel.runModal() == .OK, let url = panel.url {
+            store.addProjectScanRoot(url)
         }
     }
 

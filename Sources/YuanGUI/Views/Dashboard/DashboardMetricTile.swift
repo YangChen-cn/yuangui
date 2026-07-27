@@ -18,12 +18,12 @@ struct DashboardMetricTile: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(severity.color)
                     .accessibilityHidden(true)
-                Text(title)
+                Text(AppLocalizer.string(title))
                     .font(.caption)
                     .bold()
                 Spacer(minLength: 4)
                 if !status.isEmpty {
-                    Label(status, systemImage: severityIcon)
+                    Label(AppLocalizer.string(status), systemImage: severityIcon)
                         .labelStyle(.titleAndIcon)
                         .font(.caption)
                         .foregroundStyle(severity.color)
@@ -40,7 +40,7 @@ struct DashboardMetricTile: View {
                     value: primaryValue
                 )
             HStack(spacing: 6) {
-                Text(detail)
+                Text(AppLocalizer.string(detail))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -59,7 +59,7 @@ struct DashboardMetricTile: View {
         .frame(maxWidth: .infinity, minHeight: 79, alignment: .topLeading)
         .background(.primary.opacity(0.04), in: .rect(cornerRadius: DashboardDesign.sectionRadius))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title)，\(primaryValue)，\(detail)，\(status)")
+        .accessibilityLabel("\(AppLocalizer.string(title))，\(primaryValue)，\(AppLocalizer.string(detail))，\(AppLocalizer.string(status))")
     }
 
     private var severityIcon: String {

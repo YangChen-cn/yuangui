@@ -8,8 +8,8 @@ struct QuickToolsSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
             SettingsPageHeader(
-                title: "快捷工具",
-                subtitle: "集中管理截图、截图翻译和划词翻译",
+                title: AppLocalizer.string("快捷工具"),
+                subtitle: AppLocalizer.string("集中管理截图、截图翻译和划词翻译"),
                 systemImage: "wand.and.stars",
                 accent: .blue
             )

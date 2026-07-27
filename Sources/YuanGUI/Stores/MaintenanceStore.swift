@@ -11,9 +11,9 @@ final class MaintenanceStore: ObservableObject {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .size: return "按大小"
-            case .name: return "按名称"
-            case .lastUsed: return "按最近使用"
+            case .size: return AppLocalizer.string("按大小")
+            case .name: return AppLocalizer.string("按名称")
+            case .lastUsed: return AppLocalizer.string("按最近使用")
             }
         }
     }
@@ -30,6 +30,8 @@ final class MaintenanceStore: ObservableObject {
     @Published private(set) var isWorking = false
     @Published private(set) var message = "VCC 准备好扫描啦，master 随时叫我们～"
     @Published private(set) var whitelistedPaths: [String]
+    @Published private(set) var projectScanRoots: [String]
+    @Published private(set) var enabledCleanupCategories: Set<CleanupCategory>
     @Published var selectedTab = 0
     @Published private(set) var quickMode: QuickMode?
     @Published private(set) var quickCompleted = false
@@ -55,6 +57,10 @@ final class MaintenanceStore: ObservableObject {
         self.defaults = defaults
         self.operations = logger.load()
         self.whitelistedPaths = defaults.stringArray(forKey: "maintenanceWhitelist") ?? []
+        self.projectScanRoots = defaults.stringArray(forKey: "maintenanceProjectRoots")
+            ?? CleanupScanConfiguration.defaults().projectRoots
+        let storedCategories = defaults.stringArray(forKey: "maintenanceEnabledCategories") ?? CleanupCategory.allCases.map(\.rawValue)
+        self.enabledCleanupCategories = Set(storedCategories.compactMap(CleanupCategory.init(rawValue:)))
     }
 
     var selectedCleanup: [CleanupCandidate] { cleanupCandidates.filter { selectedCleanupIDs.contains($0.id) } }
@@ -115,7 +121,7 @@ final class MaintenanceStore: ObservableObject {
         scanProgress = nil
         message = "VCC 正在认真扫描可以清理的内容…"
         pet.beginMaintenance(message: message)
-        let found = await scanner.scan(excluding: Set(whitelistedPaths)) { [weak self] progress in
+        let found = await scanner.scan(configuration: scanConfiguration) { [weak self] progress in
             Task { @MainActor in
                 self?.scanProgress = progress
                 self?.message = progress.message
@@ -213,6 +219,28 @@ final class MaintenanceStore: ObservableObject {
         defaults.removeObject(forKey: "maintenanceWhitelist")
     }
 
+    func addProjectScanRoot(_ url: URL) {
+        let root = url.standardizedFileURL.resolvingSymlinksInPath()
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        guard root.path != home.path,
+              root.path.hasPrefix(home.path + "/"),
+              !projectScanRoots.contains(root.path) else { return }
+        projectScanRoots.append(root.path)
+        projectScanRoots.sort()
+        defaults.set(projectScanRoots, forKey: "maintenanceProjectRoots")
+    }
+
+    func removeProjectScanRoot(_ path: String) {
+        projectScanRoots.removeAll { $0 == path }
+        defaults.set(projectScanRoots, forKey: "maintenanceProjectRoots")
+    }
+
+    func setCategory(_ category: CleanupCategory, enabled: Bool) {
+        if enabled { enabledCleanupCategories.insert(category) }
+        else { enabledCleanupCategories.remove(category) }
+        defaults.set(enabledCleanupCategories.map(\.rawValue).sorted(), forKey: "maintenanceEnabledCategories")
+    }
+
     func openTrash() { pet.openTrash() }
 
     func selectRecommendedCleanup() {
@@ -250,6 +278,14 @@ final class MaintenanceStore: ObservableObject {
     func selectTab(_ tab: Int) { selectedTab = min(max(tab, 0), 2) }
 
     func refreshOperations() { operations = logger.load() }
+
+    var scanConfiguration: CleanupScanConfiguration {
+        CleanupScanConfiguration(
+            projectRoots: projectScanRoots,
+            whitelistedPaths: whitelistedPaths,
+            enabledCategories: enabledCleanupCategories
+        )
+    }
 
     private func finish(_ result: MaintenanceOperation) {
         isWorking = false

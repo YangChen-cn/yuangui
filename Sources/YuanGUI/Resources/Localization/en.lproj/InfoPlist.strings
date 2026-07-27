@@ -1,0 +1,7 @@
+/* Displayed by macOS when the system language is English. */
+"CFBundleName" = "YuanGUI";
+"CFBundleDisplayName" = "YuanGUI";
+"NSAppleEventsUsageDescription" = "Allows YuanGUI to control Music after you request playback, and to ask Finder to move selected cleanup items to the Trash.";
+"NSLocationUsageDescription" = "Allows YuanGUI to show weather for your approximate location. It does not store location history.";
+"NSLocationWhenInUseUsageDescription" = "Allows YuanGUI to show weather for your approximate location. It does not store location history.";
+"NSScreenCaptureUsageDescription" = "Allows YuanGUI to capture the screen area you explicitly select for OCR translation, local editing, copying, or saving.";

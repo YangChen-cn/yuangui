@@ -6,6 +6,7 @@ import SwiftUI
 enum YuanGUIApplication {
     @MainActor
     static func main() {
+        AppLocalizer.bootstrap()
         let application = NSApplication.shared
         let delegate = AppDelegate()
         application.delegate = delegate
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 @MainActor
 final class AppRuntime {
+    let language = AppLanguageSettings()
     let pet = PetStore()
     let aiSettings = AISettingsStore()
     let loginItem = LoginItemStore()
@@ -48,6 +50,7 @@ final class AppRuntime {
     lazy var externalAudioInterruption = ExternalAudioInterruptionController(music: music)
     lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
     private lazy var windows = WindowCoordinator(
+        language: language,
         pet: pet,
         aiSettings: aiSettings,
         loginItem: loginItem,
@@ -118,6 +121,7 @@ final class AppRuntime {
 
 @MainActor
 final class WindowCoordinator: NSObject {
+    private let language: AppLanguageSettings
     private let pet: PetStore
     private let aiSettings: AISettingsStore
     private let loginItem: LoginItemStore
@@ -151,6 +155,7 @@ final class WindowCoordinator: NSObject {
     )
 
     init(
+        language: AppLanguageSettings,
         pet: PetStore,
         aiSettings: AISettingsStore,
         loginItem: LoginItemStore,
@@ -163,6 +168,7 @@ final class WindowCoordinator: NSObject {
         quickTools: QuickToolsController,
         terminateForUpdate: @escaping () async -> Bool
     ) {
+        self.language = language
         self.pet = pet
         self.aiSettings = aiSettings
         self.loginItem = loginItem
@@ -264,33 +270,33 @@ final class WindowCoordinator: NSObject {
     }
 
     private func installMainMenu() {
-        let mainMenu = NSMenu(title: "主菜单")
+        let mainMenu = NSMenu(title: AppLocalizer.string("menu.main"))
         let applicationItem = NSMenuItem(title: "YuanGUI", action: nil, keyEquivalent: "")
         let applicationMenu = NSMenu(title: "YuanGUI")
         applicationMenu.addItem(
-            withTitle: "退出 YuanGUI",
+            withTitle: AppLocalizer.string("menu.quit"),
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
         applicationItem.submenu = applicationMenu
         mainMenu.addItem(applicationItem)
 
-        let editItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
-        let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let editItem = NSMenuItem(title: AppLocalizer.string("menu.edit"), action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: AppLocalizer.string("menu.edit"))
+        editMenu.addItem(withTitle: AppLocalizer.string("menu.undo"), action: Selector(("undo:")), keyEquivalent: "z")
         editMenu.addItem(NSMenuItem.separator())
-        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: AppLocalizer.string("menu.cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: AppLocalizer.string("menu.copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: AppLocalizer.string("menu.paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: AppLocalizer.string("menu.selectAll"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)
 
-        let toolsItem = NSMenuItem(title: "工具", action: nil, keyEquivalent: "")
-        let toolsMenu = NSMenu(title: "工具")
-        toolsMenu.addItem(withTitle: "区域截图", action: #selector(startRegionScreenshot), keyEquivalent: "")
-        toolsMenu.addItem(withTitle: "截图翻译", action: #selector(startScreenshotTranslation), keyEquivalent: "")
-        toolsMenu.addItem(withTitle: "翻译所选文字", action: #selector(translateSelection), keyEquivalent: "")
+        let toolsItem = NSMenuItem(title: AppLocalizer.string("menu.tools"), action: nil, keyEquivalent: "")
+        let toolsMenu = NSMenu(title: AppLocalizer.string("menu.tools"))
+        toolsMenu.addItem(withTitle: AppLocalizer.string("menu.regionScreenshot"), action: #selector(startRegionScreenshot), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: AppLocalizer.string("menu.screenshotTranslation"), action: #selector(startScreenshotTranslation), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: AppLocalizer.string("menu.translateSelection"), action: #selector(translateSelection), keyEquivalent: "")
         toolsMenu.addItem(NSMenuItem.separator())
         let diaryItem = toolsMenu.addItem(withTitle: "手帐本", action: #selector(showDiaryFromMenu), keyEquivalent: "d")
         diaryItem.keyEquivalentModifierMask = [.command]
@@ -337,6 +343,7 @@ final class WindowCoordinator: NSObject {
     private func showSettings(tab: SettingsTab) {
         if settingsController == nil {
             settingsController = SettingsWindowController(
+                language: language,
                 petStore: pet,
                 aiSettings: aiSettings,
                 loginItem: loginItem,

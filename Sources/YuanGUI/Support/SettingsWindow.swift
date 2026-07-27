@@ -6,19 +6,20 @@ final class SettingsWindowController {
     private let window: NSWindow
     private let selection = SettingsSelectionModel()
 
-    init(petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, music: MusicFeature, diary: DiaryFeature, externalAudioInterruption: ExternalAudioInterruptionController, quickTools: QuickToolsController, showPet: @escaping () -> Void, appActions: AppActions = .disabled) {
+    init(language: AppLanguageSettings, petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, music: MusicFeature, diary: DiaryFeature, externalAudioInterruption: ExternalAudioInterruptionController, quickTools: QuickToolsController, showPet: @escaping () -> Void, appActions: AppActions = .disabled) {
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "元圭与 VCC 设置"
+        window.title = AppLocalizer.string("window.settings")
         window.isReleasedWhenClosed = false
         window.center()
         window.contentMinSize = NSSize(width: 700, height: 520)
         window.contentView = NSHostingView(rootView:
             SettingsView(
+                language: language,
                 pet: petStore,
                 ai: aiSettings,
                 loginItem: loginItem,

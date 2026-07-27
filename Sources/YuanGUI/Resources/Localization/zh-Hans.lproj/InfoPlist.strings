@@ -1,0 +1,7 @@
+/* 系统使用简体中文时显示。 */
+"CFBundleName" = "元圭与 VCC";
+"CFBundleDisplayName" = "元圭与 VCC";
+"NSAppleEventsUsageDescription" = "用于在你确认后控制 Music App 播放，并让 Finder 将选中的清理项目移入废纸篓。";
+"NSLocationUsageDescription" = "用于显示你所在区域的天气，只请求大致位置且不保存位置轨迹。";
+"NSLocationWhenInUseUsageDescription" = "用于显示你所在区域的天气，只请求大致位置且不保存位置轨迹。";
+"NSScreenCaptureUsageDescription" = "用于在你主动触发区域截图时读取选中的屏幕画面，以进行 OCR 翻译、本机编辑、复制或保存。";

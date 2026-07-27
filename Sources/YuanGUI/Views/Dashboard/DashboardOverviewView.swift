@@ -41,8 +41,8 @@ struct DashboardOverviewView: View {
             title: "CPU",
             systemImage: "cpu",
             primaryValue: value.map(MetricFormatting.percent) ?? "—",
-            detail: snapshot.cpu.map { "用户 \(MetricFormatting.percent($0.user))" } ?? availability(.cpu),
-            status: value == nil ? "等待采样" : ((value ?? 0) >= 0.9 ? "负载较高" : ""),
+            detail: snapshot.cpu.map { "\(AppLocalizer.string("用户")) \(MetricFormatting.percent($0.user))" } ?? availability(.cpu),
+            status: value == nil ? AppLocalizer.string("等待采样") : ((value ?? 0) >= 0.9 ? AppLocalizer.string("负载较高") : ""),
             severity: severity,
             history: snapshot.history.cpu,
             fixedMaximum: 1
@@ -56,16 +56,16 @@ struct DashboardOverviewView: View {
         switch memory?.pressure {
         case .warning:
             severity = .warning
-            status = "有压力"
+            status = AppLocalizer.string("有压力")
         case .critical:
             severity = .critical
-            status = "紧张"
+            status = AppLocalizer.string("紧张")
         default:
             severity = .normal
-            status = memory == nil ? "等待采样" : "正常"
+            status = memory == nil ? AppLocalizer.string("等待采样") : AppLocalizer.string("正常")
         }
         return DashboardMetricTile(
-            title: "内存",
+            title: AppLocalizer.string("内存"),
             systemImage: "memorychip",
             primaryValue: memory.map { MetricFormatting.percent($0.fractionUsed) } ?? "—",
             detail: memory.map { "\(MetricFormatting.bytes($0.used)) / \(MetricFormatting.bytes($0.total))" } ?? availability(.memory),
@@ -77,6 +77,6 @@ struct DashboardOverviewView: View {
     }
 
     private func availability(_ identifier: MetricIdentifier) -> String {
-        snapshot.isAvailable(identifier) ? "等待首次采样" : "暂不可用"
+        AppLocalizer.string(snapshot.isAvailable(identifier) ? "等待首次采样" : "暂不可用")
     }
 }

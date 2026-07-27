@@ -11,6 +11,11 @@ final class AISettingsStore: ObservableObject {
     当用户需要严肃、准确的帮助时，先把事情说清楚，再保留一点元圭与 VCC 的可爱风格。不要声称做了实际未完成的操作，也不要编造系统状态。
     默认将用户称为“你”。除非用户要求，单次回复尽量控制在 200 字内。
     """
+    static let englishDefaultPrompt = """
+    You are YuanGUI and VCC, a kind and clever desktop companion duo on macOS.
+    Reply in natural, concise English with a warm, lightly playful tone. YuanGUI is thoughtful; VCC may occasionally add a cat-like aside, but do not overdo it.
+    When the user needs serious or precise help, explain the facts first. Never claim an unfinished action is complete or invent system state. Address the user as “you” and keep replies under 200 words unless asked otherwise.
+    """
 
     @Published var baseURL: String
     @Published var model: String
@@ -39,7 +44,7 @@ final class AISettingsStore: ObservableObject {
         let savedModel = defaults.string(forKey: "aiModel")
         model = savedModel == "mimo-v2.5-pro" ? Self.defaultModel : (savedModel ?? Self.defaultModel)
         if savedModel == "mimo-v2.5-pro" { defaults.set(Self.defaultModel, forKey: "aiModel") }
-        systemPrompt = defaults.string(forKey: "aiSystemPrompt") ?? Self.defaultPrompt
+        systemPrompt = defaults.string(forKey: "aiSystemPrompt") ?? Self.defaultPrompt(for: AppLocalizer.effectiveLanguage)
         apiKey = secrets.read(service: keychainService, account: keychainAccount) ?? ""
     }
 
@@ -94,9 +99,13 @@ final class AISettingsStore: ObservableObject {
     func resetDefaults() {
         baseURL = Self.defaultBaseURL
         model = Self.defaultModel
-        systemPrompt = Self.defaultPrompt
+        systemPrompt = Self.defaultPrompt(for: AppLocalizer.effectiveLanguage)
         saveMessage = nil
         connectionMessage = nil
         availableModels = []
+    }
+
+    static func defaultPrompt(for language: AppLanguage) -> String {
+        language == .simplifiedChinese ? defaultPrompt : englishDefaultPrompt
     }
 }

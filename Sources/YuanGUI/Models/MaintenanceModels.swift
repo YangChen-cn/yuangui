@@ -19,9 +19,9 @@ enum MaintenanceRisk: String, Codable, CaseIterable, Comparable {
 
     var title: String {
         switch self {
-        case .recommended: return "推荐"
-        case .review: return "需检查"
-        case .protected: return "受保护"
+        case .recommended: return AppLocalizer.string("推荐")
+        case .review: return AppLocalizer.string("需检查")
+        case .protected: return AppLocalizer.string("受保护")
         }
     }
 }
@@ -33,9 +33,9 @@ enum OwnershipConfidence: String, Codable {
 
     var title: String {
         switch self {
-        case .exact: return "精确匹配"
-        case .inferred: return "名称推断"
-        case .shared: return "可能共享"
+        case .exact: return AppLocalizer.string("精确匹配")
+        case .inferred: return AppLocalizer.string("名称推断")
+        case .shared: return AppLocalizer.string("可能共享")
         }
     }
 }
@@ -44,14 +44,21 @@ struct FileIdentity: Codable, Equatable {
     let standardizedPath: String
     let modificationDate: Date?
     let fileSize: Int64?
+    let fileSystemNumber: Int64?
+    let fileNumber: Int64?
+    let isDirectory: Bool?
 
     static func capture(_ url: URL, fileManager: FileManager = .default) -> FileIdentity {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
-        let values = try? resolved.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let values = try? resolved.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isDirectoryKey])
+        let attributes = try? fileManager.attributesOfItem(atPath: resolved.path)
         return FileIdentity(
             standardizedPath: resolved.path,
             modificationDate: values?.contentModificationDate,
-            fileSize: values?.fileSize.map(Int64.init)
+            fileSize: values?.fileSize.map(Int64.init),
+            fileSystemNumber: (attributes?[.systemNumber] as? NSNumber)?.int64Value,
+            fileNumber: (attributes?[.systemFileNumber] as? NSNumber)?.int64Value,
+            isDirectory: values?.isDirectory
         )
     }
 
@@ -68,25 +75,53 @@ enum CleanupCategory: String, Codable, CaseIterable {
     case temporary
     case browserCache
     case developerCache
+    case projectBuildArtifact
+    case oldInstallerPackage
     case orphanedAppData
 
     var title: String {
         switch self {
-        case .appCache: return "应用缓存"
-        case .oldLog: return "旧日志"
-        case .crashReport: return "崩溃报告"
-        case .temporary: return "安全临时文件"
-        case .browserCache: return "浏览器缓存"
-        case .developerCache: return "开发工具缓存"
-        case .orphanedAppData: return "已卸载软件残留"
+        case .appCache: return AppLocalizer.string("应用缓存")
+        case .oldLog: return AppLocalizer.string("旧日志")
+        case .crashReport: return AppLocalizer.string("崩溃报告")
+        case .temporary: return AppLocalizer.string("安全临时文件")
+        case .browserCache: return AppLocalizer.string("浏览器缓存")
+        case .developerCache: return AppLocalizer.string("开发工具缓存")
+        case .projectBuildArtifact: return AppLocalizer.string("项目构建产物")
+        case .oldInstallerPackage: return AppLocalizer.string("旧安装包")
+        case .orphanedAppData: return AppLocalizer.string("已卸载软件残留")
         }
     }
 
     var selectedByDefault: Bool {
         switch self {
         case .appCache, .oldLog, .crashReport: return true
-        case .temporary, .browserCache, .developerCache, .orphanedAppData: return false
+        case .temporary, .browserCache, .developerCache, .projectBuildArtifact, .oldInstallerPackage, .orphanedAppData: return false
         }
+    }
+}
+
+struct CleanupScanConfiguration: Codable, Equatable {
+    static let defaultProjectFolderNames = ["Developer", "Projects", "GitHub", "Code", "Workspace"]
+
+    var projectRoots: [String]
+    var whitelistedPaths: [String]
+    var enabledCategories: Set<CleanupCategory>
+
+    init(
+        projectRoots: [String] = [],
+        whitelistedPaths: [String] = [],
+        enabledCategories: Set<CleanupCategory> = Set(CleanupCategory.allCases)
+    ) {
+        self.projectRoots = projectRoots
+        self.whitelistedPaths = whitelistedPaths
+        self.enabledCategories = enabledCategories
+    }
+
+    static func defaults(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) -> CleanupScanConfiguration {
+        CleanupScanConfiguration(
+            projectRoots: defaultProjectFolderNames.map { homeDirectory.appendingPathComponent($0, isDirectory: true).path }
+        )
     }
 }
 
@@ -108,6 +143,9 @@ struct CleanupCandidate: Identifiable, Codable, Equatable {
     let reason: String
     let selectedByDefault: Bool
     let scannedIdentity: FileIdentity
+    /// The narrowly-scoped project root that made this candidate eligible. It is
+    /// revalidated before execution and is never the user's home directory.
+    let executionRoot: URL?
 
     init(
         id: UUID = UUID(),
@@ -121,7 +159,8 @@ struct CleanupCandidate: Identifiable, Codable, Equatable {
         confidence: OwnershipConfidence = .exact,
         reason: String? = nil,
         selectedByDefault: Bool? = nil,
-        scannedIdentity: FileIdentity? = nil
+        scannedIdentity: FileIdentity? = nil,
+        executionRoot: URL? = nil
     ) {
         self.id = id
         self.url = url
@@ -135,6 +174,7 @@ struct CleanupCandidate: Identifiable, Codable, Equatable {
         self.reason = reason ?? "符合\(category.title)规则"
         self.selectedByDefault = selectedByDefault ?? category.selectedByDefault
         self.scannedIdentity = scannedIdentity ?? .capture(url)
+        self.executionRoot = executionRoot
     }
 }
 

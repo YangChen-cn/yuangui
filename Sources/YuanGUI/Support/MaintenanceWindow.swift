@@ -15,7 +15,7 @@ final class MaintenanceWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         super.init()
-        window.title = "元圭与 VCC 清理屋"
+        window.title = AppLocalizer.string("window.maintenance")
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.minSize = NSSize(width: 720, height: 540)

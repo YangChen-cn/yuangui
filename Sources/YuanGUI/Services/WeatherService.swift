@@ -192,7 +192,7 @@ final class WeatherService: NSObject, ObservableObject, @preconcurrency CLLocati
                 } else {
                     let placemarks = try await CLGeocoder().reverseGeocodeLocation(
                         location,
-                        preferredLocale: Locale(identifier: "zh_CN")
+                        preferredLocale: Locale(identifier: AppLocalizer.effectiveLanguage == .simplifiedChinese ? "zh_Hans" : "en_US")
                     )
                     let placemark = placemarks.first
                     resolvedName = placemark?.locality

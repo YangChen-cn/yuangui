@@ -1,0 +1,9 @@
+YuanGUI 2.7.0 installation
+
+1. Drag YuanGUI.app to Applications.
+2. Control-click YuanGUI.app and choose Open on the first launch.
+3. If Gatekeeper blocks the app, use System Settings > Privacy & Security > Open Anyway.
+4. Grant Screen Recording, Accessibility, Location, or Automation only when you use the corresponding feature.
+
+Full guide: docs/INSTALLATION.md in the source repository.
+License and notices are included beside this file.

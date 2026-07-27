@@ -19,6 +19,13 @@ protocol CleanupScanning {
 }
 
 extension CleanupScanning {
+    func scan(
+        configuration: CleanupScanConfiguration,
+        progress: @escaping (MaintenanceScanProgress) -> Void
+    ) async -> [CleanupCandidate] {
+        await scan(excluding: Set(configuration.whitelistedPaths), progress: progress)
+    }
+
     func scan(excluding paths: Set<String>) async -> [CleanupCandidate] {
         await scan(excluding: paths, progress: { _ in })
     }
@@ -113,6 +120,9 @@ struct CleanupScanner: CleanupScanning {
     private let userLibraryOverride: URL?
     private let temporaryDirectoryOverride: URL?
     private let applicationRootsOverride: [(url: URL, source: ApplicationSource)]?
+    private let homeDirectoryOverride: URL?
+    private let downloadsDirectoryOverride: URL?
+    private let desktopDirectoryOverride: URL?
 
     init(
         fileManager: FileManager = .default,
@@ -120,7 +130,10 @@ struct CleanupScanner: CleanupScanning {
         userLibrary: URL? = nil,
         temporaryDirectory: URL? = nil,
         applicationRoots: [(URL, ApplicationSource)]? = nil,
-        metadataCacheRoot: URL? = nil
+        metadataCacheRoot: URL? = nil,
+        homeDirectory: URL? = nil,
+        downloadsDirectory: URL? = nil,
+        desktopDirectory: URL? = nil
     ) {
         self.fileManager = fileManager
         self.calendar = calendar
@@ -128,6 +141,9 @@ struct CleanupScanner: CleanupScanning {
         self.temporaryDirectoryOverride = temporaryDirectory
         self.applicationRootsOverride = applicationRoots?.map { (url: $0.0, source: $0.1) }
         self.metadataCache = ApplicationMetadataCache(fileManager: fileManager, rootOverride: metadataCacheRoot)
+        self.homeDirectoryOverride = homeDirectory
+        self.downloadsDirectoryOverride = downloadsDirectory
+        self.desktopDirectoryOverride = desktopDirectory
     }
 
     func scan(
@@ -166,6 +182,26 @@ struct CleanupScanner: CleanupScanning {
         if !Task.isCancelled {
             candidates += scanOrphanedData(excluding: paths)
             progress(MaintenanceScanProgress(completed: total, total: total, message: "正在整理扫描结果…"))
+        }
+        return deduplicated(candidates).sorted { $0.byteCount > $1.byteCount }
+    }
+
+    func scan(
+        configuration: CleanupScanConfiguration,
+        progress: @escaping (MaintenanceScanProgress) -> Void
+    ) async -> [CleanupCandidate] {
+        var candidates = await scan(excluding: Set(configuration.whitelistedPaths), progress: progress)
+        guard !Task.isCancelled else { return candidates }
+        candidates.removeAll { !configuration.enabledCategories.contains($0.category) }
+
+        if configuration.enabledCategories.contains(.developerCache) {
+            candidates += scanDeveloperToolCaches(excluding: Set(configuration.whitelistedPaths))
+        }
+        if configuration.enabledCategories.contains(.projectBuildArtifact) {
+            candidates += scanProjectArtifacts(configuration: configuration)
+        }
+        if configuration.enabledCategories.contains(.oldInstallerPackage) {
+            candidates += scanOldInstallerPackages(excluding: Set(configuration.whitelistedPaths))
         }
         return deduplicated(candidates).sorted { $0.byteCount > $1.byteCount }
     }
@@ -296,6 +332,175 @@ struct CleanupScanner: CleanupScanning {
         ]
     }
 
+    /// Rules adapted from Mole's checked source revision
+    /// 27123a964aa671d2e64222634d29d4bd2dc866ed. This native implementation
+    /// intentionally keeps only user-scoped, reproducible caches; it performs
+    /// no shell commands, sudo actions, service resets, or system optimization.
+    private func scanDeveloperToolCaches(excluding paths: Set<String>) -> [CleanupCandidate] {
+        let home = homeDirectory
+        let library = userLibraryDirectory
+        let roots: [(URL, String)] = [
+            (home.appendingPathComponent(".npm/_cacache"), "npm 可重新下载的缓存"),
+            (home.appendingPathComponent(".cache/pip"), "pip 可重新下载的缓存"),
+            (home.appendingPathComponent(".cache/uv"), "uv 可重新下载的缓存"),
+            (home.appendingPathComponent(".cargo/registry"), "Cargo 可重新下载的缓存"),
+            (home.appendingPathComponent("go/pkg/mod/cache"), "Go 模块可重新下载的缓存"),
+            (home.appendingPathComponent(".gradle/caches"), "Gradle 可重新下载的缓存"),
+            (home.appendingPathComponent("Library/Caches/CocoaPods"), "CocoaPods 可重新下载的缓存"),
+            (library.appendingPathComponent("Caches/Homebrew"), "Homebrew 下载缓存"),
+            (library.appendingPathComponent("Developer/Xcode/DerivedData"), "Xcode 可重新生成的构建产物")
+        ]
+        return roots.compactMap { root, reason in
+            guard !Task.isCancelled,
+                  fileManager.fileExists(atPath: root.path),
+                  !pathsContain(root.standardizedFileURL.path, in: paths),
+                  !isSymbolicLink(root) else { return nil }
+            let size = allocatedSize(of: root)
+            guard size > 0 else { return nil }
+            let values = try? root.resourceValues(forKeys: [.contentModificationDateKey])
+            return CleanupCandidate(
+                url: root,
+                displayName: root.lastPathComponent,
+                category: .developerCache,
+                disposition: .permanent,
+                byteCount: size,
+                modifiedAt: values?.contentModificationDate,
+                risk: .review,
+                confidence: .exact,
+                reason: reason + "，默认不选",
+                selectedByDefault: false
+            )
+        }
+    }
+
+    private func scanProjectArtifacts(configuration: CleanupScanConfiguration) -> [CleanupCandidate] {
+        let excluded = Set(configuration.whitelistedPaths)
+        var results: [CleanupCandidate] = []
+        var rootsSeen: Set<String> = []
+        for rootPath in configuration.projectRoots {
+            guard !Task.isCancelled else { break }
+            let root = URL(fileURLWithPath: rootPath, isDirectory: true).standardizedFileURL
+            let normalizedRoot = root.resolvingSymlinksInPath()
+            guard normalizedRoot.path != homeDirectory.standardizedFileURL.path,
+                  rootsSeen.insert(normalizedRoot.path).inserted,
+                  fileManager.fileExists(atPath: normalizedRoot.path),
+                  !isSymbolicLink(root) else { continue }
+            // Check the common project-root layout directly before recursive
+            // traversal. It also covers hidden artifacts such as `.build` and
+            // `.next`, which Finder-style directory enumeration may omit.
+            if let projects = try? fileManager.contentsOfDirectory(
+                at: normalizedRoot,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: []
+            ) {
+                for project in projects where !isSymbolicLink(project) {
+                    for artifactName in projectArtifactNames {
+                        let artifact = project.appendingPathComponent(artifactName, isDirectory: true)
+                        var isDirectory: ObjCBool = false
+                        guard fileManager.fileExists(atPath: artifact.path, isDirectory: &isDirectory),
+                              isDirectory.boolValue,
+                              !isSymbolicLink(artifact),
+                              !pathsContain(artifact.standardizedFileURL.path, in: excluded) else { continue }
+                        let size = allocatedSize(of: artifact)
+                        guard size > 0 else { continue }
+                        let values = try? artifact.resourceValues(forKeys: [.contentModificationDateKey])
+                        results.append(CleanupCandidate(
+                            url: artifact,
+                            displayName: "\(project.lastPathComponent)/\(artifactName)",
+                            category: .projectBuildArtifact,
+                            disposition: .recycle,
+                            byteCount: size,
+                            modifiedAt: values?.contentModificationDate,
+                            risk: .review,
+                            confidence: .inferred,
+                            reason: "项目中可重新生成的构建产物，默认移入废纸篓",
+                            selectedByDefault: false,
+                            executionRoot: normalizedRoot
+                        ))
+                    }
+                }
+            }
+            guard let enumerator = fileManager.enumerator(
+                at: normalizedRoot,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: []
+            ) else { continue }
+            for case let url as URL in enumerator {
+                guard !Task.isCancelled else { return results }
+                let path = url.standardizedFileURL.path
+                let depth = url.pathComponents.count - normalizedRoot.pathComponents.count
+                if depth > 8 { enumerator.skipDescendants(); continue }
+                if url.lastPathComponent.hasPrefix("."), !projectArtifactNames.contains(url.lastPathComponent) {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey])
+                if values?.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+                guard values?.isDirectory == true,
+                      projectArtifactNames.contains(url.lastPathComponent),
+                      !pathsContain(path, in: excluded),
+                      isProjectArtifact(url, boundedBy: normalizedRoot) else { continue }
+                let size = allocatedSize(of: url)
+                guard size > 0 else { enumerator.skipDescendants(); continue }
+                results.append(CleanupCandidate(
+                    url: url,
+                    displayName: "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)",
+                    category: .projectBuildArtifact,
+                    disposition: .recycle,
+                    byteCount: size,
+                    modifiedAt: values?.contentModificationDate,
+                    risk: .review,
+                    confidence: .inferred,
+                    reason: "项目中可重新生成的构建产物，默认移入废纸篓",
+                    selectedByDefault: false,
+                    executionRoot: normalizedRoot
+                ))
+                enumerator.skipDescendants()
+            }
+        }
+        return results
+    }
+
+    private func scanOldInstallerPackages(excluding paths: Set<String>) -> [CleanupCandidate] {
+        let cutoff = calendar.date(byAdding: .day, value: -30, to: Date()) ?? .distantPast
+        let extensions: Set<String> = ["dmg", "pkg", "mpkg", "xip", "ipsw"]
+        let roots = [downloadsDirectory, desktopDirectory]
+        var results: [CleanupCandidate] = []
+        for root in roots where fileManager.fileExists(atPath: root.path) {
+            guard let enumerator = fileManager.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for case let url as URL in enumerator {
+                guard !Task.isCancelled else { return results }
+                let depth = url.pathComponents.count - root.pathComponents.count
+                if depth > 2 { enumerator.skipDescendants(); continue }
+                let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey])
+                guard values?.isRegularFile == true,
+                      values?.isSymbolicLink != true,
+                      extensions.contains(url.pathExtension.lowercased()),
+                      !pathsContain(url.standardizedFileURL.path, in: paths),
+                      (values?.contentModificationDate ?? .distantFuture) < cutoff else { continue }
+                let size = allocatedSize(of: url)
+                guard size >= 10 * 1_024 * 1_024 else { continue }
+                results.append(CleanupCandidate(
+                    url: url,
+                    displayName: url.lastPathComponent,
+                    category: .oldInstallerPackage,
+                    disposition: .recycle,
+                    byteCount: size,
+                    modifiedAt: values?.contentModificationDate,
+                    risk: .review,
+                    confidence: .exact,
+                    reason: "超过 30 天且大于 10 MB 的安装包，默认移入废纸篓",
+                    selectedByDefault: false
+                ))
+            }
+        }
+        return results
+    }
+
     private func scanChildren(rule: CleanupRule, excluding paths: Set<String>) -> [CleanupCandidate] {
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isSymbolicLinkKey]
         guard let children = try? fileManager.contentsOfDirectory(
@@ -397,6 +602,42 @@ struct CleanupScanner: CleanupScanning {
 
     private var userLibraryDirectory: URL {
         userLibraryOverride ?? fileManager.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+    }
+
+    private var homeDirectory: URL {
+        homeDirectoryOverride ?? fileManager.homeDirectoryForCurrentUser
+    }
+
+    private var downloadsDirectory: URL {
+        downloadsDirectoryOverride ?? homeDirectory.appendingPathComponent("Downloads", isDirectory: true)
+    }
+
+    private var desktopDirectory: URL {
+        desktopDirectoryOverride ?? homeDirectory.appendingPathComponent("Desktop", isDirectory: true)
+    }
+
+    private var projectArtifactNames: Set<String> {
+        ["node_modules", ".build", "target", "build", "dist", ".next", ".venv", "Pods"]
+    }
+
+    private func isProjectArtifact(_ url: URL, boundedBy root: URL) -> Bool {
+        let projectMarkers: Set<String> = [
+            "Package.swift", "package.json", "Cargo.toml", "go.mod", "Podfile",
+            "pyproject.toml", "requirements.txt", "build.gradle", "settings.gradle", ".git"
+        ]
+        var parent = url.deletingLastPathComponent()
+        while parent.path.hasPrefix(root.path) {
+            if projectMarkers.contains(where: { fileManager.fileExists(atPath: parent.appendingPathComponent($0).path) }) {
+                return true
+            }
+            if parent.standardizedFileURL.path == root.standardizedFileURL.path { break }
+            parent.deleteLastPathComponent()
+        }
+        return false
+    }
+
+    private func isSymbolicLink(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
     }
 
     private func installedBundleIdentifiers() -> Set<String> {
@@ -626,12 +867,17 @@ struct CleanupScanner: CleanupScanning {
         if value.hasPrefix("com.apple.") { return true }
         return [
             "security", "keychain", "keyring", "safe storage", "trustd",
-            "1password", "bitwarden", "keepass", "vscode", "visual studio code", "electron"
+            "1password", "bitwarden", "keepass", "vscode", "visual studio code", "electron",
+            "crowdstrike", "sentinel", "jamf", "kandji", "defender", "sophos", "zscaler",
+            "inputmethod", "ime", "baiduinput", "sogou", "rime", "google drive", "dropbox",
+            "onedrive", "box", "icloud", "vpn", "openvpn", "tailscale", "claude", "ollama",
+            "comfyui", "stable diffusion", "huggingface", "llama"
         ].contains { value.contains($0) }
     }
 
     private func allocatedSize(of url: URL) -> Int64 {
-        let rootValues = try? url.resourceValues(forKeys: [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey])
+        let rootValues = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey])
+        guard rootValues?.isSymbolicLink != true else { return 0 }
         if rootValues?.isRegularFile == true {
             return Int64(rootValues?.totalFileAllocatedSize ?? rootValues?.fileAllocatedSize ?? rootValues?.fileSize ?? 0)
         }
@@ -641,11 +887,16 @@ struct CleanupScanner: CleanupScanning {
             options: [.skipsHiddenFiles]
         ) else { return 0 }
         var size: Int64 = 0
+        var hardLinks: Set<String> = []
         for case let item as URL in enumerator {
             if Task.isCancelled { break }
             let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey])
             if values?.isSymbolicLink == true { enumerator.skipDescendants(); continue }
             if values?.isRegularFile == true {
+                let attributes = try? fileManager.attributesOfItem(atPath: item.path)
+                let device = (attributes?[.systemNumber] as? NSNumber)?.int64Value
+                let inode = (attributes?[.systemFileNumber] as? NSNumber)?.int64Value
+                if let device, let inode, !hardLinks.insert("\(device):\(inode)").inserted { continue }
                 size += Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? values?.fileSize ?? 0)
             }
         }
@@ -701,7 +952,7 @@ final class NativeMaintenanceService: MaintenanceHandling {
 
         for candidate in candidates {
             do {
-                let safe = try validator.validate(candidate.url)
+                let safe = try validatorForCandidate(candidate).validate(candidate.url)
                 guard candidate.scannedIdentity.stillMatches(safe, fileManager: fileManager) else {
                     let message = "扫描后内容已变化，请重新扫描"
                     skipped.append("\(candidate.displayName)：\(message)")
@@ -769,14 +1020,10 @@ final class NativeMaintenanceService: MaintenanceHandling {
             }
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleIdentifier)
             if !running.isEmpty {
-                running.forEach { _ = $0.terminate() }
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleIdentifier).isEmpty {
-                    let message = "应用仍在运行，已安全跳过"
-                    skipped.append("\(app.name)：\(message)")
-                    results.append(applicationResult(app, outcome: .skipped, message: message))
-                    continue
-                }
+                let message = "应用仍在运行，请退出后重新扫描"
+                skipped.append("\(app.name)：\(message)")
+                results.append(applicationResult(app, outcome: .skipped, message: message))
+                continue
             }
 
             let siblingExists = hasBundleIDSibling(for: app)
@@ -864,6 +1111,19 @@ final class NativeMaintenanceService: MaintenanceHandling {
             byteCount: candidate.byteCount,
             message: message
         )
+    }
+
+    private func validatorForCandidate(_ candidate: CleanupCandidate) -> SafePathValidator {
+        guard let root = candidate.executionRoot?.standardizedFileURL.resolvingSymlinksInPath() else {
+            return validator
+        }
+        let home = fileManager.homeDirectoryForCurrentUser.standardizedFileURL.path
+        guard root.path != home,
+              root.path.hasPrefix(home + "/"),
+              !((try? root.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ?? true) else {
+            return validator
+        }
+        return SafePathValidator(allowedRoots: validator.allowedRoots + [root])
     }
 
     private func applicationResult(

@@ -129,6 +129,50 @@ final class MaintenanceTests: XCTestCase {
         XCTAssertFalse(orphanValue.selectedByDefault)
     }
 
+    func testProjectArtifactsAndOldInstallersAreReviewOnlyAndRecycled() async throws {
+        let root = temporaryRoot("ExtendedCleanup")
+        let library = root.appendingPathComponent("Library")
+        let projects = root.appendingPathComponent("Projects")
+        let project = projects.appendingPathComponent("Sample")
+        let artifact = project.appendingPathComponent("node_modules")
+        let downloads = root.appendingPathComponent("Downloads")
+        let desktop = root.appendingPathComponent("Desktop")
+        try FileManager.default.createDirectory(at: artifact, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: desktop, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: project.appendingPathComponent("package.json"))
+        try Data(repeating: 3, count: 4_096).write(to: artifact.appendingPathComponent("cache"))
+        let oldInstaller = downloads.appendingPathComponent("old.dmg")
+        try Data(repeating: 7, count: 10 * 1_024 * 1_024).write(to: oldInstaller)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -31 * 24 * 60 * 60)], ofItemAtPath: oldInstaller.path)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let scanner = CleanupScanner(
+            userLibrary: library,
+            metadataCacheRoot: root.appendingPathComponent("Metadata"),
+            homeDirectory: root,
+            downloadsDirectory: downloads,
+            desktopDirectory: desktop
+        )
+        let values = await scanner.scan(configuration: CleanupScanConfiguration(
+            projectRoots: [projects.path],
+            enabledCategories: [.projectBuildArtifact, .oldInstallerPackage]
+        ), progress: { _ in })
+
+        let projectCandidate = try XCTUnwrap(
+            values.first { $0.url.standardizedFileURL == artifact.standardizedFileURL },
+            "Candidates: \(values.map { $0.url.path })"
+        )
+        XCTAssertEqual(projectCandidate.category, .projectBuildArtifact)
+        XCTAssertEqual(projectCandidate.disposition, .recycle)
+        XCTAssertFalse(projectCandidate.selectedByDefault)
+        XCTAssertEqual(projectCandidate.executionRoot?.standardizedFileURL, projects.standardizedFileURL)
+        let installerCandidate = try XCTUnwrap(values.first { $0.url.standardizedFileURL == oldInstaller.standardizedFileURL })
+        XCTAssertEqual(installerCandidate.category, .oldInstallerPackage)
+        XCTAssertEqual(installerCandidate.disposition, .recycle)
+        XCTAssertFalse(installerCandidate.selectedByDefault)
+    }
+
     func testSameBundleIDSiblingsPreserveAllSharedState() async throws {
         let root = temporaryRoot("SiblingGuard")
         let apps = root.appendingPathComponent("Applications")

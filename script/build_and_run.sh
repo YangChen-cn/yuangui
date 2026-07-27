@@ -5,8 +5,8 @@ MODE="${1:-run}"
 APP_NAME="YuanGUI"
 BUNDLE_ID="com.yang.yuangui"
 MIN_SYSTEM_VERSION="15.0"
-APP_VERSION="2.6.1"
-APP_BUILD="15"
+APP_VERSION="2.7.0"
+APP_BUILD="16"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -39,6 +39,15 @@ if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
 fi
 cp -R "$RESOURCE_BUNDLE" "$APP_RESOURCES/"
 cp "$ROOT_DIR/Sources/YuanGUI/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+for locale in en zh-Hans; do
+  cp -R "$ROOT_DIR/Sources/YuanGUI/Resources/Localization/$locale.lproj" "$APP_RESOURCES/"
+done
+mkdir -p "$APP_RESOURCES/Legal"
+for legal_file in LICENSE ASSET_LICENSE.md THIRD_PARTY_NOTICES.md; do
+  if [[ -f "$ROOT_DIR/$legal_file" ]]; then
+    cp "$ROOT_DIR/$legal_file" "$APP_RESOURCES/Legal/"
+  fi
+done
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -50,9 +59,13 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
-  <string>元圭与 VCC</string>
+  <string>YuanGUI</string>
   <key>CFBundleDisplayName</key>
-  <string>元圭与 VCC</string>
+  <string>YuanGUI</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array><string>en</string><string>zh-Hans</string></array>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>
@@ -66,13 +79,13 @@ cat >"$INFO_PLIST" <<PLIST
   <key>LSUIElement</key>
   <true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>用于在你确认后控制 Music App 播放，并让 Finder 执行废纸篓操作。</string>
+  <string>Allows YuanGUI to control Music after you request playback, and to ask Finder to move selected cleanup items to the Trash.</string>
   <key>NSLocationUsageDescription</key>
-  <string>用于获取你所在区域的当前天气，只请求公里级位置且不保存轨迹。</string>
+  <string>Allows YuanGUI to show weather for your approximate location. It does not store location history.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
-  <string>用于获取你所在区域的当前天气，只请求公里级位置且不保存轨迹。</string>
+  <string>Allows YuanGUI to show weather for your approximate location. It does not store location history.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>用于在你主动触发区域截图时读取选中的屏幕画面，并在本机编辑、复制或保存。</string>
+  <string>Allows YuanGUI to capture the screen area you explicitly select for OCR translation, local editing, copying, or saving.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSHighResolutionCapable</key>

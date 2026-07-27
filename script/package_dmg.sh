@@ -2,10 +2,10 @@
 set -euo pipefail
 
 APP_NAME="YuanGUI"
-DISPLAY_NAME="元圭与 VCC"
+DISPLAY_NAME="YuanGUI"
 BUNDLE_ID="com.yang.yuangui"
-VERSION="${VERSION:-2.6.1}"
-BUILD="${BUILD:-15}"
+VERSION="${VERSION:-2.7.0}"
+BUILD="${BUILD:-16}"
 MIN_SYSTEM_VERSION="15.0"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
@@ -43,6 +43,15 @@ cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 cp -R "$RESOURCE_BUNDLE" "$APP_RESOURCES/"
 cp "$ROOT_DIR/Sources/YuanGUI/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+for locale in en zh-Hans; do
+  cp -R "$ROOT_DIR/Sources/YuanGUI/Resources/Localization/$locale.lproj" "$APP_RESOURCES/"
+done
+mkdir -p "$APP_RESOURCES/Legal"
+for legal_file in LICENSE ASSET_LICENSE.md THIRD_PARTY_NOTICES.md; do
+  if [[ -f "$ROOT_DIR/$legal_file" ]]; then
+    cp "$ROOT_DIR/$legal_file" "$APP_RESOURCES/Legal/"
+  fi
+done
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -57,6 +66,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$DISPLAY_NAME</string>
   <key>CFBundleDisplayName</key>
   <string>$DISPLAY_NAME</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array><string>en</string><string>zh-Hans</string></array>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>
@@ -70,13 +83,13 @@ cat >"$INFO_PLIST" <<PLIST
   <key>LSUIElement</key>
   <true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>用于在你确认后控制 Music App 播放，并让 Finder 执行废纸篓操作。</string>
+  <string>Allows YuanGUI to control Music after you request playback, and to ask Finder to move selected cleanup items to the Trash.</string>
   <key>NSLocationUsageDescription</key>
-  <string>用于获取你所在区域的当前天气，只请求公里级位置且不保存轨迹。</string>
+  <string>Allows YuanGUI to show weather for your approximate location. It does not store location history.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
-  <string>用于获取你所在区域的当前天气，只请求公里级位置且不保存轨迹。</string>
+  <string>Allows YuanGUI to show weather for your approximate location. It does not store location history.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>用于在你主动触发区域截图时读取选中的屏幕画面，并在本机编辑、复制或保存。</string>
+  <string>Allows YuanGUI to capture the screen area you explicitly select for OCR translation, local editing, copying, or saving.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSHighResolutionCapable</key>
@@ -98,17 +111,9 @@ fi
 
 /usr/bin/ditto "$APP_BUNDLE" "$STAGING_DIR/$APP_NAME.app"
 ln -s /Applications "$STAGING_DIR/Applications"
-printf '%s\n' \
-  "$DISPLAY_NAME $VERSION 安装说明" \
-  "" \
-  "1. 将 YuanGUI.app 拖到旁边的 Applications 文件夹。" \
-  "2. 在“应用程序”中找到 YuanGUI。首次打开时建议按住 Control 点击应用，再选择“打开”。" \
-  "3. 如果系统仍拦截，请前往“系统设置 → 隐私与安全性”，点击“仍要打开”。" \
-  "4. 首次使用天气时允许位置权限；AI 对话需要在设置中填写你自己的 API Key。" \
-  "" \
-  "$SIGNING_NOTE" \
-  "支持系统：macOS 15 或更高版本。" \
-  >"$STAGING_DIR/安装说明.txt"
+for dmg_document in Install.txt 安装说明.txt LICENSE ASSET_LICENSE.md THIRD_PARTY_NOTICES.md; do
+  cp "$ROOT_DIR/$dmg_document" "$STAGING_DIR/$dmg_document"
+done
 
 /usr/bin/hdiutil create \
   -volname "$DISPLAY_NAME" \

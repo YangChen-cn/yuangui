@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum SettingsTab: Int, CaseIterable, Equatable, Sendable {
+    case general
     case pet
     case quickTools
     case ai

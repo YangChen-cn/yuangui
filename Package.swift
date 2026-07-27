@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "YuanGUI",
+    defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "YuanGUI", targets: ["YuanGUI"])
@@ -15,7 +16,8 @@ let package = Package(
                 .copy("Resources/Sprites"),
                 .copy("Resources/YuanGUI.Translate.shortcut"),
                 .copy("Resources/AppIcon.png"),
-                .copy("Resources/AppIcon.icns")
+                .copy("Resources/AppIcon.icns"),
+                .process("Resources/Localization")
             ]
         ),
         .testTarget(

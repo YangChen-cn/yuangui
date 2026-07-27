@@ -11,6 +11,7 @@ final class SettingsSelectionModel: ObservableObject {
 }
 
 struct SettingsView: View {
+    @ObservedObject var language: AppLanguageSettings
     @ObservedObject var pet: PetStore
     @ObservedObject var ai: AISettingsStore
     @ObservedObject var loginItem: LoginItemStore
@@ -28,6 +29,7 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             List(selection: $selection.selectedTab) {
+                Label(AppLocalizer.string("settings.general"), systemImage: "gearshape").tag(SettingsTab.general)
                 Label("桌宠", systemImage: "pawprint.fill").tag(SettingsTab.pet)
                 Label("快捷工具", systemImage: "wand.and.stars").tag(SettingsTab.quickTools)
                 Label("AI 对话", systemImage: "message.fill").tag(SettingsTab.ai)
@@ -41,7 +43,9 @@ struct SettingsView: View {
             Divider()
 
             Group {
-                if selection.selectedTab == .pet {
+                if selection.selectedTab == .general {
+                    generalSettings
+                } else if selection.selectedTab == .pet {
                     PetSettingsView(pet: pet, loginItem: loginItem, showPet: showPet)
                 } else if selection.selectedTab == .quickTools {
                     QuickToolsSettingsView(controller: quickTools, settings: quickTools.settings)
@@ -65,13 +69,61 @@ struct SettingsView: View {
         .sheet(isPresented: $isBilibiliLoginPresented) {
             BilibiliLoginSheet(music: music, isPresented: $isBilibiliLoginPresented)
         }
+        .alert(
+            AppLocalizer.string("settings.language.restartTitle"),
+            isPresented: Binding(
+                get: { language.needsRestart },
+                set: { if !$0 { language.dismissRestartNotice() } }
+            )
+        ) {
+            Button(AppLocalizer.string("settings.language.restartLater"), role: .cancel) {
+                language.dismissRestartNotice()
+            }
+            Button(AppLocalizer.string("settings.language.quit")) {
+                NSApp.terminate(nil)
+            }
+        } message: {
+            Text(AppLocalizer.string("settings.language.restartMessage"))
+        }
+    }
+
+    private var generalSettings: some View {
+        VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
+            SettingsPageHeader(
+                title: AppLocalizer.string("settings.general"),
+                subtitle: AppLocalizer.string("settings.language.subtitle"),
+                systemImage: "gearshape",
+                accent: .blue
+            )
+            Form {
+                Section(AppLocalizer.string("settings.language")) {
+                    Picker(AppLocalizer.string("settings.language"), selection: Binding(
+                        get: { language.language },
+                        set: language.setLanguage
+                    )) {
+                        ForEach(AppLanguage.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    Text(AppLocalizer.string("settings.language.subtitle"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section(AppLocalizer.string("settings.permissions")) {
+                    Text(AppLocalizer.string("settings.permissions.subtitle"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+        }
     }
 
     private var musicSettings: some View {
         VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
             SettingsPageHeader(
-                title: "音乐",
-                subtitle: "管理播放来源、桌面歌词与外部声音协作",
+                title: AppLocalizer.string("音乐"),
+                subtitle: AppLocalizer.string("管理播放来源、桌面歌词与外部声音协作"),
                 systemImage: "music.note",
                 accent: .purple
             )
@@ -183,8 +235,8 @@ struct SettingsView: View {
     private var focusSettings: some View {
         VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
             SettingsPageHeader(
-                title: "专注",
-                subtitle: "用番茄钟保持节奏，专注期间让桌宠安静陪伴",
+                title: AppLocalizer.string("专注"),
+                subtitle: AppLocalizer.string("用番茄钟保持节奏，专注期间让桌宠安静陪伴"),
                 systemImage: "timer",
                 accent: .orange
             )
@@ -402,8 +454,8 @@ struct SettingsView: View {
     private var aiSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsPageHeader(
-                title: "AI 对话",
-                subtitle: "配置兼容服务与角色设定，支持流式回复",
+                title: AppLocalizer.string("AI 对话"),
+                subtitle: AppLocalizer.string("配置兼容服务与角色设定，支持流式回复"),
                 systemImage: "message.fill",
                 accent: .pink
             )

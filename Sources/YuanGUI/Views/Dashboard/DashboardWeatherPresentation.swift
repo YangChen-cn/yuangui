@@ -18,9 +18,9 @@ struct DashboardWeatherPresentation: Equatable {
             return Self(
                 icon: snapshot.condition.symbol,
                 primaryText: "\(Int(snapshot.temperature.rounded()))°",
-                conditionText: "\(snapshot.condition.title) · 体感 \(Int(snapshot.apparentTemperature.rounded()))°",
-                detailText: "湿度 \(snapshot.relativeHumidity)% · 风速 \(Int(snapshot.windSpeed.rounded())) km/h",
-                metadataText: "\(locationName ?? "当前位置") · \(snapshot.updatedAt.formatted(date: .omitted, time: .shortened)) 更新",
+                conditionText: "\(AppLocalizer.string(snapshot.condition.title)) · \(AppLocalizer.string("体感")) \(Int(snapshot.apparentTemperature.rounded()))°",
+                detailText: "\(AppLocalizer.string("湿度")) \(snapshot.relativeHumidity)% · \(AppLocalizer.string("风速")) \(Int(snapshot.windSpeed.rounded())) km/h",
+                metadataText: "\(locationName ?? AppLocalizer.string("当前位置")) · \(snapshot.updatedAt.formatted(date: .omitted, time: .shortened)) \(AppLocalizer.string("更新"))",
                 showsLocationSettings: false,
                 isRefreshing: status == .loading || status == .requestingLocation
             )
@@ -32,31 +32,31 @@ struct DashboardWeatherPresentation: Equatable {
         switch status {
         case .idle, .available:
             icon = "cloud.sun.fill"
-            condition = "当前位置"
-            detail = "点击刷新获取本地天气"
+            condition = AppLocalizer.string("当前位置")
+            detail = AppLocalizer.string("点击刷新获取本地天气")
         case .requestingLocation:
             icon = "location.fill"
-            condition = "正在获取位置"
-            detail = "请在系统提示中选择是否允许"
+            condition = AppLocalizer.string("正在获取位置")
+            detail = AppLocalizer.string("请在系统提示中选择是否允许")
         case .loading:
             icon = "location.fill"
-            condition = "正在查询"
-            detail = "正在连接天气服务"
+            condition = AppLocalizer.string("正在查询")
+            detail = AppLocalizer.string("正在连接天气服务")
         case .locationDenied:
             icon = "location.slash.fill"
-            condition = "定位未授权"
-            detail = "允许定位后可显示本地天气"
+            condition = AppLocalizer.string("定位未授权")
+            detail = AppLocalizer.string("允许定位后可显示本地天气")
         case .unavailable(let message):
             icon = "cloud.sun.fill"
-            condition = "暂不可用"
+            condition = AppLocalizer.string("暂不可用")
             detail = message
         }
         return Self(
             icon: icon,
-            primaryText: "天气",
+            primaryText: AppLocalizer.string("天气"),
             conditionText: condition,
             detailText: detail,
-            metadataText: "无需天气 API Key",
+            metadataText: AppLocalizer.string("无需天气 API Key"),
             showsLocationSettings: status == .locationDenied,
             isRefreshing: status == .loading || status == .requestingLocation
         )

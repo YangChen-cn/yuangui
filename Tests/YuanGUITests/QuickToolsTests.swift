@@ -36,7 +36,7 @@ final class QuickToolsTests: XCTestCase {
     func testSettingsTabsIncludeDiaryBackupManagement() {
         XCTAssertEqual(
             SettingsTab.allCases,
-            [.pet, .quickTools, .ai, .focus, .music, .diary, .about]
+            [.general, .pet, .quickTools, .ai, .focus, .music, .diary, .about]
         )
     }
 
