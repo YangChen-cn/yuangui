@@ -67,9 +67,12 @@ final class MetricReaderTests: XCTestCase {
         let readsBeforeEvent = battery.readCount
 
         monitor.handlePowerSourceChange()
-        try await Task.sleep(nanoseconds: 60_000_000)
+        let expectedReads = readsBeforeEvent + 3
+        for _ in 0..<200 where battery.readCount < expectedReads {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
 
-        XCTAssertGreaterThanOrEqual(battery.readCount, readsBeforeEvent + 3)
+        XCTAssertGreaterThanOrEqual(battery.readCount, expectedReads)
         monitor.stop()
     }
 
