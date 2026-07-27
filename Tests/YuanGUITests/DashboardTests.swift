@@ -40,7 +40,7 @@ final class DashboardTests: XCTestCase {
         XCTAssertEqual(DashboardStyle.mint.rawValue, 2)
         XCTAssertEqual(DashboardStyle.midnight.rawValue, 3)
         XCTAssertEqual(DashboardStyle.liquidGlass.rawValue, 4)
-        XCTAssertEqual(DashboardStyle.liquidGlass.title, "液态玻璃")
+        XCTAssertEqual(DashboardStyle.liquidGlass.title, AppLocalizer.string("液态玻璃"))
         XCTAssertEqual(
             DashboardDesign.palette(for: .liquidGlass).treatment,
             .liquidGlass
@@ -80,12 +80,12 @@ final class DashboardTests: XCTestCase {
 
     func testSmartStatePresentationHasMatchingTextAndIcon() {
         let expected: [(SmartPetState, String, String)] = [
-            (.normal, "一切平稳", "checkmark.circle"),
-            (.lowBattery, "低电量", "battery.25percent"),
-            (.memoryPressure, "内存紧张", "memorychip.fill"),
-            (.charging, "充电中", "bolt.fill"),
-            (.rainy, "下雨了", "umbrella.fill"),
-            (.bedtime, "该休息了", "moon.zzz.fill")
+            (.normal, AppLocalizer.string("一切平稳"), "checkmark.circle"),
+            (.lowBattery, AppLocalizer.string("低电量"), "battery.25percent"),
+            (.memoryPressure, AppLocalizer.string("内存紧张"), "memorychip.fill"),
+            (.charging, AppLocalizer.string("充电中"), "bolt.fill"),
+            (.rainy, AppLocalizer.string("下雨了"), "umbrella.fill"),
+            (.bedtime, AppLocalizer.string("该休息了"), "moon.zzz.fill")
         ]
 
         for (state, title, icon) in expected {
@@ -181,10 +181,10 @@ final class DashboardTests: XCTestCase {
             calendar.date(from: DateComponents(year: 2026, month: 7, day: 25, hour: 8))
         )
 
-        XCTAssertEqual(DashboardHeaderPresentation.greeting(at: morning, calendar: calendar), "早上好")
-        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .yuanGui), "元圭在这里")
-        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .vcc), "VCC 正在陪你")
-        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .duo), "元圭和 VCC 都在")
+        XCTAssertEqual(DashboardHeaderPresentation.greeting(at: morning, calendar: calendar), AppLocalizer.string("早上好"))
+        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .yuanGui), AppLocalizer.string("元圭在这里"))
+        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .vcc), AppLocalizer.string("VCC 正在陪你"))
+        XCTAssertEqual(DashboardHeaderPresentation.companionTitle(for: .duo), AppLocalizer.string("元圭和 VCC 都在"))
     }
 
     func testQueueExcludesCurrentTrackAndReportsRemainingCount() {
@@ -219,8 +219,8 @@ final class DashboardTests: XCTestCase {
             locationName: nil
         )
 
-        XCTAssertEqual(presentation.conditionText, "定位未授权")
-        XCTAssertTrue(presentation.detailText.contains("允许定位"))
+        XCTAssertEqual(presentation.conditionText, AppLocalizer.string("定位未授权"))
+        XCTAssertTrue(presentation.detailText.contains(AppLocalizer.string("允许定位后可显示本地天气")))
         XCTAssertTrue(presentation.showsLocationSettings)
         XCTAssertFalse(presentation.isRefreshing)
     }

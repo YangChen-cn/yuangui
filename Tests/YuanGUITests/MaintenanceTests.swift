@@ -205,7 +205,8 @@ final class MaintenanceTests: XCTestCase {
 
         XCTAssertEqual(applications.count, 2)
         XCTAssertTrue(applications.allSatisfy { $0.components.count == 1 })
-        XCTAssertTrue(applications.allSatisfy { $0.warnings.contains { $0.contains("相同 Bundle ID") } })
+        let sharedBundleWarning = AppLocalizer.string("maintenance.warning.sharedBundleID")
+        XCTAssertTrue(applications.allSatisfy { $0.warnings.contains(sharedBundleWarning) })
     }
 
     func testEmbeddedHelperBundleIDFindsExactResidual() async throws {

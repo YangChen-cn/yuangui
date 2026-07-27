@@ -665,12 +665,15 @@ final class MusicTests: XCTestCase {
     }
 
     func testPlayModesHaveStableUserFacingLabels() {
-        XCTAssertEqual(MusicPlayMode.allCases.map(\.title), ["顺序播放", "单曲循环", "列表循环", "随机播放"])
+        XCTAssertEqual(
+            MusicPlayMode.allCases.map(\.title),
+            ["顺序播放", "单曲循环", "列表循环", "随机播放"].map { AppLocalizer.string($0) }
+        )
         XCTAssertEqual(MusicSource.ordered(for: .english), [.appleMusic, .local, .bilibili])
         XCTAssertEqual(MusicSource.ordered(for: .simplifiedChinese), [.appleMusic, .bilibili, .local])
         XCTAssertEqual(
             LyricsFontStyle.allCases.map(\.title),
-            ["圆体", "系统字体", "衬线体", "等宽体", "苹方", "宋体", "楷体", "黑体"]
+            ["圆体", "系统字体", "衬线体", "等宽体", "苹方", "宋体", "楷体", "黑体"].map { AppLocalizer.string($0) }
         )
     }
 
@@ -860,7 +863,7 @@ final class MusicTests: XCTestCase {
             localMusicImporter: importer,
             library: library
         )
-        for _ in 0..<16 { await Task.yield() }
+        try? await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(feature.lyricsStore.document?.lines.first?.text, "本地")
         await feature.shutdown()
@@ -883,7 +886,7 @@ final class MusicTests: XCTestCase {
         )
 
         feature.play(track)
-        for _ in 0..<16 { await Task.yield() }
+        try? await Task.sleep(for: .milliseconds(50))
         player.onProgress?(1.2, 180)
         XCTAssertEqual(feature.lyricsStore.currentLine?.text, "当前歌词")
 

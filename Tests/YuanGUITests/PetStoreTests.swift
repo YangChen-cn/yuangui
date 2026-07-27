@@ -197,7 +197,7 @@ final class PetStoreTests: XCTestCase {
 
         XCTAssertEqual(desktopIcons.requestedVisibility, true)
         XCTAssertTrue(store.desktopIconsVisible)
-        XCTAssertEqual(store.toast, "已显示桌面图标")
+        XCTAssertEqual(store.toast, AppLocalizer.string("已显示桌面图标"))
     }
 
     func testAmbientChatterPreferencesClampAndPersist() {
