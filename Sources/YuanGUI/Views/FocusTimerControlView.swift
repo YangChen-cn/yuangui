@@ -5,12 +5,12 @@ struct FocusTimerControlView: View {
     let showPet: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 tomatoDial
                 VStack(alignment: .leading, spacing: 3) {
                     Text(AppLocalizer.string("陪伴式专注"))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
                         .lineLimit(1)
                     Text(timer.statusTitle)
                         .font(.caption)
@@ -53,14 +53,14 @@ struct FocusTimerControlView: View {
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Spacer(minLength: 0)
                     controls
                 }
             }
         }
-        .padding(16)
-        .frame(width: 320)
+        .padding(10)
+        .frame(width: 280)
         .background(
             LinearGradient(
                 colors: [.red.opacity(0.13), .orange.opacity(0.07), .clear],
@@ -72,19 +72,19 @@ struct FocusTimerControlView: View {
 
     private var tomatoDial: some View {
         ZStack {
-            Circle().stroke(.red.opacity(0.14), lineWidth: 5)
+            Circle().stroke(.red.opacity(0.14), lineWidth: 4)
             Circle()
                 .trim(from: 0, to: max(timer.progress, 0.025))
                 .stroke(
                     AngularGradient(colors: [.red, .orange, .red], center: .center),
-                    style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
             Text(timer.state == .idle ? "🍅" : timer.timeText)
-                .font(timer.state == .idle ? .system(size: 25) : .system(size: 13, weight: .bold, design: .rounded))
+                .font(timer.state == .idle ? .system(size: 21) : .system(size: 11, weight: .bold, design: .rounded))
                 .monospacedDigit()
         }
-        .frame(width: 58, height: 58)
+        .frame(width: 48, height: 48)
     }
 
     @ViewBuilder
@@ -94,17 +94,22 @@ struct FocusTimerControlView: View {
             case .idle, .completed:
                 Button(AppLocalizer.string("开始")) { timer.start(); showPet() }
                     .buttonStyle(.borderedProminent).tint(.red)
+                    .controlSize(.mini)
                     .fixedSize(horizontal: true, vertical: false)
             case .running:
                 Button(AppLocalizer.string("暂停")) { timer.pause() }
+                    .controlSize(.mini)
                     .fixedSize(horizontal: true, vertical: false)
                 Button(AppLocalizer.string("结束")) { timer.stop() }
+                    .controlSize(.mini)
                     .fixedSize(horizontal: true, vertical: false)
             case .paused:
                 Button(AppLocalizer.string("继续")) { timer.resume() }
                     .buttonStyle(.borderedProminent).tint(.red)
+                    .controlSize(.mini)
                     .fixedSize(horizontal: true, vertical: false)
                 Button(AppLocalizer.string("结束")) { timer.stop() }
+                    .controlSize(.mini)
                     .fixedSize(horizontal: true, vertical: false)
             }
         }

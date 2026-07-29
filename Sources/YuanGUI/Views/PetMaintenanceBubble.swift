@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// A deliberately compact companion surface. The full Cleanup House owns
-/// searching, sorting and the complete result list; this card only exposes the
-/// first few safe choices and one clear primary action.
+/// searching and sorting; this card exposes a bounded, scrollable result list
+/// and one clear primary action.
 struct PetMaintenanceBubble: View {
     @ObservedObject var store: MaintenanceStore
     var placement: PetAuxiliaryBubblePlacement = .abovePet
@@ -96,20 +96,10 @@ struct PetMaintenanceBubble: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 5) {
-                        ForEach(Array(store.cleanupCandidates.prefix(4))) { candidate in
+                        ForEach(store.cleanupCandidates) { candidate in
                             cleanupCandidateRow(candidate)
-                        }
-                        if store.cleanupCandidates.count > 4 {
-                            Text(
-                                AppLocalizer.format(
-                                    "maintenance.quick.moreCount",
-                                    store.cleanupCandidates.count - 4
-                                )
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -177,20 +167,10 @@ struct PetMaintenanceBubble: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 5) {
-                        ForEach(Array(store.visibleApplications.prefix(4))) { application in
+                        ForEach(store.visibleApplications) { application in
                             applicationCard(application)
-                        }
-                        if store.visibleApplications.count > 4 {
-                            Text(
-                                AppLocalizer.format(
-                                    "maintenance.quick.moreCount",
-                                    store.visibleApplications.count - 4
-                                )
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
                         }
                     }
                 }
