@@ -40,7 +40,10 @@ final class AppUpdateTests: XCTestCase {
 
         XCTAssertEqual(rows.map(\.kind), [.heading, .bullet, .bullet, .paragraph])
         XCTAssertEqual(rows.map(\.text), ["改进", "修复播放器布局", "更新歌词交互", "补充说明会单独换行。"])
-        XCTAssertEqual(ReleaseNoteRow.parse("").map(\.text), ["此 Release 没有填写更新日志。"])
+        XCTAssertEqual(
+            ReleaseNoteRow.parse("").map(\.text),
+            [AppLocalizer.string("此 Release 没有填写更新日志。")]
+        )
     }
 
     func testInstallerBoundsWaitForOldProcessBeforeReplacingApp() {

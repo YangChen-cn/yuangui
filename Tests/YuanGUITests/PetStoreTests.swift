@@ -40,6 +40,17 @@ final class FakeDesktopIconManager: DesktopIconManaging {
 @MainActor
 final class PetStoreTests: XCTestCase {
     func testPetToastUsesIntrinsicWidthUntilTextNeedsWrapping() {
+        let shortWidth = PetToastView.preferredWidth(for: "Hi!", maximumWidth: 380)
+        let longerWidth = PetToastView.preferredWidth(for: "Welcome back!", maximumWidth: 380)
+        let clampedWidth = PetToastView.preferredWidth(
+            for: String(repeating: "A much longer companion message. ", count: 8),
+            maximumWidth: 380
+        )
+
+        XCTAssertLessThan(shortWidth, 120)
+        XCTAssertGreaterThan(longerWidth, shortWidth)
+        XCTAssertEqual(clampedWidth, 380)
+
         let shortToast = NSHostingView(rootView:
             PetToastView(message: "Hi!", maximumWidth: 380)
         )
@@ -52,7 +63,7 @@ final class PetStoreTests: XCTestCase {
         shortToast.layoutSubtreeIfNeeded()
         longToast.layoutSubtreeIfNeeded()
 
-        XCTAssertLessThan(shortToast.fittingSize.width, 120)
+        XCTAssertEqual(shortToast.fittingSize.width, shortWidth, accuracy: 1)
         XCTAssertLessThanOrEqual(longToast.fittingSize.width, 380.5)
     }
 
