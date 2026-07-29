@@ -29,10 +29,12 @@
 "about.license" = "YuanGUI source code is licensed under GPL-3.0-only. Original visual assets are licensed under CC BY-SA 4.0.";
 "about.notice" = "This program is provided without warranty. See the bundled license and third-party notices for details.";
 "release.2.7.localMusic" = "All-new Local Music with file and folder import, playlists, search, sorting, Finder reveal, relocation, and custom cover art.";
-"release.2.7.cleanup" = "Cleanup House has safer on-demand scanning, clearer review controls, stronger protected-data rules, and Trash-only handling for project artifacts and installers.";
+"release.2.7.cleanup" = "Cleanup House now has safer on-demand scanning, risk-aware quick actions, clearer review controls, stronger protected-data rules, and Trash-only handling for project artifacts and installers.";
 "release.2.7.playerLyrics" = "Player and lyrics improvements unify local and network playback, sidecar LRC priority, seeking, offsets, desktop lyrics, and companion listening actions.";
+"release.2.7.focusChat" = "The focus popover is smaller and easier to read, while AI streaming is throttled and chat transitions are layered to keep the pet responsive.";
 "release.2.7.stability" = "Fixed AI response compatibility, lyric-bubble truncation, journal creation, artwork lifecycle, and an unwanted Desktop Folder permission prompt.";
 "release.2.7.english" = "Added a complete English interface, language-aware default prompts, localized guides, and complete licensing documents.";
+"release.2.7.localization" = "Completed bilingual Cleanup House labels, activity records, scan-scope menus, and update highlights without Chinese leakage in English mode.";
 
 /* Existing SwiftUI labels use their Chinese source text as stable lookup keys. */
 "桌宠" = "Desktop Companion";
@@ -777,8 +779,22 @@
 "受保护" = "Protected";
 "打开废纸篓" = "Open Trash";
 "还没有清理记录" = "No cleanup activity yet";
+"maintenance.remove" = "Remove: %@";
+"maintenance.activity.permanent" = "Free Permanently %@";
+"maintenance.activity.trash" = "Trash %@";
+"maintenance.activity.summary" = "Success %ld · Skipped %ld · Failed %ld";
+"maintenance.activity.detail" = "%@: %@";
 "关于" = "About";
 "此版本更新内容" = "What's New";
+"about.version" = "Version %@ (%@)";
+"about.version.short" = "Version %@";
+"about.updateTo" = "Update to %@";
+"about.releaseAvailable" = "Version %@ available";
+"about.error.releaseUnavailable" = "Unable to read the release: %@";
+"about.error.mountFailed" = "Unable to open the update image: %@";
+"about.error.invalidVersion" = "The downloaded app version (%@) does not match the release.";
+"about.error.installLocation" = "YuanGUI cannot update %@. Move the app to a writable location or the Applications folder first.";
+"about.error.helperFailed" = "Unable to start the update installer: %@";
 "检查更新" = "Check for Updates";
 "GitHub 项目主页" = "GitHub Project Page";
 "在 GitHub 查看" = "View on GitHub";

@@ -29,10 +29,12 @@
 "about.license" = "YuanGUI 源代码采用 GPL-3.0-only；原创视觉素材采用 CC BY-SA 4.0。";
 "about.notice" = "本程序按“现状”提供，不附带任何担保。详见随应用提供的许可证和第三方声明。";
 "release.2.7.localMusic" = "全新的本地音乐能力：支持文件和文件夹导入、歌单、搜索、排序、Finder 定位、重新定位及自定义封面。";
-"release.2.7.cleanup" = "清理屋改为按需扫描，强化受保护数据规则，并提供更清晰的检查交互；项目产物和安装包只移入废纸篓。";
+"release.2.7.cleanup" = "清理屋改为按需扫描，快捷操作按风险分级，强化受保护数据规则，并提供更清晰的检查交互；项目产物和安装包只移入废纸篓。";
 "release.2.7.playerLyrics" = "播放器与歌词改进统一了本地和网络播放状态，并完善同名 LRC、跳转、偏移、桌面歌词及桌宠听歌动作。";
+"release.2.7.focusChat" = "番茄钟浮层改为更紧凑易读的时间与按键布局；AI 流式回复节流刷新，聊天层分层过渡，桌宠响应更稳定。";
 "release.2.7.stability" = "修复 AI 返回格式兼容、歌词气泡截断、日记新建、封面生命周期及意外请求桌面目录权限等问题。";
 "release.2.7.english" = "新增完整英文界面、语言跟随默认提示词、本地化指南和完整许可证文档。";
+"release.2.7.localization" = "补齐清理屋、操作记录、扫描范围菜单和应用内更新说明的中英文资源，英文界面不再残留中文。";
 
 "桌宠" = "桌宠";
 "快捷工具" = "快捷工具";
@@ -776,7 +778,21 @@
 "受保护" = "受保护";
 "打开废纸篓" = "打开废纸篓";
 "还没有清理记录" = "还没有清理记录";
+"maintenance.remove" = "移除：%@";
+"maintenance.activity.permanent" = "永久释放 %@";
+"maintenance.activity.trash" = "废纸篓 %@";
+"maintenance.activity.summary" = "成功 %ld · 跳过 %ld · 失败 %ld";
+"maintenance.activity.detail" = "%@：%@";
 "此版本更新内容" = "此版本更新内容";
+"about.version" = "版本 %@（%@）";
+"about.version.short" = "版本 %@";
+"about.updateTo" = "一键更新到 %@";
+"about.releaseAvailable" = "发现版本 %@";
+"about.error.releaseUnavailable" = "读取 Release 失败：%@";
+"about.error.mountFailed" = "无法打开更新镜像：%@";
+"about.error.invalidVersion" = "下载的应用版本（%@）与 Release 不一致。";
+"about.error.installLocation" = "没有权限更新 %@，请先把应用移到可写位置或“应用程序”文件夹。";
+"about.error.helperFailed" = "无法启动更新安装器：%@";
 "检查更新" = "检查更新";
 "GitHub 项目主页" = "GitHub 项目主页";
 "在 GitHub 查看" = "在 GitHub 查看";

@@ -18,8 +18,10 @@ enum AppVersionInfo {
             "release.2.7.localMusic",
             "release.2.7.cleanup",
             "release.2.7.playerLyrics",
+            "release.2.7.focusChat",
             "release.2.7.stability",
-            "release.2.7.english"
+            "release.2.7.english",
+            "release.2.7.localization"
         ].map { AppLocalizer.string($0) }
     }
 }
@@ -108,17 +110,17 @@ enum AppUpdateError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: return "GitHub 返回了无法识别的响应。"
-        case .releaseUnavailable(let message): return "读取 Release 失败：\(message)"
-        case .dmgMissing: return "这个 Release 没有可用的 DMG 文件。"
-        case .invalidDownloadURL: return "Release 下载地址不安全或无效。"
-        case .mountFailed(let message): return "无法打开更新镜像：\(message)"
-        case .appMissing: return "更新镜像中没有 YuanGUI.app。"
-        case .invalidBundle: return "下载的应用标识与 YuanGUI 不一致。"
-        case .invalidVersion(let version): return "下载的应用版本（\(version)）与 Release 不一致。"
-        case .invalidSignature: return "下载的应用代码签名校验失败。"
-        case .installLocationNotWritable(let path): return "没有权限更新 \(path)，请先把应用移到可写位置或“应用程序”文件夹。"
-        case .helperFailed(let message): return "无法启动更新安装器：\(message)"
+        case .invalidResponse: return AppLocalizer.string("GitHub 返回了无法识别的响应。")
+        case .releaseUnavailable(let message): return AppLocalizer.format("about.error.releaseUnavailable", message)
+        case .dmgMissing: return AppLocalizer.string("这个 Release 没有可用的 DMG 文件。")
+        case .invalidDownloadURL: return AppLocalizer.string("Release 下载地址不安全或无效。")
+        case .mountFailed(let message): return AppLocalizer.format("about.error.mountFailed", message)
+        case .appMissing: return AppLocalizer.string("更新镜像中没有 YuanGUI.app。")
+        case .invalidBundle: return AppLocalizer.string("下载的应用标识与 YuanGUI 不一致。")
+        case .invalidVersion(let version): return AppLocalizer.format("about.error.invalidVersion", version)
+        case .invalidSignature: return AppLocalizer.string("下载的应用代码签名校验失败。")
+        case .installLocationNotWritable(let path): return AppLocalizer.format("about.error.installLocation", path)
+        case .helperFailed(let message): return AppLocalizer.format("about.error.helperFailed", message)
         }
     }
 }
@@ -284,7 +286,7 @@ actor AppUpdateService {
               let plist = try? PropertyListSerialization.propertyList(from: result.output, format: nil) as? [String: Any],
               let entities = plist["system-entities"] as? [[String: Any]],
               let path = entities.compactMap({ $0["mount-point"] as? String }).first else {
-            throw AppUpdateError.mountFailed(String(data: result.error, encoding: .utf8) ?? "未知错误")
+            throw AppUpdateError.mountFailed(String(data: result.error, encoding: .utf8) ?? AppLocalizer.string("未知错误"))
         }
         return URL(fileURLWithPath: path, isDirectory: true)
     }
@@ -358,7 +360,7 @@ final class AppUpdateStore: ObservableObject {
                 state = .installing
                 guard await terminateForUpdate() else {
                     await service.discard(prepared)
-                    state = .failed("日记保存失败，更新安装已取消。")
+                    state = .failed(AppLocalizer.string("日记保存失败，更新安装已取消。"))
                     return
                 }
                 do {

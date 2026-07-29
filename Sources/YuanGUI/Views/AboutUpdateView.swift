@@ -21,14 +21,14 @@ struct AboutUpdateView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(AppLocalizer.string("元圭与 VCC"))
                             .font(.title2.bold())
-                        Text("版本 \(AppVersionInfo.version)（\(AppVersionInfo.build)）")
+                        Text(AppLocalizer.format("about.version", AppVersionInfo.version, AppVersionInfo.build))
                             .foregroundStyle(.secondary)
-                        Link("GitHub 项目主页", destination: URL(string: "https://github.com/YangChen-cn/yuangui")!)
+                        Link(AppLocalizer.string("GitHub 项目主页"), destination: URL(string: "https://github.com/YangChen-cn/yuangui")!)
                             .font(.caption)
                     }
                 }
 
-                GroupBox("此版本更新内容") {
+                GroupBox(AppLocalizer.string("此版本更新内容")) {
                     VStack(alignment: .leading, spacing: 7) {
                         ForEach(AppVersionInfo.currentReleaseHighlights, id: \.self) { item in
                             Label(item, systemImage: "checkmark.circle.fill")
@@ -39,7 +39,7 @@ struct AboutUpdateView: View {
                     .padding(.vertical, 4)
                 }
 
-                GroupBox("检查更新") {
+                GroupBox(AppLocalizer.string("检查更新")) {
                     VStack(alignment: .leading, spacing: 14) {
                         ViewThatFits(in: .horizontal) {
                             HStack(spacing: 10) {
@@ -56,7 +56,7 @@ struct AboutUpdateView: View {
                         if let release = updater.latestRelease {
                             Divider()
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(release.name ?? "版本 \(release.version)")
+                                Text(release.name ?? AppLocalizer.format("about.version.short", release.version))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -67,7 +67,7 @@ struct AboutUpdateView: View {
                                         .padding(.vertical, 3)
                                         .background(.blue.opacity(0.12), in: Capsule())
                                         .foregroundStyle(.blue)
-                                    Link("在 GitHub 查看", destination: release.pageURL)
+                                    Link(AppLocalizer.string("在 GitHub 查看"), destination: release.pageURL)
                                         .font(.caption)
                                 }
                             }
@@ -95,7 +95,7 @@ struct AboutUpdateView: View {
                     .padding(.vertical, 4)
                 }
 
-                Text("更新会从 GitHub Release 下载 DMG，校验应用标识、版本号和代码签名后自动替换当前应用并重新打开。")
+                Text(AppLocalizer.string("更新会从 GitHub Release 下载 DMG，校验应用标识、版本号和代码签名后自动替换当前应用并重新打开。"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -108,10 +108,10 @@ struct AboutUpdateView: View {
 
     private var updateActions: some View {
         HStack(spacing: 8) {
-            Button("检查更新") { updater.check() }
+            Button(AppLocalizer.string("检查更新")) { updater.check() }
                 .disabled(updater.isBusy)
             if updater.state == .available {
-                Button("一键更新到 \(updater.latestRelease?.version ?? "新版本")") {
+                Button(AppLocalizer.format("about.updateTo", updater.latestRelease?.version ?? AppLocalizer.string("新版本"))) {
                     updater.installLatest()
                 }
                 .buttonStyle(.borderedProminent)
@@ -123,20 +123,20 @@ struct AboutUpdateView: View {
     private var statusView: some View {
         switch updater.state {
         case .idle:
-            Label("尚未检查", systemImage: "arrow.triangle.2.circlepath")
+            Label(AppLocalizer.string("尚未检查"), systemImage: "arrow.triangle.2.circlepath")
                 .foregroundStyle(.secondary)
         case .checking:
-            HStack { ProgressView().controlSize(.small); Text("正在读取 GitHub Release…") }
+            HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在读取 GitHub Release…")) }
         case .upToDate:
-            Label("当前已是最新版本", systemImage: "checkmark.seal.fill")
+            Label(AppLocalizer.string("当前已是最新版本"), systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
         case .available:
-            Label("发现版本 \(updater.latestRelease?.version ?? "")", systemImage: "arrow.down.circle.fill")
+            Label(AppLocalizer.format("about.releaseAvailable", updater.latestRelease?.version ?? ""), systemImage: "arrow.down.circle.fill")
                 .foregroundStyle(.blue)
         case .downloading:
-            HStack { ProgressView().controlSize(.small); Text("正在下载 DMG…") }
+            HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在下载 DMG…")) }
         case .installing:
-            HStack { ProgressView().controlSize(.small); Text("正在准备安装，应用即将重启…") }
+            HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在准备安装，应用即将重启…")) }
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
@@ -148,7 +148,7 @@ struct AboutUpdateView: View {
     private func releaseNotes(_ body: String) -> some View {
         let rows = ReleaseNoteRow.parse(body)
         return VStack(alignment: .leading, spacing: 9) {
-            Text("更新说明")
+            Text(AppLocalizer.string("更新说明"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             ForEach(rows) { row in
@@ -198,7 +198,7 @@ struct ReleaseNoteRow: Identifiable {
     static func parse(_ body: String) -> [ReleaseNoteRow] {
         let source = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.isEmpty else {
-            return [ReleaseNoteRow(id: 0, kind: .paragraph, text: "此 Release 没有填写更新日志。")]
+            return [ReleaseNoteRow(id: 0, kind: .paragraph, text: AppLocalizer.string("此 Release 没有填写更新日志。"))]
         }
         return source
             .replacingOccurrences(of: "\r\n", with: "\n")

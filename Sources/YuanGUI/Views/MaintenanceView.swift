@@ -25,10 +25,10 @@ struct MaintenanceView: View {
 
     private var commonToolbar: some View {
         HStack(spacing: 8) {
-            TextField("搜索名称、路径或 bundle ID", text: $store.searchText)
+            TextField(AppLocalizer.string("搜索名称、路径或 bundle ID"), text: $store.searchText)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 340)
-            Picker("排序", selection: $store.sortOrder) {
+            Picker(AppLocalizer.string("排序"), selection: $store.sortOrder) {
                 ForEach(MaintenanceStore.SortOrder.allCases) { order in
                     Text(order.title).tag(order)
                 }
@@ -57,7 +57,7 @@ struct MaintenanceView: View {
                 .yuanLiquidGlassSurface(.clear, cornerRadius: MaintenanceDesign.cardRadius)
             } else {
                 List {
-                    Section("分类摘要") {
+                    Section(AppLocalizer.string("分类摘要")) {
                         ForEach(CleanupCategory.allCases, id: \.self) { category in
                             let values = store.cleanupCandidates.filter { $0.category == category }
                             if !values.isEmpty {
@@ -92,7 +92,7 @@ struct MaintenanceView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 9) {
                     scanCleanupButton
-                    Button("全选推荐项") { store.selectRecommendedCleanup() }
+                    Button(AppLocalizer.string("全选推荐项")) { store.selectRecommendedCleanup() }
                         .yuanSystemGlassButton()
                         .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
                     Spacer(minLength: 8)
@@ -119,7 +119,7 @@ struct MaintenanceView: View {
 
     private var compactOptionsMenu: some View {
         Menu {
-            Button("全选推荐项") { store.selectRecommendedCleanup() }
+            Button(AppLocalizer.string("全选推荐项")) { store.selectRecommendedCleanup() }
                 .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
             Divider()
             whitelistMenu
@@ -131,13 +131,13 @@ struct MaintenanceView: View {
     }
 
     private var scanCleanupButton: some View {
-        Button("扫描可清理空间") { Task { await store.scanCleanup() } }
+        Button(AppLocalizer.string("扫描可清理空间")) { Task { await store.scanCleanup() } }
             .yuanSystemGlassButton(isProminent: true)
             .disabled(store.isScanning || store.isWorking)
     }
 
     private var startCleanupButton: some View {
-        Button("开始清理…") { confirmCleanup() }
+        Button(AppLocalizer.string("开始清理…")) { confirmCleanup() }
             .yuanSystemGlassButton(isProminent: true)
             .disabled(store.selectedCleanupIDs.isEmpty || store.isWorking)
     }
@@ -153,25 +153,25 @@ struct MaintenanceView: View {
     private var whitelistMenu: some View {
         Menu {
             if store.whitelistedPaths.isEmpty {
-                Text("白名单为空")
+                Text(AppLocalizer.string("白名单为空"))
             } else {
                 ForEach(store.whitelistedPaths, id: \.self) { path in
-                    Button("移除：\(URL(fileURLWithPath: path).lastPathComponent)") {
+                    Button(AppLocalizer.format("maintenance.remove", URL(fileURLWithPath: path).lastPathComponent)) {
                         store.removeFromWhitelist(path)
                     }
                 }
                 Divider()
-                Button("清空白名单", role: .destructive) { store.clearWhitelist() }
+                Button(AppLocalizer.string("清空白名单"), role: .destructive) { store.clearWhitelist() }
             }
         } label: {
-            Label("白名单", systemImage: "hand.raised")
+            Label(AppLocalizer.string("白名单"), systemImage: "hand.raised")
         }
         .yuanSystemGlassButton()
     }
 
     private var scanScopeMenu: some View {
         Menu {
-            Section("扫描类别") {
+            Section(AppLocalizer.string("扫描类别")) {
                 ForEach(CleanupCategory.allCases, id: \.self) { category in
                     Toggle(category.title, isOn: Binding(
                         get: { store.enabledCleanupCategories.contains(category) },
@@ -187,22 +187,22 @@ struct MaintenanceView: View {
                     ))
                 }
             }
-            Section("项目扫描位置") {
+            Section(AppLocalizer.string("项目扫描位置")) {
                 if store.projectScanRoots.isEmpty {
-                    Text("未设置项目目录")
+                    Text(AppLocalizer.string("未设置项目目录"))
                 } else {
                     ForEach(store.projectScanRoots, id: \.self) { path in
-                        Button("移除：\(URL(fileURLWithPath: path).lastPathComponent)") {
+                        Button(AppLocalizer.format("maintenance.remove", URL(fileURLWithPath: path).lastPathComponent)) {
                             store.removeProjectScanRoot(path)
                         }
                     }
                 }
                 Divider()
-                Button("添加项目目录…") { chooseProjectRoot() }
+                Button(AppLocalizer.string("添加项目目录…")) { chooseProjectRoot() }
             }
-            Text("项目产物和旧安装包默认不选，并只会移入废纸篓。")
+            Text(AppLocalizer.string("项目产物和旧安装包默认不选，并只会移入废纸篓。"))
         } label: {
-            Label("扫描范围", systemImage: "folder.badge.gearshape")
+            Label(AppLocalizer.string("扫描范围"), systemImage: "folder.badge.gearshape")
         }
         .yuanSystemGlassButton()
         .alert(
@@ -223,7 +223,7 @@ struct MaintenanceView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "添加"
+        panel.prompt = AppLocalizer.string("添加")
         if panel.runModal() == .OK, let url = panel.url {
             store.addProjectScanRoot(url)
         }
@@ -275,7 +275,7 @@ struct MaintenanceView: View {
         }
         .padding(MaintenanceDesign.rowPadding)
         .background(Color.primary.opacity(0.035), in: .rect(cornerRadius: MaintenanceDesign.rowRadius))
-        .contextMenu { Button("永不清理此项目") { store.addToWhitelist(candidate) } }
+        .contextMenu { Button(AppLocalizer.string("永不清理此项目")) { store.addToWhitelist(candidate) } }
     }
 
     private var uninstallPage: some View {
@@ -283,7 +283,7 @@ struct MaintenanceView: View {
             MaintenanceCommandSurface {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 9) {
-                        Button("扫描已安装软件") { Task { await store.scanApplications() } }
+                        Button(AppLocalizer.string("扫描已安装软件")) { Task { await store.scanApplications() } }
                             .yuanSystemGlassButton(isProminent: true)
                             .disabled(store.isScanning || store.isWorking)
                         Spacer(minLength: 8)
@@ -291,7 +291,7 @@ struct MaintenanceView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .layoutPriority(1)
-                        Button("移入废纸篓…") { confirmUninstall() }
+                        Button(AppLocalizer.string("移入废纸篓…")) { confirmUninstall() }
                             .yuanSystemGlassButton(isProminent: true)
                             .disabled(store.selectedApplicationIDs.isEmpty || store.isWorking)
                     }
@@ -301,7 +301,11 @@ struct MaintenanceView: View {
             }
 
             if store.applications.isEmpty {
-                ContentUnavailableView("等待扫描", systemImage: "shippingbox", description: Text("系统应用、共享数据与受管理软件会自动受到保护"))
+                ContentUnavailableView(
+                    AppLocalizer.string("等待扫描"),
+                    systemImage: "shippingbox",
+                    description: Text(AppLocalizer.string("系统应用、共享数据与受管理软件会自动受到保护"))
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .yuanLiquidGlassSurface(.clear, cornerRadius: MaintenanceDesign.cardRadius)
             } else {
@@ -348,7 +352,7 @@ struct MaintenanceView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if application.removalBlocked {
-                        Label("受保护", systemImage: "lock.fill").font(.caption).foregroundStyle(.orange)
+                        Label(AppLocalizer.string("受保护"), systemImage: "lock.fill").font(.caption).foregroundStyle(.orange)
                     }
                 }
                 Text("\(application.bundleIdentifier) · \(application.source.title) · \(application.management.title)")
@@ -410,13 +414,13 @@ struct MaintenanceView: View {
     private var operationsPage: some View {
         VStack(spacing: 8) {
             HStack {
-                Text("所有逐项记录仅保存在本机").font(.caption).foregroundStyle(.secondary)
+                Text(AppLocalizer.string("所有逐项记录仅保存在本机")).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("打开废纸篓") { store.openTrash() }
+                Button(AppLocalizer.string("打开废纸篓")) { store.openTrash() }
                     .yuanSystemGlassButton()
             }
             if store.operations.isEmpty {
-                ContentUnavailableView("还没有清理记录", systemImage: "clock")
+                ContentUnavailableView(AppLocalizer.string("还没有清理记录"), systemImage: "clock")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .yuanLiquidGlassSurface(.clear, cornerRadius: MaintenanceDesign.cardRadius)
             } else {
@@ -430,13 +434,32 @@ struct MaintenanceView: View {
                             Text(operation.date, style: .time).foregroundStyle(.secondary)
                         }
                         HStack(spacing: 16) {
-                            Label("永久释放 \(size(operation.permanentlyDeletedBytes ?? 0))", systemImage: "sparkles")
-                            Label("废纸篓 \(size(operation.trashedBytes ?? 0))", systemImage: "trash")
-                            Text("成功 \(operation.itemCount) · 跳过 \(operation.skipped.count) · 失败 \(operation.errors.count)")
+                            Label(
+                                AppLocalizer.format("maintenance.activity.permanent", size(operation.permanentlyDeletedBytes ?? 0)),
+                                systemImage: "sparkles"
+                            )
+                            Label(
+                                AppLocalizer.format("maintenance.activity.trash", size(operation.trashedBytes ?? 0)),
+                                systemImage: "trash"
+                            )
+                            Text(
+                                AppLocalizer.format(
+                                    "maintenance.activity.summary",
+                                    operation.itemCount,
+                                    operation.skipped.count,
+                                    operation.errors.count
+                                )
+                            )
                         }
                         .font(.caption).foregroundStyle(.secondary)
                         ForEach(Array((operation.results ?? []).filter { $0.outcome == .skipped || $0.outcome == .failed }.prefix(3))) { result in
-                            Text("\(result.displayName)：\(result.message ?? outcomeTitle(result.outcome))")
+                            Text(
+                                AppLocalizer.format(
+                                    "maintenance.activity.detail",
+                                    result.displayName,
+                                    result.message ?? outcomeTitle(result.outcome)
+                                )
+                            )
                                 .font(.caption2)
                                 .foregroundStyle(result.outcome == .failed ? .red : .orange)
                                 .lineLimit(2)
@@ -493,10 +516,10 @@ struct MaintenanceView: View {
 
     private func outcomeTitle(_ outcome: MaintenanceItemResult.Outcome) -> String {
         switch outcome {
-        case .deleted: return "已永久删除"
-        case .trashed: return "已移入废纸篓"
-        case .skipped: return "已跳过"
-        case .failed: return "失败"
+        case .deleted: return AppLocalizer.string("已永久删除")
+        case .trashed: return AppLocalizer.string("已移入废纸篓")
+        case .skipped: return AppLocalizer.string("已跳过")
+        case .failed: return AppLocalizer.string("失败")
         }
     }
 }

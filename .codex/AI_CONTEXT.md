@@ -394,3 +394,4 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 - 操作完成后只显示完成摘要和后续操作，使用 `PetLayout.maintenanceCompletionHeight`，不能继续占用候选结果列表的高度。
 - 迷你清理卡只允许风险为 `recommended` 的项目直接执行；`review` 必须禁用选择、显示“需检查”风险徽章并引导打开完整清理屋，`protected` 始终禁用。`MaintenanceStore.cleanSelected()` 和卸载快速路径也必须在模型层再次过滤，不能只依赖 View 的 disabled 状态。
 - 卸载迷你卡展开应用时必须遍历全部 `application.components`，不能再使用 `prefix(3)` 隐藏后续组件；滚动区域负责承载长列表。
+- `MaintenanceView` 的完整清理屋所有菜单、按钮、空状态、活动记录摘要和动态“移除/结果”文本都必须通过 `AppLocalizer` 或双语格式化键渲染；英文模式不能残留中文源文本。应用内 2.7.0 更新摘要由 `AppVersionInfo.currentReleaseHighlights` 读取 `release.2.7.*` 双语键，新增条目必须同步维护 `RELEASE_NOTES.md`、`RELEASE_NOTES.zh-CN.md` 和两套本地化资源。
