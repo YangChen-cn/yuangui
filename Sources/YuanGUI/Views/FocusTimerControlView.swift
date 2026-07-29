@@ -3,64 +3,51 @@ import SwiftUI
 struct FocusTimerControlView: View {
     @ObservedObject var timer: FocusTimerStore
     let showPet: () -> Void
+    @State private var dragStartDuration: Int?
+
+    private let dialSize: CGFloat = 82
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                tomatoDial
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(AppLocalizer.string("陪伴式专注"))
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .lineLimit(1)
-                    Text(timer.statusTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-            }
+        VStack(spacing: 10) {
+            tomatoDial
 
             if timer.state == .idle || timer.state == .completed {
-                HStack(spacing: 6) {
-                    ForEach([15, 25, 45, 60], id: \.self) { minutes in
-                        Button("\(minutes)") { timer.setDurationMinutes(minutes) }
-                            .buttonStyle(.bordered)
-                            .tint(timer.durationMinutes == minutes ? .red : .secondary)
-                            .controlSize(.mini)
-                    }
-                    Spacer()
-                    Stepper(
-                        AppLocalizer.format("focus.minutes", timer.durationMinutes),
-                        value: Binding(
-                            get: { timer.durationMinutes },
-                            set: timer.setDurationMinutes
-                        ),
-                        in: FocusTimerStore.minimumDurationMinutes...FocusTimerStore.maximumDurationMinutes,
-                        step: 5
-                    )
-                        .controlSize(.mini)
-                        .fixedSize()
+                Button(AppLocalizer.string("开始")) {
+                    timer.start()
+                    showPet()
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.small)
+                .fixedSize(horizontal: true, vertical: false)
             } else {
                 ProgressView(value: timer.progress)
                     .tint(.red)
-            }
+                    .frame(width: 112)
 
-            VStack(alignment: .leading, spacing: 9) {
-                Text(AppLocalizer.string("专注时自动隐藏日常、天气和非紧急气泡"))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
-                    Spacer(minLength: 0)
-                    controls
+                    if timer.state == .paused {
+                        Button(AppLocalizer.string("继续")) { timer.resume() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.mini)
+                            .fixedSize(horizontal: true, vertical: false)
+                    } else {
+                        Button(AppLocalizer.string("暂停")) { timer.pause() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+
+                    Button(AppLocalizer.string("结束")) { timer.stop() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
         }
         .padding(10)
-        .frame(width: 280)
+        .frame(width: 140)
         .background(
             LinearGradient(
                 colors: [.red.opacity(0.13), .orange.opacity(0.07), .clear],
@@ -68,51 +55,89 @@ struct FocusTimerControlView: View {
                 endPoint: .bottomTrailing
             )
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AppLocalizer.string("陪伴式专注"))
     }
 
     private var tomatoDial: some View {
         ZStack {
-            Circle().stroke(.red.opacity(0.14), lineWidth: 4)
+            Circle()
+                .stroke(.red.opacity(0.14), lineWidth: 5)
             Circle()
                 .trim(from: 0, to: max(timer.progress, 0.025))
                 .stroke(
                     AngularGradient(colors: [.red, .orange, .red], center: .center),
-                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 5, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-            Text(timer.state == .idle ? "🍅" : timer.timeText)
-                .font(timer.state == .idle ? .system(size: 21) : .system(size: 11, weight: .bold, design: .rounded))
-                .monospacedDigit()
-        }
-        .frame(width: 48, height: 48)
-    }
 
-    @ViewBuilder
-    private var controls: some View {
-        HStack(spacing: 8) {
-            switch timer.state {
-            case .idle, .completed:
-                Button(AppLocalizer.string("开始")) { timer.start(); showPet() }
-                    .buttonStyle(.borderedProminent).tint(.red)
-                    .controlSize(.mini)
-                    .fixedSize(horizontal: true, vertical: false)
-            case .running:
-                Button(AppLocalizer.string("暂停")) { timer.pause() }
-                    .controlSize(.mini)
-                    .fixedSize(horizontal: true, vertical: false)
-                Button(AppLocalizer.string("结束")) { timer.stop() }
-                    .controlSize(.mini)
-                    .fixedSize(horizontal: true, vertical: false)
-            case .paused:
-                Button(AppLocalizer.string("继续")) { timer.resume() }
-                    .buttonStyle(.borderedProminent).tint(.red)
-                    .controlSize(.mini)
-                    .fixedSize(horizontal: true, vertical: false)
-                Button(AppLocalizer.string("结束")) { timer.stop() }
-                    .controlSize(.mini)
-                    .fixedSize(horizontal: true, vertical: false)
+            if timer.state == .idle || timer.state == .completed {
+                Text("🍅")
+                    .font(.system(size: 31))
+                Text(AppLocalizer.format("focus.minutes.short", timer.durationMinutes))
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.regularMaterial, in: Capsule())
+                    .offset(y: 28)
+            } else {
+                Text(timer.timeText)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .monospacedDigit()
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(width: dialSize, height: dialSize)
+        .contentShape(Circle())
+        .gesture(durationDrag)
+        .accessibilityValue(
+            timer.state == .idle || timer.state == .completed
+                ? AppLocalizer.format("focus.minutes", timer.durationMinutes)
+                : timer.timeText
+        )
+        .accessibilityHint(
+            timer.state == .idle || timer.state == .completed
+                ? AppLocalizer.string("focus.adjustDurationHint")
+                : ""
+        )
+        .help(
+            timer.state == .idle || timer.state == .completed
+                ? AppLocalizer.string("focus.adjustDurationHint")
+                : AppLocalizer.string("专注中")
+        )
+    }
+
+    private var durationDrag: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                guard timer.state == .idle || timer.state == .completed else { return }
+                if dragStartDuration == nil {
+                    dragStartDuration = timer.durationMinutes
+                }
+
+                let start = dragStartDuration ?? timer.durationMinutes
+                timer.setDurationMinutes(
+                    FocusTimerDurationGesture.adjustedDuration(
+                        startDuration: start,
+                        translation: value.translation
+                    )
+                )
+            }
+            .onEnded { _ in
+                dragStartDuration = nil
+            }
+    }
+}
+
+enum FocusTimerDurationGesture {
+    static let pixelsPerStep: CGFloat = 12
+    static let minutesPerStep = 5
+
+    static func adjustedDuration(startDuration: Int, translation: CGSize) -> Int {
+        let movement = abs(translation.width) > abs(translation.height)
+            ? translation.width
+            : -translation.height
+        let steps = Int((movement / pixelsPerStep).rounded())
+        return startDuration + steps * minutesPerStep
     }
 }
