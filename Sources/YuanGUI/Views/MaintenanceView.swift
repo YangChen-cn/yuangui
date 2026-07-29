@@ -7,7 +7,7 @@ struct MaintenanceView: View {
     @State private var showsInstallerPermissionExplanation = false
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: MaintenanceDesign.sectionSpacing) {
             MaintenanceHeroView(store: store)
             MaintenanceTabBar(selection: $store.selectedTab)
 

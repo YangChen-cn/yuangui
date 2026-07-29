@@ -2,9 +2,10 @@ import SwiftUI
 
 enum MaintenanceDesign {
     static let outerPadding: CGFloat = 20
-    static let sectionSpacing: CGFloat = 14
+    static let sectionSpacing: CGFloat = 16
     static let cardRadius: CGFloat = 18
     static let controlRadius: CGFloat = 11
+    static let tabHeight: CGFloat = 38
     static let rowRadius: CGFloat = 12
     static let rowPadding: CGFloat = 12
 }
@@ -108,21 +109,40 @@ private struct MaintenanceTabButton: View {
 
     var body: some View {
         Button(action: select) {
-            Label(AppLocalizer.string(title), systemImage: systemImage)
-                .font(.callout.weight(isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? .primary : .secondary)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 34)
-                .contentShape(.rect(cornerRadius: MaintenanceDesign.controlRadius))
-        }
-        .buttonStyle(.plain)
-        .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: MaintenanceDesign.controlRadius)
+                tabLabel()
+                    // Keep the active label itself at a fixed height so the
+                    // native glass does not stretch an empty backdrop shape.
                     .modifier(MaintenanceTabGlassModifier())
+                    .overlay {
+                        RoundedRectangle(
+                            cornerRadius: MaintenanceDesign.controlRadius,
+                            style: .continuous
+                        )
+                        .strokeBorder(Color.accentColor.opacity(0.28), lineWidth: 0.8)
+                    }
+            } else {
+                tabLabel()
             }
         }
+        .buttonStyle(.plain)
+        .frame(height: MaintenanceDesign.tabHeight)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityLabel(AppLocalizer.string(title))
+        .accessibilityValue(isSelected ? AppLocalizer.string("当前页") : "")
+    }
+
+    private func tabLabel() -> some View {
+        Label(AppLocalizer.string(title), systemImage: systemImage)
+            .font(.callout.weight(isSelected ? .semibold : .regular))
+            // Accent text remains readable when macOS applies vibrancy to the
+            // selected surface, unlike a low-contrast primary label.
+            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .frame(maxWidth: .infinity)
+            .frame(height: MaintenanceDesign.tabHeight)
+            .contentShape(.rect(cornerRadius: MaintenanceDesign.controlRadius))
     }
 }
 
@@ -131,11 +151,15 @@ private struct MaintenanceTabGlassModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
             content.glassEffect(
-                .regular.tint(Color.accentColor.opacity(0.08)).interactive(),
+                .regular.tint(Color.accentColor.opacity(0.20)).interactive(),
                 in: .rect(cornerRadius: MaintenanceDesign.controlRadius)
             )
         } else {
-            content.background(Color.accentColor.opacity(0.10))
+            content
+                .background(
+                    Color.accentColor.opacity(0.14),
+                    in: .rect(cornerRadius: MaintenanceDesign.controlRadius)
+                )
         }
     }
 }

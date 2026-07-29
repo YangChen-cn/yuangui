@@ -54,7 +54,7 @@ CI 使用 macOS 26 SDK 是因为 `WeatherService.swift` 中有受 `#available(ma
 
 2026-07-25 的原生 Liquid Glass 实验保存在 `liquid-glass` 分支（起点包含 `4b484cc` 与后续 `26a2cfa`）。实验分支中，macOS 26 的番茄钟、状态栏 Footer 开关和音乐主控优先使用系统 `.glass` / `.glassProminent` 按钮；非运行状态的中性按钮必须显式清除继承 tint 并使用 `.primary` 前景，避免亮色桌面上出现白字低对比。页面导航只有选中标签使用固定高度的交互玻璃，不再保留整块人工灰色底板。状态面板外层是一块原生 `regular` 玻璃，天气与正在播放等内容区仅用低透明语义底色分组，避免玻璃套玻璃。背景环境色受角色、智能状态、主题、深色模式和增强对比度约束。现有 NSPanel 继续承担动态页面高度、状态栏锚定、跨 Space、点击外关闭和首击稳定性；未直接替换为 `MenuBarExtra` 或 `NSPopover`。
 
-2026-07-29 的 2.7.0 发布提交为 `2bdee5c`，当前 `main` 与 `origin/main` 均指向该提交；工作区另有更新说明资产拉取、清理台 UI 重构和 CI 缓存的未提交改动。当前应用版本为 2.7.0（Build 16），最近一次本地全量测试为 333 项通过、2 项网络测试跳过。
+2026-07-29 的 2.7.0 发布提交为 `2bdee5c`；当前本地 `main` 在其上新增了清理台 UI、更新说明资产拉取和 CI 缓存提交，远端尚未同步。当前应用版本为 2.7.0（Build 16），最近一次本地全量测试为 333 项通过、2 项网络测试跳过。
 
 Liquid Glass 页签的选中玻璃必须直接修饰固定高度标签，不能把无固有尺寸的透明 `RoundedRectangle` 作为 `ZStack` 子视图再应用 `glassEffectID` / matched geometry；后者在 NSPanel 的弹性提案下会被拉伸并挤掉页面内容。导航总高度由 `DashboardDesign.navigationHeight` 控制，`NSHostingView` 回归测试要求固有高度不超过 44pt。工具页品牌入口可以在同一个 `GlassEffectContainer` 中使用交互玻璃；普通控制保持中性玻璃，仅真正主操作使用强调色。
 
@@ -364,6 +364,12 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 - `MaintenanceView` 不再使用 `GeometryReader` 强行把搜索、排序、白名单、扫描范围和操作按钮塞进一行；清理和卸载均采用两行命令卡，避免英文长文本省略。
 - 空状态、候选列表、卸载列表和操作记录使用单层玻璃内容卡；候选原因、应用警告和文件路径允许最多两行，路径使用中间截断，动态消息保留两行并遵守 Reduce Motion。
 - 清理台仍然只在用户主动扫描/确认后创建扫描器和执行服务，不得在窗口展示时触碰 Desktop、Downloads 等受保护目录。
+
+## 2026-07-29 清理台选中页签对比度
+
+- `MaintenanceTabButton` 的选中玻璃必须把标签绘制在玻璃背景之上，使用明确的 accent 前景、半透明 accent tint 和细描边；不要只使用低对比度 `.primary` 叠在浅色玻璃上，否则 macOS 26 的 vibrancy 会让英文/中文页签都变得模糊。
+- 清理台的页签、命令卡、空状态和列表继续保持单层 Liquid Glass；页签高度由 `MaintenanceDesign.tabHeight` 统一，避免匹配动画或弹性布局拉伸选中背景。
+- 视觉层级参考状态栏的原生玻璃控制和手帐本的 `diarySelection`/卡片间距：主操作使用系统强调玻璃，页面分组使用轻量表面和清晰的选中态，不用大块不透明灰色底板。
 
 ## 2026-07-29 CI 缓存
 
