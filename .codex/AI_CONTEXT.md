@@ -371,6 +371,12 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 - 清理台的页签、命令卡、空状态和列表继续保持单层 Liquid Glass；页签高度由 `MaintenanceDesign.tabHeight` 统一，避免匹配动画或弹性布局拉伸选中背景。
 - 视觉层级参考状态栏的原生玻璃控制和手帐本的 `diarySelection`/卡片间距：主操作使用系统强调玻璃，页面分组使用轻量表面和清晰的选中态，不用大块不透明灰色底板。
 
+## 2026-07-29 桌宠迷你清理屋定位与截断
+
+- 迷你清理/卸载卡片由 `PetAuxiliaryBubblePanel` 承载，和歌词、状态气泡共用跟随桌宠的定位；不要再把它作为 `PetRootView` 内容塞进主 `PetPanel`，否则 quick mode 会改变主窗口尺寸并造成桌宠跳动或越出屏幕。
+- `PetAuxiliaryBubbleView` 的优先级为迷你清理屋、歌词、环境/状态对白；清理卡尺寸由 `PetLayout.auxiliaryBubblePanelSize(scale:showsMaintenance:)` 提供，当前固定为 360pt 宽、紧凑高度。气泡位置继续使用 `auxiliaryBubbleLayout`，靠近屏幕上边缘时自动翻到桌宠下方。
+- 迷你清理屋只展示前四项、摘要和单一主操作；“选择推荐/打开完整清理屋”放入 `More` 菜单，长文件名/应用名最多两行，完整检索和排序交给正式清理屋窗口。按钮和摘要必须使用 `maintenance.quick.*` 双语资源，不能用插值后的中文字符串。
+
 ## 2026-07-29 CI 缓存
 
 - `.github/workflows/tests.yml` 使用 `actions/cache@v5` 缓存 `.build`，缓存键包含 runner、架构、Swift 工具链、`Package.swift`/`Package.resolved` 哈希和提交 SHA；恢复键按依赖和工具链逐级回退。

@@ -31,11 +31,14 @@ enum PetLayout {
     static let basePetHeight: CGFloat = 390
     static let baseBubbleHeight: CGFloat = 116
     static let chatHeight: CGFloat = 214
-    static let maintenanceHeight: CGFloat = 350
+    /// The quick maintenance card is intentionally compact; the full window
+    /// remains the place for searching and reviewing every result.
+    static let maintenanceHeight: CGFloat = 300
     static let minimumBubbleWidth: CGFloat = 288
     static let minimumStatusBubbleWidth: CGFloat = 260
     static let minimumAmbientBubbleWidth: CGFloat = 240
     static let minimumChatWidth: CGFloat = 450
+    static let minimumMaintenanceWidth: CGFloat = 360
     static let compactTopTransparentInset: CGFloat = 58
     static let bottomToolbarButtonWidth: CGFloat = 28
     static let bottomToolbarSpacing: CGFloat = 2
@@ -61,7 +64,17 @@ enum PetLayout {
     }
 
     static func auxiliaryBubblePanelSize(scale: Double) -> CGSize {
-        CGSize(
+        auxiliaryBubblePanelSize(scale: scale, showsMaintenance: false)
+    }
+
+    static func auxiliaryBubblePanelSize(
+        scale: Double,
+        showsMaintenance: Bool
+    ) -> CGSize {
+        if showsMaintenance {
+            return CGSize(width: minimumMaintenanceWidth, height: maintenanceHeight + 18)
+        }
+        return CGSize(
             width: max(statusBubbleWidth(scale: scale), ambientBubbleWidth(scale: scale)),
             height: bubbleHeight(scale: scale) + 18
         )
@@ -95,9 +108,11 @@ enum PetLayout {
         let auxiliaryHeight = showsMaintenance
             ? maintenanceHeight
             : (showsChat ? chatHeight : (showsBubble ? bubbleHeight(scale: scale) : 0))
+        let minimumWidth = showsMaintenance
+            ? minimumMaintenanceWidth
+            : (showsChat ? minimumChatWidth : (showsBubble ? minimumBubbleWidth : 0))
         return CGSize(
-            width: (showsChat || showsMaintenance) ? max(scaledWidth, minimumChatWidth) :
-                (showsBubble ? max(scaledWidth, minimumBubbleWidth) : scaledWidth),
+            width: max(scaledWidth, minimumWidth),
             height: basePetHeight * scale + auxiliaryHeight
         )
     }
@@ -173,6 +188,7 @@ enum PetLayout {
         scale: Double,
         oldShowsChat: Bool,
         newShowsChat: Bool,
+        newShowsMaintenance: Bool = false,
         visibleFrame: CGRect
     ) -> CGRect {
         let visualFrame = petVisualFrame(
@@ -185,6 +201,7 @@ enum PetLayout {
             targetSize: targetSize,
             scale: scale,
             showsChat: newShowsChat,
+            showsMaintenance: newShowsMaintenance,
             visibleFrame: visibleFrame
         )
     }
@@ -194,6 +211,7 @@ enum PetLayout {
         targetSize: CGSize,
         scale: Double,
         showsChat: Bool,
+        showsMaintenance: Bool = false,
         visibleFrame: CGRect
     ) -> CGRect {
         let proposedOrigin = panelOrigin(
@@ -206,7 +224,9 @@ enum PetLayout {
             proposedOrigin,
             panelSize: targetSize,
             visibleFrame: visibleFrame,
-            allowedTopOverflow: showsChat ? 0 : compactTopTransparentInset * scale
+            allowedTopOverflow: (showsChat || showsMaintenance)
+                ? 0
+                : compactTopTransparentInset * scale
         )
         return CGRect(origin: constrained, size: targetSize)
     }
@@ -242,8 +262,12 @@ enum PetLayout {
         )
     }
 
-    static func usablePanelFrame(in visibleFrame: CGRect, showsChat: Bool) -> CGRect {
-        guard showsChat else { return visibleFrame }
+    static func usablePanelFrame(
+        in visibleFrame: CGRect,
+        showsChat: Bool,
+        showsMaintenance: Bool = false
+    ) -> CGRect {
+        guard showsChat || showsMaintenance else { return visibleFrame }
         return visibleFrame.insetBy(dx: chatScreenEdgeInset, dy: chatScreenEdgeInset)
     }
 

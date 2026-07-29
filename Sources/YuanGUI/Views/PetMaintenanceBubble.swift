@@ -1,112 +1,122 @@
 import SwiftUI
 
+/// A deliberately compact companion surface. The full Cleanup House owns
+/// searching, sorting and the complete result list; this card only exposes the
+/// first few safe choices and one clear primary action.
 struct PetMaintenanceBubble: View {
     @ObservedObject var store: MaintenanceStore
+    var placement: PetAuxiliaryBubblePlacement = .abovePet
     @Environment(\.appActions) private var appActions
     @State private var expandedApplicationID: UUID?
 
+    private let bubbleWidth: CGFloat = 360
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 9) {
             header
 
             if let progress = store.scanProgress, progress.total > 0 {
                 ProgressView(value: Double(progress.completed), total: Double(progress.total))
-                    .tint(.pink)
+                    .tint(.accentColor)
+                    .controlSize(.small)
             }
 
             if !store.isScanning && !store.isWorking && !store.quickCompleted {
-                if store.quickMode == .cleanup { cleanupResults }
-                else if store.quickMode == .uninstall { uninstallResults }
+                if store.quickMode == .cleanup {
+                    cleanupResults
+                } else if store.quickMode == .uninstall {
+                    uninstallResults
+                }
             }
 
             if store.quickCompleted {
-                HStack {
-                    Button("查看操作记录") { openMaintenance(tab: 2) }
-                    Spacer()
-                    Button("好呀～") { store.dismissQuick() }
-                        .buttonStyle(.borderedProminent).tint(.pink)
-                }
+                completionFooter
             }
         }
-        .padding(14)
-        .frame(width: 450)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.96), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .background(
-            LinearGradient(colors: [.pink.opacity(0.12), .blue.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 22)
+        .padding(12)
+        .frame(width: bubbleWidth)
+        .yuanPetBubbleGlass(
+            cornerRadius: 18,
+            placement: placement,
+            tailWidth: 24,
+            tailHeight: 12,
+            tailOffset: 8
         )
-        .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.72), lineWidth: 0.9))
-        .shadow(color: .black.opacity(0.16), radius: 16, y: 7)
-        .overlay(alignment: .bottom) {
-            MaintenanceBubbleTail().fill(.regularMaterial).frame(width: 22, height: 11).offset(y: 8)
-        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AppLocalizer.string("清理屋"))
     }
 
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: store.quickMode == .cleanup ? "sparkles" : "shippingbox.fill")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(.pink)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(store.quickMode == .cleanup ? .pink : .blue)
+                .frame(width: 24, height: 24)
+
             Text(AppLocalizer.string(store.message))
-                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .lineLimit(2)
-            Spacer()
-            if store.isScanning || store.isWorking { ProgressView().controlSize(.small) }
-            Button { store.dismissQuick() } label: { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+
+            Spacer(minLength: 4)
+
+            if store.isScanning || store.isWorking {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Button { store.dismissQuick() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(AppLocalizer.string("取消"))
         }
     }
 
     private var cleanupResults: some View {
         VStack(alignment: .leading, spacing: 8) {
             if store.cleanupCandidates.isEmpty {
-                Text("没有发现需要清理的内容～").foregroundStyle(.secondary)
-                emptyFooter(tab: 0)
+                emptyState(
+                    title: "maintenance.quick.emptyCleanup",
+                    tab: 0
+                )
             } else {
-                cleanupSummary
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 7) {
-                        ForEach(MaintenanceRisk.allCases, id: \.self) { risk in
-                            let candidates = store.cleanupCandidates.filter { $0.risk == risk }
-                            if !candidates.isEmpty {
-                                HStack {
-                                    riskBadge(risk)
-                                    Text("\(candidates.count) 项")
-                                        .font(.system(size: 9.5, design: .rounded)).foregroundStyle(.secondary)
-                                }
-                                ForEach(Array(candidates.prefix(4))) { candidate in
-                                    cleanupCandidateRow(candidate)
-                                }
-                            }
+                Text(
+                    AppLocalizer.format(
+                        "maintenance.quick.cleanupSummary",
+                        store.cleanupCandidates.count,
+                        size(store.cleanupCandidates.reduce(0) { $0 + $1.byteCount })
+                    )
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 5) {
+                        ForEach(Array(store.cleanupCandidates.prefix(4))) { candidate in
+                            cleanupCandidateRow(candidate)
+                        }
+                        if store.cleanupCandidates.count > 4 {
+                            Text(
+                                AppLocalizer.format(
+                                    "maintenance.quick.moreCount",
+                                    store.cleanupCandidates.count - 4
+                                )
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
-                .frame(maxHeight: 188)
+                .frame(maxHeight: 142)
 
-                HStack {
-                    Button("全选推荐") { store.selectRecommendedCleanup() }
-                    Button("打开完整清理屋") { openMaintenance(tab: 0) }
-                    Spacer()
-                    Button("确认清理") { Task { await store.cleanSelected() } }
-                        .buttonStyle(.borderedProminent).tint(.pink)
-                        .disabled(store.selectedCleanupIDs.isEmpty)
-                }
+                actionBar(tab: 0)
             }
         }
-    }
-
-    private var cleanupSummary: some View {
-        let permanent = store.selectedCleanup.filter { $0.disposition == .permanent }
-        let trash = store.selectedCleanup.filter { $0.disposition == .recycle }
-        return HStack(spacing: 12) {
-            Label("永久释放 \(size(permanent.reduce(0) { $0 + $1.byteCount }))", systemImage: "sparkles")
-            Label("废纸篓 \(size(trash.reduce(0) { $0 + $1.byteCount }))", systemImage: "trash")
-            Spacer()
-        }
-        .font(.system(size: 9.5, weight: .medium, design: .rounded))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(.white.opacity(0.35), in: RoundedRectangle(cornerRadius: 9))
     }
 
     private func cleanupCandidateRow(_ candidate: CleanupCandidate) -> some View {
@@ -120,99 +130,141 @@ struct PetMaintenanceBubble: View {
             HStack(spacing: 7) {
                 Image(systemName: candidate.disposition == .permanent ? "sparkles" : "trash")
                     .foregroundStyle(candidate.disposition == .permanent ? .orange : .blue)
+                    .frame(width: 16)
+
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(candidate.displayName).font(.system(size: 10.5, weight: .semibold, design: .rounded)).lineLimit(1)
-                    Text("\(candidate.category.title) · \(AppLocalizer.string(candidate.reason))")
-                        .font(.system(size: 8.5, design: .rounded)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(candidate.displayName)
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(candidate.category.title)
+                        .font(.system(size: 8.5, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                Spacer()
-                Text(size(candidate.byteCount)).font(.system(size: 9.5, design: .rounded)).foregroundStyle(.secondary)
+                .layoutPriority(1)
+
+                Spacer(minLength: 5)
+
+                Text(size(candidate.byteCount))
+                    .font(.system(size: 9.5, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .toggleStyle(.checkbox)
         .disabled(candidate.risk == .protected)
+        .padding(.vertical, 2)
     }
 
     private var uninstallResults: some View {
         VStack(alignment: .leading, spacing: 8) {
             if store.applications.isEmpty {
-                Text("没有发现可列出的第三方软件～").foregroundStyle(.secondary)
-                emptyFooter(tab: 1)
+                emptyState(
+                    title: "maintenance.quick.emptyUninstall",
+                    tab: 1
+                )
             } else {
-                HStack {
-                    Label("已选 \(store.selectedApplications.count) 个应用", systemImage: "checkmark.circle")
-                    Text("约 \(size(store.selectedUninstallBytes))")
-                    Spacer()
-                    Text("展开可逐组件选择").foregroundStyle(.secondary)
-                }
-                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                Text(
+                    AppLocalizer.format(
+                        "maintenance.quick.uninstallSummary",
+                        store.selectedApplications.count,
+                        size(store.selectedUninstallBytes)
+                    )
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
-                ScrollView {
-                    LazyVStack(spacing: 7) {
-                        ForEach(Array(store.visibleApplications.prefix(6))) { application in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 5) {
+                        ForEach(Array(store.visibleApplications.prefix(4))) { application in
                             applicationCard(application)
+                        }
+                        if store.visibleApplications.count > 4 {
+                            Text(
+                                AppLocalizer.format(
+                                    "maintenance.quick.moreCount",
+                                    store.visibleApplications.count - 4
+                                )
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
-                .frame(maxHeight: 218)
+                .frame(maxHeight: 150)
 
-                HStack {
-                    Button("打开完整清理屋") { openMaintenance(tab: 1) }
-                    Spacer()
-                    Button("确认移入废纸篓") { Task { await store.uninstallSelected() } }
-                        .buttonStyle(.borderedProminent).tint(.pink)
-                        .disabled(store.selectedApplicationIDs.isEmpty)
-                }
+                actionBar(tab: 1)
             }
         }
     }
 
     private func applicationCard(_ application: ApplicationCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 7) {
                 Toggle("", isOn: Binding(
                     get: { store.selectedApplicationIDs.contains(application.id) },
                     set: { store.setApplicationSelected(application, selected: $0) }
                 ))
-                .labelsHidden().toggleStyle(.checkbox)
+                .labelsHidden()
+                .toggleStyle(.checkbox)
                 .disabled(application.removalBlocked)
 
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
-                        Text(application.name).font(.system(size: 10.5, weight: .semibold, design: .rounded)).lineLimit(1)
-                        if application.removalBlocked { riskBadge(.protected) }
-                        else if application.components.contains(where: { $0.risk == .review }) { riskBadge(.review) }
+                        Text(application.name)
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if application.removalBlocked {
+                            riskBadge(.protected)
+                        } else if application.components.contains(where: { $0.risk == .review }) {
+                            riskBadge(.review)
+                        }
                     }
-                    Text("\(application.management.title) · \(application.components.count) 个组件")
-                        .font(.system(size: 8.5, design: .rounded)).foregroundStyle(.secondary)
+                    Text(
+                        AppLocalizer.format(
+                            "maintenance.quick.components",
+                            application.components.count
+                        )
+                    )
+                    .font(.system(size: 8.5, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                Spacer()
-                Text(size(application.reclaimableByteCount))
-                    .font(.system(size: 9.5, design: .rounded)).foregroundStyle(.secondary)
-                Button {
-                    expandedApplicationID = expandedApplicationID == application.id ? nil : application.id
-                } label: {
-                    Image(systemName: expandedApplicationID == application.id ? "chevron.up.circle" : "chevron.down.circle")
-                }
-                .buttonStyle(.plain)
-            }
+                .layoutPriority(1)
 
-            if let warning = application.warnings.first {
-                Label(warning, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 8.5, design: .rounded)).foregroundStyle(.orange).lineLimit(2)
+                Spacer(minLength: 5)
+
+                Text(size(application.reclaimableByteCount))
+                    .font(.system(size: 9.5, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if !application.components.isEmpty {
+                    Button {
+                        expandedApplicationID = expandedApplicationID == application.id ? nil : application.id
+                    } label: {
+                        Image(systemName: expandedApplicationID == application.id ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(AppLocalizer.string("展开可逐组件选择"))
+                }
             }
 
             if expandedApplicationID == application.id {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(application.components.prefix(6))) { component in
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(application.components.prefix(3))) { component in
                         componentRow(component, in: application)
                     }
                 }
-                .padding(.leading, 21)
+                .padding(.leading, 22)
             }
         }
-        .padding(7)
-        .background(.white.opacity(0.32), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.vertical, 3)
     }
 
     private func componentRow(_ component: UninstallComponent, in application: ApplicationCandidate) -> some View {
@@ -221,11 +273,13 @@ struct PetMaintenanceBubble: View {
             set: { store.setComponentSelected(component, in: application, selected: $0) }
         )) {
             HStack(spacing: 5) {
-                Text(component.kind.title).lineLimit(1)
+                Text(component.kind.title)
+                    .lineLimit(1)
                 riskBadge(component.risk)
-                Text(component.confidence.title).foregroundStyle(.secondary)
-                Spacer()
-                Text(size(component.byteCount)).foregroundStyle(.secondary)
+                Spacer(minLength: 3)
+                Text(size(component.byteCount))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .font(.system(size: 8.5, design: .rounded))
         }
@@ -233,27 +287,127 @@ struct PetMaintenanceBubble: View {
         .disabled(component.kind == .application || component.risk == .protected || application.removalBlocked)
     }
 
+    private func actionBar(tab: Int) -> some View {
+        HStack(spacing: 6) {
+            Menu {
+                if tab == 0 {
+                    Button {
+                        store.selectRecommendedCleanup()
+                    } label: {
+                        Label(
+                            AppLocalizer.string("maintenance.quick.select"),
+                            systemImage: "checkmark.circle"
+                        )
+                    }
+                }
+                Button {
+                    openMaintenance(tab: tab)
+                } label: {
+                    Label(
+                        AppLocalizer.string("maintenance.quick.open"),
+                        systemImage: "arrow.up.right.square"
+                    )
+                }
+            } label: {
+                Label(
+                    AppLocalizer.string("maintenance.quick.more"),
+                    systemImage: "ellipsis"
+                )
+            }
+            .yuanSystemGlassButton()
+            .controlSize(.small)
+
+            Spacer(minLength: 0)
+
+            Button {
+                if tab == 0 {
+                    Task { await store.cleanSelected() }
+                } else {
+                    Task { await store.uninstallSelected() }
+                }
+            } label: {
+                Label(
+                    AppLocalizer.string(
+                        tab == 0
+                            ? "maintenance.quick.confirmCleanup"
+                            : "maintenance.quick.confirmUninstall"
+                    ),
+                    systemImage: tab == 0 ? "sparkles" : "trash"
+                )
+            }
+            .yuanSystemGlassButton(isProminent: true)
+            .controlSize(.small)
+            .disabled(tab == 0 ? store.selectedCleanupIDs.isEmpty : store.selectedApplicationIDs.isEmpty)
+        }
+    }
+
+    private func emptyState(title: String, tab: Int) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(AppLocalizer.string(title))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Button {
+                    openMaintenance(tab: tab)
+                } label: {
+                    Label(
+                        AppLocalizer.string("maintenance.quick.open"),
+                        systemImage: "arrow.up.right.square"
+                    )
+                }
+                .yuanSystemGlassButton()
+                .controlSize(.small)
+
+                Spacer(minLength: 0)
+
+                Button(AppLocalizer.string("maintenance.quick.dismiss")) {
+                    store.dismissQuick()
+                }
+                .yuanSystemGlassButton(isProminent: true)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private var completionFooter: some View {
+        HStack(spacing: 6) {
+            Button {
+                openMaintenance(tab: 2)
+            } label: {
+                Label(
+                    AppLocalizer.string("maintenance.quick.activity"),
+                    systemImage: "clock.arrow.circlepath"
+                )
+            }
+            .yuanSystemGlassButton()
+            .controlSize(.small)
+
+            Spacer(minLength: 0)
+
+            Button(AppLocalizer.string("maintenance.quick.dismiss")) {
+                store.dismissQuick()
+            }
+            .yuanSystemGlassButton(isProminent: true)
+            .controlSize(.small)
+        }
+    }
+
     private func riskBadge(_ risk: MaintenanceRisk) -> some View {
         Text(risk.title)
             .font(.system(size: 8, weight: .bold, design: .rounded))
             .foregroundStyle(riskColor(risk))
-            .padding(.horizontal, 5).padding(.vertical, 2)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
             .background(riskColor(risk).opacity(0.12), in: Capsule())
     }
 
     private func riskColor(_ risk: MaintenanceRisk) -> Color {
         switch risk {
-        case .recommended: return .green
-        case .review: return .orange
-        case .protected: return .red
-        }
-    }
-
-    private func emptyFooter(tab: Int) -> some View {
-        HStack {
-            Button("打开完整清理屋") { openMaintenance(tab: tab) }
-            Spacer()
-            Button("关闭") { store.dismissQuick() }
+        case .recommended: .green
+        case .review: .orange
+        case .protected: .red
         }
     }
 
@@ -264,15 +418,5 @@ struct PetMaintenanceBubble: View {
     private func openMaintenance(tab: Int) {
         store.dismissQuick()
         appActions.open(.maintenance(tab: tab))
-    }
-}
-
-private struct MaintenanceBubbleTail: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: rect.midX, y: rect.maxY))
-            path.closeSubpath()
-        }
     }
 }

@@ -792,16 +792,68 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testMaintenanceBubbleHasSpaceForGroupedResults() {
+    func testMaintenanceBubbleUsesCompactQuickSurface() {
         let normal = PetLayout.panelSize(scale: PetLayout.defaultScale, showsBubble: false)
         let maintenance = PetLayout.panelSize(
             scale: PetLayout.defaultScale,
             showsBubble: false,
             showsMaintenance: true
         )
-        XCTAssertGreaterThanOrEqual(maintenance.width, 450)
+        XCTAssertGreaterThanOrEqual(maintenance.width, PetLayout.minimumMaintenanceWidth)
         XCTAssertEqual(maintenance.height - normal.height, PetLayout.maintenanceHeight)
-        XCTAssertGreaterThanOrEqual(PetLayout.maintenanceHeight, 340)
+        XCTAssertLessThan(PetLayout.maintenanceHeight, 340)
+
+        let quickBubble = PetLayout.auxiliaryBubblePanelSize(
+            scale: PetLayout.defaultScale,
+            showsMaintenance: true
+        )
+        XCTAssertEqual(quickBubble.width, PetLayout.minimumMaintenanceWidth)
+        XCTAssertEqual(quickBubble.height, PetLayout.maintenanceHeight + 18)
+    }
+
+    func testMaintenanceResizeClampsAndRestoresCompactOriginAtDisplayEdges() {
+        let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
+        let scale = PetLayout.defaultScale
+        let compactSize = PetLayout.panelSize(scale: scale, showsBubble: false)
+        let maintenanceSize = PetLayout.panelSize(
+            scale: scale,
+            showsBubble: false,
+            showsMaintenance: true
+        )
+        let usable = PetLayout.usablePanelFrame(
+            in: visible,
+            showsChat: false,
+            showsMaintenance: true
+        )
+        let originalOrigins = [
+            CGPoint(x: visible.minX - 60, y: 120),
+            CGPoint(x: visible.maxX - compactSize.width + 60, y: 120)
+        ]
+
+        for originalOrigin in originalOrigins {
+            let expanded = PetLayout.resizedPanelFrame(
+                from: CGRect(origin: originalOrigin, size: compactSize),
+                targetSize: maintenanceSize,
+                scale: scale,
+                oldShowsChat: false,
+                newShowsChat: false,
+                newShowsMaintenance: true,
+                visibleFrame: usable
+            )
+            XCTAssertGreaterThanOrEqual(expanded.minX, usable.minX)
+            XCTAssertLessThanOrEqual(expanded.maxX, usable.maxX)
+            XCTAssertGreaterThanOrEqual(expanded.minY, usable.minY)
+            XCTAssertLessThanOrEqual(expanded.maxY, usable.maxY)
+
+            let restored = PetLayout.restoredCompactOrigin(
+                originalOrigin,
+                panelSize: compactSize,
+                scale: scale,
+                visibleFrame: visible
+            )
+            XCTAssertEqual(restored.x, originalOrigin.x, accuracy: 0.001)
+            XCTAssertEqual(restored.y, originalOrigin.y, accuracy: 0.001)
+        }
     }
 
     func testEdgeDockingDetectsEveryScreenSideAndIgnoresCenter() {

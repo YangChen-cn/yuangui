@@ -16,7 +16,12 @@ struct PetAuxiliaryBubbleView: View {
 
     var body: some View {
         Group {
-            if showsMusicLyric, let lyric = music.lyricsStore.currentLine?.text {
+            if maintenance.quickMode != nil {
+                PetMaintenanceBubble(
+                    store: maintenance,
+                    placement: presentation.placement
+                )
+            } else if showsMusicLyric, let lyric = music.lyricsStore.currentLine?.text {
                 PetMusicLyricBubble(
                     text: lyric,
                     alertText: musicAlertText,

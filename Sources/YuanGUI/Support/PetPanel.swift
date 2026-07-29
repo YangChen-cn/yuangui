@@ -159,7 +159,7 @@ final class PetPanelController {
             scale: store.petScale,
             showsBubble: false,
             showsChat: chat.isPresented,
-            showsMaintenance: maintenance.quickMode != nil
+            showsMaintenance: false
         )
         panel = PetPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -252,7 +252,6 @@ final class PetPanelController {
             .removeDuplicates()
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.scheduleLayoutUpdate()
                     self?.updateAuxiliaryBubble()
                 }
             }
@@ -627,13 +626,15 @@ final class PetPanelController {
         let screen = screenForExpandedPet() ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame
         let usableFrame = visibleFrame.map {
-            PetLayout.usablePanelFrame(in: $0, showsChat: chat.isPresented)
+            PetLayout.usablePanelFrame(
+                in: $0,
+                showsChat: chat.isPresented
+            )
         }
         var targetSize = PetLayout.panelSize(
             scale: store.petScale,
             showsBubble: false,
-            showsChat: chat.isPresented,
-            showsMaintenance: maintenance.quickMode != nil
+            showsChat: chat.isPresented
         )
         if let usableFrame {
             // Keep a fixed-width chat surface from extending past a narrow
@@ -834,7 +835,10 @@ final class PetPanelController {
         auxiliaryBubbleUnloadTask?.cancel()
         auxiliaryBubbleUnloadTask = nil
         let bubblePanel = ensureAuxiliaryBubblePanel()
-        let size = PetLayout.auxiliaryBubblePanelSize(scale: store.petScale)
+        let size = PetLayout.auxiliaryBubblePanelSize(
+            scale: store.petScale,
+            showsMaintenance: maintenance.quickMode != nil
+        )
         if bubblePanel.frame.size != size {
             bubblePanel.setContentSize(size)
         }
@@ -844,7 +848,8 @@ final class PetPanelController {
     }
 
     private var shouldShowAuxiliaryBubble: Bool {
-        guard maintenance.quickMode == nil, !chat.isPresented else { return false }
+        guard !chat.isPresented else { return false }
+        if maintenance.quickMode != nil { return true }
         return store.ambientMessage != nil
             || store.shouldShowPetBubble
             || Self.showsMusicLyric(
@@ -967,9 +972,9 @@ final class PetPanelController {
             scale: store.petScale,
             showsBubble: false,
             showsChat: chat.isPresented,
-            showsMaintenance: maintenance.quickMode != nil
+            showsMaintenance: false
         )
-        let allowsCompactOverflow = !chat.isPresented && maintenance.quickMode == nil
+        let allowsCompactOverflow = !chat.isPresented
         let horizontalOverflow = PetLayout.compactHorizontalOverflow(scale: store.petScale)
         panel.allowedLeftOverflow = allowsCompactOverflow ? horizontalOverflow.left : 0
         panel.allowedRightOverflow = allowsCompactOverflow ? horizontalOverflow.right : 0
@@ -1000,8 +1005,7 @@ final class PetPanelController {
                 let compactSize = PetLayout.panelSize(
                     scale: store.petScale,
                     showsBubble: false,
-                    showsChat: false,
-                    showsMaintenance: maintenance.quickMode != nil
+                    showsChat: false
                 )
                 let compactOrigin = PetLayout.panelOrigin(
                     preservingPetVisualFrame: petVisualFrame,

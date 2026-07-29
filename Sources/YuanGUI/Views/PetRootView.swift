@@ -32,8 +32,7 @@ struct PetRootView: View {
         PetLayout.panelSize(
             scale: store.petScale,
             showsBubble: false,
-            showsChat: chat.isPresented,
-            showsMaintenance: maintenance.quickMode != nil
+            showsChat: chat.isPresented
         )
     }
 
@@ -57,13 +56,7 @@ struct PetRootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if maintenance.quickMode != nil {
-                PetMaintenanceBubble(store: maintenance)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 291 * scale + 4)
-                    .zIndex(6)
-            } else if chat.isPresented {
+            if chat.isPresented {
                 if chat.latestReply != nil || chat.isSending || chat.errorMessage != nil {
                     PetReplyBubble(chat: chat, pet: store)
                         .transition(.move(edge: .top).combined(with: .opacity))
