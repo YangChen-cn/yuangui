@@ -809,6 +809,14 @@ final class PetStoreTests: XCTestCase {
         )
         XCTAssertEqual(quickBubble.width, PetLayout.minimumMaintenanceWidth)
         XCTAssertEqual(quickBubble.height, PetLayout.maintenanceHeight + 18)
+
+        let scanningBubble = PetLayout.auxiliaryBubblePanelSize(
+            scale: PetLayout.defaultScale,
+            showsMaintenance: true,
+            maintenanceIsBusy: true
+        )
+        XCTAssertEqual(scanningBubble.height, PetLayout.maintenanceScanningHeight + 18)
+        XCTAssertLessThan(scanningBubble.height, quickBubble.height)
     }
 
     func testMaintenanceResizeClampsAndRestoresCompactOriginAtDisplayEdges() {

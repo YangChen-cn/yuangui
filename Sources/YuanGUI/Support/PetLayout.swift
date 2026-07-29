@@ -34,6 +34,10 @@ enum PetLayout {
     /// The quick maintenance card is intentionally compact; the full window
     /// remains the place for searching and reviewing every result.
     static let maintenanceHeight: CGFloat = 300
+    /// Scanning only renders a header and progress bar. Reserving the final
+    /// results-card height here would place that small card far away from the
+    /// pet when the auxiliary panel flips below it near the top edge.
+    static let maintenanceScanningHeight: CGFloat = 126
     static let minimumBubbleWidth: CGFloat = 288
     static let minimumStatusBubbleWidth: CGFloat = 260
     static let minimumAmbientBubbleWidth: CGFloat = 240
@@ -69,10 +73,12 @@ enum PetLayout {
 
     static func auxiliaryBubblePanelSize(
         scale: Double,
-        showsMaintenance: Bool
+        showsMaintenance: Bool,
+        maintenanceIsBusy: Bool = false
     ) -> CGSize {
         if showsMaintenance {
-            return CGSize(width: minimumMaintenanceWidth, height: maintenanceHeight + 18)
+            let height = maintenanceIsBusy ? maintenanceScanningHeight : maintenanceHeight
+            return CGSize(width: minimumMaintenanceWidth, height: height + 18)
         }
         return CGSize(
             width: max(statusBubbleWidth(scale: scale), ambientBubbleWidth(scale: scale)),

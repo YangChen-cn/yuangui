@@ -26,7 +26,7 @@ struct FocusTimerControlView: View {
                         Button("\(minutes)") { timer.setDurationMinutes(minutes) }
                             .buttonStyle(.bordered)
                             .tint(timer.durationMinutes == minutes ? .red : .secondary)
-                            .controlSize(.small)
+                            .controlSize(.mini)
                     }
                     Spacer()
                     Stepper(
@@ -38,6 +38,7 @@ struct FocusTimerControlView: View {
                         in: FocusTimerStore.minimumDurationMinutes...FocusTimerStore.maximumDurationMinutes,
                         step: 5
                     )
+                        .controlSize(.mini)
                         .fixedSize()
                 }
             } else {
@@ -59,7 +60,7 @@ struct FocusTimerControlView: View {
             }
         }
         .padding(16)
-        .frame(width: 380)
+        .frame(width: 320)
         .background(
             LinearGradient(
                 colors: [.red.opacity(0.13), .orange.opacity(0.07), .clear],
