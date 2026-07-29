@@ -58,6 +58,14 @@ struct GitHubRelease: Decodable, Equatable {
     var dmgAsset: GitHubReleaseAsset? {
         assets.first { $0.name.lowercased().hasSuffix(".dmg") }
     }
+
+    func releaseNotesAsset(for language: AppLanguage) -> GitHubReleaseAsset? {
+        let effectiveLanguage = language == .system ? AppLocalizer.effectiveLanguage : language
+        let preferredName = effectiveLanguage == .simplifiedChinese
+            ? "RELEASE_NOTES.zh-CN.md"
+            : "RELEASE_NOTES.md"
+        return assets.first { $0.name.caseInsensitiveCompare(preferredName) == .orderedSame }
+    }
 }
 
 enum SemanticVersion {
@@ -190,6 +198,26 @@ actor AppUpdateService {
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
     }
 
+    func releaseNotes(for release: GitHubRelease, language: AppLanguage = AppLocalizer.effectiveLanguage) async throws -> String {
+        guard let asset = release.releaseNotesAsset(for: language) else {
+            return release.body
+        }
+        guard asset.downloadURL.scheme == "https", asset.downloadURL.host == "github.com" else {
+            throw AppUpdateError.invalidDownloadURL
+        }
+
+        var request = URLRequest(url: asset.downloadURL, timeoutInterval: 20)
+        request.setValue("YuanGUI/\(AppVersionInfo.version)", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AppUpdateError.invalidResponse
+        }
+        guard let notes = String(data: data, encoding: .utf8) else {
+            throw AppUpdateError.invalidResponse
+        }
+        return notes
+    }
+
     func prepare(_ release: GitHubRelease) async throws -> PreparedAppUpdate {
         guard let asset = release.dmgAsset else { throw AppUpdateError.dmgMissing }
         guard asset.downloadURL.scheme == "https", asset.downloadURL.host == "github.com" else {
@@ -291,6 +319,7 @@ final class AppUpdateStore: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var latestRelease: GitHubRelease?
+    @Published private(set) var latestReleaseNotes: String?
     private let service: AppUpdateService
     private var terminateForUpdate: @MainActor () async -> Bool = { false }
 
@@ -307,10 +336,12 @@ final class AppUpdateStore: ObservableObject {
     func check() {
         guard !isBusy else { return }
         state = .checking
+        latestReleaseNotes = nil
         Task {
             do {
                 let release = try await service.latestRelease()
                 latestRelease = release
+                latestReleaseNotes = (try? await service.releaseNotes(for: release)) ?? release.body
                 state = SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) ? .available : .upToDate
             } catch {
                 state = .failed(error.localizedDescription)

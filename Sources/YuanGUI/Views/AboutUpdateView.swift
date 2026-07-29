@@ -71,7 +71,7 @@ struct AboutUpdateView: View {
                                         .font(.caption)
                                 }
                             }
-                            releaseNotes(release.body)
+                            releaseNotes(updater.latestReleaseNotes ?? release.body)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

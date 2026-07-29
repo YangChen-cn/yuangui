@@ -8,14 +8,8 @@ struct MaintenanceView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            maintenanceBubble
-            Picker("清理分类", selection: $store.selectedTab) {
-                Label("空间清理", systemImage: "sparkles").tag(0)
-                Label("软件卸载", systemImage: "shippingbox").tag(1)
-                Label("操作记录", systemImage: "clock.arrow.circlepath").tag(2)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            MaintenanceHeroView(store: store)
+            MaintenanceTabBar(selection: $store.selectedTab)
 
             Group {
                 if store.selectedTab == 0 { cleanupPage }
@@ -24,46 +18,22 @@ struct MaintenanceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(16)
+        .padding(MaintenanceDesign.outerPadding)
         .frame(minWidth: 760, minHeight: 570)
-        .background(.regularMaterial)
-    }
-
-    private var maintenanceBubble: some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 12) {
-                Image(systemName: store.isScanning ? "cat.fill" : "heart.circle.fill")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(.pink)
-                    .symbolEffect(.bounce, value: store.message)
-                Text(AppLocalizer.string(store.message)).font(.system(size: 14, weight: .bold, design: .rounded))
-                Spacer()
-                if store.isScanning || store.isWorking { ProgressView().controlSize(.small) }
-            }
-            if let progress = store.scanProgress, progress.total > 0 {
-                ProgressView(value: Double(progress.completed), total: Double(progress.total))
-                    .tint(.pink)
-            }
-        }
-        .padding(14)
-        .background(
-            LinearGradient(colors: [.pink.opacity(0.16), .purple.opacity(0.10)], startPoint: .leading, endPoint: .trailing),
-            in: RoundedRectangle(cornerRadius: 20)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.55)))
+        .background(.clear)
     }
 
     private var commonToolbar: some View {
         HStack(spacing: 8) {
             TextField("搜索名称、路径或 bundle ID", text: $store.searchText)
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 270)
+                .frame(maxWidth: 340)
             Picker("排序", selection: $store.sortOrder) {
                 ForEach(MaintenanceStore.SortOrder.allCases) { order in
                     Text(order.title).tag(order)
                 }
             }
-            .frame(width: 125)
+            .frame(width: 140)
         }
     }
 
@@ -80,9 +50,11 @@ struct MaintenanceView: View {
                     Button(AppLocalizer.string("maintenance.welcome.start")) {
                         Task { await store.scanCleanup() }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .yuanSystemGlassButton(isProminent: true)
                     .disabled(store.isScanning || store.isWorking)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .yuanLiquidGlassSurface(.clear, cornerRadius: MaintenanceDesign.cardRadius)
             } else {
                 List {
                     Section("分类摘要") {
@@ -108,70 +80,65 @@ struct MaintenanceView: View {
                         }
                     }
                 }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .yuanLiquidGlassSurface(.regular, cornerRadius: MaintenanceDesign.cardRadius)
             }
         }
     }
 
     private var cleanupToolbar: some View {
-        GeometryReader { proxy in
-            Group {
-                if proxy.size.width >= 940 {
-                    fullCleanupToolbar
-                } else {
-                    compactCleanupToolbar
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        }
-        .frame(height: 34)
-    }
-
-    private var fullCleanupToolbar: some View {
-        HStack(spacing: 8) {
-            scanCleanupButton
-            Button("全选推荐项") { store.selectRecommendedCleanup() }
-                .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
-            commonToolbar
-            Spacer(minLength: 0)
-            selectedCleanupSize
-            whitelistMenu
-            scanScopeMenu
-            startCleanupButton
-        }
-    }
-
-    private var compactCleanupToolbar: some View {
-        HStack(spacing: 8) {
-            scanCleanupButton
-            Menu {
-                Button("全选推荐项") { store.selectRecommendedCleanup() }
-                    .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
-                Picker("排序", selection: $store.sortOrder) {
-                    ForEach(MaintenanceStore.SortOrder.allCases) { order in
-                        Text(order.title).tag(order)
-                    }
+        MaintenanceCommandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 9) {
+                    scanCleanupButton
+                    Button("全选推荐项") { store.selectRecommendedCleanup() }
+                        .yuanSystemGlassButton()
+                        .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
+                    Spacer(minLength: 8)
+                    selectedCleanupSize
+                    startCleanupButton
                 }
                 Divider()
-                whitelistMenu
-                scanScopeMenu
-            } label: {
-                Label(AppLocalizer.string("maintenance.ui.options"), systemImage: "slider.horizontal.3")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 9) {
+                        commonToolbar
+                        Spacer(minLength: 8)
+                        whitelistMenu
+                        scanScopeMenu
+                    }
+                    HStack(spacing: 9) {
+                        commonToolbar
+                        Spacer(minLength: 8)
+                        compactOptionsMenu
+                    }
+                }
             }
-            Spacer(minLength: 0)
-            selectedCleanupSize
-            startCleanupButton
         }
+    }
+
+    private var compactOptionsMenu: some View {
+        Menu {
+            Button("全选推荐项") { store.selectRecommendedCleanup() }
+                .disabled(store.cleanupCandidates.isEmpty || store.isWorking)
+            Divider()
+            whitelistMenu
+            scanScopeMenu
+        } label: {
+            Label(AppLocalizer.string("maintenance.ui.options"), systemImage: "slider.horizontal.3")
+        }
+        .yuanSystemGlassButton()
     }
 
     private var scanCleanupButton: some View {
         Button("扫描可清理空间") { Task { await store.scanCleanup() } }
-            .buttonStyle(.borderedProminent)
-            .tint(.pink)
+            .yuanSystemGlassButton(isProminent: true)
             .disabled(store.isScanning || store.isWorking)
     }
 
     private var startCleanupButton: some View {
         Button("开始清理…") { confirmCleanup() }
+            .yuanSystemGlassButton(isProminent: true)
             .disabled(store.selectedCleanupIDs.isEmpty || store.isWorking)
     }
 
@@ -180,7 +147,7 @@ struct MaintenanceView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
     }
 
     private var whitelistMenu: some View {
@@ -199,6 +166,7 @@ struct MaintenanceView: View {
         } label: {
             Label("白名单", systemImage: "hand.raised")
         }
+        .yuanSystemGlassButton()
     }
 
     private var scanScopeMenu: some View {
@@ -236,6 +204,7 @@ struct MaintenanceView: View {
         } label: {
             Label("扫描范围", systemImage: "folder.badge.gearshape")
         }
+        .yuanSystemGlassButton()
         .alert(
             AppLocalizer.string("maintenance.installerPermission.title"),
             isPresented: $showsInstallerPermissionExplanation
@@ -275,12 +244,25 @@ struct MaintenanceView: View {
                 .foregroundStyle(candidate.disposition == .permanent ? .orange : .blue)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(candidate.displayName).font(.headline).lineLimit(1)
+                    Text(candidate.displayName)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(candidate.confidence.title).font(.caption2).foregroundStyle(.secondary)
                 }
-                Text(AppLocalizer.string(candidate.reason)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Text(candidate.url.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                Text(AppLocalizer.string(candidate.reason))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(candidate.url.path)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .layoutPriority(1)
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
                 Text(size(candidate.byteCount)).monospacedDigit()
@@ -291,25 +273,37 @@ struct MaintenanceView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
+        .padding(MaintenanceDesign.rowPadding)
+        .background(Color.primary.opacity(0.035), in: .rect(cornerRadius: MaintenanceDesign.rowRadius))
         .contextMenu { Button("永不清理此项目") { store.addToWhitelist(candidate) } }
     }
 
     private var uninstallPage: some View {
         VStack(spacing: 10) {
-            HStack {
-                Button("扫描已安装软件") { Task { await store.scanApplications() } }
-                    .buttonStyle(.borderedProminent).tint(.pink)
-                    .disabled(store.isScanning || store.isWorking)
-                commonToolbar
-                Spacer()
-                Text(AppLocalizer.format("maintenance.ui.selectedSize", size(store.selectedUninstallBytes)))
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("移入废纸篓…") { confirmUninstall() }
-                    .disabled(store.selectedApplicationIDs.isEmpty || store.isWorking)
+            MaintenanceCommandSurface {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 9) {
+                        Button("扫描已安装软件") { Task { await store.scanApplications() } }
+                            .yuanSystemGlassButton(isProminent: true)
+                            .disabled(store.isScanning || store.isWorking)
+                        Spacer(minLength: 8)
+                        Text(AppLocalizer.format("maintenance.ui.selectedSize", size(store.selectedUninstallBytes)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .layoutPriority(1)
+                        Button("移入废纸篓…") { confirmUninstall() }
+                            .yuanSystemGlassButton(isProminent: true)
+                            .disabled(store.selectedApplicationIDs.isEmpty || store.isWorking)
+                    }
+                    Divider()
+                    commonToolbar
+                }
             }
 
             if store.applications.isEmpty {
                 ContentUnavailableView("等待扫描", systemImage: "shippingbox", description: Text("系统应用、共享数据与受管理软件会自动受到保护"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .yuanLiquidGlassSurface(.clear, cornerRadius: MaintenanceDesign.cardRadius)
             } else {
                 List {
                     ForEach(store.visibleApplications) { application in
@@ -330,6 +324,9 @@ struct MaintenanceView: View {
                         }
                     }
                 }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .yuanLiquidGlassSurface(.regular, cornerRadius: MaintenanceDesign.cardRadius)
             }
         }
     }
@@ -346,17 +343,28 @@ struct MaintenanceView: View {
                 .resizable().frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(application.name).font(.headline)
+                    Text(application.name)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     if application.removalBlocked {
                         Label("受保护", systemImage: "lock.fill").font(.caption).foregroundStyle(.orange)
                     }
                 }
                 Text("\(application.bundleIdentifier) · \(application.source.title) · \(application.management.title)")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let warning = application.warnings.first {
-                    Text(warning).font(.caption2).foregroundStyle(.orange).lineLimit(1)
+                    Text(warning)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .layoutPriority(1)
             Spacer()
             VStack(alignment: .trailing) {
                 Text(size(application.reclaimableByteCount)).monospacedDigit()
@@ -377,14 +385,26 @@ struct MaintenanceView: View {
                 .foregroundStyle(component.risk == .protected ? .orange : .secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(component.kind.title) · \(component.risk.title) · \(component.confidence.title)")
-                    .font(.caption).fontWeight(.medium)
-                Text(AppLocalizer.string(component.reason)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                Text(component.url.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+                Text(AppLocalizer.string(component.reason))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(component.url.path)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .layoutPriority(1)
             Spacer()
             Text(size(component.byteCount)).font(.caption).monospacedDigit()
         }
         .padding(.leading, 28)
+        .padding(.vertical, 7)
     }
 
     private var operationsPage: some View {
@@ -393,9 +413,12 @@ struct MaintenanceView: View {
                 Text("所有逐项记录仅保存在本机").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("打开废纸篓") { store.openTrash() }
+                    .yuanSystemGlassButton()
             }
             if store.operations.isEmpty {
                 ContentUnavailableView("还没有清理记录", systemImage: "clock")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .yuanLiquidGlassSurface(.clear, cornerRadius: MaintenanceDesign.cardRadius)
             } else {
                 List(store.operations) { operation in
                     VStack(alignment: .leading, spacing: 6) {
@@ -416,10 +439,17 @@ struct MaintenanceView: View {
                             Text("\(result.displayName)：\(result.message ?? outcomeTitle(result.outcome))")
                                 .font(.caption2)
                                 .foregroundStyle(result.outcome == .failed ? .red : .orange)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(MaintenanceDesign.rowPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.035), in: .rect(cornerRadius: MaintenanceDesign.rowRadius))
                 }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .yuanLiquidGlassSurface(.regular, cornerRadius: MaintenanceDesign.cardRadius)
             }
         }
         .onAppear { store.refreshOperations() }

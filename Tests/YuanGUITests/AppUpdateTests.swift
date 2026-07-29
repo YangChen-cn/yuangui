@@ -20,6 +20,15 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(release.dmgAsset?.name, "YuanGUI-1.0.2.dmg")
     }
 
+    func testGitHubReleaseSelectsLocalizedReleaseNotesAsset() throws {
+        let data = Data(#"{"tag_name":"v2.7.0","name":"YuanGUI 2.7.0","body":"English fallback","html_url":"https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.0","assets":[{"name":"RELEASE_NOTES.md","browser_download_url":"https://github.com/YangChen-cn/yuangui/releases/download/v2.7.0/RELEASE_NOTES.md","size":10},{"name":"RELEASE_NOTES.zh-CN.md","browser_download_url":"https://github.com/YangChen-cn/yuangui/releases/download/v2.7.0/RELEASE_NOTES.zh-CN.md","size":12}]}"#.utf8)
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+
+        XCTAssertEqual(release.releaseNotesAsset(for: .english)?.name, "RELEASE_NOTES.md")
+        XCTAssertEqual(release.releaseNotesAsset(for: .simplifiedChinese)?.name, "RELEASE_NOTES.zh-CN.md")
+        XCTAssertNotNil(release.releaseNotesAsset(for: .system))
+    }
+
     func testReleaseNotesKeepGitHubMarkdownStructure() {
         let rows = ReleaseNoteRow.parse("""
         ## 改进
