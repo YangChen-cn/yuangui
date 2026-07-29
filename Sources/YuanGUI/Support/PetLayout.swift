@@ -38,6 +38,9 @@ enum PetLayout {
     /// results-card height here would place that small card far away from the
     /// pet when the auxiliary panel flips below it near the top edge.
     static let maintenanceScanningHeight: CGFloat = 126
+    /// Completion only renders the result message and follow-up actions; it
+    /// should not keep the full candidate-list footprint.
+    static let maintenanceCompletionHeight: CGFloat = 112
     static let minimumBubbleWidth: CGFloat = 288
     static let minimumStatusBubbleWidth: CGFloat = 260
     static let minimumAmbientBubbleWidth: CGFloat = 240
@@ -74,10 +77,18 @@ enum PetLayout {
     static func auxiliaryBubblePanelSize(
         scale: Double,
         showsMaintenance: Bool,
-        maintenanceIsBusy: Bool = false
+        maintenanceIsBusy: Bool = false,
+        maintenanceIsCompleted: Bool = false
     ) -> CGSize {
         if showsMaintenance {
-            let height = maintenanceIsBusy ? maintenanceScanningHeight : maintenanceHeight
+            let height: CGFloat
+            if maintenanceIsBusy {
+                height = maintenanceScanningHeight
+            } else if maintenanceIsCompleted {
+                height = maintenanceCompletionHeight
+            } else {
+                height = maintenanceHeight
+            }
             return CGSize(width: minimumMaintenanceWidth, height: height + 18)
         }
         return CGSize(

@@ -181,7 +181,14 @@ final class MaintenanceStore: ObservableObject {
     }
 
     func cleanSelected() async {
-        let selected = selectedCleanup
+        // The mini companion card is intentionally limited to low-risk
+        // recommendations. Review items must be handled from the full
+        // Cleanup House, where the explicit confirmation flow is available;
+        // protected items are never executable from either surface.
+        let selected = selectedCleanup.filter {
+            $0.risk != .protected
+                && (quickMode != .cleanup || $0.risk == .recommended)
+        }
         guard !selected.isEmpty, !isWorking else { return }
         isWorking = true
         message = AppLocalizer.string("maintenance.status.cleaning")
@@ -197,7 +204,14 @@ final class MaintenanceStore: ObservableObject {
     }
 
     func uninstallSelected() async {
-        let selected = selectedApplications
+        let selected = selectedApplications.compactMap { application -> ApplicationCandidate? in
+            let components = application.components.filter {
+                $0.risk != .protected
+                    && (quickMode != .uninstall || $0.risk == .recommended)
+            }
+            guard !components.isEmpty else { return nil }
+            return application.selectingComponents(Set(components.map(\.id)))
+        }
         guard !selected.isEmpty, !isWorking else { return }
         isWorking = true
         message = AppLocalizer.string("maintenance.status.uninstalling")
@@ -260,12 +274,21 @@ final class MaintenanceStore: ObservableObject {
         }.map(\.id))
     }
 
+    func setCleanupSelected(_ candidate: CleanupCandidate, selected: Bool) {
+        guard candidate.risk != .protected,
+              (quickMode != .cleanup || candidate.risk == .recommended) else { return }
+        if selected { selectedCleanupIDs.insert(candidate.id) }
+        else { selectedCleanupIDs.remove(candidate.id) }
+    }
+
     func setApplicationSelected(_ application: ApplicationCandidate, selected: Bool) {
         if selected {
             guard !application.removalBlocked else { return }
             selectedApplicationIDs.insert(application.id)
             selectedUninstallComponentIDs.formUnion(application.components.filter {
-                $0.selectedByDefault && $0.risk != .protected
+                $0.selectedByDefault
+                    && $0.risk != .protected
+                    && (quickMode != .uninstall || $0.risk == .recommended)
             }.map(\.id))
         } else {
             selectedApplicationIDs.remove(application.id)
@@ -274,7 +297,9 @@ final class MaintenanceStore: ObservableObject {
     }
 
     func setComponentSelected(_ component: UninstallComponent, in application: ApplicationCandidate, selected: Bool) {
-        guard component.risk != .protected, !application.removalBlocked else { return }
+        guard component.risk != .protected,
+              (quickMode != .uninstall || component.risk == .recommended),
+              !application.removalBlocked else { return }
         if selected {
             selectedApplicationIDs.insert(application.id)
             selectedUninstallComponentIDs.insert(component.id)

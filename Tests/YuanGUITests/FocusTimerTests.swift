@@ -44,23 +44,6 @@ final class FocusTimerTests: XCTestCase {
         XCTAssertEqual(timer.remainingSeconds, FocusTimerStore.maximumDurationMinutes * 60)
     }
 
-    func testDurationGestureUsesTheDominantSwipeAxisInFiveMinuteSteps() {
-        XCTAssertEqual(
-            FocusTimerDurationGesture.adjustedDuration(
-                startDuration: 25,
-                translation: CGSize(width: 24, height: 3)
-            ),
-            35
-        )
-        XCTAssertEqual(
-            FocusTimerDurationGesture.adjustedDuration(
-                startDuration: 45,
-                translation: CGSize(width: 2, height: 25)
-            ),
-            35
-        )
-    }
-
     private func makePet(defaults: UserDefaults) -> PetStore {
         PetStore(
             monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),

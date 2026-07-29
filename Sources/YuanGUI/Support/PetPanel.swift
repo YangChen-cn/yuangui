@@ -268,6 +268,12 @@ final class PetPanelController {
                 Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() }
             }
             .store(in: &cancellables)
+        maintenance.$quickCompleted
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() }
+            }
+            .store(in: &cancellables)
         store.$automaticBubbleSuppressed
             .removeDuplicates()
             .sink { [weak self] _ in
@@ -850,7 +856,8 @@ final class PetPanelController {
         let size = PetLayout.auxiliaryBubblePanelSize(
             scale: store.petScale,
             showsMaintenance: maintenance.quickMode != nil,
-            maintenanceIsBusy: maintenance.isScanning || maintenance.isWorking
+            maintenanceIsBusy: maintenance.isScanning || maintenance.isWorking,
+            maintenanceIsCompleted: maintenance.quickCompleted
         )
         if bubblePanel.frame.size != size {
             bubblePanel.setContentSize(size)

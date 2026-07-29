@@ -735,7 +735,8 @@
 "focus.duration" = "Focus duration: %ld minutes";
 "focus.minutes" = "%ld minutes";
 "focus.minutes.short" = "%ldm";
-"focus.adjustDurationHint" = "Swipe the tomato to adjust focus time";
+"减少专注时长" = "Decrease focus duration";
+"增加专注时长" = "Increase focus duration";
 "backup.count" = "%ld backups";
 "backup.dailyCount" = "%ld daily";
 "backup.weeklyCount" = "%ld weekly";

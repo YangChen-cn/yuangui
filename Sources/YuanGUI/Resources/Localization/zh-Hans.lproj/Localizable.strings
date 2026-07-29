@@ -734,7 +734,8 @@
 "focus.duration" = "专注时长：%ld 分钟";
 "focus.minutes" = "%ld 分钟";
 "focus.minutes.short" = "%ld 分钟";
-"focus.adjustDurationHint" = "滑动番茄圆圈调整专注时长";
+"减少专注时长" = "减少专注时长";
+"增加专注时长" = "增加专注时长";
 "backup.count" = "%ld 个";
 "backup.dailyCount" = "每日 %ld 个";
 "backup.weeklyCount" = "每周 %ld 个";

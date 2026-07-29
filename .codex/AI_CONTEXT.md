@@ -384,9 +384,11 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 ## 2026-07-29 番茄钟与迷你清理屋可读性
 
 - `FocusTimerStore.statusTitle` 必须通过 `AppLocalizer` 读取，不能把动态状态直接保留为中文源文本；番茄钟控制卡的时长、说明和按钮也要用本地化键。说明文字允许最多两行，Toast 同样必须换行，避免英文界面出现“英文标题 + 中文状态”或被省略号截断。
-- `FocusTimerControlView` 保持固定的可用宽度并采用底部对齐的说明/操作布局；不要再让说明和按钮共享一条不可换行的单行 `HStack`。
-- 番茄钟浮层要明显小于桌宠本体；当前控制卡宽度为 140pt，空闲态不再使用预设按钮或 Stepper，运行态按钮必须用固有宽度放在独立行，不能被压成省略号。
-- 番茄钟空闲态进一步收敛为一个番茄圆形拨盘和一个开始按钮；不再显示预设按钮、Stepper、说明或重复标题。拖动圆圈按主方向每 12pt 调整 5 分钟，圆圈内显示当前时长；运行中只保留进度、暂停/继续和结束。
+- `FocusTimerControlView` 使用约 148pt 的紧凑玻璃卡：顶部仅保留 timer 图标和“专注”，中间圆环承载状态/数字，空闲和完成态下方用减 5 分钟/当前时长/加 5 分钟，底部只显示状态对应的图标按钮。不要恢复预设按钮、Stepper、长说明或重复标题。
+- 圆环状态必须区分 idle、running、paused、completed；倒计时数字使用 `.monospacedDigit()` 与 `.contentTransition(.numericText())`，状态和进度切换使用轻量动画。图标按钮要有本地化辅助功能标签，不能为了缩小而让按钮文字变成省略号。
 - `yuanPetBubbleGlass` 支持 `.regular`/`.clear` 两种表面。迷你清理/卸载卡必须使用 `.regular`，避免桌面壁纸或窗口背景穿透后影响候选项和操作按钮的可读性；歌词、普通状态对白可继续使用 clear 玻璃。
 - 桌宠侧栏继续保留快速清理和卸载入口；迷你清理/卸载卡底部原来的 `More` 按钮改为直接打开完整清理屋（按当前页签进入清理或卸载页），不再套一层菜单。扫描进行中主桌宠面板保持原有紧凑尺寸，扫描卡在独立辅助面板中贴近桌宠底部/屏幕边界定位，不能通过扩大主面板把桌宠推离底部。
 - 扫描/执行阶段的辅助卡只需要标题、进度和关闭操作，使用 `PetLayout.maintenanceScanningHeight`；只有扫描完成并显示候选列表时才使用 `maintenanceHeight`。`PetPanel` 必须监听 `isScanning`/`isWorking` 的边界变化并同步调整辅助面板尺寸，否则卡片会按结果态高度居中，导致桌宠与扫描卡之间出现巨大空隙。
+- 操作完成后只显示完成摘要和后续操作，使用 `PetLayout.maintenanceCompletionHeight`，不能继续占用候选结果列表的高度。
+- 迷你清理卡只允许风险为 `recommended` 的项目直接执行；`review` 必须禁用选择、显示“需检查”风险徽章并引导打开完整清理屋，`protected` 始终禁用。`MaintenanceStore.cleanSelected()` 和卸载快速路径也必须在模型层再次过滤，不能只依赖 View 的 disabled 状态。
+- 卸载迷你卡展开应用时必须遍历全部 `application.components`，不能再使用 `prefix(3)` 隐藏后续组件；滚动区域负责承载长列表。

@@ -113,10 +113,7 @@ struct PetMaintenanceBubble: View {
     private func cleanupCandidateRow(_ candidate: CleanupCandidate) -> some View {
         Toggle(isOn: Binding(
             get: { store.selectedCleanupIDs.contains(candidate.id) },
-            set: { selected in
-                if selected { store.selectedCleanupIDs.insert(candidate.id) }
-                else { store.selectedCleanupIDs.remove(candidate.id) }
-            }
+            set: { store.setCleanupSelected(candidate, selected: $0) }
         )) {
             HStack(spacing: 7) {
                 Image(systemName: candidate.disposition == .permanent ? "sparkles" : "trash")
@@ -128,10 +125,13 @@ struct PetMaintenanceBubble: View {
                         .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(candidate.category.title)
-                        .font(.system(size: 8.5, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(candidate.category.title)
+                            .font(.system(size: 8.5, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        riskBadge(candidate.risk)
+                    }
                 }
                 .layoutPriority(1)
 
@@ -144,7 +144,10 @@ struct PetMaintenanceBubble: View {
             }
         }
         .toggleStyle(.checkbox)
-        .disabled(candidate.risk == .protected)
+        .disabled(
+            candidate.risk == .protected
+                || (store.quickMode == .cleanup && candidate.risk != .recommended)
+        )
         .padding(.vertical, 2)
     }
 
@@ -238,7 +241,7 @@ struct PetMaintenanceBubble: View {
 
             if expandedApplicationID == application.id {
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(application.components.prefix(3))) { component in
+                    ForEach(application.components) { component in
                         componentRow(component, in: application)
                     }
                 }
@@ -265,7 +268,12 @@ struct PetMaintenanceBubble: View {
             .font(.system(size: 8.5, design: .rounded))
         }
         .toggleStyle(.checkbox)
-        .disabled(component.kind == .application || component.risk == .protected || application.removalBlocked)
+        .disabled(
+            component.kind == .application
+                || component.risk == .protected
+                || (store.quickMode == .uninstall && component.risk != .recommended)
+                || application.removalBlocked
+        )
     }
 
     private func actionBar(tab: Int) -> some View {
