@@ -45,16 +45,17 @@ struct FocusTimerControlView: View {
                     .tint(.red)
             }
 
-            HStack(alignment: .bottom, spacing: 12) {
+            VStack(alignment: .leading, spacing: 9) {
                 Text(AppLocalizer.string("专注时自动隐藏日常、天气和非紧急气泡"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-                Spacer()
-                controls
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    controls
+                }
             }
         }
         .padding(16)
@@ -87,17 +88,25 @@ struct FocusTimerControlView: View {
 
     @ViewBuilder
     private var controls: some View {
-        switch timer.state {
-        case .idle, .completed:
-            Button(AppLocalizer.string("开始")) { timer.start(); showPet() }
-                .buttonStyle(.borderedProminent).tint(.red)
-        case .running:
-            Button(AppLocalizer.string("暂停")) { timer.pause() }
-            Button(AppLocalizer.string("结束")) { timer.stop() }
-        case .paused:
-            Button(AppLocalizer.string("继续")) { timer.resume() }
-                .buttonStyle(.borderedProminent).tint(.red)
-            Button(AppLocalizer.string("结束")) { timer.stop() }
+        HStack(spacing: 8) {
+            switch timer.state {
+            case .idle, .completed:
+                Button(AppLocalizer.string("开始")) { timer.start(); showPet() }
+                    .buttonStyle(.borderedProminent).tint(.red)
+                    .fixedSize(horizontal: true, vertical: false)
+            case .running:
+                Button(AppLocalizer.string("暂停")) { timer.pause() }
+                    .fixedSize(horizontal: true, vertical: false)
+                Button(AppLocalizer.string("结束")) { timer.stop() }
+                    .fixedSize(horizontal: true, vertical: false)
+            case .paused:
+                Button(AppLocalizer.string("继续")) { timer.resume() }
+                    .buttonStyle(.borderedProminent).tint(.red)
+                    .fixedSize(horizontal: true, vertical: false)
+                Button(AppLocalizer.string("结束")) { timer.stop() }
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }

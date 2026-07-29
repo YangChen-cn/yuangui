@@ -24,6 +24,7 @@ struct PetRootView: View {
         case role = "切换桌宠角色"
         case focus = "番茄钟"
         case cleanup = "空间清理"
+        case uninstall = "软件卸载"
     }
 
     private var scale: CGFloat { store.petScale }
@@ -264,7 +265,23 @@ struct PetRootView: View {
             focusSideButton(size: 34)
                 .offset(x: sideControlsOnRight ? -7 : 7)
 
-            openMaintenanceSideButton(size: 30)
+            Button { startQuickCleanup() } label: {
+                sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup, size: 30)
+            }
+            .buttonStyle(.plain)
+            .onHover { setSideToolHover(.cleanup, hovering: $0) }
+            .overlay { sideHoverLabel(for: .cleanup) }
+            .help(AppLocalizer.string("空间清理"))
+            .opacity(showsInteractiveSideControls ? 1 : 0)
+            .allowsHitTesting(showsInteractiveSideControls)
+
+            Button { startQuickUninstall() } label: {
+                sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall, size: 30)
+            }
+            .buttonStyle(.plain)
+            .onHover { setSideToolHover(.uninstall, hovering: $0) }
+            .overlay { sideHoverLabel(for: .uninstall) }
+            .help(AppLocalizer.string("软件卸载"))
             .opacity(showsInteractiveSideControls ? 1 : 0)
             .allowsHitTesting(showsInteractiveSideControls)
         }
@@ -339,9 +356,30 @@ struct PetRootView: View {
     }
 
     private var maintenanceSideControls: some View {
-        openMaintenanceSideButton()
-            .offset(x: sideControlsOnRight ? 0 : -1)
-            .animation(.easeOut(duration: 0.14), value: hoveredSideTool)
+        VStack(spacing: 3) {
+            Button {
+                startQuickCleanup()
+            } label: {
+                sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode == .cleanup)
+            }
+            .buttonStyle(.plain)
+            .onHover { setSideToolHover(.cleanup, hovering: $0) }
+            .overlay { sideHoverLabel(for: .cleanup) }
+            .help(AppLocalizer.string("空间清理：扫描可安全清理的缓存、日志和临时文件"))
+            .offset(x: sideControlsOnRight ? 7 : -7)
+
+            Button {
+                startQuickUninstall()
+            } label: {
+                sideToolIcon("shippingbox", tint: .blue, selected: maintenance.quickMode == .uninstall)
+            }
+            .buttonStyle(.plain)
+            .onHover { setSideToolHover(.uninstall, hovering: $0) }
+            .overlay { sideHoverLabel(for: .uninstall) }
+            .help(AppLocalizer.string("软件卸载：查找应用及其可确认的用户级残留"))
+            .offset(x: sideControlsOnRight ? -7 : 7)
+        }
+        .animation(.easeOut(duration: 0.14), value: hoveredSideTool)
     }
 
     @ViewBuilder
@@ -362,19 +400,14 @@ struct PetRootView: View {
         }
     }
 
-    private func openFullMaintenance() {
+    private func startQuickCleanup() {
         chat.dismiss()
-        appActions.open(.maintenance(tab: 0))
+        Task { await maintenance.startQuickCleanup() }
     }
 
-    private func openMaintenanceSideButton(size: CGFloat = 34) -> some View {
-        Button(action: openFullMaintenance) {
-            sideToolIcon("sparkles", tint: .mint, selected: maintenance.quickMode != nil, size: size)
-        }
-        .buttonStyle(.plain)
-        .onHover { setSideToolHover(.cleanup, hovering: $0) }
-        .overlay { sideHoverLabel(for: .cleanup) }
-        .help(AppLocalizer.string("打开完整清理屋"))
+    private func startQuickUninstall() {
+        chat.dismiss()
+        Task { await maintenance.startQuickUninstall() }
     }
 
     private func sideToolIcon(_ systemName: String, tint: Color, selected: Bool, size: CGFloat = 34) -> some View {

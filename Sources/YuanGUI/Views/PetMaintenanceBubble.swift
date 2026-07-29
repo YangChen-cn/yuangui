@@ -290,29 +290,12 @@ struct PetMaintenanceBubble: View {
 
     private func actionBar(tab: Int) -> some View {
         HStack(spacing: 6) {
-            Menu {
-                if tab == 0 {
-                    Button {
-                        store.selectRecommendedCleanup()
-                    } label: {
-                        Label(
-                            AppLocalizer.string("maintenance.quick.select"),
-                            systemImage: "checkmark.circle"
-                        )
-                    }
-                }
-                Button {
-                    openMaintenance(tab: tab)
-                } label: {
-                    Label(
-                        AppLocalizer.string("maintenance.quick.open"),
-                        systemImage: "arrow.up.right.square"
-                    )
-                }
+            Button {
+                openMaintenance(tab: tab)
             } label: {
                 Label(
-                    AppLocalizer.string("maintenance.quick.more"),
-                    systemImage: "ellipsis"
+                    AppLocalizer.string("打开完整清理屋"),
+                    systemImage: "arrow.up.right.square"
                 )
             }
             .yuanSystemGlassButton()
