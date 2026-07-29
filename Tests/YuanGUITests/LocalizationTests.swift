@@ -2,6 +2,13 @@ import XCTest
 @testable import YuanGUI
 
 final class LocalizationTests: XCTestCase {
+    func testPackagedApplicationDoesNotUseSwiftPMResourceFallback() {
+        XCTAssertFalse(AppLocalizer.allowsModuleFallback(for: URL(fileURLWithPath: "/Applications/YuanGUI.app")))
+        XCTAssertFalse(AppLocalizer.allowsModuleFallback(for: URL(fileURLWithPath: "/private/tmp/YuanGUI.app")))
+        XCTAssertTrue(AppLocalizer.allowsModuleFallback(for: URL(fileURLWithPath: "/tmp/YuanGUIPackageTests.xctest")))
+        XCTAssertTrue(AppLocalizer.allowsModuleFallback(for: URL(fileURLWithPath: "/tmp/YuanGUI")))
+    }
+
     func testEnglishAndSimplifiedChineseHaveTheSameKeys() {
         let english = AppLocalizer.localizationKeys(for: "en")
         let chinese = AppLocalizer.localizationKeys(for: "zh-Hans")
@@ -57,7 +64,22 @@ final class LocalizationTests: XCTestCase {
             "music.lyrics.matchResult",
             "music.lyrics.metadataSaved",
             "music.lyrics.jumpToTime",
-            "music.lyrics.lineAccessibility"
+            "music.lyrics.lineAccessibility",
+            "music.library.search.placeholder",
+            "music.library.sort.libraryOrder",
+            "music.library.sort.direction.current",
+            "music.local.revealInFinder",
+            "music.local.import.failures.title",
+            "music.local.import.failures.count",
+            "music.artwork.menu",
+            "music.artwork.choose",
+            "music.artwork.remove",
+            "music.artwork.error.invalidImage",
+            "music.artwork.error.fileTooLarge",
+            "pet.chatter.period.morning.yuanGui.1",
+            "pet.chatter.period.afternoon.vcc.1",
+            "pet.chatter.period.evening.duo.1",
+            "pet.chatter.period.lateNight.yuanGui.1"
         ]
         let english = AppLocalizer.localizedValues(for: "en")
         let chinese = AppLocalizer.localizedValues(for: "zh-Hans")
@@ -79,12 +101,25 @@ final class LocalizationTests: XCTestCase {
             ),
             "From “Favorites”: imported 4 · skipped 1 duplicates · 2 videos failed"
         )
+
+        for period in PetChatterPeriod.allCases {
+            for modeKey in ["yuanGui", "vcc", "duo"] {
+                for index in 1...2 {
+                    let key = "pet.chatter.period.\(period.rawValue).\(modeKey).\(index)"
+                    XCTAssertNotNil(english[key], "Missing English key: \(key)")
+                    XCTAssertNotNil(chinese[key], "Missing Simplified Chinese key: \(key)")
+                }
+            }
+        }
     }
 
     func testDiaryAndQuickToolsRuntimeKeysExistInBothLanguagesAndFormatInEnglish() {
         let keys = [
             "quickTools.defaultShortcut",
             "quickTools.hotKeySaved",
+            "chat.error.invalidResponse",
+            "YuanGUI 音乐播放器",
+            "截图翻译使用 Vision 在本机 OCR。翻译默认通过系统快捷指令免费调用 Apple 翻译；在线 AI 仅在你明确选择时使用。网页与截图等只读来源支持编辑、翻译和复制，但不能替换原文。",
             "diary.metadata.listening",
             "diary.sidebar.entryCount",
             "diary.sidebar.photoCount",
@@ -122,6 +157,11 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(
             String(format: tryUnwrap(english["quickTools.hotKeySaved"]), "Translate Selected Text", "⌃Z"),
             "Set Translate Selected Text shortcut: ⌃Z"
+        )
+        XCTAssertEqual(english["YuanGUI 音乐播放器"], "YuanGUI Music")
+        XCTAssertEqual(
+            english["截图翻译使用 Vision 在本机 OCR。翻译默认通过系统快捷指令免费调用 Apple 翻译；在线 AI 仅在你明确选择时使用。网页与截图等只读来源支持编辑、翻译和复制，但不能替换原文。"],
+            "Screenshot translation uses Vision for on-device OCR. By default, translation calls Apple Translate for free through a system Shortcut; online AI is used only when you explicitly select it. Read-only sources such as webpages and screenshots can be edited, translated, and copied, but their original text cannot be replaced."
         )
         XCTAssertEqual(
             String(format: tryUnwrap(english["diary.metadata.listening"]), "double take", "Dhruv"),

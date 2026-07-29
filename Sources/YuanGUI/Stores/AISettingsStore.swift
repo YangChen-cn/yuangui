@@ -25,6 +25,7 @@ final class AISettingsStore: ObservableObject {
     @Published private(set) var availableModels: [String] = []
     @Published private(set) var isConnecting = false
     @Published private(set) var connectionMessage: String?
+    @Published private(set) var promptLanguage: AppLanguage
 
     private let defaults: UserDefaults
     private let secrets: SecretStoring
@@ -35,16 +36,24 @@ final class AISettingsStore: ObservableObject {
     init(
         defaults: UserDefaults = .standard,
         secrets: SecretStoring = LocalSecretStore(),
-        modelService: AIModelListing = AIModelService()
+        modelService: AIModelListing = AIModelService(),
+        language: AppLanguage = AppLocalizer.effectiveLanguage
     ) {
         self.defaults = defaults
         self.secrets = secrets
         self.modelService = modelService
+        let resolvedPromptLanguage = Self.resolvedPromptLanguage(language)
+        promptLanguage = resolvedPromptLanguage
         baseURL = defaults.string(forKey: "aiBaseURL") ?? Self.defaultBaseURL
         let savedModel = defaults.string(forKey: "aiModel")
         model = savedModel == "mimo-v2.5-pro" ? Self.defaultModel : (savedModel ?? Self.defaultModel)
         if savedModel == "mimo-v2.5-pro" { defaults.set(Self.defaultModel, forKey: "aiModel") }
-        systemPrompt = defaults.string(forKey: "aiSystemPrompt") ?? Self.defaultPrompt(for: AppLocalizer.effectiveLanguage)
+        if let savedPrompt = defaults.string(forKey: "aiSystemPrompt"),
+           !Self.isBundledDefaultPrompt(savedPrompt) {
+            systemPrompt = savedPrompt
+        } else {
+            systemPrompt = Self.defaultPrompt(for: resolvedPromptLanguage)
+        }
         apiKey = secrets.read(service: keychainService, account: keychainAccount) ?? ""
     }
 
@@ -99,13 +108,34 @@ final class AISettingsStore: ObservableObject {
     func resetDefaults() {
         baseURL = Self.defaultBaseURL
         model = Self.defaultModel
-        systemPrompt = Self.defaultPrompt(for: AppLocalizer.effectiveLanguage)
+        systemPrompt = Self.defaultPrompt(for: promptLanguage)
         saveMessage = nil
         connectionMessage = nil
         availableModels = []
     }
 
+    func updateDefaultPromptLanguage(_ language: AppLanguage) {
+        let resolvedLanguage = Self.resolvedPromptLanguage(language)
+        let shouldReplacePrompt = Self.isBundledDefaultPrompt(systemPrompt)
+        promptLanguage = resolvedLanguage
+        guard shouldReplacePrompt else { return }
+        systemPrompt = Self.defaultPrompt(for: resolvedLanguage)
+        if defaults.object(forKey: "aiSystemPrompt") != nil {
+            defaults.set(systemPrompt, forKey: "aiSystemPrompt")
+        }
+    }
+
     static func defaultPrompt(for language: AppLanguage) -> String {
-        language == .simplifiedChinese ? defaultPrompt : englishDefaultPrompt
+        resolvedPromptLanguage(language) == .simplifiedChinese ? defaultPrompt : englishDefaultPrompt
+    }
+
+    static func isBundledDefaultPrompt(_ prompt: String) -> Bool {
+        let normalized = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized == defaultPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            || normalized == englishDefaultPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func resolvedPromptLanguage(_ language: AppLanguage) -> AppLanguage {
+        language == .system ? AppLocalizer.effectiveLanguage : language
     }
 }

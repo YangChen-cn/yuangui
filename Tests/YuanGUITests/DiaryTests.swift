@@ -579,6 +579,20 @@ final class DiaryFeatureTests: XCTestCase {
         XCTAssertTrue(Calendar.current.isDate(feature.entries[0].occurredAt, inSameDayAs: date))
     }
 
+    func testCreateAndOpenEntryLeavesEmptySpecialViewAndShowsNewEntry() {
+        feature.viewMode = .onThisDay
+        feature.filter = DiaryFilter(favoritesOnly: true)
+        feature.searchText = "不存在的日记"
+
+        let entry = feature.createAndOpenEntry()
+
+        XCTAssertEqual(feature.viewMode, .timeline)
+        XCTAssertEqual(feature.filter, DiaryFilter())
+        XCTAssertEqual(feature.searchText, "")
+        XCTAssertEqual(feature.selectedEntryID, entry.id)
+        XCTAssertEqual(feature.selectedEntry?.id, entry.id)
+    }
+
     func testOnThisDayIncludesAllPriorYears() {
         let calendar = Calendar.current
         let today = Date()

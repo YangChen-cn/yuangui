@@ -44,6 +44,8 @@ final class MusicFeature {
     private let urlPlayerReleaseDelay: Duration
     private let lyricsService: any LyricsProviding
     private let localMusicImporter: any LocalMusicImporting
+    private let localArtworkRepository: any LocalMusicArtworkManaging
+    private let localFileRevealer: any LocalMusicFileRevealing
     private let library: any MusicLibraryCoordinating
     private let defaults: UserDefaults
     private var libraryRestoreTask: Task<Void, Never>?
@@ -61,6 +63,7 @@ final class MusicFeature {
     private var bilibiliFavoriteTask: Task<Void, Never>?
     private var localImportTask: Task<Void, Never>?
     private var localLoadTask: Task<Void, Never>?
+    private var artworkMaintenanceTask: Task<Void, Never>?
     private var lyricsByTrackID: [String: LyricsDocument] = [:]
     private var currentTrackID: String?
     private var lastSavedSecond = -1
@@ -90,6 +93,8 @@ final class MusicFeature {
         urlPlayerFactory: @escaping URLMusicPlayerFactory = { URLMusicPlayerEngine() },
         lyricsService: any LyricsProviding = LyricsService(),
         localMusicImporter: any LocalMusicImporting = LocalMusicImportService(),
+        localArtworkRepository: any LocalMusicArtworkManaging = LocalMusicArtworkRepository.shared,
+        localFileRevealer: (any LocalMusicFileRevealing)? = nil,
         library: any MusicLibraryCoordinating = MusicLibraryActor(),
         urlPlayerReleaseDelay: Duration = .seconds(60)
     ) {
@@ -104,6 +109,8 @@ final class MusicFeature {
         self.urlPlayerReleaseDelay = urlPlayerReleaseDelay
         self.lyricsService = lyricsService
         self.localMusicImporter = localMusicImporter
+        self.localArtworkRepository = localArtworkRepository
+        self.localFileRevealer = localFileRevealer ?? WorkspaceLocalMusicFileRevealer.shared
         self.library = library
         playback = MusicPlaybackStore(
             source: source,
@@ -595,20 +602,31 @@ final class MusicFeature {
         localImportStore.isImporting = true
         localImportStore.message = nil
         localImportStore.errorMessage = nil
+        localImportStore.failures = []
         localImportTask = Task(priority: .utility) { [weak self, localMusicImporter] in
             let result = await localMusicImporter.importFiles(urls)
             guard !Task.isCancelled, let self else { return }
             let existingKeys = Set(playlist.compactMap(\.localDuplicateKey))
             var seen = existingKeys
-            let added = result.tracks.filter { track in
-                guard let key = track.localDuplicateKey else { return true }
-                return seen.insert(key).inserted
+            var added: [MusicTrack] = []
+            var duplicateTracks: [MusicTrack] = []
+            for track in result.tracks {
+                guard let key = track.localDuplicateKey else {
+                    added.append(track)
+                    continue
+                }
+                if seen.insert(key).inserted {
+                    added.append(track)
+                } else {
+                    duplicateTracks.append(track)
+                }
             }
-            let duplicates = result.tracks.count - added.count
+            let duplicates = duplicateTracks.count
             playlist.append(contentsOf: added)
             localImportStore.importedCount = added.count
             localImportStore.duplicateCount = duplicates
             localImportStore.failedCount = result.failures.count
+            localImportStore.failures = result.failures
             localImportStore.message = AppLocalizer.format(
                 "music.local.import.result",
                 added.count,
@@ -617,6 +635,11 @@ final class MusicFeature {
             )
             localImportStore.isImporting = false
             localImportTask = nil
+            scheduleArtworkRemoval(
+                keys: orphanedArtworkKeys(
+                    among: Set(duplicateTracks.compactMap(\.localArtworkCacheKey))
+                )
+            )
             if !added.isEmpty {
                 setSource(.local)
                 if currentTrack?.source != .local { restoreSelection(for: .local) }
@@ -637,16 +660,94 @@ final class MusicFeature {
             guard let self else { return }
             do {
                 let updated = try await localMusicImporter.relocatedTrack(track, to: url)
-                guard let index = playlist.firstIndex(where: { $0.id == track.id }) else { return }
+                guard let index = playlist.firstIndex(where: { $0.id == track.id }) else {
+                    scheduleArtworkRemoval(keys: Set([updated.localArtworkCacheKey].compactMap { $0 }))
+                    return
+                }
                 playlist[index] = updated
-                if currentTrack?.id == track.id { currentTrack = updated }
+                removeCachedLyrics(for: track)
+                if currentTrack?.id == track.id {
+                    urlPlayer?.stop()
+                    clearLoadedURLIdentity()
+                    releaseScopedLocalURL()
+                    currentTrack = updated
+                    playbackProgress.setDuration(updated.duration)
+                    playbackProgress.setPosition(min(position, updated.duration))
+                    setPlaybackState(.paused)
+                    loadLyrics(for: updated)
+                }
                 localImportStore.trackNeedingRelocation = nil
                 localImportStore.errorMessage = nil
+                if let oldKey = track.localArtworkCacheKey, oldKey != updated.localArtworkCacheKey {
+                    scheduleArtworkRemoval(keys: orphanedArtworkKeys(among: [oldKey]))
+                }
                 persistLibrary()
             } catch {
                 localImportStore.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    func revealInFinder(_ track: MusicTrack) {
+        guard track.source == .local else { return }
+        Task { [weak self, localMusicImporter] in
+            guard let self else { return }
+            do {
+                let url = try await localMusicImporter.resolveURL(for: track)
+                let accessed = url.startAccessingSecurityScopedResource()
+                guard accessed else { throw LocalMusicImportError.securityScopeUnavailable }
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                localFileRevealer.reveal(url)
+                localImportStore.errorMessage = nil
+            } catch {
+                localImportStore.errorMessage = error.localizedDescription
+                if error as? LocalMusicImportError == .staleBookmark
+                    || error as? LocalMusicImportError == .missingFile {
+                    localImportStore.trackNeedingRelocation = track
+                }
+            }
+        }
+    }
+
+    func setArtwork(for track: MusicTrack, from imageURL: URL) {
+        guard track.source != .appleMusic else { return }
+        Task { [weak self, localArtworkRepository] in
+            guard let self else { return }
+            do {
+                let newKey = try await localArtworkRepository.importArtwork(from: imageURL)
+                guard let index = playlist.firstIndex(where: { $0.id == track.id }) else {
+                    scheduleArtworkRemoval(keys: [newKey])
+                    return
+                }
+                let oldKey = playlist[index].localArtworkCacheKey
+                playlist[index].localArtworkCacheKey = newKey
+                let updated = playlist[index]
+                if currentTrack?.id == updated.id {
+                    currentTrack = updated
+                }
+                localImportStore.errorMessage = nil
+                persistLibrary()
+                if let oldKey, oldKey != newKey {
+                    scheduleArtworkRemoval(keys: orphanedArtworkKeys(among: [oldKey]))
+                }
+            } catch {
+                localImportStore.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func removeArtwork(for track: MusicTrack) {
+        guard track.source != .appleMusic,
+              let index = playlist.firstIndex(where: { $0.id == track.id }),
+              let oldKey = playlist[index].localArtworkCacheKey else { return }
+        playlist[index].localArtworkCacheKey = nil
+        let updated = playlist[index]
+        if currentTrack?.id == updated.id {
+            currentTrack = updated
+        }
+        localImportStore.errorMessage = nil
+        persistLibrary()
+        scheduleArtworkRemoval(keys: orphanedArtworkKeys(among: [oldKey]))
     }
 
     func importBilibili() {
@@ -1082,6 +1183,9 @@ final class MusicFeature {
         let wasCurrent = currentTrack?.id == track.id
         let removedSource = track.source
         playlist.removeAll { $0.id == track.id }
+        if let key = track.localArtworkCacheKey {
+            scheduleArtworkRemoval(keys: orphanedArtworkKeys(among: [key]))
+        }
         favoriteTrackIDs.remove(track.id)
         removeCachedLyrics(for: track)
         for index in savedPlaylists.indices { savedPlaylists[index].trackIDs.removeAll { $0 == track.id } }
@@ -1107,6 +1211,11 @@ final class MusicFeature {
         let removedIDs = Set(removedTracks.map(\.id))
         for track in removedTracks { removeCachedLyrics(for: track) }
         playlist.removeAll { $0.source == source }
+        scheduleArtworkRemoval(
+            keys: orphanedArtworkKeys(
+                among: Set(removedTracks.compactMap(\.localArtworkCacheKey))
+            )
+        )
         favoriteTrackIDs.subtract(removedIDs)
         for index in savedPlaylists.indices {
             savedPlaylists[index].trackIDs.removeAll { removedIDs.contains($0) }
@@ -1364,6 +1473,7 @@ final class MusicFeature {
         appleMusicWorkspaceObservers.removeAll()
         persistenceRevision &+= 1
         await library.saveNow(librarySnapshot(), revision: persistenceRevision)
+        await artworkMaintenanceTask?.value
     }
 
     private func refreshAppleMusic() async {
@@ -1743,6 +1853,9 @@ final class MusicFeature {
         lyricOffsets = snapshot.lyricOffsets
         lyricsByTrackID = snapshot.lyricsByTrackID
         currentTrackID = snapshot.currentTrackID
+        scheduleArtworkPrune(
+            keeping: Set(snapshot.playlist.compactMap(\.localArtworkCacheKey))
+        )
         rebuildMusicPlaybackQueue()
         lastBilibiliPosition = snapshot.lastPosition
         if browsingSource == .bilibili || browsingSource == .local {
@@ -1785,6 +1898,29 @@ final class MusicFeature {
         let revision = persistenceRevision
         let snapshot = librarySnapshot()
         Task { await library.scheduleSave(snapshot, revision: revision) }
+    }
+
+    private func scheduleArtworkRemoval(keys: Set<String>) {
+        guard !keys.isEmpty else { return }
+        let previous = artworkMaintenanceTask
+        let repository = localArtworkRepository
+        artworkMaintenanceTask = Task {
+            await previous?.value
+            await repository.remove(keys: keys)
+        }
+    }
+
+    private func orphanedArtworkKeys(among candidates: Set<String>) -> Set<String> {
+        candidates.subtracting(Set(playlist.compactMap(\.localArtworkCacheKey)))
+    }
+
+    private func scheduleArtworkPrune(keeping keys: Set<String>) {
+        let previous = artworkMaintenanceTask
+        let repository = localArtworkRepository
+        artworkMaintenanceTask = Task {
+            await previous?.value
+            await repository.removeOrphans(keeping: keys)
+        }
     }
 
     private func rebuildMusicPlaybackQueue() {

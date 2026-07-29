@@ -147,9 +147,11 @@ final class MaintenanceTests: XCTestCase {
         let artifact = project.appendingPathComponent("node_modules")
         let downloads = root.appendingPathComponent("Downloads")
         let desktop = root.appendingPathComponent("Desktop")
+        let temporary = root.appendingPathComponent("Temporary")
         try FileManager.default.createDirectory(at: artifact, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: desktop, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: project.appendingPathComponent("package.json"))
         try Data(repeating: 3, count: 4_096).write(to: artifact.appendingPathComponent("cache"))
         let oldInstaller = downloads.appendingPathComponent("old.dmg")
@@ -159,6 +161,7 @@ final class MaintenanceTests: XCTestCase {
 
         let scanner = CleanupScanner(
             userLibrary: library,
+            temporaryDirectory: temporary,
             metadataCacheRoot: root.appendingPathComponent("Metadata"),
             homeDirectory: root,
             downloadsDirectory: downloads,

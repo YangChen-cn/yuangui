@@ -37,6 +37,75 @@ final class FakeDesktopIconManager: DesktopIconManaging {
 
 @MainActor
 final class PetStoreTests: XCTestCase {
+    func testChatterPeriodBoundariesUseExpectedTimeBuckets() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        func date(hour: Int, minute: Int = 0) throws -> Date {
+            try XCTUnwrap(calendar.date(from: DateComponents(
+                year: 2026,
+                month: 7,
+                day: 29,
+                hour: hour,
+                minute: minute
+            )))
+        }
+
+        XCTAssertEqual(PetChatterPeriod.resolve(at: try date(hour: 5), calendar: calendar), .morning)
+        XCTAssertEqual(PetChatterPeriod.resolve(at: try date(hour: 11, minute: 59), calendar: calendar), .morning)
+        XCTAssertEqual(PetChatterPeriod.resolve(at: try date(hour: 12), calendar: calendar), .afternoon)
+        XCTAssertEqual(PetChatterPeriod.resolve(at: try date(hour: 18), calendar: calendar), .evening)
+        XCTAssertEqual(PetChatterPeriod.resolve(at: try date(hour: 22), calendar: calendar), .lateNight)
+        XCTAssertEqual(PetChatterPeriod.resolve(at: try date(hour: 4, minute: 59), calendar: calendar), .lateNight)
+    }
+
+    func testChatterSelectorAvoidsFiveRecentIDsAndReleasesOldestWhenNeeded() {
+        let candidates = (0..<6).map {
+            PetChatterCandidate(id: "line-\($0)", text: "Line \($0)")
+        }
+        XCTAssertEqual(
+            PetChatterSelector.eligible(
+                from: candidates,
+                recentIDs: Array(candidates[1...5].map(\.id))
+            ).map(\.id),
+            ["line-0"]
+        )
+
+        let exhausted = Array(candidates.prefix(2))
+        XCTAssertEqual(
+            PetChatterSelector.eligible(
+                from: exhausted,
+                recentIDs: exhausted.map(\.id)
+            ).map(\.id),
+            ["line-0"]
+        )
+        XCTAssertEqual(
+            PetChatterSelector.recording("line-6", in: candidates.prefix(6).map(\.id)),
+            ["line-2", "line-3", "line-4", "line-5", "line-6"]
+        )
+    }
+
+    func testAmbientChatterIncludesCurrentPeriodForEveryCompanionMode() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let morning = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 29,
+            hour: 8
+        )))
+
+        for mode in PetMode.allCases {
+            let candidates = PetAmbientChatter.candidateEntries(
+                mode: mode,
+                system: .empty,
+                weather: nil,
+                date: morning,
+                calendar: calendar
+            )
+            XCTAssertTrue(candidates.contains { $0.id.contains(".morning.") })
+        }
+    }
+
     func testDiarySavedMessagesAreDistinctForEveryPetMode() {
         let yuanGuiMessages = Set(PetStore.diarySavedMessages(for: .yuanGui))
         let vccMessages = Set(PetStore.diarySavedMessages(for: .vcc))

@@ -18,8 +18,7 @@ struct DiaryMainView: View {
                 )
         } content: {
             DiaryEntryList(store: store) {
-                store.clearFilters()
-                _ = store.createEntry()
+                store.createAndOpenEntry()
             }
                 .navigationSplitViewColumnWidth(
                     min: DiaryDesign.listMinimumWidth,
@@ -53,7 +52,7 @@ struct DiaryMainView: View {
     @ToolbarContentBuilder
     private var diaryToolbar: some ToolbarContent {
         ToolbarItemGroup {
-            Button { _ = store.createEntry() } label: {
+            Button { store.createAndOpenEntry() } label: {
                 Image(systemName: "square.and.pencil")
             }
             .help(AppLocalizer.string("新建日记"))
@@ -127,7 +126,7 @@ struct DiaryMainView: View {
             systemImage: "book.closed",
             actionTitle: "记录这一刻"
         ) {
-            _ = store.createEntry()
+            store.createAndOpenEntry()
         }
     }
 

@@ -41,6 +41,7 @@ struct AIChatConfiguration {
     let model: String
     let apiKey: String
     let systemPrompt: String
+    let language: AppLanguage
 }
 
 struct AIChatService: AIChatServicing {
@@ -66,7 +67,7 @@ struct AIChatService: AIChatServicing {
         request.setValue(key, forHTTPHeaderField: "api-key")
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
 
-        let modeContext = "当前桌宠角色：\(petMode.title)。请让回复口吻与当前角色相符。"
+        let modeContext = Self.modeContext(for: petMode, language: configuration.language)
         let context = Array(messages.suffix(12))
         let requestMessages = context.enumerated().map { index, message in
             RequestPayload.Message(
@@ -96,12 +97,24 @@ struct AIChatService: AIChatServicing {
                 ?? "未知错误"
             throw ChatServiceError.server(status: http.statusCode, message: String(error.prefix(240)))
         }
-        let decoded = try JSONDecoder().decode(ResponsePayload.self, from: data)
-        guard let content = decoded.choices.first?.message.content?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty else {
+        let content = try Self.responseContent(from: data)
+        guard !content.isEmpty else {
             throw ChatServiceError.emptyResponse
         }
         return content
+    }
+
+    static func responseContent(from data: Data) throws -> String {
+        let decoded: ResponsePayload
+        do {
+            decoded = try JSONDecoder().decode(ResponsePayload.self, from: data)
+        } catch {
+            throw ChatServiceError.invalidResponse
+        }
+        return decoded.choices
+            .compactMap(\.message.content?.text)
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func streamReply(
@@ -156,6 +169,12 @@ struct AIChatService: AIChatServicing {
     static func contentFragment(fromStreamLine line: String) throws -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix(":")
+            || trimmed.hasPrefix("event:")
+            || trimmed.hasPrefix("id:")
+            || trimmed.hasPrefix("retry:") {
+            return nil
+        }
         let payloadText = trimmed.hasPrefix("data:")
             ? String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             : trimmed
@@ -163,8 +182,14 @@ struct AIChatService: AIChatServicing {
         if let error = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
             throw ChatServiceError.server(status: 200, message: error.error.message)
         }
-        let payload = try JSONDecoder().decode(StreamResponsePayload.self, from: data)
-        return payload.choices.compactMap { $0.delta?.content ?? $0.message?.content }.joined()
+        do {
+            let payload = try JSONDecoder().decode(StreamResponsePayload.self, from: data)
+            return payload.choices?
+                .compactMap { $0.delta?.content?.text ?? $0.message?.content?.text }
+                .joined()
+        } catch {
+            throw ChatServiceError.invalidResponse
+        }
     }
 
     private func makeRequest(
@@ -186,7 +211,7 @@ struct AIChatService: AIChatServicing {
         request.setValue(key, forHTTPHeaderField: "api-key")
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
 
-        let modeContext = "当前桌宠角色：\(petMode.title)。请让回复口吻与当前角色相符。"
+        let modeContext = Self.modeContext(for: petMode, language: configuration.language)
         let context = Array(messages.suffix(12))
         let requestMessages = context.enumerated().map { index, message in
             RequestPayload.Message(
@@ -226,6 +251,23 @@ struct AIChatService: AIChatServicing {
         }
         parts.append(.text(textBlocks.joined(separator: "\n\n")))
         return parts
+    }
+
+    static func modeContext(for petMode: PetMode, language: AppLanguage) -> String {
+        if language == .simplifiedChinese {
+            let name = switch petMode {
+            case .yuanGui: "元圭"
+            case .vcc: "VCC"
+            case .duo: "元圭与 VCC"
+            }
+            return "当前桌宠角色：\(name)。请让回复口吻与当前角色相符。"
+        }
+        let name = switch petMode {
+        case .yuanGui: "YuanGUI"
+        case .vcc: "VCC"
+        case .duo: "YuanGUI and VCC"
+        }
+        return "Current desktop companion: \(name). Match the reply’s voice to this character."
     }
 }
 
@@ -284,7 +326,7 @@ private struct RequestPayload: Encodable {
 
 private struct ResponsePayload: Decodable {
     struct Choice: Decodable {
-        struct Message: Decodable { let content: String? }
+        struct Message: Decodable { let content: ChatResponseContent? }
         let message: Message
     }
     let choices: [Choice]
@@ -292,11 +334,35 @@ private struct ResponsePayload: Decodable {
 
 private struct StreamResponsePayload: Decodable {
     struct Choice: Decodable {
-        struct Content: Decodable { let content: String? }
+        struct Content: Decodable { let content: ChatResponseContent? }
         let delta: Content?
         let message: Content?
     }
-    let choices: [Choice]
+    let choices: [Choice]?
+}
+
+private struct ChatResponseContent: Decodable {
+    private struct Part: Decodable {
+        let text: String?
+        let content: String?
+    }
+
+    let text: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            text = nil
+        } else if let value = try? container.decode(String.self) {
+            text = value
+        } else if let parts = try? container.decode([Part].self) {
+            text = parts.compactMap { $0.text ?? $0.content }.joined()
+        } else if let part = try? container.decode(Part.self) {
+            text = part.text ?? part.content
+        } else {
+            text = nil
+        }
+    }
 }
 
 private struct ErrorEnvelope: Decodable {

@@ -164,7 +164,7 @@ struct DiaryEntryList: View {
                                         store.toggleFavorite(id: entry.id)
                                     }
                                     Divider()
-                                    Button(AppLocalizer.string("删除…"), role: .destructive) { pendingDelete = entry }
+                                    Button(AppLocalizer.string("删除"), role: .destructive) { pendingDelete = entry }
                                 }
                         }
                     }

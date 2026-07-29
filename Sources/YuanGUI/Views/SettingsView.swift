@@ -39,7 +39,7 @@ struct SettingsView: View {
                 Label("关于", systemImage: "info.circle.fill").tag(SettingsTab.about)
             }
             .listStyle(.sidebar)
-            .frame(width: 170)
+            .frame(width: 220)
             Divider()
 
             Group {
@@ -99,7 +99,10 @@ struct SettingsView: View {
                 Section(AppLocalizer.string("settings.language")) {
                     Picker(AppLocalizer.string("settings.language"), selection: Binding(
                         get: { language.language },
-                        set: language.setLanguage
+                        set: { selectedLanguage in
+                            ai.updateDefaultPromptLanguage(selectedLanguage)
+                            language.setLanguage(selectedLanguage)
+                        }
                     )) {
                         ForEach(AppLanguage.allCases) { option in
                             Text(option.title).tag(option)
@@ -526,7 +529,10 @@ struct SettingsView: View {
             }
         }
         .sheet(item: $promptEditorState) { state in
-            PromptEditorSheet(initialPrompt: state.prompt) { updatedPrompt in
+            PromptEditorSheet(
+                initialPrompt: state.prompt,
+                defaultPrompt: AISettingsStore.defaultPrompt(for: ai.promptLanguage)
+            ) { updatedPrompt in
                 ai.systemPrompt = updatedPrompt
             }
         }
@@ -541,10 +547,12 @@ private struct PromptEditorState: Identifiable {
 private struct PromptEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: String
+    let defaultPrompt: String
     let apply: (String) -> Void
 
-    init(initialPrompt: String, apply: @escaping (String) -> Void) {
+    init(initialPrompt: String, defaultPrompt: String, apply: @escaping (String) -> Void) {
         _draft = State(initialValue: initialPrompt)
+        self.defaultPrompt = defaultPrompt
         self.apply = apply
     }
 
@@ -563,7 +571,7 @@ private struct PromptEditorSheet: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator.opacity(0.5)))
 
             HStack {
-                Button("恢复默认提示词") { draft = AISettingsStore.defaultPrompt }
+                Button("恢复默认提示词") { draft = defaultPrompt }
                 Spacer()
                 Button("取消", role: .cancel) { dismiss() }
                 Button("应用") {

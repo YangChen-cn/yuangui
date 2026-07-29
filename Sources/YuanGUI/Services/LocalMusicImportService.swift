@@ -1,5 +1,5 @@
-import AVFoundation
 import Foundation
+import ImageIO
 
 struct LocalMusicImportFailure: Sendable, Equatable {
     let filename: String
@@ -29,6 +29,18 @@ enum LocalMusicImportError: LocalizedError, Equatable {
     }
 }
 
+enum MusicArtworkImportError: LocalizedError, Equatable {
+    case invalidImage
+    case fileTooLarge
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidImage: AppLocalizer.string("music.artwork.error.invalidImage")
+        case .fileTooLarge: AppLocalizer.string("music.artwork.error.fileTooLarge")
+        }
+    }
+}
+
 protocol LocalMusicImporting: Sendable {
     func importFiles(_ urls: [URL]) async -> LocalMusicImportResult
     func resolveURL(for track: MusicTrack) async throws -> URL
@@ -36,29 +48,81 @@ protocol LocalMusicImporting: Sendable {
     func localLyrics(for track: MusicTrack) async throws -> LyricsDocument?
 }
 
-actor LocalMusicArtworkRepository {
+protocol LocalMusicArtworkManaging: Sendable {
+    func store(_ data: Data, key: String) async throws
+    func importArtwork(from url: URL) async throws -> String
+    func data(for track: MusicTrack) async -> Data?
+    func remove(keys: Set<String>) async
+    func removeOrphans(keeping keys: Set<String>) async
+}
+
+actor LocalMusicArtworkRepository: LocalMusicArtworkManaging {
     static let shared = LocalMusicArtworkRepository()
+    static let maximumArtworkBytes = 20 * 1_024 * 1_024
+    static let maximumArtworkPixels: Int64 = 50_000_000
 
     private let rootURL: URL
+    private let customRootURL: URL
 
-    init(rootURL: URL? = nil) {
-        self.rootURL = rootURL ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "YuanGUI/MusicArtwork", directoryHint: .isDirectory)
+    init(rootURL: URL? = nil, customRootURL: URL? = nil) {
+        if let rootURL {
+            self.rootURL = rootURL
+            self.customRootURL = customRootURL ?? rootURL
+        } else {
+            self.rootURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appending(path: "YuanGUI/MusicArtwork", directoryHint: .isDirectory)
+            self.customRootURL = customRootURL
+                ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appending(path: "YuanGUI/CustomMusicArtwork", directoryHint: .isDirectory)
+        }
     }
 
     func store(_ data: Data, key: String) throws {
+        guard let destination = cacheURL(for: key) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         try FileManager.default.createDirectory(
-            at: rootURL,
+            at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        try data.write(to: rootURL.appending(path: key), options: .atomic)
+        try data.write(to: destination, options: .atomic)
+    }
+
+    func importArtwork(from url: URL) throws -> String {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true else {
+            throw MusicArtworkImportError.invalidImage
+        }
+        if let fileSize = values.fileSize, fileSize > Self.maximumArtworkBytes {
+            throw MusicArtworkImportError.fileTooLarge
+        }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        guard data.count <= Self.maximumArtworkBytes else {
+            throw MusicArtworkImportError.fileTooLarge
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.int64Value,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.int64Value,
+              width > 0,
+              height > 0,
+              width <= Self.maximumArtworkPixels / height else {
+            throw MusicArtworkImportError.invalidImage
+        }
+        let key = "custom-\(UUID().uuidString).artwork"
+        try store(data, key: key)
+        return key
     }
 
     func data(for track: MusicTrack) async -> Data? {
-        guard track.source == .local, let key = track.localArtworkCacheKey else { return nil }
-        let cacheURL = rootURL.appending(path: key)
+        guard let key = track.localArtworkCacheKey,
+              let cacheURL = cacheURL(for: key) else { return nil }
         if let cached = try? Data(contentsOf: cacheURL) { return cached }
+        guard track.source == .local else { return nil }
         guard let reference = track.local else { return nil }
         var stale = false
         guard let url = try? URL(
@@ -68,24 +132,67 @@ actor LocalMusicArtworkRepository {
             bookmarkDataIsStale: &stale
         ), !stale else { return nil }
         let accessed = url.startAccessingSecurityScopedResource()
+        guard accessed else { return nil }
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        guard let artwork = await LocalMusicMetadataReader.artworkData(at: url) else { return nil }
+        guard let artwork = try? await AVFoundationLocalMusicMetadataReader().read(at: url).artworkData else {
+            return nil
+        }
         try? store(artwork, key: key)
         return artwork
+    }
+
+    func remove(keys: Set<String>) {
+        for key in keys {
+            guard let url = cacheURL(for: key) else { continue }
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    func removeOrphans(keeping keys: Set<String>) {
+        for directory in Set([rootURL.standardizedFileURL, customRootURL.standardizedFileURL]) {
+            guard let contents = try? FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for url in contents where !keys.contains(url.lastPathComponent) {
+                guard url.deletingLastPathComponent().standardizedFileURL == directory else {
+                    continue
+                }
+                guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                    continue
+                }
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    private func cacheURL(for key: String) -> URL? {
+        guard !key.isEmpty,
+              key != ".",
+              key != "..",
+              URL(fileURLWithPath: key).lastPathComponent == key else { return nil }
+        let directory = key.hasPrefix("custom-") ? customRootURL : rootURL
+        let url = directory.appending(path: key).standardizedFileURL
+        guard url.deletingLastPathComponent() == directory.standardizedFileURL else { return nil }
+        return url
     }
 }
 
 actor LocalMusicImportService: LocalMusicImporting {
     static let supportedExtensions: Set<String> = ["mp3", "m4a", "aac", "wav", "aiff"]
 
-    private let artworkRepository: LocalMusicArtworkRepository
+    private let artworkRepository: any LocalMusicArtworkManaging
+    private let metadataReader: any LocalMusicMetadataReading
     private let maximumConcurrentMetadataReads: Int
 
     init(
-        artworkRepository: LocalMusicArtworkRepository = .shared,
+        artworkRepository: any LocalMusicArtworkManaging = LocalMusicArtworkRepository.shared,
+        metadataReader: any LocalMusicMetadataReading = AVFoundationLocalMusicMetadataReader(),
         maximumConcurrentMetadataReads: Int = 4
     ) {
         self.artworkRepository = artworkRepository
+        self.metadataReader = metadataReader
         self.maximumConcurrentMetadataReads = max(1, maximumConcurrentMetadataReads)
     }
 
@@ -105,11 +212,12 @@ actor LocalMusicImportService: LocalMusicImporting {
                 }
                 await withTaskGroup(of: (Int, Result<MusicTrack, Error>).self) { group in
                     for (index, url) in batch {
-                        group.addTask { [artworkRepository] in
+                        group.addTask { [artworkRepository, metadataReader] in
                             do {
                                 return (index, .success(try await Self.makeTrack(
                                     from: url,
-                                    artworkRepository: artworkRepository
+                                    artworkRepository: artworkRepository,
+                                    metadataReader: metadataReader
                                 )))
                             } catch {
                                 return (index, .failure(error))
@@ -167,17 +275,35 @@ actor LocalMusicImportService: LocalMusicImporting {
     func relocatedTrack(_ track: MusicTrack, to url: URL) async throws -> MusicTrack {
         guard track.source == .local else { throw LocalMusicImportError.invalidTrack }
         guard Self.isSupported(url) else { throw LocalMusicImportError.unsupportedFile }
+        let accessed = url.startAccessingSecurityScopedResource()
+        guard accessed else { throw LocalMusicImportError.securityScopeUnavailable }
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let metadata = try await metadataReader.read(at: url)
         var updated = track
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        let bookmark = try url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        let artworkKey: String?
+        if let artworkData = metadata.artworkData {
+            let key = "\(UUID().uuidString).artwork"
+            try await artworkRepository.store(artworkData, key: key)
+            artworkKey = key
+        } else {
+            artworkKey = nil
+        }
+        updated.title = metadata.title ?? url.deletingPathExtension().lastPathComponent
+        updated.artist = metadata.artist ?? AppLocalizer.string("music.local.unknownArtist")
+        updated.album = metadata.album
+        updated.duration = metadata.duration
         updated.local = LocalTrackReference(
-            bookmarkData: try url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            ),
+            bookmarkData: bookmark,
             originalFilename: url.lastPathComponent,
             fileSize: values.fileSize.map(Int64.init)
         )
+        updated.localArtworkCacheKey = artworkKey
         return updated
     }
 
@@ -227,13 +353,14 @@ actor LocalMusicImportService: LocalMusicImporting {
 
     private static func makeTrack(
         from url: URL,
-        artworkRepository: LocalMusicArtworkRepository
+        artworkRepository: any LocalMusicArtworkManaging,
+        metadataReader: any LocalMusicMetadataReading
     ) async throws -> MusicTrack {
         try Task.checkCancellation()
         guard isSupported(url) else { throw LocalMusicImportError.unsupportedFile }
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        let metadata = try await LocalMusicMetadataReader.read(at: url)
+        let metadata = try await metadataReader.read(at: url)
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         let id = UUID()
         let artworkKey = "\(id.uuidString).artwork"
@@ -261,58 +388,5 @@ actor LocalMusicImportService: LocalMusicImporting {
             ),
             localArtworkCacheKey: metadata.artworkData == nil ? nil : artworkKey
         )
-    }
-}
-
-private struct LocalMusicMetadata: Sendable {
-    let title: String?
-    let artist: String?
-    let album: String?
-    let duration: TimeInterval
-    let artworkData: Data?
-}
-
-private enum LocalMusicMetadataReader {
-    static func read(at url: URL) async throws -> LocalMusicMetadata {
-        let asset = AVURLAsset(url: url)
-        let duration = try await asset.load(.duration).seconds
-        let metadata = try await asset.load(.commonMetadata)
-        var title: String?
-        var artist: String?
-        var album: String?
-        var artwork: Data?
-        for item in metadata {
-            switch item.commonKey?.rawValue {
-            case AVMetadataKey.commonKeyTitle.rawValue:
-                title = try? await item.load(.stringValue)
-            case AVMetadataKey.commonKeyArtist.rawValue:
-                artist = try? await item.load(.stringValue)
-            case AVMetadataKey.commonKeyAlbumName.rawValue:
-                album = try? await item.load(.stringValue)
-            case AVMetadataKey.commonKeyArtwork.rawValue:
-                artwork = try? await item.load(.dataValue)
-            default:
-                break
-            }
-        }
-        guard duration.isFinite, duration > 0 else { throw LocalMusicImportError.invalidTrack }
-        return LocalMusicMetadata(
-            title: title?.nilIfBlank,
-            artist: artist?.nilIfBlank,
-            album: album?.nilIfBlank,
-            duration: duration,
-            artworkData: artwork
-        )
-    }
-
-    static func artworkData(at url: URL) async -> Data? {
-        try? await read(at: url).artworkData
-    }
-}
-
-private extension String {
-    var nilIfBlank: String? {
-        let value = trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
     }
 }

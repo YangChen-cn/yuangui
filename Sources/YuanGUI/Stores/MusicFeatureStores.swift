@@ -142,6 +142,7 @@ final class LocalMusicImportStore: ObservableObject {
     @Published var importedCount = 0
     @Published var duplicateCount = 0
     @Published var failedCount = 0
+    @Published var failures: [LocalMusicImportFailure] = []
     @Published var message: String?
     @Published var errorMessage: String?
     @Published var trackNeedingRelocation: MusicTrack?

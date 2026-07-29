@@ -2,22 +2,16 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
-## Unreleased — Local Music
+## 2.7.0 — Local Music, safer cleanup, and player improvements
 
-- Added Local Music as a third playback source alongside Apple Music and Bilibili, with language-aware source ordering and migration-safe defaults.
-- Added explicit file and folder import for MP3, M4A, AAC, WAV, and AIFF; folder traversal runs only inside a user-selected location. FLAC remains disabled pending device-level AVFoundation validation.
-- Added security-scoped bookmark persistence, stable `local:<UUID>` track IDs, metadata and embedded-artwork extraction, local playlists and favorites, playback-mode queues, progress restoration, and recoverable missing-file relocation.
-- Local lyrics now prefer a matching sidecar `.lrc`, then YuanGUI’s cache, LRCLIB, and manual LRC tools. Desktop lyrics, lyric seeking and offsets, external-audio interruption, and pet listening actions are shared with the existing sources.
-- Generalized the AVPlayer engine for both network candidates and local file URLs. Network fallback and the 12-second watchdog remain limited to HTTP/HTTPS playback.
-- Polished the full-player sidebar and menu bar empty states: import labels no longer truncate at compact widths, every empty source can open the full player, and runtime music, lyrics, Apple Music, and Bilibili feedback is fully localized.
-
-## 2.7.0 — English localization and global-release preparation
-
-- Added English and Simplified Chinese resource bundles, a System/English/Simplified Chinese preference, localized app metadata, and restart guidance.
-- New English installations use an English companion prompt, English place-name lookup, and non-English-to-English translation defaults. Existing prompts and translation settings are retained.
-- Cleanup House now reviews reproducible developer caches, project build artifacts, and old installer packages. The latter two are moved to the Trash only.
-- Added conservative project-root management, category summaries, hard-link-aware size accounting, stronger scan-time identity checks, expanded protected software/data rules, and “quit then rescan” behavior for running apps.
-- Added English/Chinese installation and permission guides, GPL-3.0-only and asset licensing materials, third-party notices, and DMG legal documents.
+- Added Local Music as a complete third playback source alongside Apple Music and Bilibili. Import MP3, M4A, AAC, WAV, and AIFF files or folders through the system picker, with security-scoped bookmarks, metadata and embedded-artwork extraction, local playlists, favorites, progress restoration, and recoverable missing-file relocation.
+- Added library search and stable display-only sorting for Local Music and Bilibili, detailed import failures, Reveal in Finder, and safe orphaned-artwork cleanup after deletion, duplicate imports, and library restoration.
+- Local tracks can now import or remove custom cover art. Relocation refreshes title, artist, album, duration, artwork, and matching sidecar LRC while preserving the track ID, favorites, and playlist references.
+- Reworked Cleanup House safety and interaction. Scanners and destructive-operation services are now created only after an explicit user action; project roots, category summaries, hard-link-aware sizing, protected-data rules, scan-time identity checks, shared-data protection, and running-app guidance make review clearer and safer. Project artifacts and old installers go to the Trash only.
+- Improved the player and lyrics pipeline across local and network sources. Matching sidecar LRC files take priority over the cache and LRCLIB; lyrics seeking, offsets, desktop lyrics, external-audio interruption, and companion listening actions now share consistent playback state.
+- Added time-aware bilingual companion dialogue with per-language and per-character recent-history deduplication.
+- Fixed malformed AI-response handling, language-following default prompts, lyric-bubble truncation, journal creation from empty special views, local artwork lifecycle issues, and an unwanted Desktop Folder permission prompt caused by packaged apps falling back to SwiftPM build resources.
+- Added a complete English interface, System/English/Simplified Chinese language selection, localized app metadata and permission guides, plus full GPL-3.0-only, asset-license, and third-party notice documents.
 
 ## 2.6.1 — Stability and performance
 

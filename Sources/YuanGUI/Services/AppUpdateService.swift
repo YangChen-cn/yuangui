@@ -13,12 +13,15 @@ enum AppVersionInfo {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? fallbackBuild
     }
 
-    static let currentReleaseHighlights = [
-        "YuanGUI 2.7.0: English and Simplified Chinese app localization with an explicit language preference.",
-        "Cleanup adds conservative developer-cache, project-artifact, and old-installer review rules.",
-        "Project artifacts and installers are sent to the Trash; running apps are never force-quit.",
-        "Bundled GPL-3.0-only, asset-license, and third-party-notice documents improve release transparency."
-    ]
+    static var currentReleaseHighlights: [String] {
+        [
+            "release.2.7.localMusic",
+            "release.2.7.cleanup",
+            "release.2.7.playerLyrics",
+            "release.2.7.stability",
+            "release.2.7.english"
+        ].map { AppLocalizer.string($0) }
+    }
 }
 
 struct GitHubReleaseAsset: Decodable, Equatable {

@@ -3,6 +3,148 @@ import XCTest
 @testable import YuanGUI
 
 final class MusicTests: XCTestCase {
+    func testMusicLibraryQuerySearchesMetadataAndFilenameAndSortsStably() {
+        var first = makeLocalTrack(id: "local:first", filename: "Café Song.mp3")
+        first.title = "晨光"
+        first.artist = "Artist B"
+        first.album = "Album"
+        first.duration = 240
+        var second = makeLocalTrack(id: "local:second", filename: "other.m4a")
+        second.title = "Echo"
+        second.artist = "Artist A"
+        second.album = "Album"
+        second.duration = 120
+        var third = makeLocalTrack(id: "local:third", filename: "third.aac")
+        third.title = "Echo"
+        third.artist = "Artist A"
+        third.album = "Album"
+        third.duration = 180
+
+        XCTAssertEqual(
+            MusicLibraryQuery(searchText: "CAFÉ").apply(to: [first, second, third]).map(\.id),
+            [first.id]
+        )
+        XCTAssertEqual(
+            MusicLibraryQuery(searchText: "晨光").apply(to: [first, second, third]).map(\.id),
+            [first.id]
+        )
+
+        let ascending = MusicLibraryQuery(
+            sortField: .artist,
+            sortDirection: .ascending
+        ).apply(to: [first, second, third])
+        XCTAssertEqual(ascending.map(\.id), [second.id, third.id, first.id])
+
+        let descending = MusicLibraryQuery(
+            sortField: .duration,
+            sortDirection: .descending
+        ).apply(to: [first, second, third])
+        XCTAssertEqual(descending.map(\.id), [first.id, third.id, second.id])
+    }
+
+    func testArtworkRepositoryPrunesOnlyUnreferencedCacheFiles() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "ArtworkRepository-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = LocalMusicArtworkRepository(rootURL: root)
+        try await repository.store(Data([1]), key: "keep.artwork")
+        try await repository.store(Data([2]), key: "orphan.artwork")
+
+        await repository.removeOrphans(keeping: ["keep.artwork"])
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: "keep.artwork").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "orphan.artwork").path))
+
+        await repository.remove(keys: ["../keep.artwork", "keep.artwork"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "keep.artwork").path))
+    }
+
+    func testArtworkRepositoryImportsAValidatedImage() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "ArtworkImport-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let imageURL = root.appending(path: "cover.png")
+        let imageData = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        ))
+        try imageData.write(to: imageURL)
+        let cacheRoot = root.appending(path: "Cache", directoryHint: .isDirectory)
+        let repository = LocalMusicArtworkRepository(rootURL: cacheRoot)
+
+        let key = try await repository.importArtwork(from: imageURL)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheRoot.appending(path: key).path))
+        var bilibiliTrack = MusicTrack(
+            id: "bilibili:custom-cover",
+            source: .bilibili,
+            title: "Song",
+            artist: "Artist",
+            duration: 120
+        )
+        bilibiliTrack.localArtworkCacheKey = key
+        let cachedData = await repository.data(for: bilibiliTrack)
+        XCTAssertEqual(cachedData, imageData)
+    }
+
+    func testLocalRelocationRefreshesMetadataAndArtwork() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "RelocationArtwork-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let file = FileManager.default.temporaryDirectory
+            .appending(path: "relocated-\(UUID().uuidString).mp3")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: file)
+        }
+        try Data([0]).write(to: file)
+        let repository = LocalMusicArtworkRepository(rootURL: root)
+        let service = LocalMusicImportService(
+            artworkRepository: repository,
+            metadataReader: StubLocalMusicMetadataReader(metadata: LocalMusicMetadata(
+                title: "New Title",
+                artist: "New Artist",
+                album: "New Album",
+                duration: 321,
+                artworkData: Data([9, 8, 7])
+            ))
+        )
+
+        let updated = try await service.relocatedTrack(
+            makeLocalTrack(id: "local:relocated", filename: "old.mp3"),
+            to: file
+        )
+
+        XCTAssertEqual(updated.id, "local:relocated")
+        XCTAssertEqual(updated.title, "New Title")
+        XCTAssertEqual(updated.artist, "New Artist")
+        XCTAssertEqual(updated.album, "New Album")
+        XCTAssertEqual(updated.duration, 321)
+        XCTAssertEqual(updated.local?.originalFilename, file.lastPathComponent)
+        let key = try XCTUnwrap(updated.localArtworkCacheKey)
+        XCTAssertEqual(try Data(contentsOf: root.appending(path: key)), Data([9, 8, 7]))
+
+        let noArtworkService = LocalMusicImportService(
+            artworkRepository: repository,
+            metadataReader: StubLocalMusicMetadataReader(metadata: LocalMusicMetadata(
+                title: nil,
+                artist: nil,
+                album: nil,
+                duration: 111,
+                artworkData: nil
+            ))
+        )
+        let withoutArtwork = try await noArtworkService.relocatedTrack(
+            makeLocalTrack(
+                id: "local:no-artwork",
+                filename: "old.mp3",
+                artworkKey: "old.artwork"
+            ),
+            to: file
+        )
+        XCTAssertEqual(withoutArtwork.title, file.deletingPathExtension().lastPathComponent)
+        XCTAssertNil(withoutArtwork.localArtworkCacheKey)
+    }
+
     @MainActor
     func testDesktopLyricsBackgroundOpacityDefaultsClampsAndPersists() {
         let suite = "LyricsOpacityTests-\(UUID().uuidString)"
@@ -810,6 +952,148 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testDuplicateImportRetainsFailureDetailsAndCleansRejectedArtwork() async {
+        let first = makeLocalTrack(id: "local:first", filename: "same.mp3", artworkKey: "first.artwork")
+        let duplicate = makeLocalTrack(id: "local:second", filename: "same.mp3", artworkKey: "duplicate.artwork")
+        let artwork = RecordingLocalArtworkRepository()
+        let feature = MusicFeature(
+            defaults: UserDefaults(suiteName: "LocalFailure-\(UUID().uuidString)")!,
+            localMusicImporter: StubLocalMusicImporter(importResult: LocalMusicImportResult(
+                tracks: [first, duplicate],
+                failures: [LocalMusicImportFailure(filename: "broken.wav", message: "Unreadable")]
+            )),
+            localArtworkRepository: artwork,
+            library: RecordingMusicLibraryCoordinator()
+        )
+
+        feature.importLocalMusic([URL(fileURLWithPath: "/tmp/selected")])
+        for _ in 0..<12 { await Task.yield() }
+        await feature.shutdown()
+
+        XCTAssertEqual(feature.localImportStore.failures.count, 1)
+        XCTAssertEqual(feature.localImportStore.failures.first?.filename, "broken.wav")
+        let removed = await artwork.removedKeys()
+        XCTAssertEqual(removed, ["duplicate.artwork"])
+    }
+
+    @MainActor
+    func testRemovingLocalTracksCleansArtworkAndRestorePrunesOrphans() async {
+        let first = makeLocalTrack(id: "local:first", filename: "first.mp3", artworkKey: "first.artwork")
+        let second = makeLocalTrack(id: "local:second", filename: "second.mp3", artworkKey: "second.artwork")
+        let artwork = RecordingLocalArtworkRepository()
+        let defaults = UserDefaults(suiteName: "LocalCleanup-\(UUID().uuidString)")!
+        defaults.set(MusicSource.local.rawValue, forKey: "musicSource")
+        let feature = MusicFeature(
+            defaults: defaults,
+            localArtworkRepository: artwork,
+            library: StaticMusicLibraryCoordinator(snapshot: MusicLibrarySnapshot(playlist: [first, second]))
+        )
+        for _ in 0..<12 { await Task.yield() }
+
+        feature.remove(first)
+        feature.clearPlaylist()
+        await feature.shutdown()
+
+        let removed = await artwork.removedKeys()
+        let pruneKeys = await artwork.lastPruneKeys()
+        XCTAssertEqual(removed, Set(["first.artwork", "second.artwork"]))
+        XCTAssertEqual(pruneKeys, Set(["first.artwork", "second.artwork"]))
+    }
+
+    @MainActor
+    func testRemovingTrackKeepsArtworkStillReferencedByAnotherTrack() async {
+        let first = makeLocalTrack(id: "local:first", filename: "first.mp3", artworkKey: "shared.artwork")
+        let second = makeLocalTrack(id: "local:second", filename: "second.mp3", artworkKey: "shared.artwork")
+        let artwork = RecordingLocalArtworkRepository()
+        let defaults = UserDefaults(suiteName: "SharedArtwork-\(UUID().uuidString)")!
+        defaults.set(MusicSource.local.rawValue, forKey: "musicSource")
+        let feature = MusicFeature(
+            defaults: defaults,
+            localArtworkRepository: artwork,
+            library: StaticMusicLibraryCoordinator(snapshot: MusicLibrarySnapshot(playlist: [first, second]))
+        )
+        for _ in 0..<12 { await Task.yield() }
+
+        feature.remove(first)
+        for _ in 0..<8 { await Task.yield() }
+        let removedAfterFirst = await artwork.removedKeys()
+        XCTAssertTrue(removedAfterFirst.isEmpty)
+
+        feature.clearPlaylist()
+        await feature.shutdown()
+        let removedAfterClear = await artwork.removedKeys()
+        XCTAssertEqual(removedAfterClear, ["shared.artwork"])
+    }
+
+    @MainActor
+    func testReplacingAndRemovingArtworkUpdatesTheTrackAndCleansOldFiles() async {
+        let track = makeLocalTrack(
+            id: "local:custom-artwork",
+            filename: "song.mp3",
+            artworkKey: "embedded.artwork"
+        )
+        let artwork = RecordingLocalArtworkRepository(importedKey: "custom.artwork")
+        let feature = MusicFeature(
+            defaults: UserDefaults(suiteName: "CustomArtwork-\(UUID().uuidString)")!,
+            localArtworkRepository: artwork,
+            library: StaticMusicLibraryCoordinator(snapshot: MusicLibrarySnapshot(playlist: [track]))
+        )
+        for _ in 0..<12 { await Task.yield() }
+
+        feature.setArtwork(for: track, from: URL(fileURLWithPath: "/tmp/cover.png"))
+        for _ in 0..<12 { await Task.yield() }
+        XCTAssertEqual(
+            feature.libraryStore.playlist.first(where: { $0.id == track.id })?.localArtworkCacheKey,
+            "custom.artwork"
+        )
+
+        if let updated = feature.libraryStore.playlist.first(where: { $0.id == track.id }) {
+            feature.removeArtwork(for: updated)
+        }
+        await feature.shutdown()
+
+        XCTAssertNil(feature.libraryStore.playlist.first(where: { $0.id == track.id })?.localArtworkCacheKey)
+        let removedKeys = await artwork.removedKeys()
+        XCTAssertEqual(removedKeys, Set(["embedded.artwork", "custom.artwork"]))
+    }
+
+    @MainActor
+    func testRevealInFinderUsesResolvedLocalURL() async {
+        let track = makeLocalTrack(id: "local:finder", filename: "finder.mp3")
+        let revealer = RecordingLocalMusicFileRevealer()
+        let feature = MusicFeature(
+            defaults: UserDefaults(suiteName: "LocalFinder-\(UUID().uuidString)")!,
+            localMusicImporter: StubLocalMusicImporter(),
+            localFileRevealer: revealer,
+            library: RecordingMusicLibraryCoordinator()
+        )
+
+        feature.revealInFinder(track)
+        for _ in 0..<12 { await Task.yield() }
+
+        XCTAssertEqual(revealer.revealedURL?.lastPathComponent, "finder.mp3")
+        await feature.shutdown()
+    }
+
+    @MainActor
+    func testRevealInFinderRequestsRelocationWhenBookmarkIsStale() async {
+        let track = makeLocalTrack(id: "local:stale-finder", filename: "missing.mp3")
+        let feature = MusicFeature(
+            defaults: UserDefaults(suiteName: "StaleFinder-\(UUID().uuidString)")!,
+            localMusicImporter: StubLocalMusicImporter(resolveError: .staleBookmark),
+            localFileRevealer: RecordingLocalMusicFileRevealer(),
+            library: RecordingMusicLibraryCoordinator()
+        )
+
+        feature.revealInFinder(track)
+        for _ in 0..<12 { await Task.yield() }
+
+        XCTAssertEqual(feature.localImportStore.trackNeedingRelocation?.id, track.id)
+        XCTAssertNotNil(feature.localImportStore.errorMessage)
+        await feature.shutdown()
+    }
+
+    @MainActor
     func testMissingLocalFileProducesRelocationStateInsteadOfCrashing() async {
         let defaults = UserDefaults(suiteName: "LocalMissing-\(UUID().uuidString)")!
         let track = makeLocalTrack(id: "local:missing", filename: "missing.mp3")
@@ -1083,7 +1367,11 @@ final class MusicTests: XCTestCase {
         }
     }
 
-    private func makeLocalTrack(id: String, filename: String) -> MusicTrack {
+    private func makeLocalTrack(
+        id: String,
+        filename: String,
+        artworkKey: String? = nil
+    ) -> MusicTrack {
         MusicTrack(
             id: id,
             source: .local,
@@ -1098,8 +1386,42 @@ final class MusicTests: XCTestCase {
                 bookmarkData: Data([1, 2, 3]),
                 originalFilename: filename,
                 fileSize: 100
-            )
+            ),
+            localArtworkCacheKey: artworkKey
         )
+    }
+}
+
+private struct StubLocalMusicMetadataReader: LocalMusicMetadataReading {
+    let metadata: LocalMusicMetadata
+
+    func read(at url: URL) async throws -> LocalMusicMetadata { metadata }
+}
+
+private actor RecordingLocalArtworkRepository: LocalMusicArtworkManaging {
+    private var removed: Set<String> = []
+    private var pruneKeys: Set<String> = []
+    private let importedKey: String
+
+    init(importedKey: String = "imported.artwork") {
+        self.importedKey = importedKey
+    }
+
+    func store(_ data: Data, key: String) async throws {}
+    func importArtwork(from url: URL) async throws -> String { importedKey }
+    func data(for track: MusicTrack) async -> Data? { nil }
+    func remove(keys: Set<String>) async { removed.formUnion(keys) }
+    func removeOrphans(keeping keys: Set<String>) async { pruneKeys = keys }
+    func removedKeys() -> Set<String> { removed }
+    func lastPruneKeys() -> Set<String> { pruneKeys }
+}
+
+@MainActor
+private final class RecordingLocalMusicFileRevealer: LocalMusicFileRevealing {
+    private(set) var revealedURL: URL?
+
+    func reveal(_ url: URL) {
+        revealedURL = url
     }
 }
 

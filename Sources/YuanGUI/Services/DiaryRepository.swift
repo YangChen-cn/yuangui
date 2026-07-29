@@ -28,24 +28,43 @@ actor DiaryRepository {
 
     func save(_ entry: DiaryEntry) throws {
         try prepareDirectories()
-        let envelope = DiaryFileEnvelope(entry: entry)
-        let data = try encoder.encode(envelope)
-        try data.write(to: fileURL(for: entry.id), options: .atomic)
-        try removeLegacyDuplicates(for: entry.id)
+        try write(entry)
+        try removeLegacyDuplicates(for: [entry.id])
     }
 
     func save(_ entries: [DiaryEntry]) async -> DiarySaveReport {
         await beforeBatchSave?()
         var savedIDs = Set<UUID>()
         var failures: [DiaryWriteFailure] = []
+
+        do {
+            try prepareDirectories()
+        } catch {
+            return DiarySaveReport(
+                savedIDs: [],
+                failures: entries.map { DiaryWriteFailure(entryID: $0.id, message: error.localizedDescription) }
+            )
+        }
+
         for entry in entries {
             do {
-                try save(entry)
+                try write(entry)
                 savedIDs.insert(entry.id)
             } catch {
                 failures.append(DiaryWriteFailure(entryID: entry.id, message: error.localizedDescription))
             }
         }
+
+        do {
+            try removeLegacyDuplicates(for: savedIDs)
+        } catch {
+            let cleanupIDs = savedIDs
+            savedIDs.removeAll()
+            failures.append(contentsOf: cleanupIDs.map {
+                DiaryWriteFailure(entryID: $0, message: error.localizedDescription)
+            })
+        }
+
         return DiarySaveReport(savedIDs: savedIDs, failures: failures)
     }
 
@@ -190,6 +209,12 @@ actor DiaryRepository {
         return try decoder.decode(DiaryEntry.self, from: data)
     }
 
+    private func write(_ entry: DiaryEntry) throws {
+        let envelope = DiaryFileEnvelope(entry: entry)
+        let data = try encoder.encode(envelope)
+        try data.write(to: fileURL(for: entry.id), options: .atomic)
+    }
+
     private func fileURL(for id: UUID) -> URL {
         layout.entriesURL.appendingPathComponent("\(id.uuidString.lowercased()).diaryentry")
     }
@@ -202,12 +227,13 @@ actor DiaryRepository {
             .first { $0.lastPathComponent.lowercased() == expectedName }
     }
 
-    private func removeLegacyDuplicates(for id: UUID) throws {
-        let current = fileURL(for: id)
-        let currentPath = current.standardizedFileURL.path
-        let expectedName = "\(id.uuidString.lowercased()).diaryentry"
+    private func removeLegacyDuplicates(for ids: Set<UUID>) throws {
+        guard !ids.isEmpty else { return }
+        let currentPaths = Set(ids.map { fileURL(for: $0).standardizedFileURL.path })
+        let expectedNames = Set(ids.map { "\($0.uuidString.lowercased()).diaryentry" })
         for file in try fileManager.contentsOfDirectory(at: layout.entriesURL, includingPropertiesForKeys: nil)
-        where file.standardizedFileURL.path != currentPath && file.lastPathComponent.lowercased() == expectedName {
+        where !currentPaths.contains(file.standardizedFileURL.path)
+            && expectedNames.contains(file.lastPathComponent.lowercased()) {
             try fileManager.removeItem(at: file)
         }
     }

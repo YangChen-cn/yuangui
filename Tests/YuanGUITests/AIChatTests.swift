@@ -57,6 +57,26 @@ final class AIChatTests: XCTestCase {
             "与 VCC"
         )
         XCTAssertNil(try AIChatService.contentFragment(fromStreamLine: "data: [DONE]"))
+        XCTAssertNil(try AIChatService.contentFragment(fromStreamLine: "event: message"))
+        XCTAssertNil(try AIChatService.contentFragment(fromStreamLine: ": keep-alive"))
+        XCTAssertNil(try AIChatService.contentFragment(fromStreamLine: #"data: {"usage":{"total_tokens":12}}"#))
+        XCTAssertEqual(
+            try AIChatService.contentFragment(
+                fromStreamLine: #"data: {"choices":[{"delta":{"content":[{"type":"text","text":"Hello"},{"type":"text","text":"!"}]}}]}"#
+            ),
+            "Hello!"
+        )
+    }
+
+    func testChatParsesArrayBasedNonStreamingContentAndMapsMalformedResponses() throws {
+        let data = Data(
+            #"{"choices":[{"message":{"content":[{"type":"text","text":"Hello"},{"type":"text","text":" world"}]}}]}"#
+                .utf8
+        )
+        XCTAssertEqual(try AIChatService.responseContent(from: data), "Hello world")
+        XCTAssertThrowsError(try AIChatService.responseContent(from: Data("not-json".utf8))) { error in
+            XCTAssertEqual(error as? ChatServiceError, .invalidResponse)
+        }
     }
 
     func testModelsEndpointUsesSameCompatibleBasePath() {
@@ -133,6 +153,40 @@ final class AIChatTests: XCTestCase {
 
         XCTAssertEqual(secrets.value, "test-key")
         XCTAssertEqual(defaults.string(forKey: "aiModel"), "custom-model")
+    }
+
+    @MainActor
+    func testDefaultPromptFollowsLanguageWithoutOverwritingCustomPrompt() {
+        let suite = "AIPromptLanguageTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(AISettingsStore.defaultPrompt, forKey: "aiSystemPrompt")
+        let settings = AISettingsStore(
+            defaults: defaults,
+            secrets: MemorySecretStore(),
+            language: .english
+        )
+
+        XCTAssertEqual(settings.systemPrompt, AISettingsStore.englishDefaultPrompt)
+        XCTAssertEqual(settings.promptLanguage, .english)
+
+        settings.updateDefaultPromptLanguage(.simplifiedChinese)
+        XCTAssertEqual(settings.systemPrompt, AISettingsStore.defaultPrompt)
+        XCTAssertEqual(defaults.string(forKey: "aiSystemPrompt"), AISettingsStore.defaultPrompt)
+
+        settings.systemPrompt = "My custom instructions"
+        settings.updateDefaultPromptLanguage(.english)
+        XCTAssertEqual(settings.systemPrompt, "My custom instructions")
+        XCTAssertEqual(settings.promptLanguage, .english)
+    }
+
+    func testModeContextUsesTheConfiguredPromptLanguage() {
+        let english = AIChatService.modeContext(for: .duo, language: .english)
+        let chinese = AIChatService.modeContext(for: .duo, language: .simplifiedChinese)
+
+        XCTAssertTrue(english.hasPrefix("Current desktop companion:"))
+        XCTAssertFalse(english.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
+        XCTAssertTrue(chinese.hasPrefix("当前桌宠角色："))
     }
 
     @MainActor

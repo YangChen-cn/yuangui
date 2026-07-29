@@ -20,7 +20,7 @@ struct DiaryPhotoWallView: View {
                 systemImage: "photo.on.rectangle",
                 actionTitle: "记录这一刻"
             ) {
-                _ = store.createEntry()
+                store.createAndOpenEntry()
             }
         } else {
             ScrollView {

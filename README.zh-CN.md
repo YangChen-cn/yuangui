@@ -13,7 +13,7 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.6.1.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.7.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -22,7 +22,7 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-当前稳定版本为 `2.6.1`。
+当前稳定版本为 `2.7.0`。
 
 ## 界面预览
 
@@ -56,6 +56,10 @@
 ## 主要功能
 
 - **三种角色模式**：元圭、VCC、元圭与 VCC 一起。
+- **全新的本地音乐能力**：可通过系统面板导入 MP3、M4A、AAC、WAV 和 AIFF 文件或文件夹，支持安全作用域书签、元数据和内嵌封面读取、本地歌单、收藏、搜索、稳定排序、播放进度恢复、Finder 定位及文件丢失后的重新定位。
+- **本地封面与资料维护**：可以为本地歌曲导入或移除自定义封面；重新定位歌曲会刷新标题、歌手、专辑、时长、封面和同名 LRC，同时保留歌曲 ID、收藏和歌单引用。删除歌曲、重复导入及资料库恢复时会安全清理无主封面缓存。
+- **清理屋安全与交互重做**：扫描和执行依赖延迟到用户主动操作后创建，启动时不会触碰桌面等受保护目录；新增项目扫描位置、分类摘要、硬链接去重、执行前身份复核、共享数据保护、运行中应用提示和更清晰的选择交互。项目构建产物与旧安装包只会移入废纸篓。
+- **播放器与歌词改进**：本地音乐和哔哩哔哩资料库支持纯逻辑搜索与排序；本地歌词优先读取同目录同名 LRC，并与歌词缓存、LRCLIB、歌词偏移、点击跳转、桌面歌词及桌宠听歌动作共用一致的播放状态。
 - **元圭恋爱手账**：原生 macOS 三栏日记界面，支持快速记录、心情、天气、地点、播放中的音乐、标签、Markdown、照片、日历、照片墙、那年今日、搜索、收藏、最近删除以及 Markdown/JSON/ZIP 导出。
 - **本地日记存储**：日记和附件保存在本机，采用带格式版本的 JSON、原图/缩略图分离、损坏文件隔离、竞态安全的自动保存和可验证备份恢复；每天最多自动备份一次，并保留 7 个每日备份和 4 个每周备份。
 - **轻量动作效果**：每个普通动作和状态动作都带有短暂的位移、缩放、摆动或弹跳效果；低电量模式和“减少动态效果”下会自动静止。
@@ -94,9 +98,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-2.6.1.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.6.1.dmg)
+[一键下载最新版 `YuanGUI-2.7.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.7.0.dmg)
 
-1. 打开 `YuanGUI-2.6.1.dmg`。
+1. 打开 `YuanGUI-2.7.0.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -173,7 +177,7 @@ swift test
 swift test
 ```
 
-当前测试套件包含 295 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
+当前测试套件包含 332 项测试，其中 2 项网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -197,7 +201,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
 
 ```text
-dist/YuanGUI-2.6.1.dmg
+dist/YuanGUI-2.7.0.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

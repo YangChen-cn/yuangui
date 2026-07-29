@@ -21,7 +21,7 @@ struct MusicArtworkView: View {
         .overlay(RoundedRectangle(cornerRadius: size * 0.18).stroke(.primary.opacity(0.12), lineWidth: 0.7))
         .task(id: track?.localArtworkCacheKey) {
             localArtwork = nil
-            guard let track, track.source == .local,
+            guard let track, track.localArtworkCacheKey != nil,
                   let data = await LocalMusicArtworkRepository.shared.data(for: track) else { return }
             localArtwork = NSImage(data: data)
         }
@@ -458,8 +458,12 @@ struct MusicPlayerView: View {
     @State private var isSearchingLyrics = false
     @State private var isBilibiliLoginPresented = false
     @State private var isBilibiliFavoritesPresented = false
+    @State private var isLocalImportFailuresPresented = false
     @State private var lyricsSearchTitle = ""
     @State private var lyricsSearchArtist = ""
+    @State private var librarySearchText = ""
+    @State private var librarySortField: MusicLibraryQuery.SortField = .libraryOrder
+    @State private var librarySortDirection: MusicLibraryQuery.SortDirection = .ascending
 
     var body: some View {
         VStack(spacing: 0) {
@@ -503,6 +507,12 @@ struct MusicPlayerView: View {
         }
         .sheet(isPresented: $isBilibiliFavoritesPresented) {
             BilibiliFavoriteImportSheet(music: music, isPresented: $isBilibiliFavoritesPresented)
+        }
+        .sheet(isPresented: $isLocalImportFailuresPresented) {
+            LocalMusicImportFailureSheet(
+                failures: music.localImportStore.failures,
+                isPresented: $isLocalImportFailuresPresented
+            )
         }
     }
 
@@ -553,6 +563,7 @@ struct MusicPlayerView: View {
                     .padding(.horizontal, 10)
                     .padding(.bottom, 8)
                 }
+                libraryFilterBar
                 HStack {
                     Button {
                         if music.bilibiliAccountStore.account == nil { isBilibiliLoginPresented = true }
@@ -627,18 +638,30 @@ struct MusicPlayerView: View {
                             if let selectedSavedPlaylist {
                                 Button("从此歌单移除") { music.remove(track, from: selectedSavedPlaylist) }
                             }
+                            Button("music.artwork.choose") { chooseArtwork(for: track) }
+                            if track.localArtworkCacheKey != nil {
+                                Button("music.artwork.remove") { music.removeArtwork(for: track) }
+                            }
                             Button("从资料库移除", role: .destructive) { music.remove(track) }
                         }
                         .onTapGesture(count: 2) { music.play(track) }
                     }
                     }
-                }.listStyle(.sidebar)
+                }
+                .listStyle(.sidebar)
+                .overlay {
+                    if displayedTracks.isEmpty, !librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ContentUnavailableView.search
+                    }
+                }
                 HStack {
                     Text(AppLocalizer.format("music.library.trackCount", displayedTracks.count))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    if selectedCollectionID == "all", !displayedTracks.isEmpty {
+                    if selectedCollectionID == "all",
+                       librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       !displayedTracks.isEmpty {
                         Button("清空") { music.clearPlaylist() }.buttonStyle(.plain).foregroundStyle(.secondary)
                     }
                 }.padding(10)
@@ -662,7 +685,20 @@ struct MusicPlayerView: View {
             }
             .padding(10)
             if let message = music.localImportStore.message {
-                Text(message).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
+                HStack(spacing: 8) {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !music.localImportStore.failures.isEmpty {
+                        Button(AppLocalizer.string("music.local.import.failures.show")) {
+                            isLocalImportFailuresPresented = true
+                        }
+                        .buttonStyle(.link)
+                        .controlSize(.small)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
             }
             if localTracks.isEmpty {
                 ContentUnavailableView {
@@ -677,6 +713,7 @@ struct MusicPlayerView: View {
                 }
                 .frame(maxHeight: .infinity)
             } else {
+                libraryFilterBar
                 List(selection: $selectedTrackID) {
                     Section("资料库") {
                         collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: localTracks.count)
@@ -727,6 +764,11 @@ struct MusicPlayerView: View {
                                     }
                                 }
                                 Button("music.local.relocate") { chooseRelocation(for: track) }
+                                Button("music.local.revealInFinder") { music.revealInFinder(track) }
+                                Button("music.artwork.choose") { chooseArtwork(for: track) }
+                                if track.localArtworkCacheKey != nil {
+                                    Button("music.artwork.remove") { music.removeArtwork(for: track) }
+                                }
                                 Button("从资料库移除", role: .destructive) { music.remove(track) }
                             }
                             .onTapGesture(count: 2) { music.play(track) }
@@ -734,6 +776,11 @@ struct MusicPlayerView: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .overlay {
+                    if displayedTracks.isEmpty, !librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ContentUnavailableView.search
+                    }
+                }
             }
         }
     }
@@ -757,14 +804,26 @@ struct MusicPlayerView: View {
                 MusicProgressView(music: music).frame(maxWidth: 480)
                 MusicTransportControls(music: music)
                 if let track = music.playback.currentTrack, track.source != .appleMusic {
-                    Button { music.toggleFavorite(track) } label: {
-                        Label(
-                            AppLocalizer.string(music.isFavorite(track) ? "已收藏" : "收藏"),
-                            systemImage: music.isFavorite(track) ? "heart.fill" : "heart"
-                        )
+                    HStack(spacing: 8) {
+                        Button { music.toggleFavorite(track) } label: {
+                            Label(
+                                AppLocalizer.string(music.isFavorite(track) ? "已收藏" : "收藏"),
+                                systemImage: music.isFavorite(track) ? "heart.fill" : "heart"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.pink)
+
+                        Menu("music.artwork.menu", systemImage: "photo") {
+                            Button("music.artwork.choose") { chooseArtwork(for: track) }
+                            if track.localArtworkCacheKey != nil {
+                                Button("music.artwork.remove", role: .destructive) {
+                                    music.removeArtwork(for: track)
+                                }
+                            }
+                        }
+                        .menuStyle(.button)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.pink)
                 }
                 MusicVolumeControl(music: music).frame(width: 230)
                 if music.playback.source != .appleMusic {
@@ -933,7 +992,19 @@ struct MusicPlayerView: View {
         if selectedCollectionID == "favorites" { tracks = music.libraryStore.favoriteTracks }
         else if let selectedSavedPlaylist { tracks = music.tracks(in: selectedSavedPlaylist) }
         else { tracks = music.libraryStore.playlist }
-        return tracks.filter { $0.source == music.playback.source }
+        return MusicLibraryQuery(
+            searchText: librarySearchText,
+            sortField: librarySortField,
+            sortDirection: librarySortDirection
+        ).apply(to: tracks.filter { $0.source == music.playback.source })
+    }
+
+    private var libraryFilterBar: some View {
+        MusicLibraryFilterBar(
+            searchText: $librarySearchText,
+            sortField: $librarySortField,
+            sortDirection: $librarySortDirection
+        )
     }
 
     private var collectionTitle: String {
@@ -1037,6 +1108,17 @@ struct MusicPlayerView: View {
         }
         panel.nameFieldStringValue = track.local?.originalFilename ?? ""
         if panel.runModal() == .OK, let url = panel.url { music.relocate(track, to: url) }
+    }
+
+    private func chooseArtwork(for track: MusicTrack) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.image]
+        panel.prompt = AppLocalizer.string("music.artwork.chooseButton")
+        if panel.runModal() == .OK, let url = panel.url {
+            music.setArtwork(for: track, from: url)
+        }
     }
 
     private func prepareLyricsSearch() {
@@ -1401,10 +1483,18 @@ struct PetMusicLyricBubble: View {
     let text: String
     var alertText: String? = nil
     var placement: PetAuxiliaryBubblePlacement = .abovePet
+
     var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "music.note").foregroundStyle(.pink).font(.headline)
-            Text(text).font(.system(size: 13, weight: .semibold, design: .rounded)).lineLimit(2)
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "music.note")
+                .foregroundStyle(.pink)
+                .font(.headline)
+                .padding(.top, 1)
+            Text(text)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if let alertText {
                 Label(alertText, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 9, weight: .bold, design: .rounded))
@@ -1416,7 +1506,7 @@ struct PetMusicLyricBubble: View {
         }
         .padding(.horizontal, 15).padding(.vertical, 11)
         .frame(maxWidth: 350)
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize(horizontal: false, vertical: true)
         .yuanPetBubbleGlass(
             cornerRadius: 20,
             placement: placement,

@@ -26,19 +26,19 @@ Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, 
 ## Interface preview
 
 <p align="center">
-  <img src="docs/media/yuangui-demo.gif" width="820" alt="YuanGUI and VCC feature demo">
+  <img src="docs/media/yuangui-demo-en.gif" width="820" alt="YuanGUI and VCC feature demo">
 </p>
 
 <table>
   <tr><th>Companion and status bar</th><th>Journal</th></tr>
   <tr>
-    <td><img src="docs/media/桌宠状态栏.gif" width="390" alt="Companion and status bar demo"></td>
-    <td><img src="docs/media/手帐本.gif" width="390" alt="Journal demo"></td>
+    <td><img src="docs/media/Status bar-en.gif" width="390" alt="Companion and status bar demo"></td>
+    <td><img src="docs/media/Journal-en.gif" width="390" alt="Journal demo"></td>
   </tr>
   <tr><th>Music player</th><th>AI chat</th></tr>
   <tr>
-    <td><img src="docs/media/播放器.gif" width="390" alt="Music player demo"></td>
-    <td><img src="docs/media/ai chat.gif" width="390" alt="AI chat demo"></td>
+    <td><img src="docs/media/music player.gif" width="390" alt="Music player demo"></td>
+    <td><img src="docs/media/ai chat-en.gif" width="390" alt="AI chat demo"></td>
   </tr>
 </table>
 
@@ -50,7 +50,7 @@ Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, 
 - **Local weather**: approximate location through macOS permission and Open-Meteo, with no weather API key.
 - **Journal**: local photos, Markdown, calendar, mood, weather, music, search, favorites, recently deleted items, and Markdown/JSON/ZIP export.
 - **AI chat**: OpenAI-compatible endpoints, streaming replies, attachments, local history, and editable prompts.
-- **Music player**: Apple Music, Bilibili, and local audio. Local Music supports MP3, M4A, AAC, WAV, and AIFF, with playlists, favorites, matching LRC lyrics, lyric cache, and desktop lyrics.
+- **Music player**: Apple Music, Bilibili, and local audio. Local Music supports MP3, M4A, AAC, WAV, and AIFF, with search, stable sorting, playlists, favorites, custom cover art, matching LRC lyrics, lyric cache, and desktop lyrics.
 - **Bilibili library**: QR login, authorized subtitles, and deduplicated favorites import without storing passwords.
 - **Screenshots and translation**: region capture, annotations, on-device Vision OCR, screenshot translation, selected-text translation, and Apple or online translation engines.
 - **Cleanup House**: conservative cleanup, uninstall tools, allowlists, operation logs, and path safety checks.
@@ -86,9 +86,10 @@ Open the full player from the status bar music panel or Settings, then select Ap
 - Apple Music controls the system Music app.
 - Bilibili accepts video URLs, BV IDs, and `b23.tv` links. QR login enables authorized subtitles and favorites import.
 - Local Music reads audio only after you choose files or folders in the system import panel. It uses security-scoped bookmarks for continued access and never changes the original files.
+- Local tracks can use embedded artwork or a cover image you choose. Relocating a missing file refreshes its metadata, duration, artwork, and matching sidecar lyrics while preserving favorites and playlist references.
 - A matching `.lrc` beside an imported track takes priority over the lyrics cache and LRCLIB lookup. Playlists, favorites, lyrics, offsets, and progress stay on this Mac.
 
-The menu bar panel follows the selected source and shows source-specific empty-state actions. The full player keeps import controls usable in narrow sidebars; built-in library labels are localized while user playlist and track names remain unchanged.
+The menu bar panel follows the selected source and shows source-specific empty-state actions. The full player supports library search and stable display-only sorting, detailed import failures, and revealing local files in Finder. Built-in library labels are localized while user playlist and track names remain unchanged.
 
 ## Screenshots and translation
 

@@ -69,7 +69,7 @@ final class PetStore: ObservableObject {
     private var batteryWarningReminderTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
-    private var lastAmbientMessage: String?
+    private var recentChatterIDs: [String: [String]] = [:]
     private var batteryAlertLevel: BatteryAlertLevel = .normal
 
     var currentAction: PetAction {
@@ -819,7 +819,11 @@ final class PetStore: ObservableObject {
         ambientMessage = nil
     }
 
-    func showAmbientMessage(_ message: String, duration: TimeInterval = 8) {
+    func showAmbientMessage(
+        _ message: String,
+        duration: TimeInterval = 8,
+        chatterID: String? = nil
+    ) {
         guard isPetPresented, !isFocusActive, taskState == .idle, !isDropTargeted, !isChatting else { return }
         let value = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
@@ -827,10 +831,15 @@ final class PetStore: ObservableObject {
         toast = nil
         ambientMessageHideTask?.cancel()
         ambientMessage = value
-        lastAmbientMessage = value
-        let nanoseconds = UInt64(max(duration, 0) * 1_000_000_000)
+        if let chatterID {
+            let key = chatterHistoryKey
+            recentChatterIDs[key] = PetChatterSelector.recording(
+                chatterID,
+                in: recentChatterIDs[key] ?? []
+            )
+        }
         ambientMessageHideTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: nanoseconds) }
+            do { try await Task.sleep(for: .seconds(max(duration, 0))) }
             catch { return }
             guard !Task.isCancelled, let self, self.ambientMessage == value else { return }
             self.ambientMessageHideTask = nil
@@ -873,7 +882,7 @@ final class PetStore: ObservableObject {
         let configuredDelay = TimeInterval(ambientChatterIntervalMinutes * 60)
         let delay = initial ? min(configuredDelay, 180) : configuredDelay
         ambientChatterTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            do { try await Task.sleep(for: .seconds(delay)) }
             catch { return }
             guard !Task.isCancelled, let self else { return }
             self.presentScheduledAmbientChatter()
@@ -888,14 +897,18 @@ final class PetStore: ObservableObject {
               !isChatting,
               toast == nil,
               ambientMessage == nil else { return }
-        let candidates = PetAmbientChatter.candidates(
+        let candidates = PetAmbientChatter.candidateEntries(
             mode: mode,
             system: monitor.snapshot,
             weather: weather.snapshot,
             locationName: weather.locationName
-        ).filter { $0 != lastAmbientMessage }
-        guard let message = candidates.randomElement() else { return }
-        showAmbientMessage(message)
+        )
+        let eligible = PetChatterSelector.eligible(
+            from: candidates,
+            recentIDs: recentChatterIDs[chatterHistoryKey] ?? []
+        )
+        guard let candidate = eligible.randomElement() else { return }
+        showAmbientMessage(candidate.text, chatterID: candidate.id)
     }
 
     private func presentWeatherRefreshAnnouncement(_ snapshot: WeatherSnapshot) {
@@ -908,15 +921,21 @@ final class PetStore: ObservableObject {
               !isChatting,
               toast == nil,
               ambientMessage == nil else { return }
-        let allMessages = PetAmbientChatter.weatherAnnouncements(
+        let allCandidates = PetAmbientChatter.weatherAnnouncementEntries(
             mode: mode,
             weather: snapshot,
             locationName: weather.locationName
         )
-        let freshMessages = allMessages.filter { $0 != lastAmbientMessage }
-        let messages = freshMessages.isEmpty ? allMessages : freshMessages
-        guard let message = messages.randomElement() else { return }
-        showAmbientMessage(message, duration: 10)
+        let eligible = PetChatterSelector.eligible(
+            from: allCandidates,
+            recentIDs: recentChatterIDs[chatterHistoryKey] ?? []
+        )
+        guard let candidate = eligible.randomElement() else { return }
+        showAmbientMessage(candidate.text, duration: 10, chatterID: candidate.id)
+    }
+
+    private var chatterHistoryKey: String {
+        "\(AppLocalizer.effectiveLanguage.rawValue):\(mode.rawValue)"
     }
 
     private func ambientDurationText(_ totalMinutes: Int) -> String {

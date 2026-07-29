@@ -181,6 +181,13 @@ final class DiaryFeature: ObservableObject {
         return entry
     }
 
+    @discardableResult
+    func createAndOpenEntry(occurredAt: Date = Date()) -> DiaryEntry {
+        clearFilters()
+        viewMode = .timeline
+        return createEntry(occurredAt: occurredAt)
+    }
+
     func requestCurrentLocationName() async -> String? {
         guard let weatherService else { return nil }
         if let locationName = normalizedLocationName(weatherService.locationName) {

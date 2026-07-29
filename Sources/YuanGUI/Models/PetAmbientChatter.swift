@@ -5,7 +5,49 @@ enum PetAmbientChatter {
         mode: PetMode,
         system: SystemSnapshot,
         weather: WeatherSnapshot?,
-        locationName: String? = nil
+        locationName: String? = nil,
+        date: Date = .now,
+        calendar: Calendar = .current
+    ) -> [String] {
+        candidateEntries(
+            mode: mode,
+            system: system,
+            weather: weather,
+            locationName: locationName,
+            date: date,
+            calendar: calendar
+        ).map(\.text)
+    }
+
+    static func candidateEntries(
+        mode: PetMode,
+        system: SystemSnapshot,
+        weather: WeatherSnapshot?,
+        locationName: String? = nil,
+        date: Date = .now,
+        calendar: Calendar = .current
+    ) -> [PetChatterCandidate] {
+        let period = PetChatterPeriod.resolve(at: date, calendar: calendar)
+        let periodCandidates = periodMessages(for: mode, period: period)
+        let contextualMessages = baseCandidates(
+            mode: mode,
+            system: system,
+            weather: weather,
+            locationName: locationName
+        )
+        return periodCandidates + contextualMessages.enumerated().map { index, text in
+            PetChatterCandidate(
+                id: "pet.chatter.context.\(mode.rawValue).\(index)",
+                text: text
+            )
+        }
+    }
+
+    private static func baseCandidates(
+        mode: PetMode,
+        system: SystemSnapshot,
+        weather: WeatherSnapshot?,
+        locationName: String?
     ) -> [String] {
         if AppLocalizer.effectiveLanguage == .english {
             return englishCandidates(mode: mode, system: system, weather: weather, locationName: locationName)
@@ -27,6 +69,33 @@ enum PetAmbientChatter {
         }
 
         return messages
+    }
+
+    static func weatherAnnouncementEntries(
+        mode: PetMode,
+        weather: WeatherSnapshot,
+        locationName: String? = nil
+    ) -> [PetChatterCandidate] {
+        let category: String
+        if weather.isRainy {
+            category = "rain"
+        } else if weather.apparentTemperature >= 30 {
+            category = "hot"
+        } else if weather.apparentTemperature <= 10 {
+            category = "cold"
+        } else {
+            category = "normal"
+        }
+        return weatherAnnouncements(
+            mode: mode,
+            weather: weather,
+            locationName: locationName
+        ).enumerated().map { index, text in
+            PetChatterCandidate(
+                id: "pet.chatter.weather.\(mode.rawValue).\(category).\(index)",
+                text: text
+            )
+        }
     }
 
     static func weatherAnnouncements(
@@ -216,6 +285,22 @@ enum PetAmbientChatter {
                 "元圭给 master 一颗小爱心，VCC 再盖一个梅花爪印。",
                 "不管今天进度多少，只要认真走过，就值得元圭和 VCC 为你鼓掌～"
             ]
+        }
+    }
+
+    private static func periodMessages(
+        for mode: PetMode,
+        period: PetChatterPeriod
+    ) -> [PetChatterCandidate] {
+        let modeKey: String
+        switch mode {
+        case .yuanGui: modeKey = "yuanGui"
+        case .vcc: modeKey = "vcc"
+        case .duo: modeKey = "duo"
+        }
+        return (1...2).map { index in
+            let key = "pet.chatter.period.\(period.rawValue).\(modeKey).\(index)"
+            return PetChatterCandidate(id: key, text: AppLocalizer.string(key))
         }
     }
 

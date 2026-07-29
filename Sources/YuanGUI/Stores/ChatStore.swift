@@ -65,7 +65,8 @@ final class ChatStore: ObservableObject {
                     baseURL: settings.baseURL,
                     model: settings.model,
                     apiKey: settings.apiKey,
-                    systemPrompt: settings.systemPrompt
+                    systemPrompt: settings.systemPrompt,
+                    language: settings.promptLanguage
                 ),
                 petMode: petMode,
                 onPartialReply: { [weak self] partialReply in

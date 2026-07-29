@@ -96,6 +96,7 @@ enum ChatServiceError: LocalizedError, Equatable {
     case missingAPIKey
     case invalidURL
     case emptyResponse
+    case invalidResponse
     case server(status: Int, message: String)
     case unsupportedAttachment(String)
     case attachmentTooLarge(String)
@@ -106,6 +107,7 @@ enum ChatServiceError: LocalizedError, Equatable {
         case .missingAPIKey: return "请先在设置里填写 API Key"
         case .invalidURL: return "API 地址格式不正确"
         case .emptyResponse: return "元圭和 VCC 好像睡着了，请再试一次"
+        case .invalidResponse: return AppLocalizer.string("chat.error.invalidResponse")
         case .server(let status, let message): return "请求失败（\(status)）：\(message)"
         case .unsupportedAttachment(let name): return "暂不支持这个文件：\(name)"
         case .attachmentTooLarge(let name): return "文件超过 20 MB：\(name)"

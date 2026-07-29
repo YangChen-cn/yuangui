@@ -54,6 +54,9 @@ final class AppLanguageSettings: ObservableObject {
 
 enum AppLocalizer {
     private static let languageKey = AppLanguageStorage.key
+    private static var allowsModuleFallback: Bool {
+        allowsModuleFallback(for: Bundle.main.bundleURL)
+    }
 
     /// Must run before the first window is created. Apple resolves ordinary SwiftUI
     /// `Text` literals from the main bundle using this per-app language preference.
@@ -67,13 +70,15 @@ enum AppLocalizer {
     }
 
     static var effectiveLanguage: AppLanguage {
-        let identifier = Bundle.main.preferredLocalizations.first ?? Bundle.module.preferredLocalizations.first ?? "en"
+        let moduleIdentifier = allowsModuleFallback ? Bundle.module.preferredLocalizations.first : nil
+        let identifier = Bundle.main.preferredLocalizations.first ?? moduleIdentifier ?? "en"
         return identifier.lowercased().hasPrefix("zh") ? .simplifiedChinese : .english
     }
 
     static func string(_ key: String, comment: String = "") -> String {
         let mainValue = Bundle.main.localizedString(forKey: key, value: nil, table: nil)
         if mainValue != key { return mainValue }
+        guard allowsModuleFallback else { return key }
         let moduleValue = Bundle.module.localizedString(forKey: key, value: nil, table: nil)
         return moduleValue == key ? key : moduleValue
     }
@@ -83,12 +88,17 @@ enum AppLocalizer {
     }
 
     static func localizedValues(for identifier: String) -> [String: String] {
-        guard let url = Bundle.module.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: identifier),
+        let resourceBundle = allowsModuleFallback ? Bundle.module : Bundle.main
+        guard let url = resourceBundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: identifier),
               let dictionary = NSDictionary(contentsOf: url) as? [String: String] else { return [:] }
         return dictionary
     }
 
     static func localizationKeys(for identifier: String) -> Set<String> {
         Set(localizedValues(for: identifier).keys)
+    }
+
+    static func allowsModuleFallback(for bundleURL: URL) -> Bool {
+        bundleURL.pathExtension.caseInsensitiveCompare("app") != .orderedSame
     }
 }
