@@ -155,7 +155,7 @@ swift test
 
 `ChatStore.send()` 必须在发送前捕获目标会话 ID，并将用户消息、请求上下文、流式文本、最终回复和错误绑定到该 ID；等待期间切换或删除会话不得把结果写进当前会话。`loadSessionIfNeeded()` 不得跨 `await` 保存数组下标，返回后必须重新按 ID 定位，并放弃已删除或已在内存中更新的会话结果。
 
-Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueue` 统一管理，并发布到 `MusicPlaybackStore`。随机模式必须先生成稳定顺序，再由“下一首”和界面共同消费；不要在视图中另算队列，也不要在每次切歌时临时 `randomElement()`，否则显示顺序会和实际播放不一致。单曲循环只显示当前歌曲，顺序和列表循环按真实后续顺序展示。
+音乐“接下来播放”由 `MusicPlaybackCoordinator` 持有的 `MusicPlaybackQueue` 统一管理，并发布到 `MusicPlaybackStore`。随机模式必须先生成稳定顺序，再由“下一首”和界面共同消费；不要在视图中另算队列，也不要在每次切歌时临时 `randomElement()`，否则显示顺序会和实际播放不一致。单曲循环只显示当前歌曲，顺序和列表循环按真实后续顺序展示。
 
 外部音频自动暂停默认关闭，以一次连续外部音频为一个会话：只有会话开始后未被用户手动覆盖时才可自动暂停/恢复。外部声音已存在时，用户主动播放、暂停、切歌或拖动进度均视为覆盖，允许并行播放并取消恢复资格；会话稳定结束后才清除覆盖状态。监测优先监听 Core Audio 的进程列表和 `kAudioProcessPropertyIsRunningOutput` 事件，0.5 秒轮询仅作兜底。
 
@@ -406,3 +406,12 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 - 最终回复到达时先取消 pending partial，只向目标会话追加一个完整 assistant message；隐藏时不为气泡额外发布 `latestReply`。切换、新建、删除、清空会话或发送失败时必须清理不再适用的 pending，旧会话的 partial、最终回复和错误都不得进入新会话。
 - `FocusTimerControlView` 的空闲/完成态只显示一次主要时长，减 5 分钟和加 5 分钟按钮不再夹带重复时长。Reduce Motion 开启时禁用状态切换动画、完成 bounce、hover/press scale；允许保留 hover 颜色和轻微按压 opacity，数字仍正常更新。
 - `PetRootView` 顶部短暂 toast 使用 `PetToastView`：短文本按固有宽度显示，不能接受根面板宽度提案后拉成整条；长文本才在面板允许的最大宽度内换行。
+
+## 2026-07-30 音乐订阅隔离与门面架构
+
+- `MusicFeature` 是非 Observable 的兼容门面和组合入口，不能重新加入 `ObservableObject`、`@Published` 或聚合 `objectWillChange`。播放、资料库、歌词、歌词呈现、Bilibili 账号/导入和本地导入继续由独立 Store 发布。
+- `ObservedMusicFeature` 已删除。SwiftUI 视图必须以普通 `let music` 发送命令，并只用 `@ObservedObject` 订阅自己读取的子 Store；只显示进度的视图直接观察 `MusicPlaybackProgress`。禁止为了少写初始化代码重新建立同时观察全部音乐 Store 的包装器。
+- 已删除聚合全部业务的 `MusicFeatureRuntime`。`MusicFeatureContext` 只负责连接七个 Store 和领域协作者，不得持有播放器、服务、队列、歌词缓存或异步 Task；禁止用 Runtime、Manager extension 或转发壳重新建立中心业务对象。
+- 播放器实例、Apple Music 同步、来源切换和播放队列由 `MusicPlaybackCoordinator` 持有；歌词任务与缓存由 `MusicLyricsCoordinator` 持有；账号/收藏夹任务和本地导入/封面维护任务分别由 Bilibili、本地音乐协调器持有。跨域调用必须明确经过对应 Coordinator，不能把实现放回门面或 Context。
+- 播放、资料库、歌词、Bilibili 和本地音乐命令通过 MainActor 领域协议暴露；持久化 revision、恢复时的版本校验、延迟保存和 shutdown flush 由 `MusicPersistenceCoordinator` 负责。所有服务接口和 `MusicLibrarySnapshot` 格式保持兼容。
+- 音乐性能回归以 publisher 隔离和 SwiftUI Instruments 的 View Body Updates 验收：播放进度不得使资料库、设置或桌宠根视图刷新；账号、资料库和导入进度不得使播放进度与传输控制刷新。`MusicObservationTests` 同时禁止生产源码重新出现宽音乐观察包装器。

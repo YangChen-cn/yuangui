@@ -68,7 +68,13 @@ private final class LyricsLockedControlsPanel: NSPanel {
 }
 
 private struct LyricsLockedControlsView: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
+
+    init(music: MusicFeature) {
+        self.music = music
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -98,38 +104,48 @@ private struct LyricsLockedControlsView: View {
 }
 
 private struct DesktopLyricsView: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var lyrics: LyricsStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @State private var showsSettings = false
     @State private var searchTitle = ""
     @State private var searchArtist = ""
+
+    init(music: MusicFeature) {
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 2) {
                 Text(
-                    music.lyricsStore.currentLine?.text
-                        ?? music.playback.currentTrack?.title
+                    lyrics.currentLine?.text
+                        ?? playback.currentTrack?.title
                         ?? AppLocalizer.string("YuanGUI 桌面歌词")
                 )
-                    .font(music.lyricsPresentation.fontStyle.font(
-                        size: music.lyricsPresentation.fontSize,
+                    .font(lyricsPresentation.fontStyle.font(
+                        size: lyricsPresentation.fontSize,
                         weight: .bold
                     ))
-                    .foregroundStyle(Color(nsColor: music.lyricsPresentation.color))
+                    .foregroundStyle(Color(nsColor: lyricsPresentation.color))
                     .shadow(
-                        color: music.lyricsPresentation.shadowEnabled ? .black.opacity(0.38) : .clear,
+                        color: lyricsPresentation.shadowEnabled ? .black.opacity(0.38) : .clear,
                         radius: 1.5,
                         y: 1
                     )
                     .lineLimit(1).minimumScaleFactor(0.6)
-                if let next = music.lyricsStore.nextLine?.text {
-                    Text(next).font(music.lyricsPresentation.fontStyle.font(
-                        size: max(11, music.lyricsPresentation.fontSize * 0.52),
+                if let next = lyrics.nextLine?.text {
+                    Text(next).font(lyricsPresentation.fontStyle.font(
+                        size: max(11, lyricsPresentation.fontSize * 0.52),
                         weight: .medium
                     ))
-                        .foregroundStyle(Color(nsColor: music.lyricsPresentation.color).opacity(0.46))
+                        .foregroundStyle(Color(nsColor: lyricsPresentation.color).opacity(0.46))
                         .shadow(
-                            color: music.lyricsPresentation.shadowEnabled ? .black.opacity(0.18) : .clear,
+                            color: lyricsPresentation.shadowEnabled ? .black.opacity(0.18) : .clear,
                             radius: 1,
                             y: 1
                         )
@@ -139,7 +155,7 @@ private struct DesktopLyricsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 72)
 
-            if !music.lyricsPresentation.isPanelLocked {
+            if !lyricsPresentation.isPanelLocked {
                 HStack(spacing: 5) {
                     Button {
                         music.toggleLyricsVisible()
@@ -192,27 +208,43 @@ private struct DesktopLyricsView: View {
         )
         .contentShape(.rect(cornerRadius: 18))
         .onAppear(perform: syncSearchFields)
-        .onChange(of: music.playback.currentTrack?.id) { _, _ in syncSearchFields() }
+        .onChange(of: playback.currentTrack?.id) { _, _ in syncSearchFields() }
     }
 
     private func syncSearchFields() {
-        searchTitle = music.playback.currentTrack?.title ?? ""
-        searchArtist = music.playback.currentTrack?.artist ?? ""
+        searchTitle = playback.currentTrack?.title ?? ""
+        searchArtist = playback.currentTrack?.artist ?? ""
     }
 
     private var effectiveBackgroundOpacity: Double {
         min(
-            music.lyricsPresentation.backgroundOpacity
-                + (music.lyricsPresentation.backgroundVisible ? 0.10 : 0),
+            lyricsPresentation.backgroundOpacity
+                + (lyricsPresentation.backgroundVisible ? 0.10 : 0),
             0.70
         )
     }
 }
 
 private struct DesktopLyricsSettingsView: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var lyrics: LyricsStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @Binding var title: String
     @Binding var artist: String
+
+    init(
+        music: MusicFeature,
+        title: Binding<String>,
+        artist: Binding<String>
+    ) {
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+        _title = title
+        _artist = artist
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -221,17 +253,17 @@ private struct DesktopLyricsSettingsView: View {
             HStack {
                 Text("字号")
                 Slider(
-                    value: Binding(get: { music.lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
+                    value: Binding(get: { lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
                     in: 14...42,
                     step: 1
                 )
-                Text("\(Int(music.lyricsPresentation.fontSize))")
+                Text("\(Int(lyricsPresentation.fontSize))")
                     .font(.system(.caption, design: .monospaced))
                     .frame(width: 26, alignment: .trailing)
             }
             HStack {
                 Picker("字体", selection: Binding(
-                    get: { music.lyricsPresentation.fontStyle },
+                    get: { lyricsPresentation.fontStyle },
                     set: music.setLyricsFontStyle
                 )) {
                     ForEach(LyricsFontStyle.allCases) { style in Text(style.title).tag(style) }
@@ -240,31 +272,31 @@ private struct DesktopLyricsSettingsView: View {
                 ColorPicker(
                     "文字颜色",
                     selection: Binding(
-                        get: { Color(nsColor: music.lyricsPresentation.color) },
+                        get: { Color(nsColor: lyricsPresentation.color) },
                         set: { music.setLyricsColor(NSColor($0)) }
                     ),
                     supportsOpacity: true
                 )
             }
             Toggle("显示文字阴影", isOn: Binding(
-                get: { music.lyricsPresentation.shadowEnabled },
+                get: { lyricsPresentation.shadowEnabled },
                 set: music.setLyricsShadowEnabled
             ))
             Toggle("增强歌词背景对比度", isOn: Binding(
-                get: { music.lyricsPresentation.backgroundVisible },
+                get: { lyricsPresentation.backgroundVisible },
                 set: music.setLyricsBackgroundVisible
             ))
             HStack {
                 Text("细条透明度")
                 Slider(
                     value: Binding(
-                        get: { music.lyricsPresentation.backgroundOpacity },
+                        get: { lyricsPresentation.backgroundOpacity },
                         set: music.setLyricsBackgroundOpacity
                     ),
                     in: 0.12...0.60,
                     step: 0.01
                 )
-                Text(music.lyricsPresentation.backgroundOpacity, format: .percent.precision(.fractionLength(0)))
+                Text(lyricsPresentation.backgroundOpacity, format: .percent.precision(.fractionLength(0)))
                     .font(.system(.caption, design: .monospaced))
                     .frame(width: 38, alignment: .trailing)
             }
@@ -282,15 +314,15 @@ private struct DesktopLyricsSettingsView: View {
                 Button {
                     music.searchLyrics(title: title, artist: artist)
                 } label: {
-                    if music.lyricsStore.isSearching {
+                    if lyrics.isSearching {
                         ProgressView().controlSize(.small)
                     } else {
                         Label("匹配歌词并更新信息", systemImage: "magnifyingglass")
                     }
                 }
-                .disabled(music.lyricsStore.isSearching || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(lyrics.isSearching || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            if let message = music.lyricsStore.searchMessage {
+            if let message = lyrics.searchMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)

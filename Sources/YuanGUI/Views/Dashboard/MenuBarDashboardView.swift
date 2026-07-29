@@ -5,7 +5,8 @@ struct MenuBarDashboardView: View {
 
     @ObservedObject var store: PetStore
     @ObservedObject var focusTimer: FocusTimerStore
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @ObservedObject var quickTools: QuickToolsController
     @ObservedObject var panelState: DashboardPanelState
@@ -21,6 +22,37 @@ struct MenuBarDashboardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var updater = AppUpdateStore()
     @State private var showsFocusPopover = false
+
+    init(
+        store: PetStore,
+        focusTimer: FocusTimerStore,
+        music: MusicFeature,
+        externalAudioInterruption: ExternalAudioInterruptionController,
+        quickTools: QuickToolsController,
+        panelState: DashboardPanelState,
+        dashboardWidth: CGFloat,
+        dashboardHeight: CGFloat,
+        togglePet: @escaping () -> Void,
+        showPet: @escaping () -> Void,
+        openSettings: @escaping () -> Void,
+        dismiss: @escaping () -> Void,
+        layoutDidChange: @escaping (DashboardSection, MusicSource) -> Void
+    ) {
+        self.store = store
+        self.focusTimer = focusTimer
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        self.externalAudioInterruption = externalAudioInterruption
+        self.quickTools = quickTools
+        self.panelState = panelState
+        self.dashboardWidth = dashboardWidth
+        self.dashboardHeight = dashboardHeight
+        self.togglePet = togglePet
+        self.showPet = showPet
+        self.openSettings = openSettings
+        self.dismiss = dismiss
+        self.layoutDidChange = layoutDidChange
+    }
 
     private var palette: DashboardPalette {
         DashboardDesign.palette(for: store.dashboardStyle)
@@ -50,7 +82,7 @@ struct MenuBarDashboardView: View {
             width: dashboardWidth,
             height: DashboardPanelLayout.height(
                 for: panelState.selectedSection,
-                musicSource: music.playback.source,
+                musicSource: playback.source,
                 maximumHeight: dashboardHeight
             )
         )
@@ -66,9 +98,9 @@ struct MenuBarDashboardView: View {
         .preferredColorScheme(palette.preferredColorScheme)
         .onAppear(perform: prepareDashboard)
         .onChange(of: panelState.selectedSection) { _, section in
-            layoutDidChange(section, music.playback.source)
+            layoutDidChange(section, playback.source)
         }
-        .onChange(of: music.playback.source) { _, source in
+        .onChange(of: playback.source) { _, source in
             layoutDidChange(panelState.selectedSection, source)
         }
         .onExitCommand(perform: dismiss)

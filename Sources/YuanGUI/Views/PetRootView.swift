@@ -9,7 +9,9 @@ struct PetRootView: View {
     @ObservedObject var chatPresentation: ChatPresentationCoordinator
     @ObservedObject var maintenance: MaintenanceStore
     @ObservedObject var focusTimer: FocusTimerStore
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @ObservedObject var auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
     @Environment(\.appActions) private var appActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,6 +22,28 @@ struct PetRootView: View {
     @State private var hoveredSideTool: SideTool?
     @State private var showsFocusPopover = false
     @State private var isMiniPlayerPresented = false
+
+    init(
+        window: PetPanel,
+        store: PetStore,
+        chat: ChatStore,
+        chatPresentation: ChatPresentationCoordinator,
+        maintenance: MaintenanceStore,
+        focusTimer: FocusTimerStore,
+        music: MusicFeature,
+        auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
+    ) {
+        self.window = window
+        self.store = store
+        self.chat = chat
+        self.chatPresentation = chatPresentation
+        self.maintenance = maintenance
+        self.focusTimer = focusTimer
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+        self.auxiliaryBubblePresentation = auxiliaryBubblePresentation
+    }
 
     private enum SideTool: String {
         case role = "切换桌宠角色"
@@ -102,15 +126,13 @@ struct PetRootView: View {
                     && (!displayedPetAction.file.contains("chatting") || store.ambientMessage != nil)
             )
                 .overlay(alignment: .topTrailing) {
-                    if showsStandaloneMusicIndicator {
-                        Image(systemName: "music.note")
-                            .font(.system(size: max(14, 24 * scale), weight: .bold))
-                            .foregroundStyle(.pink)
-                            .padding(6)
-                            .background(.regularMaterial, in: Circle())
-                            .symbolEffect(.pulse, options: .repeating.speed(0.35), isActive: music.lyricsPresentation.lightSingAlongEnabled)
-                            .accessibilityLabel("音乐播放中")
-                    }
+                    PetMusicIndicatorView(
+                        music: music,
+                        isChatPresented: chatPresentation.keepsExpandedLayout,
+                        hasMaintenanceTask: maintenance.quickMode != nil,
+                        focusState: focusTimer.state,
+                        scale: scale
+                    )
                 }
                 .frame(width: 326 * scale, height: 326 * scale)
                 .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
@@ -226,22 +248,7 @@ struct PetRootView: View {
     }
 
     private var displayedPetAction: PetAction {
-        store.resolvedAction(isMusicPlaying: music.playback.isPlaying)
-    }
-
-    private var showsStandaloneMusicIndicator: Bool {
-        let showsLyricBubble = PetMusicPresentationPolicy.showsLyricBubble(
-            isPlaying: music.playback.isPlaying,
-            lightSingAlongEnabled: music.lyricsPresentation.lightSingAlongEnabled,
-            hasCurrentLyric: music.lyricsStore.currentLine != nil,
-            isChatPresented: chatPresentation.keepsExpandedLayout,
-            hasMaintenanceTask: maintenance.quickMode != nil,
-            focusState: focusTimer.state
-        )
-        return PetMusicPresentationPolicy.showsStandaloneMusicIndicator(
-            isPlaying: music.playback.isPlaying,
-            showsLyricBubble: showsLyricBubble
-        )
+        store.resolvedAction(isMusicPlaying: playback.isPlaying)
     }
 
     private var placesToolbarAbovePet: Bool {

@@ -16,7 +16,10 @@ struct SettingsView: View {
     @ObservedObject var ai: AISettingsStore
     @ObservedObject var loginItem: LoginItemStore
     @ObservedObject var focusTimer: FocusTimerStore
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var musicPlayback: MusicPlaybackStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
+    @ObservedObject private var bilibiliAccount: BilibiliAccountStore
     @ObservedObject var diary: DiaryFeature
     @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @ObservedObject var quickTools: QuickToolsController
@@ -25,6 +28,35 @@ struct SettingsView: View {
     let showPet: () -> Void
     @State private var promptEditorState: PromptEditorState?
     @State private var isBilibiliLoginPresented = false
+
+    init(
+        language: AppLanguageSettings,
+        pet: PetStore,
+        ai: AISettingsStore,
+        loginItem: LoginItemStore,
+        focusTimer: FocusTimerStore,
+        music: MusicFeature,
+        diary: DiaryFeature,
+        externalAudioInterruption: ExternalAudioInterruptionController,
+        quickTools: QuickToolsController,
+        selection: SettingsSelectionModel,
+        showPet: @escaping () -> Void
+    ) {
+        self.language = language
+        self.pet = pet
+        self.ai = ai
+        self.loginItem = loginItem
+        self.focusTimer = focusTimer
+        self.music = music
+        _musicPlayback = ObservedObject(wrappedValue: music.playback)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+        _bilibiliAccount = ObservedObject(wrappedValue: music.bilibiliAccountStore)
+        self.diary = diary
+        self.externalAudioInterruption = externalAudioInterruption
+        self.quickTools = quickTools
+        self.selection = selection
+        self.showPet = showPet
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -132,32 +164,32 @@ struct SettingsView: View {
             )
             Form {
             Section("播放器") {
-                Picker("默认播放来源", selection: Binding(get: { music.playback.source }, set: music.setSource)) {
+                Picker("默认播放来源", selection: Binding(get: { musicPlayback.source }, set: music.setSource)) {
                     ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
                 }
-                Toggle("显示桌面悬浮歌词", isOn: Binding(get: { music.lyricsPresentation.isVisible }, set: { _ in music.toggleLyricsVisible() }))
-                Toggle("轻量跟唱（歌词气泡与轻微律动）", isOn: Binding(get: { music.lyricsPresentation.lightSingAlongEnabled }, set: music.setLightSingAlongEnabled))
-                Toggle("锁定悬浮歌词并允许点击穿透", isOn: Binding(get: { music.lyricsPresentation.isPanelLocked }, set: music.setLyricsPanelLocked))
+                Toggle("显示桌面悬浮歌词", isOn: Binding(get: { lyricsPresentation.isVisible }, set: { _ in music.toggleLyricsVisible() }))
+                Toggle("轻量跟唱（歌词气泡与轻微律动）", isOn: Binding(get: { lyricsPresentation.lightSingAlongEnabled }, set: music.setLightSingAlongEnabled))
+                Toggle("锁定悬浮歌词并允许点击穿透", isOn: Binding(get: { lyricsPresentation.isPanelLocked }, set: music.setLyricsPanelLocked))
                 Toggle("显示桌面歌词文字阴影", isOn: Binding(
-                    get: { music.lyricsPresentation.shadowEnabled },
+                    get: { lyricsPresentation.shadowEnabled },
                     set: music.setLyricsShadowEnabled
                 ))
                 Toggle("增强桌面歌词背景对比度", isOn: Binding(
-                    get: { music.lyricsPresentation.backgroundVisible },
+                    get: { lyricsPresentation.backgroundVisible },
                     set: music.setLyricsBackgroundVisible
                 ))
                 HStack {
                     Text("桌面歌词细条透明度")
                     Slider(
                         value: Binding(
-                            get: { music.lyricsPresentation.backgroundOpacity },
+                            get: { lyricsPresentation.backgroundOpacity },
                             set: music.setLyricsBackgroundOpacity
                         ),
                         in: 0.12...0.60,
                         step: 0.01
                     )
                     Text(
-                        music.lyricsPresentation.backgroundOpacity,
+                        lyricsPresentation.backgroundOpacity,
                         format: .percent.precision(.fractionLength(0))
                     )
                     .font(.system(.body, design: .monospaced))
@@ -166,16 +198,16 @@ struct SettingsView: View {
                 HStack {
                     Text("桌面歌词字号")
                     Slider(
-                        value: Binding(get: { music.lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
+                        value: Binding(get: { lyricsPresentation.fontSize }, set: music.setLyricsFontSize),
                         in: 14...42,
                         step: 1
                     )
-                    Text("\(Int(music.lyricsPresentation.fontSize))")
+                    Text("\(Int(lyricsPresentation.fontSize))")
                         .font(.system(.body, design: .monospaced))
                         .frame(width: 28, alignment: .trailing)
                 }
                 Picker("桌面歌词字体", selection: Binding(
-                    get: { music.lyricsPresentation.fontStyle },
+                    get: { lyricsPresentation.fontStyle },
                     set: music.setLyricsFontStyle
                 )) {
                     ForEach(LyricsFontStyle.allCases) { style in Text(style.title).tag(style) }
@@ -183,7 +215,7 @@ struct SettingsView: View {
                 ColorPicker(
                     "桌面歌词颜色",
                     selection: Binding(
-                        get: { Color(nsColor: music.lyricsPresentation.color) },
+                        get: { Color(nsColor: lyricsPresentation.color) },
                         set: { music.setLyricsColor(NSColor($0)) }
                     ),
                     supportsOpacity: true
@@ -206,7 +238,7 @@ struct SettingsView: View {
             }
             Section("Apple Music") {
                 HStack {
-                    Text(music.playback.appleMusicRunning ? "Music App 正在运行" : "Music App 尚未运行")
+                    Text(musicPlayback.appleMusicRunning ? "Music App 正在运行" : "Music App 尚未运行")
                     Spacer()
                     Button("连接") { music.connectAppleMusic() }
                     Button("权限设置") { music.openAutomationSettings() }
@@ -217,11 +249,11 @@ struct SettingsView: View {
             Section("哔哩哔哩") {
                 HStack {
                     Label(
-                        music.bilibiliAccountStore.account.map { "已登录：\($0.name)" } ?? "未登录",
-                        systemImage: music.bilibiliAccountStore.account == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark"
+                        bilibiliAccount.account.map { "已登录：\($0.name)" } ?? "未登录",
+                        systemImage: bilibiliAccount.account == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark"
                     )
                     Spacer()
-                    Button(music.bilibiliAccountStore.account == nil ? "扫码登录" : "账号管理") {
+                    Button(bilibiliAccount.account == nil ? "扫码登录" : "账号管理") {
                         isBilibiliLoginPresented = true
                     }
                 }

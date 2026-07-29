@@ -3,168 +3,19 @@ import CoreImage.CIFilterBuiltins
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct MusicArtworkView: View {
-    let track: MusicTrack?
-    var size: CGFloat = 54
-    @State private var localArtwork: NSImage?
-
-    var body: some View {
-        Group {
-            if let localArtwork {
-                Image(nsImage: localArtwork).resizable().scaledToFill()
-            } else if let url = displayCoverURL {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { placeholder }
-            } else { placeholder }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: size * 0.18).stroke(.primary.opacity(0.12), lineWidth: 0.7))
-        .task(id: track?.localArtworkCacheKey) {
-            localArtwork = nil
-            guard let track, track.localArtworkCacheKey != nil,
-                  let data = await LocalMusicArtworkRepository.shared.data(for: track) else { return }
-            localArtwork = NSImage(data: data)
-        }
-    }
-
-    private var displayCoverURL: URL? {
-        guard let url = track?.coverURL,
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return track?.coverURL
-        }
-        if components.scheme?.lowercased() == "http" { components.scheme = "https" }
-        return components.url
-    }
-
-    private var placeholder: some View {
-        ZStack {
-            LinearGradient(colors: [.pink.opacity(0.72), .purple.opacity(0.62)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            Image(systemName: track?.source.systemImage ?? "music.note")
-                .font(.system(size: size * 0.34, weight: .semibold)).foregroundStyle(.white)
-        }
-    }
-}
-
-struct MusicTransportControls: View {
-    @ObservedMusicFeature var music: MusicFeature
-    var compact = false
-    var usesGlassButtons = false
-
-    var body: some View {
-        HStack(spacing: compact ? 15 : 22) {
-            Button(action: music.previous) { Image(systemName: "backward.fill") }
-                .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
-                .help("上一首")
-                .accessibilityLabel("上一首")
-            Button(action: music.playPause) {
-                Image(systemName: music.playback.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: compact ? 15 : 20, weight: .bold))
-                    .frame(width: compact ? 27 : 38, height: compact ? 27 : 38)
-                    .background(
-                        usesGlassButtons ? Color.clear : Color.primary.opacity(0.10),
-                        in: Circle()
-                    )
-            }
-            .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
-            .help(AppLocalizer.string(music.playback.isPlaying ? "暂停" : "播放"))
-            .accessibilityLabel(AppLocalizer.string(music.playback.isPlaying ? "暂停" : "播放"))
-            Button(action: music.next) { Image(systemName: "forward.fill") }
-                .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
-                .help("下一首")
-                .accessibilityLabel("下一首")
-        }
-        .disabled(!music.canControl)
-    }
-}
-
-private struct MusicTransportButtonModifier: ViewModifier {
-    let usesGlass: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if usesGlass {
-            content.yuanSystemGlassButton()
-        } else {
-            content.buttonStyle(.plain)
-        }
-    }
-}
-
-struct MusicProgressView: View {
-    @ObservedMusicFeature var music: MusicFeature
-    @ObservedObject private var progress: MusicPlaybackProgress
-    @State private var previewPosition: TimeInterval = 0
-    @State private var isSeeking = false
-
-    init(music: MusicFeature) {
-        _music = ObservedMusicFeature(wrappedValue: music)
-        _progress = ObservedObject(wrappedValue: music.playback.progress)
-    }
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Slider(
-                value: Binding(
-                    get: { isSeeking ? previewPosition : progress.position },
-                    set: { newPosition in
-                        previewPosition = newPosition
-                        if !isSeeking { music.seek(to: newPosition) }
-                    }
-                ),
-                in: 0...max(progress.duration, 1),
-                onEditingChanged: handleSeeking
-            )
-                .controlSize(.mini)
-                .disabled(progress.duration <= 0)
-                .help("拖动调整播放位置")
-                .accessibilityLabel("播放进度")
-            HStack {
-                Text(formatTime(isSeeking ? previewPosition : progress.position))
-                Spacer()
-                Text(formatTime(progress.duration))
-            }
-            .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
-        }
-    }
-
-    private func handleSeeking(_ editing: Bool) {
-        if editing {
-            previewPosition = progress.position
-            isSeeking = true
-        } else if isSeeking {
-            let target = previewPosition
-            isSeeking = false
-            music.seek(to: target)
-        }
-    }
-}
-
-struct MusicVolumeControl: View {
-    @ObservedMusicFeature var music: MusicFeature
-    var compact = false
-
-    var body: some View {
-        HStack(spacing: compact ? 6 : 9) {
-            Image(systemName: music.playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.system(size: compact ? 10 : 13))
-                .foregroundStyle(.secondary)
-            Slider(value: Binding(get: { music.playback.volume }, set: music.setVolume), in: 0...1)
-                .controlSize(compact ? .mini : .regular)
-                .accessibilityLabel("音量")
-            Text("\(Int((music.playback.volume * 100).rounded()))%")
-                .font(.system(size: compact ? 9 : 11, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: compact ? 28 : 34, alignment: .trailing)
-        }
-        .help("调整音量")
-    }
-}
-
 private struct FullPlayerLyricsView: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var lyrics: LyricsStore
     @State private var previewLyricPosition: Double?
     @State private var isScrollFocused = false
     @State private var resumeFollowingTask: Task<Void, Never>?
+
+    init(music: MusicFeature) {
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -390,67 +241,14 @@ private struct LyricsScrollWheelMonitor: NSViewRepresentable {
     }
 }
 
-struct MiniMusicPlayerView: View {
-    @ObservedMusicFeature var music: MusicFeature
-    @Environment(\.appActions) private var appActions
-    var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                MusicArtworkView(track: music.playback.currentTrack, size: 52)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(music.playback.currentTrack?.title ?? AppLocalizer.string("暂无播放内容"))
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(music.playback.currentTrack?.artist ?? music.playback.playbackSource.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Label(music.playback.playbackSource.title, systemImage: music.playback.playbackSource.systemImage)
-                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            MusicProgressView(music: music)
-            HStack {
-                Button { music.toggleLyricsVisible() } label: {
-                    Image(systemName: music.lyricsPresentation.isVisible ? "quote.bubble.fill" : "quote.bubble")
-                }
-                .yuanSystemGlassButton()
-                .controlSize(.small)
-                .help(AppLocalizer.string(
-                    music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
-                ))
-                .accessibilityLabel(AppLocalizer.string(
-                    music.lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
-                ))
-                Button { music.setLyricsPanelLocked(!music.lyricsPresentation.isPanelLocked) } label: {
-                    Image(systemName: music.lyricsPresentation.isPanelLocked ? "lock.fill" : "lock.open")
-                }
-                .yuanSystemGlassButton()
-                .controlSize(.small)
-                .help(AppLocalizer.string(
-                    music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词"
-                ))
-                .accessibilityLabel(AppLocalizer.string(
-                    music.lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词"
-                ))
-                Spacer()
-                MusicTransportControls(music: music, compact: true, usesGlassButtons: true)
-                Spacer()
-                Button { appActions.open(.music) } label: { Image(systemName: "list.bullet") }
-                    .yuanSystemGlassButton()
-                    .controlSize(.small)
-                    .help("打开完整播放器")
-                    .accessibilityLabel("打开完整播放器")
-            }
-        }
-        .padding(12)
-        .frame(width: 300)
-        .yuanLiquidGlassSurface(.regular, cornerRadius: 22)
-        .padding(6)
-        .presentationBackground(.clear)
-    }
-}
-
 struct MusicPlayerView: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var library: MusicLibraryStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
+    @ObservedObject private var bilibiliAccount: BilibiliAccountStore
+    @ObservedObject private var bilibiliImport: BilibiliImportStore
+    @ObservedObject private var localImport: LocalMusicImportStore
     @State private var selectedTrackID: String?
     @State private var selectedCollectionID = "all"
     @State private var isCreatingPlaylist = false
@@ -464,6 +262,16 @@ struct MusicPlayerView: View {
     @State private var librarySearchText = ""
     @State private var librarySortField: MusicLibraryQuery.SortField = .libraryOrder
     @State private var librarySortDirection: MusicLibraryQuery.SortDirection = .ascending
+
+    init(music: MusicFeature) {
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _library = ObservedObject(wrappedValue: music.libraryStore)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+        _bilibiliAccount = ObservedObject(wrappedValue: music.bilibiliAccountStore)
+        _bilibiliImport = ObservedObject(wrappedValue: music.bilibiliImportStore)
+        _localImport = ObservedObject(wrappedValue: music.localImportStore)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1129,9 +937,18 @@ struct MusicPlayerView: View {
 }
 
 struct BilibiliFavoriteImportSheet: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var account: BilibiliAccountStore
+    @ObservedObject private var importer: BilibiliImportStore
     @Binding var isPresented: Bool
     @State private var selectedFolderID: Int64?
+
+    init(music: MusicFeature, isPresented: Binding<Bool>) {
+        self.music = music
+        _account = ObservedObject(wrappedValue: music.bilibiliAccountStore)
+        _importer = ObservedObject(wrappedValue: music.bilibiliImportStore)
+        _isPresented = isPresented
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1259,8 +1076,15 @@ struct BilibiliFavoriteImportSheet: View {
 }
 
 struct BilibiliLoginSheet: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var account: BilibiliAccountStore
     @Binding var isPresented: Bool
+
+    init(music: MusicFeature, isPresented: Binding<Bool>) {
+        self.music = music
+        _account = ObservedObject(wrappedValue: music.bilibiliAccountStore)
+        _isPresented = isPresented
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -1386,11 +1210,26 @@ struct BilibiliLoginSheet: View {
 }
 
 struct LyricOffsetControl: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let commands: any MusicLyricsCommanding
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var lyrics: LyricsStore
     var compact = false
 
+    init(music: MusicFeature, compact: Bool = false) {
+        commands = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
+        self.compact = compact
+    }
+
     private var offset: Binding<Double> {
-        Binding(get: { music.currentLyricOffset }, set: music.setLyricOffset)
+        Binding(
+            get: {
+                guard let trackID = playback.currentTrack?.id else { return 0 }
+                return lyrics.offsets[trackID] ?? 0
+            },
+            set: commands.setLyricOffset
+        )
     }
 
     var body: some View {
@@ -1421,20 +1260,34 @@ struct LyricOffsetControl: View {
                 .help("每次微调 0.1 秒")
 
             if !compact {
-                Button("归零") { music.setLyricOffset(0) }
+                Button("归零") { commands.setLyricOffset(0) }
                     .controlSize(.small)
-                    .disabled(abs(music.currentLyricOffset) < 0.001)
+                    .disabled(abs(offset.wrappedValue) < 0.001)
             }
         }
-        .disabled(music.playback.currentTrack == nil)
+        .disabled(playback.currentTrack == nil)
     }
 }
 
 private struct LyricsSearchSheet: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var lyrics: LyricsStore
     @Binding var title: String
     @Binding var artist: String
     @Binding var isPresented: Bool
+
+    init(
+        music: MusicFeature,
+        title: Binding<String>,
+        artist: Binding<String>,
+        isPresented: Binding<Bool>
+    ) {
+        self.music = music
+        _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
+        _title = title
+        _artist = artist
+        _isPresented = isPresented
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1517,7 +1370,7 @@ struct PetMusicLyricBubble: View {
     }
 }
 
-private func formatTime(_ seconds: TimeInterval) -> String {
+func formatTime(_ seconds: TimeInterval) -> String {
     guard seconds.isFinite, seconds >= 0 else { return "00:00" }
     return String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60)
 }

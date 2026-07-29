@@ -1,7 +1,13 @@
 import SwiftUI
 
 struct DashboardMusicTransportControls: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+
+    init(music: MusicFeature) {
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -12,8 +18,8 @@ struct DashboardMusicTransportControls: View {
                 action: music.previous
             )
             DashboardMusicTransportButton(
-                title: music.playback.isPlaying ? "暂停" : "播放",
-                systemImage: music.playback.isPlaying ? "pause.fill" : "play.fill",
+                title: playback.isPlaying ? "暂停" : "播放",
+                systemImage: playback.isPlaying ? "pause.fill" : "play.fill",
                 isProminent: true,
                 action: music.playPause
             )

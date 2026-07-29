@@ -1,27 +1,24 @@
 import AppKit
 import Foundation
-import SwiftUI
 
-@propertyWrapper
-struct ObservedMusicFeature: DynamicProperty {
-    let wrappedValue: MusicFeature
-    @ObservedObject private var playback: MusicPlaybackStore
-    @ObservedObject private var library: MusicLibraryStore
-    @ObservedObject private var lyrics: LyricsStore
-    @ObservedObject private var presentation: LyricsPresentationStore
-    @ObservedObject private var account: BilibiliAccountStore
-    @ObservedObject private var importer: BilibiliImportStore
-    @ObservedObject private var localImporter: LocalMusicImportStore
+@MainActor
+final class MusicPlaybackProgress: ObservableObject {
+    @Published private(set) var position: TimeInterval = 0
+    @Published private(set) var duration: TimeInterval = 0
 
-    init(wrappedValue: MusicFeature) {
-        self.wrappedValue = wrappedValue
-        _playback = ObservedObject(wrappedValue: wrappedValue.playback)
-        _library = ObservedObject(wrappedValue: wrappedValue.libraryStore)
-        _lyrics = ObservedObject(wrappedValue: wrappedValue.lyricsStore)
-        _presentation = ObservedObject(wrappedValue: wrappedValue.lyricsPresentation)
-        _account = ObservedObject(wrappedValue: wrappedValue.bilibiliAccountStore)
-        _importer = ObservedObject(wrappedValue: wrappedValue.bilibiliImportStore)
-        _localImporter = ObservedObject(wrappedValue: wrappedValue.localImportStore)
+    func setPosition(_ position: TimeInterval) {
+        guard self.position != position else { return }
+        self.position = position
+    }
+
+    func setDuration(_ duration: TimeInterval) {
+        guard self.duration != duration else { return }
+        self.duration = duration
+    }
+
+    func reset(position: TimeInterval = 0, duration: TimeInterval = 0) {
+        setPosition(position)
+        setDuration(duration)
     }
 }
 

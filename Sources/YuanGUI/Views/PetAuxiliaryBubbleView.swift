@@ -11,8 +11,30 @@ struct PetAuxiliaryBubbleView: View {
     @ObservedObject var chat: ChatStore
     @ObservedObject var maintenance: MaintenanceStore
     @ObservedObject var focusTimer: FocusTimerStore
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var lyrics: LyricsStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @ObservedObject var presentation: PetAuxiliaryBubblePresentation
+
+    init(
+        store: PetStore,
+        chat: ChatStore,
+        maintenance: MaintenanceStore,
+        focusTimer: FocusTimerStore,
+        music: MusicFeature,
+        presentation: PetAuxiliaryBubblePresentation
+    ) {
+        self.store = store
+        self.chat = chat
+        self.maintenance = maintenance
+        self.focusTimer = focusTimer
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+        self.presentation = presentation
+    }
 
     var body: some View {
         Group {
@@ -21,7 +43,7 @@ struct PetAuxiliaryBubbleView: View {
                     store: maintenance,
                     placement: presentation.placement
                 )
-            } else if showsMusicLyric, let lyric = music.lyricsStore.currentLine?.text {
+            } else if showsMusicLyric, let lyric = lyrics.currentLine?.text {
                 PetMusicLyricBubble(
                     text: lyric,
                     alertText: musicAlertText,
@@ -39,9 +61,9 @@ struct PetAuxiliaryBubbleView: View {
 
     private var showsMusicLyric: Bool {
         PetMusicPresentationPolicy.showsLyricBubble(
-            isPlaying: music.playback.isPlaying,
-            lightSingAlongEnabled: music.lyricsPresentation.lightSingAlongEnabled,
-            hasCurrentLyric: music.lyricsStore.currentLine != nil,
+            isPlaying: playback.isPlaying,
+            lightSingAlongEnabled: lyricsPresentation.lightSingAlongEnabled,
+            hasCurrentLyric: lyrics.currentLine != nil,
             isChatPresented: chat.isPresented,
             hasMaintenanceTask: maintenance.quickMode != nil,
             focusState: focusTimer.state

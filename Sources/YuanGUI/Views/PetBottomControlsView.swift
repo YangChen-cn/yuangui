@@ -3,10 +3,24 @@ import SwiftUI
 struct PetBottomControlsView: View {
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
     @Binding var isMiniPlayerPresented: Bool
     @Environment(\.appActions) private var appActions
     @State private var hoveredTip: String?
+
+    init(
+        store: PetStore,
+        chat: ChatStore,
+        music: MusicFeature,
+        isMiniPlayerPresented: Binding<Bool>
+    ) {
+        self.store = store
+        self.chat = chat
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _isMiniPlayerPresented = isMiniPlayerPresented
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -56,12 +70,12 @@ struct PetBottomControlsView: View {
             .accessibilityLabel(AppLocalizer.string(chat.isPresented ? "收起 AI 对话" : "打开 AI 对话"))
 
             Button { isMiniPlayerPresented.toggle() } label: {
-                toolIcon("music.note", tint: .purple, selected: music.playback.isPlaying)
+                toolIcon("music.note", tint: .purple, selected: playback.isPlaying)
             }
             .buttonStyle(.plain)
-            .onHover { setTip($0 ? (music.playback.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
+            .onHover { setTip($0 ? (playback.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
             .help(AppLocalizer.string("YuanGUI 音乐播放器"))
-            .accessibilityLabel(AppLocalizer.string(music.playback.isPlaying ? "正在播放音乐" : "打开迷你播放器"))
+            .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "正在播放音乐" : "打开迷你播放器"))
             .popover(isPresented: $isMiniPlayerPresented, arrowEdge: .bottom) {
                 MiniMusicPlayerView(music: music)
             }

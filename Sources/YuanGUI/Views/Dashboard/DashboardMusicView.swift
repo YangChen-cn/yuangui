@@ -3,15 +3,31 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct DashboardMusicView: View {
-    @ObservedMusicFeature var music: MusicFeature
+    let music: MusicFeature
+    @ObservedObject private var playback: MusicPlaybackStore
+    @ObservedObject private var library: MusicLibraryStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     let dismiss: () -> Void
 
     @Environment(\.appActions) private var appActions
 
+    init(
+        music: MusicFeature,
+        externalAudioInterruption: ExternalAudioInterruptionController,
+        dismiss: @escaping () -> Void
+    ) {
+        self.music = music
+        _playback = ObservedObject(wrappedValue: music.playback)
+        _library = ObservedObject(wrappedValue: music.libraryStore)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
+        self.externalAudioInterruption = externalAudioInterruption
+        self.dismiss = dismiss
+    }
+
     var body: some View {
         VStack(spacing: 9) {
-            if let track = music.playback.currentTrack {
+            if let track = playback.currentTrack {
                 nowPlaying(track)
                 queueSection
                 settingsRow
@@ -38,7 +54,7 @@ struct DashboardMusicView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         DashboardMusicSourceMenu(
-                            selection: music.playback.source,
+                            selection: playback.source,
                             onSelect: switchSource
                         )
                     }
@@ -76,15 +92,15 @@ struct DashboardMusicView: View {
 
     @ViewBuilder
     private var queueSection: some View {
-        if music.playback.source != .appleMusic {
+        if playback.source != .appleMusic {
             let presentation = DashboardQueuePresentation.resolve(
                 upcoming: music.upcomingTracks,
-                currentTrackID: music.playback.currentTrack?.id
+                currentTrackID: playback.currentTrack?.id
             )
             DashboardUpNextSection(
                 tracks: presentation.tracks,
                 remainingCount: presentation.remainingCount,
-                playMode: music.playback.playMode,
+                playMode: playback.playMode,
                 onPlay: { music.play($0) },
                 onChangePlayMode: music.setPlayMode,
                 onOpenFullQueue: openFullPlayer
@@ -116,7 +132,7 @@ struct DashboardMusicView: View {
             .help("其他应用持续播放声音时自动暂停音乐")
             .accessibilityLabel("外部声音自动暂停")
             Toggle("桌面歌词", isOn: Binding(
-                get: { music.lyricsPresentation.isVisible },
+                get: { lyricsPresentation.isVisible },
                 set: { _ in music.toggleLyricsVisible() }
             ))
             .help("显示或隐藏桌面歌词")
@@ -137,12 +153,12 @@ struct DashboardMusicView: View {
                     .bold()
                 Spacer()
                 DashboardMusicSourceMenu(
-                    selection: music.playback.source,
+                    selection: playback.source,
                     onSelect: switchSource
                 )
             }
             DashboardEmptyState(
-                title: music.playback.source == .local ? "music.local.empty.title" : "暂无播放内容",
+                title: playback.source == .local ? "music.local.empty.title" : "暂无播放内容",
                 systemImage: "music.note",
                 description: emptyDescription
             )
@@ -160,7 +176,7 @@ struct DashboardMusicView: View {
     }
 
     private var emptyDescription: String {
-        switch music.playback.source {
+        switch playback.source {
         case .appleMusic: AppLocalizer.string("连接 Music App 后可在这里快速控制。")
         case .local:
             AppLocalizer.string("music.local.empty.description")
@@ -172,7 +188,7 @@ struct DashboardMusicView: View {
 
     @ViewBuilder
     private var emptyStateActions: some View {
-        ForEach(DashboardMusicEmptyAction.actions(for: music.playback.source)) { action in
+        ForEach(DashboardMusicEmptyAction.actions(for: playback.source)) { action in
             if let systemImage = action.systemImage {
                 Button(action.title, systemImage: systemImage) {
                     performEmptyAction(action)
