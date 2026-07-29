@@ -384,8 +384,10 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 ## 2026-07-29 番茄钟与迷你清理屋可读性
 
 - `FocusTimerStore.statusTitle` 必须通过 `AppLocalizer` 读取，不能把动态状态直接保留为中文源文本；番茄钟控制卡的时长、说明和按钮也要用本地化键。说明文字允许最多两行，Toast 同样必须换行，避免英文界面出现“英文标题 + 中文状态”或被省略号截断。
-- `FocusTimerControlView` 使用约 148pt 的紧凑玻璃卡：顶部仅保留 timer 图标和“专注”，中间圆环承载状态/数字，空闲和完成态下方用减 5 分钟/当前时长/加 5 分钟，底部只显示状态对应的图标按钮。不要恢复预设按钮、Stepper、长说明或重复标题。
-- 圆环状态必须区分 idle、running、paused、completed；倒计时数字使用 `.monospacedDigit()` 与 `.contentTransition(.numericText())`，状态和进度切换使用轻量动画。图标按钮要有本地化辅助功能标签，不能为了缩小而让按钮文字变成省略号。
+- `FocusTimerControlView` 使用宽度约 148pt 的紧凑玻璃卡：顶部仅保留 timer 图标和“专注”，中间直接显示大号等宽时间，不再恢复大圆环；空闲和完成态下方用减 5 分钟/当前时长/加 5 分钟，底部只显示状态对应的图标按钮。开始按钮可使用整行强调样式，但不能让英文或中文变成省略号。
+- 倒计时数字使用 `.monospacedDigit()` 与 `.contentTransition(.numericText())`，状态切换使用轻量动画；主按钮使用红橙渐变和 hover/press 反馈，次按钮保持轻玻璃。图标按钮要有本地化辅助功能标签。
+- AI 流式回复由 `ChatStore` 以 50ms 节流合并 partial reply，再刷新 `latestReply`；服务层仍可逐 token 读取，但不能逐 token 触发 SwiftUI 更新。
+- `PetRootView` 的根视图不能对 `chat.isPresented` 做隐式动画；窗口 frame 使用 `.animation(nil, value: panelSize)`，聊天层单独使用 0.14 秒 opacity + 0.97 scale 淡出，控制按钮层单独动画。关闭聊天后等待聊天卡淡出约 150ms，再调用 `pet.setChatting(false)`，避免桌宠图片和窗口状态同帧二次刷新。
 - `yuanPetBubbleGlass` 支持 `.regular`/`.clear` 两种表面。迷你清理/卸载卡必须使用 `.regular`，避免桌面壁纸或窗口背景穿透后影响候选项和操作按钮的可读性；歌词、普通状态对白可继续使用 clear 玻璃。
 - 桌宠侧栏继续保留快速清理和卸载入口；迷你清理/卸载卡底部原来的 `More` 按钮改为直接打开完整清理屋（按当前页签进入清理或卸载页），不再套一层菜单。扫描进行中主桌宠面板保持原有紧凑尺寸，扫描卡在独立辅助面板中贴近桌宠底部/屏幕边界定位，不能通过扩大主面板把桌宠推离底部。
 - 扫描/执行阶段的辅助卡只需要标题、进度和关闭操作，使用 `PetLayout.maintenanceScanningHeight`；只有扫描完成并显示候选列表时才使用 `maintenanceHeight`。`PetPanel` 必须监听 `isScanning`/`isWorking` 的边界变化并同步调整辅助面板尺寸，否则卡片会按结果态高度居中，导致桌宠与扫描卡之间出现巨大空隙。

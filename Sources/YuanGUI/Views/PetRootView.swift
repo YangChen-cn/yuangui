@@ -19,6 +19,8 @@ struct PetRootView: View {
     @State private var hoveredSideTool: SideTool?
     @State private var showsFocusPopover = false
     @State private var isMiniPlayerPresented = false
+    @State private var isChatLayerVisible = false
+    @State private var chatLayerVisibilityGeneration = 0
 
     private enum SideTool: String {
         case role = "切换桌宠角色"
@@ -56,76 +58,117 @@ struct PetRootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if chat.isPresented {
+            petLayer
+            chatLayer
+            sideControlLayer
+        }
+        .frame(width: panelSize.width, height: panelSize.height)
+        .background(Color.clear)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.18)) { isHovering = hovering }
+        }
+        .onChange(of: store.interactionLocked) { _, locked in
+            if locked { isHovering = false }
+        }
+        .onAppear { updateAdaptiveControlSide() }
+        .onAppear { syncChatLayerVisibility(chat.isPresented) }
+        .onChange(of: chat.isPresented) { _, presented in
+            syncChatLayerVisibility(presented)
+        }
+        // AppKit changes the window frame atomically. Keep the root frame out
+        // of SwiftUI's implicit animation system; only the chat and controls
+        // layers below animate their own content.
+        .animation(nil, value: panelSize)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.petScale)
+        .animation(.easeOut(duration: 0.18), value: store.toast)
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.16),
+            value: window.dockCandidate
+        )
+        .contextMenu { contextMenu }
+    }
+
+    private var petLayer: some View {
+        VStack(spacing: -12) {
+            if let toast = store.toast {
+                Text(AppLocalizer.string(toast))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: max(220, panelSize.width - 24))
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 0.7))
+                    .shadow(color: .black.opacity(0.14), radius: 10, y: 4)
+                    .transition(.scale(scale: 0.82).combined(with: .opacity))
+                    .zIndex(3)
+            }
+
+            AnimatedPetSprite(
+                mode: store.mode,
+                action: displayedPetAction,
+                motionEnabled: store.isPetPresented,
+                sequencePlaybackEnabled: store.petMotionEnabled
+                    && (!displayedPetAction.file.contains("chatting") || store.ambientMessage != nil)
+            )
+                .overlay(alignment: .topTrailing) {
+                    if showsStandaloneMusicIndicator {
+                        Image(systemName: "music.note")
+                            .font(.system(size: max(14, 24 * scale), weight: .bold))
+                            .foregroundStyle(.pink)
+                            .padding(6)
+                            .background(.regularMaterial, in: Circle())
+                            .symbolEffect(.pulse, options: .repeating.speed(0.35), isActive: music.lyricsPresentation.lightSingAlongEnabled)
+                            .accessibilityLabel("音乐播放中")
+                    }
+                }
+                .frame(width: 326 * scale, height: 326 * scale)
+                .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
+                .scaleEffect(dockPreviewScale)
+                .rotationEffect(dockPreviewRotation)
+                .opacity(dockPreviewOpacity)
+                .contentShape(Rectangle())
+                .onTapGesture { store.interact() }
+                .simultaneousGesture(windowDragGesture)
+                .onDrop(of: [UTType.fileURL.identifier], isTargeted: $store.isDropTargeted) { providers in
+                    handleDrop(providers)
+                }
+        }
+        .frame(maxWidth: .infinity)
+        .offset(x: 35 * scale)
+        .padding(.bottom, chat.isPresented ? PetLayout.chatPetBottomInset : 0)
+    }
+
+    @ViewBuilder
+    private var chatLayer: some View {
+        if isChatLayerVisible {
+            ZStack(alignment: .bottom) {
                 if chat.latestReply != nil || chat.isSending || chat.errorMessage != nil {
                     PetReplyBubble(chat: chat, pet: store)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                         .frame(maxHeight: .infinity, alignment: .bottom)
                         .padding(.bottom, 291 * scale + PetLayout.chatPetBottomInset + 4)
                         .zIndex(4)
                 }
-            }
 
-            VStack(spacing: -12) {
-                if let toast = store.toast {
-                    Text(AppLocalizer.string(toast))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: max(220, panelSize.width - 24))
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 8)
-                        .background(.regularMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 0.7))
-                        .shadow(color: .black.opacity(0.14), radius: 10, y: 4)
-                        .transition(.scale(scale: 0.82).combined(with: .opacity))
-                        .zIndex(3)
+                if maintenance.quickMode == nil {
+                    PetChatComposer(chat: chat, pet: store)
+                        .padding(.bottom, 3)
+                        .zIndex(5)
                 }
-
-                AnimatedPetSprite(
-                    mode: store.mode,
-                    action: displayedPetAction,
-                    motionEnabled: store.isPetPresented,
-                    sequencePlaybackEnabled: store.petMotionEnabled
-                        && (!displayedPetAction.file.contains("chatting") || store.ambientMessage != nil)
-                )
-                    .overlay(alignment: .topTrailing) {
-                        if showsStandaloneMusicIndicator {
-                            Image(systemName: "music.note")
-                                .font(.system(size: max(14, 24 * scale), weight: .bold))
-                                .foregroundStyle(.pink)
-                                .padding(6)
-                                .background(.regularMaterial, in: Circle())
-                                .symbolEffect(.pulse, options: .repeating.speed(0.35), isActive: music.lyricsPresentation.lightSingAlongEnabled)
-                                .accessibilityLabel("音乐播放中")
-                        }
-                    }
-                    .frame(width: 326 * scale, height: 326 * scale)
-                    .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
-                    .scaleEffect(dockPreviewScale)
-                    .rotationEffect(dockPreviewRotation)
-                    .opacity(dockPreviewOpacity)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        store.interact()
-                    }
-                    .simultaneousGesture(windowDragGesture)
-                    .onDrop(of: [UTType.fileURL.identifier], isTargeted: $store.isDropTargeted) { providers in
-                        handleDrop(providers)
-                    }
             }
-            .frame(maxWidth: .infinity)
-            .offset(x: 35 * scale)
-            .padding(.bottom, chat.isPresented ? PetLayout.chatPetBottomInset : 0)
+            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.14),
+                value: chat.isPresented
+            )
+        }
+    }
 
-            if chat.isPresented && maintenance.quickMode == nil {
-                PetChatComposer(chat: chat, pet: store)
-                    .padding(.bottom, 3)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(5)
-            }
-
+    @ViewBuilder
+    private var sideControlLayer: some View {
+        Group {
             if store.isDropTargeted {
                 dropOverlay
                     .transition(.scale.combined(with: .opacity))
@@ -133,7 +176,7 @@ struct PetRootView: View {
 
             if !store.isDropTargeted && !chat.isPresented {
                 if showsInteractiveSideControls || hasActiveFocusCountdown {
-                    if PetLayout.usesCompactControls(scale: store.petScale), !chat.isPresented {
+                    if PetLayout.usesCompactControls(scale: store.petScale) {
                         compactSideControls
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
                             .padding(sideControlsOnRight ? .trailing : .leading, PetLayout.compactSideControlsInset + 8)
@@ -145,19 +188,19 @@ struct PetRootView: View {
                             roleControls
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
                                 .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 20)
-                                .padding(.bottom, chat.isPresented ? 173 : 143)
+                                .padding(.bottom, 143)
                                 .transition(.move(edge: sideControlsOnRight ? .trailing : .leading).combined(with: .opacity))
                             maintenanceSideControls
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
                                 .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 50)
-                                .padding(.bottom, chat.isPresented ? 64 : 22)
+                                .padding(.bottom, 22)
                                 .transition(.scale(scale: 0.82).combined(with: .opacity))
                         }
                         if showsInteractiveSideControls || hasActiveFocusCountdown {
                             focusSideButton(size: 40)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
                                 .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 55)
-                                .padding(.bottom, chat.isPresented ? 128 : 98)
+                                .padding(.bottom, 98)
                                 .transition(.scale(scale: 0.82).combined(with: .opacity))
                                 .zIndex(8)
                         }
@@ -181,26 +224,38 @@ struct PetRootView: View {
                 }
             }
         }
-        .frame(width: panelSize.width, height: panelSize.height)
-        .background(Color.clear)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.18)) { isHovering = hovering }
-        }
-        .onChange(of: store.interactionLocked) { _, locked in
-            if locked { isHovering = false }
-        }
-        .onAppear { updateAdaptiveControlSide() }
-        // The AppKit panel already changes size and origin atomically. A
-        // second spring animation on the entire SwiftUI root exaggerates the
-        // apparent jump when a chat closes beside a display edge.
-        .animation(.easeOut(duration: 0.18), value: chat.isPresented)
-        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.petScale)
-        .animation(.easeOut(duration: 0.18), value: store.toast)
         .animation(
-            reduceMotion ? nil : .easeOut(duration: 0.16),
-            value: window.dockCandidate
+            reduceMotion ? nil : .easeOut(duration: 0.14),
+            value: chat.isPresented
         )
-        .contextMenu { contextMenu }
+        .animation(.easeOut(duration: 0.14), value: hoveredSideTool)
+    }
+
+    private func syncChatLayerVisibility(_ presented: Bool) {
+        chatLayerVisibilityGeneration += 1
+        let generation = chatLayerVisibilityGeneration
+        if presented {
+            setChatLayerVisible(true)
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled,
+                  generation == chatLayerVisibilityGeneration,
+                  !chat.isPresented else { return }
+            setChatLayerVisible(false)
+        }
+    }
+
+    private func setChatLayerVisible(_ visible: Bool) {
+        guard isChatLayerVisible != visible else { return }
+        if reduceMotion {
+            isChatLayerVisible = visible
+        } else {
+            withAnimation(.easeOut(duration: 0.14)) {
+                isChatLayerVisible = visible
+            }
+        }
     }
 
     private var displayedPetAction: PetAction {

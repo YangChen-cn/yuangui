@@ -4,12 +4,10 @@ struct FocusTimerControlView: View {
     @ObservedObject var timer: FocusTimerStore
     let showPet: () -> Void
 
-    private let dialSize: CGFloat = 76
-
     var body: some View {
         VStack(spacing: 6) {
             header
-            focusDial
+            timeDisplay
             durationAdjuster
             stateControls
         }
@@ -22,9 +20,8 @@ struct FocusTimerControlView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .animation(.easeOut(duration: 0.22), value: timer.state)
-        .animation(.easeOut(duration: 0.2), value: timer.progress)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .animation(.easeOut(duration: 0.20), value: timer.state)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalizer.string("陪伴式专注"))
     }
@@ -32,58 +29,41 @@ struct FocusTimerControlView: View {
     private var header: some View {
         HStack(spacing: 5) {
             Image(systemName: "timer")
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.red)
             Text(AppLocalizer.string("专注"))
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
     }
 
-    private var focusDial: some View {
-        ZStack {
-            Circle()
-                .stroke(.primary.opacity(0.10), lineWidth: 5)
-            Circle()
-                .trim(from: 0, to: ringProgress)
-                .stroke(
-                    AngularGradient(colors: [.red, .orange, .red], center: .center),
-                    style: StrokeStyle(lineWidth: 5, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-
-            dialContent
-        }
-        .frame(width: dialSize, height: dialSize)
-        .accessibilityValue(accessibilityDialValue)
-    }
-
     @ViewBuilder
-    private var dialContent: some View {
+    private var timeDisplay: some View {
         switch timer.state {
         case .idle:
             Text(AppLocalizer.format("focus.minutes.short", timer.durationMinutes))
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.system(size: 25, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                .contentTransition(.numericText())
         case .running:
             Text(timer.timeText)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.system(size: 25, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .contentTransition(.numericText())
         case .paused:
-            VStack(spacing: 1) {
+            VStack(spacing: 0) {
                 Text(AppLocalizer.string("已暂停"))
-                    .font(.system(size: 8, weight: .medium, design: .rounded))
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                 Text(timer.timeText)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .contentTransition(.numericText())
             }
         case .completed:
-            Image(systemName: "checkmark")
-                .font(.system(size: 22, weight: .bold))
+            Label(AppLocalizer.string("完成一轮"), systemImage: "checkmark.circle.fill")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.green)
                 .symbolEffect(.bounce, value: timer.state)
         }
@@ -119,11 +99,9 @@ struct FocusTimerControlView: View {
                 showPet()
             } label: {
                 Label(AppLocalizer.string("开始"), systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .controlSize(.mini)
-            .fixedSize(horizontal: true, vertical: false)
+            .buttonStyle(FocusPrimaryButtonStyle())
             .accessibilityLabel(AppLocalizer.string("开始"))
         case .running:
             HStack(spacing: 6) {
@@ -148,8 +126,7 @@ struct FocusTimerControlView: View {
                 .font(.system(size: 9, weight: .bold))
                 .frame(width: 22, height: 20)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
+        .buttonStyle(FocusSecondaryButtonStyle())
         .accessibilityLabel(AppLocalizer.string(label))
     }
 
@@ -161,26 +138,59 @@ struct FocusTimerControlView: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 10, weight: .semibold))
-                .frame(width: 25, height: 21)
+                .frame(width: 28, height: 22)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
+        .buttonStyle(FocusSecondaryButtonStyle())
         .accessibilityLabel(AppLocalizer.string(label))
         .help(AppLocalizer.string(label))
     }
+}
 
-    private var ringProgress: Double {
-        switch timer.state {
-        case .idle: return 0.025
-        case .running, .paused, .completed: return max(timer.progress, 0.025)
-        }
+private struct FocusPrimaryButtonStyle: ButtonStyle {
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 30)
+            .background(
+                LinearGradient(
+                    colors: [.red, .orange],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .shadow(
+                color: .red.opacity(isHovering ? 0.30 : 0.18),
+                radius: isHovering ? 8 : 5,
+                y: 2
+            )
+            .scaleEffect(configuration.isPressed ? 0.95 : (isHovering ? 1.02 : 1))
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
     }
+}
 
-    private var accessibilityDialValue: String {
-        switch timer.state {
-        case .idle: return AppLocalizer.format("focus.minutes", timer.durationMinutes)
-        case .running, .paused: return timer.timeText
-        case .completed: return AppLocalizer.string("完成一轮")
-        }
+private struct FocusSecondaryButtonStyle: ButtonStyle {
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.primary.opacity(0.78))
+            .background(
+                Color.primary.opacity(isHovering ? 0.13 : 0.07),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(.white.opacity(isHovering ? 0.55 : 0.30), lineWidth: 0.7)
+            }
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
     }
 }

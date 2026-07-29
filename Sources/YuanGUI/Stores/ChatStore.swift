@@ -4,6 +4,10 @@ import Foundation
 final class ChatStore: ObservableObject {
     static let maximumSessions = 100
     static let maximumMessagesPerSession = 200
+    /// Streaming providers can deliver dozens of fragments per second. Keep
+    /// the reply responsive without invalidating the SwiftUI tree for every
+    /// token.
+    static let partialReplyUpdateInterval = Duration.milliseconds(50)
 
     @Published private(set) var latestReply: String?
     @Published private(set) var isSending = false
@@ -20,6 +24,8 @@ final class ChatStore: ObservableObject {
     private var sessionMessageCounts: [UUID: Int] = [:]
     private var hasBootstrapped = false
     private var bootstrapWaiters: [CheckedContinuation<Void, Never>] = []
+    private var pendingPartialReply: (sessionID: UUID, content: String)?
+    private var partialReplyUpdateTask: Task<Void, Never>?
     var onWillPresentationChange: ((Bool) -> Void)?
 
     init(
@@ -49,6 +55,7 @@ final class ChatStore: ObservableObject {
         guard (!content.isEmpty || !attachments.isEmpty), !isSending else { return }
         if currentSessionID == nil { newSession() }
         guard let targetSessionID = currentSessionID else { return }
+        cancelPendingPartialReply()
         latestReply = nil
         errorMessage = nil
         isSending = true
@@ -73,9 +80,12 @@ final class ChatStore: ObservableObject {
                     guard let self,
                           self.currentSessionID == targetSessionID,
                           self.sessions.contains(where: { $0.id == targetSessionID }) else { return }
-                    self.latestReply = partialReply
+                    self.enqueuePartialReply(partialReply, for: targetSessionID)
                 }
             )
+            // The completed assistant message publishes the final text once;
+            // do not publish the last partial immediately before it.
+            cancelPendingPartialReply()
             _ = append(ChatMessage(role: .assistant, content: reply), to: targetSessionID)
         } catch {
             if currentSessionID == targetSessionID,
@@ -83,14 +93,17 @@ final class ChatStore: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+        cancelPendingPartialReply()
     }
 
     func clear() {
+        cancelPendingPartialReply()
         latestReply = nil
         errorMessage = nil
     }
 
     func newSession() {
+        cancelPendingPartialReply()
         let session = ChatSession()
         sessions.insert(session, at: 0)
         loadedSessionIDs.insert(session.id)
@@ -103,6 +116,7 @@ final class ChatStore: ObservableObject {
 
     func selectSession(_ id: UUID) {
         guard sessions.contains(where: { $0.id == id }) else { return }
+        cancelPendingPartialReply()
         currentSessionID = id
         latestReply = nil
         errorMessage = nil
@@ -110,6 +124,7 @@ final class ChatStore: ObservableObject {
     }
 
     func deleteSession(_ id: UUID) {
+        if currentSessionID == id { cancelPendingPartialReply() }
         sessions.removeAll { $0.id == id }
         loadedSessionIDs.remove(id)
         sessionMessageCounts[id] = nil
@@ -122,6 +137,7 @@ final class ChatStore: ObservableObject {
     }
 
     func clearHistory() {
+        cancelPendingPartialReply()
         sessions = []
         loadedSessionIDs = []
         sessionMessageCounts = [:]
@@ -184,6 +200,37 @@ final class ChatStore: ObservableObject {
 
     private func updateLatestReply() {
         latestReply = currentSession?.messages.last(where: { $0.role == .assistant })?.content
+    }
+
+    private func enqueuePartialReply(_ content: String, for sessionID: UUID) {
+        pendingPartialReply = (sessionID, content)
+        guard partialReplyUpdateTask == nil else { return }
+        partialReplyUpdateTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: Self.partialReplyUpdateInterval)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.partialReplyUpdateTask = nil
+            self.flushPendingPartialReply()
+        }
+    }
+
+    private func flushPendingPartialReply() {
+        partialReplyUpdateTask?.cancel()
+        partialReplyUpdateTask = nil
+        guard let pending = pendingPartialReply else { return }
+        pendingPartialReply = nil
+        guard currentSessionID == pending.sessionID,
+              sessions.contains(where: { $0.id == pending.sessionID }) else { return }
+        latestReply = pending.content
+    }
+
+    private func cancelPendingPartialReply() {
+        partialReplyUpdateTask?.cancel()
+        partialReplyUpdateTask = nil
+        pendingPartialReply = nil
     }
 
     @discardableResult
