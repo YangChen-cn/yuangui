@@ -380,3 +380,10 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 ## 2026-07-29 CI 缓存
 
 - `.github/workflows/tests.yml` 使用 `actions/cache@v5` 缓存 `.build`，缓存键包含 runner、架构、Swift 工具链、`Package.swift`/`Package.resolved` 哈希和提交 SHA；恢复键按依赖和工具链逐级回退。
+
+## 2026-07-29 番茄钟与迷你清理屋可读性
+
+- `FocusTimerStore.statusTitle` 必须通过 `AppLocalizer` 读取，不能把动态状态直接保留为中文源文本；番茄钟控制卡的时长、说明和按钮也要用本地化键。说明文字允许最多两行，Toast 同样必须换行，避免英文界面出现“英文标题 + 中文状态”或被省略号截断。
+- `FocusTimerControlView` 保持固定的可用宽度并采用底部对齐的说明/操作布局；不要再让说明和按钮共享一条不可换行的单行 `HStack`。
+- `yuanPetBubbleGlass` 支持 `.regular`/`.clear` 两种表面。迷你清理/卸载卡必须使用 `.regular`，避免桌面壁纸或窗口背景穿透后影响候选项和操作按钮的可读性；歌词、普通状态对白可继续使用 clear 玻璃。
+- 桌宠左下角的清理入口只负责打开完整清理屋，不再从悬浮侧栏直接启动快速清理或卸载。扫描进行中主桌宠面板保持原有紧凑尺寸，扫描卡在独立辅助面板中贴近桌宠底部/屏幕边界定位，不能通过扩大主面板把桌宠推离底部。

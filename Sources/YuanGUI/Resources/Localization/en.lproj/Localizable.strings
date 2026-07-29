@@ -733,6 +733,7 @@
 "metric.uptime.daysHours" = "%ldd %ldh";
 "metric.uptime.hours" = "%ldh";
 "focus.duration" = "Focus duration: %ld minutes";
+"focus.minutes" = "%ld minutes";
 "backup.count" = "%ld backups";
 "backup.dailyCount" = "%ld daily";
 "backup.weeklyCount" = "%ld weekly";

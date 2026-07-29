@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum YuanLiquidGlassVariant {
+enum YuanLiquidGlassVariant: Equatable {
     case regular
     case clear
 }
@@ -34,6 +34,7 @@ extension View {
     /// clear glass variant is appropriate. The tail participates in the same
     /// glass container so it visually joins the main surface.
     func yuanPetBubbleGlass(
+        _ variant: YuanLiquidGlassVariant = .clear,
         cornerRadius: CGFloat,
         placement: PetAuxiliaryBubblePlacement,
         tailWidth: CGFloat,
@@ -42,6 +43,7 @@ extension View {
     ) -> some View {
         modifier(
             YuanPetBubbleGlassModifier(
+                variant: variant,
                 cornerRadius: cornerRadius,
                 placement: placement,
                 tailWidth: tailWidth,
@@ -119,6 +121,7 @@ private struct YuanSystemGlassButtonModifier: ViewModifier {
 }
 
 private struct YuanPetBubbleGlassModifier: ViewModifier {
+    let variant: YuanLiquidGlassVariant
     let cornerRadius: CGFloat
     let placement: PetAuxiliaryBubblePlacement
     let tailWidth: CGFloat
@@ -130,12 +133,18 @@ private struct YuanPetBubbleGlassModifier: ViewModifier {
         if #available(macOS 26.0, *) {
             GlassEffectContainer(spacing: 0) {
                 content
-                    .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
+                    .glassEffect(
+                        variant == .regular ? .regular : .clear,
+                        in: .rect(cornerRadius: cornerRadius)
+                    )
                     .overlay(alignment: placement == .abovePet ? .bottom : .top) {
                         PetBubbleTail()
                             .fill(Color.clear)
                             .frame(width: tailWidth, height: tailHeight)
-                            .glassEffect(.clear, in: PetBubbleTail())
+                            .glassEffect(
+                                variant == .regular ? .regular : .clear,
+                                in: PetBubbleTail()
+                            )
                             .rotationEffect(.degrees(placement == .abovePet ? 0 : 180))
                             .offset(y: placement == .abovePet ? tailOffset : -tailOffset)
                     }

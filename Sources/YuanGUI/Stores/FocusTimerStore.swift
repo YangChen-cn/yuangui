@@ -37,10 +37,10 @@ final class FocusTimerStore: ObservableObject {
 
     var statusTitle: String {
         switch state {
-        case .idle: return "准备专注"
-        case .running: return "安静陪伴中"
-        case .paused: return "已暂停"
-        case .completed: return "完成一轮"
+        case .idle: return AppLocalizer.string("准备专注")
+        case .running: return AppLocalizer.string("安静陪伴中")
+        case .paused: return AppLocalizer.string("已暂停")
+        case .completed: return AppLocalizer.string("完成一轮")
         }
     }
 

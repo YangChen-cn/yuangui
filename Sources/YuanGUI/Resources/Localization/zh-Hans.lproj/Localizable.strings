@@ -732,6 +732,7 @@
 "metric.uptime.daysHours" = "%ld天%ld小时";
 "metric.uptime.hours" = "%ld小时";
 "focus.duration" = "专注时长：%ld 分钟";
+"focus.minutes" = "%ld 分钟";
 "backup.count" = "%ld 个";
 "backup.dailyCount" = "每日 %ld 个";
 "backup.weeklyCount" = "每周 %ld 个";

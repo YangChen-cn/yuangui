@@ -5,15 +5,17 @@ struct FocusTimerControlView: View {
     let showPet: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 tomatoDial
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("陪伴式专注")
+                    Text(AppLocalizer.string("陪伴式专注"))
                         .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .lineLimit(1)
                     Text(timer.statusTitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer()
             }
@@ -28,7 +30,7 @@ struct FocusTimerControlView: View {
                     }
                     Spacer()
                     Stepper(
-                        "\(timer.durationMinutes) 分钟",
+                        AppLocalizer.format("focus.minutes", timer.durationMinutes),
                         value: Binding(
                             get: { timer.durationMinutes },
                             set: timer.setDurationMinutes
@@ -43,16 +45,20 @@ struct FocusTimerControlView: View {
                     .tint(.red)
             }
 
-            HStack {
-                Text("专注时自动隐藏日常、天气和非紧急气泡")
+            HStack(alignment: .bottom, spacing: 12) {
+                Text(AppLocalizer.string("专注时自动隐藏日常、天气和非紧急气泡"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Spacer()
                 controls
             }
         }
         .padding(16)
-        .frame(width: 340)
+        .frame(width: 380)
         .background(
             LinearGradient(
                 colors: [.red.opacity(0.13), .orange.opacity(0.07), .clear],
@@ -83,15 +89,15 @@ struct FocusTimerControlView: View {
     private var controls: some View {
         switch timer.state {
         case .idle, .completed:
-            Button("开始") { timer.start(); showPet() }
+            Button(AppLocalizer.string("开始")) { timer.start(); showPet() }
                 .buttonStyle(.borderedProminent).tint(.red)
         case .running:
-            Button("暂停") { timer.pause() }
-            Button("结束") { timer.stop() }
+            Button(AppLocalizer.string("暂停")) { timer.pause() }
+            Button(AppLocalizer.string("结束")) { timer.stop() }
         case .paused:
-            Button("继续") { timer.resume() }
+            Button(AppLocalizer.string("继续")) { timer.resume() }
                 .buttonStyle(.borderedProminent).tint(.red)
-            Button("结束") { timer.stop() }
+            Button(AppLocalizer.string("结束")) { timer.stop() }
         }
     }
 }

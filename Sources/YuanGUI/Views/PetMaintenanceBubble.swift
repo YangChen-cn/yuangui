@@ -36,6 +36,7 @@ struct PetMaintenanceBubble: View {
         .padding(12)
         .frame(width: bubbleWidth)
         .yuanPetBubbleGlass(
+            .regular,
             cornerRadius: 18,
             placement: placement,
             tailWidth: 24,
