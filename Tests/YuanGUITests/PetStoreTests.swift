@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import SwiftUI
 import XCTest
 @testable import YuanGUI
 
@@ -37,6 +39,23 @@ final class FakeDesktopIconManager: DesktopIconManaging {
 
 @MainActor
 final class PetStoreTests: XCTestCase {
+    func testPetToastUsesIntrinsicWidthUntilTextNeedsWrapping() {
+        let shortToast = NSHostingView(rootView:
+            PetToastView(message: "Hi!", maximumWidth: 380)
+        )
+        let longToast = NSHostingView(rootView:
+            PetToastView(
+                message: String(repeating: "这是一段需要换行的提示文字", count: 8),
+                maximumWidth: 380
+            )
+        )
+        shortToast.layoutSubtreeIfNeeded()
+        longToast.layoutSubtreeIfNeeded()
+
+        XCTAssertLessThan(shortToast.fittingSize.width, 120)
+        XCTAssertLessThanOrEqual(longToast.fittingSize.width, 380.5)
+    }
+
     func testChatterPeriodBoundariesUseExpectedTimeBuckets() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

@@ -1,9 +1,39 @@
 import AppKit
+import Combine
 import Foundation
 import XCTest
 @testable import YuanGUI
 
 final class AIChatTests: XCTestCase {
+    @MainActor
+    private func makeStreamingFixture() -> StreamingChatFixture {
+        let defaults = UserDefaults(
+            suiteName: "StreamingChatStoreTests-\(UUID().uuidString)"
+        )!
+        let delay = ManualAsyncDelay()
+        let service = ControlledStreamingChatService()
+        let chat = ChatStore(
+            settings: AISettingsStore(defaults: defaults, secrets: MemorySecretStore()),
+            service: service,
+            history: MemoryChatHistoryStore(),
+            partialReplyDelay: { _ in await delay.wait() }
+        )
+        return StreamingChatFixture(chat: chat, service: service, delay: delay)
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ condition: () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<200 {
+            if condition() { return }
+            await Task.yield()
+        }
+        XCTFail("Condition was not satisfied", file: file, line: line)
+    }
+
     @MainActor
     func testPresentationHookRunsSynchronouslyBeforePublishedStateChanges() {
         let suite = "ChatPresentationHookTests-\(UUID().uuidString)"
@@ -222,6 +252,7 @@ final class AIChatTests: XCTestCase {
         let service = SequencedChatService(replies: ["第一次回复", "第二次回复"])
         let history = MemoryChatHistoryStore()
         let chat = ChatStore(settings: settings, service: service, history: history)
+        chat.present()
 
         await chat.send("第一问", petMode: .duo)
         XCTAssertEqual(chat.latestReply, "第一次回复")
@@ -231,6 +262,217 @@ final class AIChatTests: XCTestCase {
         let received = await service.receivedContents()
         XCTAssertEqual(received, [["第一问"], ["第一问", "第一次回复", "第二问"]])
         XCTAssertEqual(chat.sessions.first?.messages.count, 4)
+    }
+
+    @MainActor
+    func testRapidPartialRepliesAreCoalescedIntoOnePublishedUpdate() async {
+        let fixture = makeStreamingFixture()
+        var publishedReplies: [String] = []
+        let cancellable = fixture.chat.$latestReply
+            .compactMap { $0 }
+            .sink { publishedReplies.append($0) }
+        fixture.chat.present()
+        let sendTask = Task { await fixture.chat.send("问题", petMode: .duo) }
+        await fixture.service.waitUntilRequested()
+
+        await fixture.service.emit("一")
+        await fixture.service.emit("一二")
+        await fixture.service.emit("一二三")
+        XCTAssertTrue(publishedReplies.isEmpty)
+
+        fixture.delay.resumeNext()
+        await waitUntil { fixture.chat.latestReply == "一二三" }
+        XCTAssertEqual(publishedReplies, ["一二三"])
+
+        await fixture.service.finish(with: "完整回复")
+        await sendTask.value
+        withExtendedLifetime(cancellable) {}
+    }
+
+    @MainActor
+    func testVisibleThrottlePublishesNewestPartialInsteadOfOlderContent() async {
+        let fixture = makeStreamingFixture()
+        fixture.chat.present()
+        let sendTask = Task { await fixture.chat.send("问题", petMode: .duo) }
+        await fixture.service.waitUntilRequested()
+
+        await fixture.service.emit("旧内容")
+        await fixture.service.emit("最新内容")
+        fixture.delay.resumeNext()
+
+        await waitUntil { fixture.chat.latestReply == "最新内容" }
+        XCTAssertEqual(fixture.chat.latestReply, "最新内容")
+        await fixture.service.finish(with: "最终内容")
+        await sendTask.value
+    }
+
+    @MainActor
+    func testHiddenChatBuffersPartialsWithoutPublishingLatestReply() async {
+        let fixture = makeStreamingFixture()
+        fixture.chat.present()
+        let sendTask = Task { await fixture.chat.send("问题", petMode: .duo) }
+        await fixture.service.waitUntilRequested()
+        await fixture.service.emit("可见内容")
+        fixture.delay.resumeNext()
+        await waitUntil { fixture.chat.latestReply == "可见内容" }
+
+        fixture.chat.dismiss()
+        await fixture.service.emit("隐藏内容一")
+        await fixture.service.emit("隐藏内容二")
+        for _ in 0..<10 { await Task.yield() }
+
+        XCTAssertEqual(fixture.chat.latestReply, "可见内容")
+        XCTAssertEqual(fixture.delay.waiterCount, 0)
+        await fixture.service.finish(with: "最终内容")
+        await sendTask.value
+    }
+
+    @MainActor
+    func testPresentingChatImmediatelyPublishesLatestHiddenPartial() async {
+        let fixture = makeStreamingFixture()
+        fixture.chat.present()
+        let sendTask = Task { await fixture.chat.send("问题", petMode: .duo) }
+        await fixture.service.waitUntilRequested()
+        fixture.chat.dismiss()
+        await fixture.service.emit("隐藏期间的最新内容")
+
+        fixture.chat.present()
+
+        XCTAssertEqual(fixture.chat.latestReply, "隐藏期间的最新内容")
+        await fixture.service.finish(with: "最终内容")
+        await sendTask.value
+    }
+
+    @MainActor
+    func testFinalReplyReplacesPendingPartialAndAppendsOneAssistantMessage() async {
+        let fixture = makeStreamingFixture()
+        var publishedReplies: [String] = []
+        let cancellable = fixture.chat.$latestReply
+            .compactMap { $0 }
+            .sink { publishedReplies.append($0) }
+        fixture.chat.present()
+        let sendTask = Task { await fixture.chat.send("问题", petMode: .duo) }
+        await fixture.service.waitUntilRequested()
+        await fixture.service.emit("尚未发布的 partial")
+
+        await fixture.service.finish(with: "唯一完整回复")
+        await sendTask.value
+
+        XCTAssertEqual(fixture.chat.latestReply, "唯一完整回复")
+        XCTAssertEqual(
+            fixture.chat.currentSession?.messages.filter { $0.role == .assistant }.map(\.content),
+            ["唯一完整回复"]
+        )
+        XCTAssertEqual(publishedReplies, ["唯一完整回复"])
+        fixture.delay.resumeAll()
+        withExtendedLifetime(cancellable) {}
+    }
+
+    @MainActor
+    func testStreamingFailureClearsResidualPartialBeforePublishingError() async {
+        let defaults = UserDefaults(
+            suiteName: "FailingStreamingChatStoreTests-\(UUID().uuidString)"
+        )!
+        let delay = ManualAsyncDelay()
+        let chat = ChatStore(
+            settings: AISettingsStore(defaults: defaults, secrets: MemorySecretStore()),
+            service: FailingStreamingChatService(),
+            history: MemoryChatHistoryStore(),
+            partialReplyDelay: { _ in await delay.wait() }
+        )
+        chat.present()
+
+        await chat.send("问题", petMode: .duo)
+
+        XCTAssertNil(chat.latestReply)
+        XCTAssertEqual(chat.errorMessage, "测试流式错误")
+        delay.resumeAll()
+    }
+
+    @MainActor
+    func testReopeningDuringDismissCancelsStaleCollapse() async {
+        let delay = ManualAsyncDelay()
+        let coordinator = ChatPresentationCoordinator { _ in await delay.wait() }
+        var collapses = 0
+        coordinator.collapseToCompactLayout = { collapses += 1 }
+
+        coordinator.present(reduceMotion: false)
+        await waitUntil { coordinator.phase == .presented }
+        coordinator.dismiss(reduceMotion: false)
+        XCTAssertEqual(coordinator.phase, .dismissing)
+
+        coordinator.present(reduceMotion: false)
+        await waitUntil { coordinator.phase == .presented }
+        delay.resumeAll()
+        for _ in 0..<10 { await Task.yield() }
+
+        XCTAssertEqual(coordinator.phase, .presented)
+        XCTAssertTrue(coordinator.keepsExpandedLayout)
+        XCTAssertEqual(collapses, 0)
+    }
+
+    @MainActor
+    func testDismissKeepsExpandedLayoutUntilContentDelayCompletes() async {
+        let delay = ManualAsyncDelay()
+        let coordinator = ChatPresentationCoordinator { _ in await delay.wait() }
+        var events: [String] = []
+        coordinator.prepareExpandedLayout = { events.append("expand") }
+        coordinator.collapseToCompactLayout = { events.append("collapse") }
+        coordinator.setPetChatting = { events.append("chat:\($0)") }
+
+        coordinator.present(reduceMotion: false)
+        await waitUntil { coordinator.phase == .presented }
+        coordinator.dismiss(reduceMotion: false)
+
+        XCTAssertEqual(coordinator.phase, .dismissing)
+        XCTAssertTrue(coordinator.keepsExpandedLayout)
+        XCTAssertEqual(events, ["expand", "chat:true"])
+
+        await waitUntil { delay.waiterCount == 1 }
+        delay.resumeNext()
+        await waitUntil { coordinator.phase == .hidden }
+        XCTAssertFalse(coordinator.keepsExpandedLayout)
+        XCTAssertEqual(events.prefix(3), ["expand", "chat:true", "collapse"])
+        await waitUntil { events.last == "chat:false" }
+    }
+
+    @MainActor
+    func testOldSessionPartialAndFinalNeverAppearInNewSession() async throws {
+        let fixture = makeStreamingFixture()
+        fixture.chat.present()
+        let sendTask = Task { await fixture.chat.send("原会话问题", petMode: .duo) }
+        await fixture.service.waitUntilRequested()
+        let originalSessionID = try XCTUnwrap(fixture.chat.currentSessionID)
+        await fixture.service.emit("原会话 partial")
+
+        fixture.chat.newSession()
+        let newSessionID = try XCTUnwrap(fixture.chat.currentSessionID)
+        fixture.delay.resumeAll()
+        await fixture.service.finish(with: "原会话最终回复")
+        await sendTask.value
+
+        XCTAssertNil(fixture.chat.latestReply)
+        XCTAssertTrue(fixture.chat.sessions.first { $0.id == newSessionID }?.messages.isEmpty == true)
+        XCTAssertEqual(
+            fixture.chat.sessions.first { $0.id == originalSessionID }?.messages.map(\.content),
+            ["原会话问题", "原会话最终回复"]
+        )
+    }
+
+    @MainActor
+    func testReduceMotionDismissSkipsNormalAnimationDelay() async {
+        let delay = ManualAsyncDelay()
+        let coordinator = ChatPresentationCoordinator { _ in await delay.wait() }
+        var collapsed = false
+        coordinator.collapseToCompactLayout = { collapsed = true }
+
+        coordinator.present(reduceMotion: true)
+        await waitUntil { coordinator.phase == .presented }
+        coordinator.dismiss(reduceMotion: true)
+        await waitUntil { coordinator.phase == .hidden }
+
+        XCTAssertTrue(collapsed)
+        XCTAssertEqual(delay.waiterCount, 0)
     }
 
     @MainActor
@@ -412,6 +654,108 @@ final class AIChatTests: XCTestCase {
         pasteboard.clearContents()
         pasteboard.setString("普通文字", forType: .string)
         XCTAssertTrue(ChatPasteboardReader.images(from: pasteboard).isEmpty)
+    }
+}
+
+@MainActor
+private struct StreamingChatFixture {
+    let chat: ChatStore
+    let service: ControlledStreamingChatService
+    let delay: ManualAsyncDelay
+}
+
+@MainActor
+private final class ManualAsyncDelay {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    var waiterCount: Int { waiters.count }
+
+    func wait() async {
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func resumeNext() {
+        guard !waiters.isEmpty else { return }
+        waiters.removeFirst().resume()
+    }
+
+    func resumeAll() {
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.resume() }
+    }
+}
+
+private actor ControlledStreamingChatService: AIChatServicing {
+    private var partialHandler: (@MainActor (String) -> Void)?
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
+    private var requested = false
+    private var replyContinuation: CheckedContinuation<String, Never>?
+
+    func reply(
+        messages: [ChatMessage],
+        attachments: [PreparedChatAttachment],
+        configuration: AIChatConfiguration,
+        petMode: PetMode
+    ) async throws -> String {
+        await withCheckedContinuation { replyContinuation = $0 }
+    }
+
+    func streamReply(
+        messages: [ChatMessage],
+        attachments: [PreparedChatAttachment],
+        configuration: AIChatConfiguration,
+        petMode: PetMode,
+        onPartialReply: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        partialHandler = onPartialReply
+        requested = true
+        let waiters = requestWaiters
+        requestWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        return await withCheckedContinuation { replyContinuation = $0 }
+    }
+
+    func waitUntilRequested() async {
+        if requested { return }
+        await withCheckedContinuation { requestWaiters.append($0) }
+    }
+
+    func emit(_ content: String) async {
+        guard let partialHandler else { return }
+        await partialHandler(content)
+    }
+
+    func finish(with reply: String) {
+        replyContinuation?.resume(returning: reply)
+        replyContinuation = nil
+        partialHandler = nil
+    }
+}
+
+private struct FailingStreamingChatService: AIChatServicing {
+    struct Failure: LocalizedError {
+        var errorDescription: String? { "测试流式错误" }
+    }
+
+    func reply(
+        messages: [ChatMessage],
+        attachments: [PreparedChatAttachment],
+        configuration: AIChatConfiguration,
+        petMode: PetMode
+    ) async throws -> String {
+        throw Failure()
+    }
+
+    func streamReply(
+        messages: [ChatMessage],
+        attachments: [PreparedChatAttachment],
+        configuration: AIChatConfiguration,
+        petMode: PetMode,
+        onPartialReply: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        await onPartialReply("不应残留的 partial")
+        throw Failure()
     }
 }
 

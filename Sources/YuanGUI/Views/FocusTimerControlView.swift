@@ -3,6 +3,7 @@ import SwiftUI
 struct FocusTimerControlView: View {
     @ObservedObject var timer: FocusTimerStore
     let showPet: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
@@ -21,7 +22,10 @@ struct FocusTimerControlView: View {
             )
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .animation(.easeOut(duration: 0.20), value: timer.state)
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.20),
+            value: timer.state
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalizer.string("陪伴式专注"))
     }
@@ -42,46 +46,53 @@ struct FocusTimerControlView: View {
     private var timeDisplay: some View {
         switch timer.state {
         case .idle:
-            Text(AppLocalizer.format("focus.minutes.short", timer.durationMinutes))
-                .font(.system(size: 25, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .contentTransition(.numericText())
+            primaryTimeText(AppLocalizer.format("focus.minutes.short", timer.durationMinutes))
         case .running:
-            Text(timer.timeText)
-                .font(.system(size: 25, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .contentTransition(.numericText())
+            primaryTimeText(timer.timeText)
         case .paused:
             VStack(spacing: 0) {
                 Text(AppLocalizer.string("已暂停"))
                     .font(.system(size: 9, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
-                Text(timer.timeText)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                primaryTimeText(timer.timeText, size: 22)
             }
         case .completed:
-            Label(AppLocalizer.string("完成一轮"), systemImage: "checkmark.circle.fill")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(.green)
-                .symbolEffect(.bounce, value: timer.state)
+            VStack(spacing: 0) {
+                completedLabel
+                primaryTimeText(
+                    AppLocalizer.format("focus.minutes.short", timer.durationMinutes),
+                    size: 22
+                )
+            }
+        }
+    }
+
+    private func primaryTimeText(_ text: String, size: CGFloat = 25) -> some View {
+        Text(text)
+            .font(.system(size: size, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .contentTransition(reduceMotion ? .identity : .numericText())
+    }
+
+    @ViewBuilder
+    private var completedLabel: some View {
+        let label = Label(AppLocalizer.string("完成一轮"), systemImage: "checkmark.circle.fill")
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(.green)
+        if reduceMotion {
+            label
+        } else {
+            label.symbolEffect(.bounce, value: timer.state)
         }
     }
 
     @ViewBuilder
     private var durationAdjuster: some View {
         if timer.state == .idle || timer.state == .completed {
-            HStack(spacing: 5) {
+            HStack(spacing: 22) {
                 durationButton("minus", label: "减少专注时长") {
                     timer.setDurationMinutes(timer.durationMinutes - 5)
                 }
-
-                Text(AppLocalizer.format("focus.minutes.short", timer.durationMinutes))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .frame(minWidth: 52)
-                    .contentTransition(.numericText())
 
                 durationButton("plus", label: "增加专注时长") {
                     timer.setDurationMinutes(timer.durationMinutes + 5)
@@ -128,6 +139,7 @@ struct FocusTimerControlView: View {
         }
         .buttonStyle(FocusSecondaryButtonStyle())
         .accessibilityLabel(AppLocalizer.string(label))
+        .help(AppLocalizer.string(label))
     }
 
     private func iconControl(
@@ -148,6 +160,7 @@ struct FocusTimerControlView: View {
 
 private struct FocusPrimaryButtonStyle: ButtonStyle {
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -168,15 +181,23 @@ private struct FocusPrimaryButtonStyle: ButtonStyle {
                 radius: isHovering ? 8 : 5,
                 y: 2
             )
-            .scaleEffect(configuration.isPressed ? 0.95 : (isHovering ? 1.02 : 1))
+            .scaleEffect(
+                reduceMotion
+                    ? 1
+                    : (configuration.isPressed ? 0.95 : (isHovering ? 1.02 : 1))
+            )
             .opacity(configuration.isPressed ? 0.88 : 1)
             .onHover { isHovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.12),
+                value: isHovering
+            )
     }
 }
 
 private struct FocusSecondaryButtonStyle: ButtonStyle {
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -189,8 +210,12 @@ private struct FocusSecondaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(.white.opacity(isHovering ? 0.55 : 0.30), lineWidth: 0.7)
             }
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.94 : 1))
+            .opacity(configuration.isPressed ? 0.86 : 1)
             .onHover { isHovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.12),
+                value: isHovering
+            )
     }
 }

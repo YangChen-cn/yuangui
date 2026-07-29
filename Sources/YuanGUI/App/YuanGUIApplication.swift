@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import SwiftUI
 
 @main
@@ -143,8 +142,6 @@ final class WindowCoordinator: NSObject {
     private var diaryController: DiaryWindowController?
     private var lyricsController: LyricsPanelController?
     private var weatherStartupTask: Task<Void, Never>?
-    private var chatDismissTask: Task<Void, Never>?
-    private var cancellables = Set<AnyCancellable>()
 
     private lazy var actions = AppActions(
         open: { [weak self] route in self?.open(route) },
@@ -211,36 +208,10 @@ final class WindowCoordinator: NSObject {
             self?.pet.weather.start()
         }
         diary.onEntryCompleted = { [weak self] in self?.pet.showDiarySavedMessage() }
-        chat.$isPresented
-            .removeDuplicates()
-            .sink { [weak self] presented in
-                Task { @MainActor [weak self] in
-                    guard let self, self.chat.isPresented == presented else { return }
-                    self.chatDismissTask?.cancel()
-                    if presented {
-                        self.pet.setChatting(true)
-                        self.panelController?.focusForChatInput()
-                    } else {
-                        // Let the chat card finish its short opacity/scale
-                        // exit before switching the pet animation state. This
-                        // avoids two large view updates in the same frame.
-                        self.chatDismissTask = Task { @MainActor [weak self] in
-                            try? await Task.sleep(for: .milliseconds(150))
-                            guard !Task.isCancelled,
-                                  let self,
-                                  !self.chat.isPresented else { return }
-                            self.pet.setChatting(false)
-                            self.chatDismissTask = nil
-                        }
-                    }
-                }
-            }
-            .store(in: &cancellables)
     }
 
     func stop() {
         weatherStartupTask?.cancel()
-        chatDismissTask?.cancel()
         pet.monitor.stop()
         quickTools.stop()
         music.lyricsPresentation.onVisibilityChanged = nil

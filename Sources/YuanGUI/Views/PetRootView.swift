@@ -6,6 +6,7 @@ struct PetRootView: View {
     @ObservedObject var window: PetPanel
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
+    @ObservedObject var chatPresentation: ChatPresentationCoordinator
     @ObservedObject var maintenance: MaintenanceStore
     @ObservedObject var focusTimer: FocusTimerStore
     @ObservedMusicFeature var music: MusicFeature
@@ -19,8 +20,6 @@ struct PetRootView: View {
     @State private var hoveredSideTool: SideTool?
     @State private var showsFocusPopover = false
     @State private var isMiniPlayerPresented = false
-    @State private var isChatLayerVisible = false
-    @State private var chatLayerVisibilityGeneration = 0
 
     private enum SideTool: String {
         case role = "切换桌宠角色"
@@ -34,7 +33,7 @@ struct PetRootView: View {
         PetLayout.panelSize(
             scale: store.petScale,
             showsBubble: false,
-            showsChat: chat.isPresented
+            showsChat: chatPresentation.keepsExpandedLayout
         )
     }
 
@@ -71,10 +70,6 @@ struct PetRootView: View {
             if locked { isHovering = false }
         }
         .onAppear { updateAdaptiveControlSide() }
-        .onAppear { syncChatLayerVisibility(chat.isPresented) }
-        .onChange(of: chat.isPresented) { _, presented in
-            syncChatLayerVisibility(presented)
-        }
         // AppKit changes the window frame atomically. Keep the root frame out
         // of SwiftUI's implicit animation system; only the chat and controls
         // layers below animate their own content.
@@ -91,17 +86,10 @@ struct PetRootView: View {
     private var petLayer: some View {
         VStack(spacing: -12) {
             if let toast = store.toast {
-                Text(AppLocalizer.string(toast))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: max(220, panelSize.width - 24))
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 0.7))
-                    .shadow(color: .black.opacity(0.14), radius: 10, y: 4)
+                PetToastView(
+                    message: toast,
+                    maximumWidth: max(220, panelSize.width - 24)
+                )
                     .transition(.scale(scale: 0.82).combined(with: .opacity))
                     .zIndex(3)
             }
@@ -138,12 +126,12 @@ struct PetRootView: View {
         }
         .frame(maxWidth: .infinity)
         .offset(x: 35 * scale)
-        .padding(.bottom, chat.isPresented ? PetLayout.chatPetBottomInset : 0)
+        .padding(.bottom, chatPresentation.keepsExpandedLayout ? PetLayout.chatPetBottomInset : 0)
     }
 
     @ViewBuilder
     private var chatLayer: some View {
-        if isChatLayerVisible {
+        if chatPresentation.showsChatLayer {
             ZStack(alignment: .bottom) {
                 if chat.latestReply != nil || chat.isSending || chat.errorMessage != nil {
                     PetReplyBubble(chat: chat, pet: store)
@@ -158,10 +146,16 @@ struct PetRootView: View {
                         .zIndex(5)
                 }
             }
-            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
+            .opacity(chatPresentation.showsChatContent ? 1 : 0)
+            .scaleEffect(
+                chatPresentation.showsChatContent ? 1 : 0.97,
+                anchor: .bottom
+            )
             .animation(
-                reduceMotion ? nil : .easeOut(duration: 0.14),
-                value: chat.isPresented
+                reduceMotion
+                    ? nil
+                    : .easeOut(duration: ChatPresentationCoordinator.contentAnimationDuration),
+                value: chatPresentation.showsChatContent
             )
         }
     }
@@ -174,7 +168,7 @@ struct PetRootView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
-            if !store.isDropTargeted && !chat.isPresented {
+            if !store.isDropTargeted && !chatPresentation.keepsExpandedLayout {
                 if showsInteractiveSideControls || hasActiveFocusCountdown {
                     if PetLayout.usesCompactControls(scale: store.petScale) {
                         compactSideControls
@@ -226,36 +220,9 @@ struct PetRootView: View {
         }
         .animation(
             reduceMotion ? nil : .easeOut(duration: 0.14),
-            value: chat.isPresented
+            value: chatPresentation.keepsExpandedLayout
         )
         .animation(.easeOut(duration: 0.14), value: hoveredSideTool)
-    }
-
-    private func syncChatLayerVisibility(_ presented: Bool) {
-        chatLayerVisibilityGeneration += 1
-        let generation = chatLayerVisibilityGeneration
-        if presented {
-            setChatLayerVisible(true)
-            return
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled,
-                  generation == chatLayerVisibilityGeneration,
-                  !chat.isPresented else { return }
-            setChatLayerVisible(false)
-        }
-    }
-
-    private func setChatLayerVisible(_ visible: Bool) {
-        guard isChatLayerVisible != visible else { return }
-        if reduceMotion {
-            isChatLayerVisible = visible
-        } else {
-            withAnimation(.easeOut(duration: 0.14)) {
-                isChatLayerVisible = visible
-            }
-        }
     }
 
     private var displayedPetAction: PetAction {
@@ -267,7 +234,7 @@ struct PetRootView: View {
             isPlaying: music.playback.isPlaying,
             lightSingAlongEnabled: music.lyricsPresentation.lightSingAlongEnabled,
             hasCurrentLyric: music.lyricsStore.currentLine != nil,
-            isChatPresented: chat.isPresented,
+            isChatPresented: chatPresentation.keepsExpandedLayout,
             hasMaintenanceTask: maintenance.quickMode != nil,
             focusState: focusTimer.state
         )
@@ -396,7 +363,7 @@ struct PetRootView: View {
     }
 
     private var showsInteractiveSideControls: Bool {
-        showsTransientSideControls && !store.interactionLocked && !chat.isPresented
+        showsTransientSideControls && !store.interactionLocked && !chatPresentation.keepsExpandedLayout
     }
 
     private var hasActiveFocusCountdown: Bool {

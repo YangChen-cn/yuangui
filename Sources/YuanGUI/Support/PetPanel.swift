@@ -108,6 +108,7 @@ final class PetPanelController {
     private let focusTimer: FocusTimerStore
     private let music: MusicFeature
     private let appActions: AppActions
+    private let chatPresentation = ChatPresentationCoordinator()
     private var lockedToolbarPanel: PetLockedToolbarPanel?
     private var auxiliaryBubblePanel: PetAuxiliaryBubblePanel?
     private let auxiliaryBubblePresentation = PetAuxiliaryBubblePresentation()
@@ -154,11 +155,11 @@ final class PetPanelController {
         self.music = music
         self.appActions = appActions
         lastLayoutScale = store.petScale
-        lastLayoutShowsChat = chat.isPresented
+        lastLayoutShowsChat = false
         let size = PetLayout.panelSize(
             scale: store.petScale,
             showsBubble: false,
-            showsChat: chat.isPresented,
+            showsChat: false,
             showsMaintenance: false
         )
         panel = PetPanel(
@@ -181,6 +182,7 @@ final class PetPanelController {
                 window: panel,
                 store: store,
                 chat: chat,
+                chatPresentation: chatPresentation,
                 maintenance: maintenance,
                 focusTimer: focusTimer,
                 music: music,
@@ -206,8 +208,26 @@ final class PetPanelController {
             self.chat.dismiss()
         }
         panel.dragEndedAction = { [weak self] in self?.finishUserDrag() }
+        chatPresentation.prepareExpandedLayout = { [weak self] in
+            self?.prepareAndExpandChatLayout()
+        }
+        chatPresentation.collapseToCompactLayout = { [weak self] in
+            self?.resizeToCurrentLayout(showsChatOverride: false)
+        }
+        chatPresentation.setPetChatting = { [weak store] chatting in
+            store?.setChatting(chatting)
+        }
+        chatPresentation.focusChatInput = { [weak self] in
+            self?.focusForChatInput()
+        }
         chat.onWillPresentationChange = { [weak self] presented in
-            self?.prepareForChatPresentationChange(presented)
+            guard let self else { return }
+            let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            if presented {
+                self.chatPresentation.present(reduceMotion: reduceMotion)
+            } else {
+                self.chatPresentation.dismiss(reduceMotion: reduceMotion)
+            }
         }
         installObservers()
         Publishers.CombineLatest4(store.$showsSystemStatus, store.$smartState, store.$petScale, chat.$isPresented)
@@ -576,24 +596,21 @@ final class PetPanelController {
         if dockedEdge != nil {
             restoreFromEdge(animated: false)
         }
-        // `@Published` presentation is delivered before SwiftUI completes its
-        // update. Resize first so the composer never renders for one frame in
-        // the old, smaller pet window.
-        resizeToCurrentLayout()
         show()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 
-    private func prepareForChatPresentationChange(_ willPresent: Bool) {
-        guard willPresent else { return }
+    private func prepareAndExpandChatLayout() {
         if dockedEdge != nil {
             restoreFromEdge(animated: false)
         }
-        // This runs before ChatStore publishes the new value, so neither
-        // SwiftUI's intrinsic-content update nor AppKit's panel resizing can
-        // replace the true compact origin with the expanded chat origin.
-        preChatPanelOrigin = panel.frame.origin
+        if !chatPresentation.keepsExpandedLayout {
+            // Capture the exact compact position before either SwiftUI or
+            // AppKit can observe the expanded visual phase.
+            preChatPanelOrigin = panel.frame.origin
+        }
+        resizeToCurrentLayout(showsChatOverride: true)
     }
 
     private func installObservers() {
@@ -640,19 +657,20 @@ final class PetPanelController {
         }
     }
 
-    private func resizeToCurrentLayout() {
+    private func resizeToCurrentLayout(showsChatOverride: Bool? = nil) {
+        let showsChat = showsChatOverride ?? chatPresentation.keepsExpandedLayout
         let screen = screenForExpandedPet() ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame
         let usableFrame = visibleFrame.map {
             PetLayout.usablePanelFrame(
                 in: $0,
-                showsChat: chat.isPresented
+                showsChat: showsChat
             )
         }
         var targetSize = PetLayout.panelSize(
             scale: store.petScale,
             showsBubble: false,
-            showsChat: chat.isPresented
+            showsChat: showsChat
         )
         if let usableFrame {
             // Keep a fixed-width chat surface from extending past a narrow
@@ -661,8 +679,8 @@ final class PetPanelController {
             targetSize.width = min(targetSize.width, usableFrame.width)
             targetSize.height = min(targetSize.height, usableFrame.height)
         }
-        let isOpeningChat = !lastLayoutShowsChat && chat.isPresented
-        let isClosingChat = lastLayoutShowsChat && !chat.isPresented
+        let isOpeningChat = !lastLayoutShowsChat && showsChat
+        let isClosingChat = lastLayoutShowsChat && !showsChat
         if isOpeningChat, preChatPanelOrigin == nil {
             // Keep the exact compact-panel position. Preserving only the
             // sprite frame loses information when the larger chat panel is
@@ -673,7 +691,7 @@ final class PetPanelController {
         let mustRestoreChatOrigin = isClosingChat && preChatPanelOrigin != nil
         guard panel.frame.size != targetSize || mustRestoreChatOrigin else {
             lastLayoutScale = store.petScale
-            lastLayoutShowsChat = chat.isPresented
+            lastLayoutShowsChat = showsChat
             updateAuxiliaryBubble()
             return
         }
@@ -702,7 +720,7 @@ final class PetPanelController {
                 targetSize: targetSize,
                 scale: store.petScale,
                 oldShowsChat: lastLayoutShowsChat,
-                newShowsChat: chat.isPresented,
+                newShowsChat: showsChat,
                 visibleFrame: layoutFrame
             )
         }
@@ -711,7 +729,7 @@ final class PetPanelController {
         panel.setFrame(frame, display: true, animate: false)
         panel.bypassScreenConstraint = false
         lastLayoutScale = store.petScale
-        lastLayoutShowsChat = chat.isPresented
+        lastLayoutShowsChat = showsChat
         if isClosingChat {
             preChatPanelOrigin = nil
         }
@@ -733,12 +751,18 @@ final class PetPanelController {
         isApplyingProgrammaticLayout = false
     }
 
-    private static func showsMusicLyric(store: PetStore, chat: ChatStore, maintenance: MaintenanceStore, focusTimer: FocusTimerStore, music: MusicFeature) -> Bool {
+    private static func showsMusicLyric(
+        store: PetStore,
+        isChatPresented: Bool,
+        maintenance: MaintenanceStore,
+        focusTimer: FocusTimerStore,
+        music: MusicFeature
+    ) -> Bool {
         PetMusicPresentationPolicy.showsLyricBubble(
             isPlaying: music.playback.isPlaying,
             lightSingAlongEnabled: music.lyricsPresentation.lightSingAlongEnabled,
             hasCurrentLyric: music.lyricsStore.currentLine != nil,
-            isChatPresented: chat.isPresented,
+            isChatPresented: isChatPresented,
             hasMaintenanceTask: maintenance.quickMode != nil,
             focusState: focusTimer.state
         )
@@ -834,7 +858,7 @@ final class PetPanelController {
             && auxiliaryBubblePresentation.placement == .belowPet
         let y = placesAbovePet
             ? panel.frame.maxY - toolbarPanel.frame.height - PetLayout.bottomToolbarNormalBottomPadding
-            : panel.frame.minY + (chat.isPresented
+            : panel.frame.minY + (chatPresentation.keepsExpandedLayout
                 ? PetLayout.bottomToolbarChatBottomPadding
                 : PetLayout.bottomToolbarNormalBottomPadding)
         toolbarPanel.setFrameOrigin(NSPoint(
@@ -868,13 +892,13 @@ final class PetPanelController {
     }
 
     private var shouldShowAuxiliaryBubble: Bool {
-        guard !chat.isPresented else { return false }
+        guard !chatPresentation.keepsExpandedLayout else { return false }
         if maintenance.quickMode != nil { return true }
         return store.ambientMessage != nil
             || store.shouldShowPetBubble
             || Self.showsMusicLyric(
                 store: store,
-                chat: chat,
+                isChatPresented: chatPresentation.keepsExpandedLayout,
                 maintenance: maintenance,
                 focusTimer: focusTimer,
                 music: music
@@ -892,7 +916,7 @@ final class PetPanelController {
         let spriteFrame = PetLayout.petVisualFrame(
             panelFrame: panel.frame,
             scale: store.petScale,
-            showsChat: chat.isPresented
+            showsChat: chatPresentation.keepsExpandedLayout
         )
         let action = store.resolvedAction(isMusicPlaying: music.playback.isPlaying)
         let visiblePetFrame = PetLayout.visiblePetFrame(
@@ -991,10 +1015,10 @@ final class PetPanelController {
         panel.allowedTopOverflow = PetLayout.allowedTopOverflow(
             scale: store.petScale,
             showsBubble: false,
-            showsChat: chat.isPresented,
+            showsChat: chatPresentation.keepsExpandedLayout,
             showsMaintenance: false
         )
-        let allowsCompactOverflow = !chat.isPresented
+        let allowsCompactOverflow = !chatPresentation.keepsExpandedLayout
         let horizontalOverflow = PetLayout.compactHorizontalOverflow(scale: store.petScale)
         panel.allowedLeftOverflow = allowsCompactOverflow ? horizontalOverflow.left : 0
         panel.allowedRightOverflow = allowsCompactOverflow ? horizontalOverflow.right : 0
@@ -1016,11 +1040,11 @@ final class PetPanelController {
         if let edge = candidate?.edge, candidate?.isCommitReady == true {
             dock(to: edge, on: screen)
         } else {
-            if chat.isPresented {
+            if chatPresentation.keepsExpandedLayout {
                 let petVisualFrame = PetLayout.petVisualFrame(
                     panelFrame: panel.frame,
                     scale: store.petScale,
-                    showsChat: chat.isPresented
+                    showsChat: true
                 )
                 let compactSize = PetLayout.panelSize(
                     scale: store.petScale,
@@ -1438,7 +1462,7 @@ final class PetPanelController {
         let spriteFrame = PetLayout.petVisualFrame(
             panelFrame: panelFrame,
             scale: store.petScale,
-            showsChat: chat.isPresented
+            showsChat: chatPresentation.keepsExpandedLayout
         )
         let visiblePetFrame = PetLayout.visiblePetFrame(
             spriteFrame: spriteFrame,
@@ -1463,7 +1487,7 @@ final class PetPanelController {
         let spriteFrame = PetLayout.petVisualFrame(
             panelFrame: panelFrame,
             scale: store.petScale,
-            showsChat: chat.isPresented
+            showsChat: chatPresentation.keepsExpandedLayout
         )
         return PetLayout.originEnsuringContentVisible(
             panelOrigin: proposedOrigin,
@@ -1489,7 +1513,7 @@ final class PetPanelController {
         let spriteFrame = PetLayout.petVisualFrame(
             panelFrame: panel.frame,
             scale: store.petScale,
-            showsChat: chat.isPresented
+            showsChat: chatPresentation.keepsExpandedLayout
         )
         return PetLayout.visiblePetFrame(
             spriteFrame: spriteFrame,

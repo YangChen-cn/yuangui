@@ -26,16 +26,21 @@ final class ChatStore: ObservableObject {
     private var bootstrapWaiters: [CheckedContinuation<Void, Never>] = []
     private var pendingPartialReply: (sessionID: UUID, content: String)?
     private var partialReplyUpdateTask: Task<Void, Never>?
+    private let partialReplyDelay: (Duration) async throws -> Void
     var onWillPresentationChange: ((Bool) -> Void)?
 
     init(
         settings: AISettingsStore,
         service: AIChatServicing = AIChatService(),
-        history: ChatHistoryStoring = ChatHistoryFileStore()
+        history: ChatHistoryStoring = ChatHistoryFileStore(),
+        partialReplyDelay: @escaping (Duration) async throws -> Void = { duration in
+            try await Task.sleep(for: duration)
+        }
     ) {
         self.settings = settings
         self.service = service
         self.history = ChatHistoryActor(store: history)
+        self.partialReplyDelay = partialReplyDelay
         Task { await bootstrap() }
     }
 
@@ -88,8 +93,10 @@ final class ChatStore: ObservableObject {
             cancelPendingPartialReply()
             _ = append(ChatMessage(role: .assistant, content: reply), to: targetSessionID)
         } catch {
+            cancelPendingPartialReply()
             if currentSessionID == targetSessionID,
                sessions.contains(where: { $0.id == targetSessionID }) {
+                latestReply = nil
                 errorMessage = error.localizedDescription
             }
         }
@@ -130,7 +137,12 @@ final class ChatStore: ObservableObject {
         sessionMessageCounts[id] = nil
         if currentSessionID == id {
             currentSessionID = sessions.first?.id
-            if let currentSessionID { Task { await loadSessionIfNeeded(currentSessionID) } }
+            latestReply = nil
+            errorMessage = nil
+            if let currentSessionID {
+                publishLatestVisibleReply()
+                Task { await loadSessionIfNeeded(currentSessionID) }
+            }
         }
         let metadata = metadataSnapshot()
         Task { try? await history.deleteSession(id: id, metadata: metadata) }
@@ -157,6 +169,12 @@ final class ChatStore: ObservableObject {
         // @Published invalidates SwiftUI and AppKit starts resizing the panel.
         onWillPresentationChange?(presented)
         isPresented = presented
+        if presented {
+            publishLatestVisibleReply()
+        } else {
+            partialReplyUpdateTask?.cancel()
+            partialReplyUpdateTask = nil
+        }
     }
 
     private func bootstrap() async {
@@ -183,7 +201,7 @@ final class ChatStore: ObservableObject {
     private func loadSessionIfNeeded(_ id: UUID) async {
         guard !loadedSessionIDs.contains(id),
               sessions.contains(where: { $0.id == id }) else {
-            updateLatestReply()
+            publishLatestVisibleReply()
             return
         }
         isLoadingSession = true
@@ -195,23 +213,33 @@ final class ChatStore: ObservableObject {
             loadedSessionIDs.insert(id)
             sessionMessageCounts[id] = session.messages.count
         }
-        updateLatestReply()
+        publishLatestVisibleReply()
     }
 
-    private func updateLatestReply() {
+    private func publishLatestVisibleReply() {
+        guard isPresented else { return }
+        if let pending = pendingPartialReply,
+           pending.sessionID == currentSessionID,
+           sessions.contains(where: { $0.id == pending.sessionID }) {
+            pendingPartialReply = nil
+            latestReply = pending.content
+            return
+        }
         latestReply = currentSession?.messages.last(where: { $0.role == .assistant })?.content
     }
 
     private func enqueuePartialReply(_ content: String, for sessionID: UUID) {
         pendingPartialReply = (sessionID, content)
+        guard isPresented else { return }
         guard partialReplyUpdateTask == nil else { return }
         partialReplyUpdateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
-                try await Task.sleep(for: Self.partialReplyUpdateInterval)
+                try await self.partialReplyDelay(Self.partialReplyUpdateInterval)
             } catch {
                 return
             }
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled else { return }
             self.partialReplyUpdateTask = nil
             self.flushPendingPartialReply()
         }
@@ -221,9 +249,13 @@ final class ChatStore: ObservableObject {
         partialReplyUpdateTask?.cancel()
         partialReplyUpdateTask = nil
         guard let pending = pendingPartialReply else { return }
-        pendingPartialReply = nil
+        guard isPresented else { return }
         guard currentSessionID == pending.sessionID,
-              sessions.contains(where: { $0.id == pending.sessionID }) else { return }
+              sessions.contains(where: { $0.id == pending.sessionID }) else {
+            pendingPartialReply = nil
+            return
+        }
+        pendingPartialReply = nil
         latestReply = pending.content
     }
 
@@ -251,7 +283,7 @@ final class ChatStore: ObservableObject {
         trimSessionLimit()
         let metadata = metadataSnapshot()
         Task { await history.scheduleSave(session: session, metadata: metadata) }
-        if currentSessionID == id { updateLatestReply() }
+        if currentSessionID == id { publishLatestVisibleReply() }
         return true
     }
 

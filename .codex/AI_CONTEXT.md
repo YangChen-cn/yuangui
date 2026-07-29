@@ -395,3 +395,14 @@ Bilibili 的“接下来播放”由 `MusicFeature` 内的 `BilibiliPlaybackQueu
 - 迷你清理卡只允许风险为 `recommended` 的项目直接执行；`review` 必须禁用选择、显示“需检查”风险徽章并引导打开完整清理屋，`protected` 始终禁用。`MaintenanceStore.cleanSelected()` 和卸载快速路径也必须在模型层再次过滤，不能只依赖 View 的 disabled 状态。
 - 卸载迷你卡展开应用时必须遍历全部 `application.components`，不能再使用 `prefix(3)` 隐藏后续组件；滚动区域负责承载长列表。
 - `MaintenanceView` 的完整清理屋所有菜单、按钮、空状态、活动记录摘要和动态“移除/结果”文本都必须通过 `AppLocalizer` 或双语格式化键渲染；英文模式不能残留中文源文本。应用内 2.7.0 更新摘要由 `AppVersionInfo.currentReleaseHighlights` 读取 `release.2.7.*` 双语键，新增条目必须同步维护 `RELEASE_NOTES.md`、`RELEASE_NOTES.zh-CN.md` 和两套本地化资源。
+
+## 2026-07-30 AI 聊天展示状态机、流式发布与番茄钟动态效果
+
+- AI 聊天的逻辑开关仍由 `ChatStore.isPresented` 表示，但窗口和聊天内容的视觉生命周期统一由 `ChatPresentationCoordinator` 管理，阶段为 `hidden`、`presenting`、`presented`、`dismissing`。`PetRootView` 和 `WindowCoordinator` 不得再各自维护延迟关闭任务。
+- 聊天打开时先恢复停靠、记录紧凑原点并由 AppKit 原子扩大 `PetPanel`，再切换聊天桌宠动作、显示聊天层和聚焦输入框。关闭时面板在约 0.14 秒 opacity + 0.97 scale 内容动画期间保持聊天尺寸；动画结束后移除聊天层、原子恢复紧凑尺寸与原点，再 `Task.yield()` 后执行 `pet.setChatting(false)`。
+- 所有聊天展示延迟必须可取消，并同时校验 generation 与当前 phase。关闭期间重新打开必须取消旧任务，旧任务不得再移除新聊天、收缩窗口或清除聊天动作。Reduce Motion 路径跳过正常动画等待。
+- `PetRootView` 的根 frame、角色底部 inset、侧边控制和辅助气泡抑制都依据视觉展示阶段，不直接跟随逻辑 `chat.isPresented` 瞬间收缩；根视图继续禁止针对面板尺寸的隐式动画，AppKit 仍是窗口 frame 的唯一控制方。
+- `ChatStore` 将生成中的最新 partial 保存在非 Published 缓冲。聊天可见时最多每 50ms 发布一次 `latestReply`；隐藏时取消节流任务但保留最新缓冲，不再高频发布。重新打开时立即发布当前会话的 pending partial，否则从当前会话恢复最终 assistant 回复。
+- 最终回复到达时先取消 pending partial，只向目标会话追加一个完整 assistant message；隐藏时不为气泡额外发布 `latestReply`。切换、新建、删除、清空会话或发送失败时必须清理不再适用的 pending，旧会话的 partial、最终回复和错误都不得进入新会话。
+- `FocusTimerControlView` 的空闲/完成态只显示一次主要时长，减 5 分钟和加 5 分钟按钮不再夹带重复时长。Reduce Motion 开启时禁用状态切换动画、完成 bounce、hover/press scale；允许保留 hover 颜色和轻微按压 opacity，数字仍正常更新。
+- `PetRootView` 顶部短暂 toast 使用 `PetToastView`：短文本按固有宽度显示，不能接受根面板宽度提案后拉成整条；长文本才在面板允许的最大宽度内换行。
