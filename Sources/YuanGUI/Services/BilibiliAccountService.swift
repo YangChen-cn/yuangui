@@ -107,6 +107,7 @@ actor BilibiliAccountService: BilibiliAccountServicing {
     }
 
     func currentAccount() async throws -> BilibiliAccount? {
+        guard !refreshToken.isEmpty || !biliCookies().isEmpty else { return nil }
         let response: AccountNavResponse = try await get(
             URL(string: "https://api.bilibili.com/x/web-interface/nav")!
         )

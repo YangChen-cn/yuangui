@@ -150,8 +150,25 @@ struct CleanupScanner: CleanupScanning {
         excluding paths: Set<String>,
         progress: @escaping (MaintenanceScanProgress) -> Void
     ) async -> [CleanupCandidate] {
-        let rules = cleanupRules()
-        let total = rules.count + 1
+        await scanStandardCategories(
+            nil,
+            excluding: paths,
+            progress: progress
+        )
+    }
+
+    private func scanStandardCategories(
+        _ enabledCategories: Set<CleanupCategory>?,
+        excluding paths: Set<String>,
+        progress: @escaping (MaintenanceScanProgress) -> Void
+    ) async -> [CleanupCandidate] {
+        let rules = cleanupRules().filter { rule in
+            guard let enabledCategories else { return true }
+            return enabledCategories.contains(rule.category)
+                || (rule.category == .appCache && enabledCategories.contains(.browserCache))
+        }
+        let scansOrphanedData = enabledCategories?.contains(.orphanedAppData) ?? true
+        let total = rules.count + (scansOrphanedData ? 1 : 0)
         let counter = ScanProgressCounter()
         let lanes = (0..<min(2, rules.count)).map { start in
             stride(from: start, to: rules.count, by: 2).map { rules[$0] }
@@ -179,9 +196,12 @@ struct CleanupScanner: CleanupScanning {
             return merged
         }
 
-        if !Task.isCancelled {
+        if scansOrphanedData, !Task.isCancelled {
             candidates += scanOrphanedData(excluding: paths)
             progress(MaintenanceScanProgress(completed: total, total: total, message: AppLocalizer.string("maintenance.progress.organizing")))
+        }
+        if let enabledCategories {
+            candidates.removeAll { !enabledCategories.contains($0.category) }
         }
         return deduplicated(candidates).sorted { $0.byteCount > $1.byteCount }
     }
@@ -190,9 +210,12 @@ struct CleanupScanner: CleanupScanning {
         configuration: CleanupScanConfiguration,
         progress: @escaping (MaintenanceScanProgress) -> Void
     ) async -> [CleanupCandidate] {
-        var candidates = await scan(excluding: Set(configuration.whitelistedPaths), progress: progress)
+        var candidates = await scanStandardCategories(
+            configuration.enabledCategories,
+            excluding: Set(configuration.whitelistedPaths),
+            progress: progress
+        )
         guard !Task.isCancelled else { return candidates }
-        candidates.removeAll { !configuration.enabledCategories.contains($0.category) }
 
         if configuration.enabledCategories.contains(.developerCache) {
             candidates += scanDeveloperToolCaches(excluding: Set(configuration.whitelistedPaths))

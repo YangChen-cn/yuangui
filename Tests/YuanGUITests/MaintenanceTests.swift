@@ -186,6 +186,38 @@ final class MaintenanceTests: XCTestCase {
         XCTAssertFalse(installerCandidate.selectedByDefault)
     }
 
+    func testConfiguredScanExcludesDisabledStandardCategories() async throws {
+        let root = temporaryRoot("ConfiguredCleanup")
+        let library = root.appendingPathComponent("Library")
+        let cache = library.appendingPathComponent("Caches/com.example.disabled")
+        let projects = root.appendingPathComponent("Projects")
+        let artifact = projects.appendingPathComponent("Sample/.build")
+        let temporary = root.appendingPathComponent("Temporary")
+        for directory in [cache, artifact, temporary] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data(repeating: 1, count: 4_096).write(to: directory.appendingPathComponent("data"))
+        }
+        try Data("{}".utf8).write(to: projects.appendingPathComponent("Sample/Package.swift"))
+        defer { try? FileManager.default.removeItem(at: root) }
+        let scanner = CleanupScanner(
+            userLibrary: library,
+            temporaryDirectory: temporary,
+            metadataCacheRoot: root.appendingPathComponent("Metadata"),
+            homeDirectory: root,
+            downloadsDirectory: root.appendingPathComponent("Downloads"),
+            desktopDirectory: root.appendingPathComponent("Desktop")
+        )
+
+        let values = await scanner.scan(configuration: CleanupScanConfiguration(
+            projectRoots: [projects.path],
+            enabledCategories: [.projectBuildArtifact]
+        ), progress: { _ in })
+
+        XCTAssertTrue(values.contains { $0.url.standardizedFileURL == artifact.standardizedFileURL })
+        XCTAssertFalse(values.contains { $0.url.standardizedFileURL == cache.standardizedFileURL })
+        XCTAssertTrue(values.allSatisfy { $0.category == .projectBuildArtifact })
+    }
+
     func testSameBundleIDSiblingsPreserveAllSharedState() async throws {
         let root = temporaryRoot("SiblingGuard")
         let apps = root.appendingPathComponent("Applications")

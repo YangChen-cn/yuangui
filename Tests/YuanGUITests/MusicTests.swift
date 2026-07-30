@@ -769,6 +769,32 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: fileStore.fileURL.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
+    func testBilibiliCurrentAccountWithoutStoredSessionSkipsNetwork() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileStore = BilibiliSessionFileStore(fileURL: directory.appendingPathComponent("session.json"))
+        let cookieStorage = HTTPCookieStorage.sharedCookieStorage(
+            forGroupContainerIdentifier: "com.yang.yuangui.tests.\(UUID().uuidString)"
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LyricsURLProtocol.self]
+        configuration.httpCookieStorage = cookieStorage
+        let session = URLSession(configuration: configuration)
+        LyricsURLProtocol.handler = { _ in
+            XCTFail("Logged-out account refresh must not issue a network request")
+            throw URLError(.unsupportedURL)
+        }
+        defer {
+            LyricsURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let service = BilibiliAccountService(session: session, store: fileStore)
+        let account = try await service.currentAccount()
+
+        XCTAssertNil(account)
+    }
+
     func testBilibiliFavoritesListsFoldersAndFiltersVideoResources() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]

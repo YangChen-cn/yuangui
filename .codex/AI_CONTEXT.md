@@ -302,7 +302,7 @@ swift test
 ## 2026-07-28 清理屋权限边界
 
 - 打开清理屋只展示 `maintenance.welcome` 安全说明与“开始扫描”操作；不要在 `MaintenanceView.onAppear`、窗口创建或路由时扫描。只有用户点击开始扫描（或明确点击桌宠的清理快捷操作）才调用 `MaintenanceStore.scanCleanup()`。
-- `CleanupScanConfiguration.defaultEnabledCategories` 只包含 `.appCache`、`.oldLog`、`.crashReport`。浏览器缓存、开发工具缓存、项目构建产物、旧安装包和孤儿残留首次运行全部关闭；已有用户保存的显式设置保持不变。
+- `CleanupScanConfiguration.defaultEnabledCategories` 只包含 `.appCache`、`.oldLog`、`.crashReport`。浏览器缓存、开发工具缓存、项目构建产物、旧安装包和孤儿残留首次运行全部关闭；已有用户保存的显式设置保持不变。配置扫描必须在文件系统遍历前裁剪未启用的标准规则，不能先扫描所有类别再过滤；只启用项目产物或旧安装包时尤其不得枚举应用列表和孤儿数据。
 - 启用 `.oldInstallerPackage` 时，`MaintenanceView` 必须先显示 `maintenance.installerPermission` 提示：该规则会在下一次扫描时检查 Downloads/Desktop 内的旧 DMG、PKG 等文件，macOS 可能请求权限。确认前不要把分类写入设置或启动任何扫描。
 - `MaintenanceTests.testDefaultCleanupConfigurationExcludesReviewCategories` 是默认范围的回归测试。
 
@@ -422,3 +422,4 @@ swift test
 - Bilibili 扫码轮询和收藏夹批处理必须在每个不可控服务 await（包括 `pollQRCode` 和 task group 汇合）之后重新校验 `MusicTaskRegistry` generation；取消登录、取消导入或 shutdown 后不得再发布登录阶段和批次进度。
 - 本地导入、重定位和自定义封面产生但尚未提交的封面键必须在任务过期时直接 await 删除，不能重新排入会被 shutdown 拒绝的维护队列。shutdown 取消领域任务后要等待已经排入的封面清理/裁剪完成，不得取消这些清理任务。
 - 歌词搜索取消必须同步清除 `LyricsStore.isSearching`。播放 shutdown 开始时先解除 URL Player 的全部回调；完成、失败、上一首、下一首、移动和 Apple Music 异步错误提交都必须检查关闭状态。
+- `BilibiliAccountService.currentAccount()` 在没有持久化 refresh token 且没有 Bilibili Cookie 时必须直接返回登出，不得发起账号网络刷新。否则 `MusicFeature` 启动时会制造无意义请求，并使严格等待任务结束的 shutdown 在离线 CI 中卡到网络超时。
