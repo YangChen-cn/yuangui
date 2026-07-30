@@ -4,6 +4,7 @@ import Foundation
 
 extension MusicPlaybackCoordinator {
     func setSource(_ newSource: MusicSource) {
+        guard !isShuttingDown else { return }
         guard newSource != browsingSource else { return }
         registerManualPlaybackControl()
         browsingSource = newSource
@@ -28,6 +29,7 @@ extension MusicPlaybackCoordinator {
 
     @discardableResult
     func activatePlaybackSource(_ newSource: MusicSource) -> Bool {
+        guard !isShuttingDown else { return false }
         guard activePlaybackSource != newSource else { return false }
         switch activePlaybackSource {
         case .appleMusic:
@@ -54,11 +56,15 @@ extension MusicPlaybackCoordinator {
         case .appleMusic:
             break
         case .local:
-            Task { [appleMusic] in await appleMusic.pause() }
+            tasks.launch(key: "apple-pause") { [appleMusic] _ in
+                await appleMusic.pause()
+            }
             if volume != localVolume { volume = localVolume }
             urlPlayer?.setVolume(localVolume)
         case .bilibili:
-            Task { [appleMusic] in await appleMusic.pause() }
+            tasks.launch(key: "apple-pause") { [appleMusic] _ in
+                await appleMusic.pause()
+            }
             if volume != bilibiliVolume { volume = bilibiliVolume }
             urlPlayer?.setVolume(bilibiliVolume)
         }
@@ -70,26 +76,25 @@ extension MusicPlaybackCoordinator {
         currentTrack = nil
         playbackProgress.reset()
         setPlaybackState(.stopped)
-        lyrics = nil
-        currentLyric = nil
-        nextLyric = nil
-        currentLyricIndex = nil
-        errorMessage = nil
-        lyricsSearchMessage = nil
-        isSearchingLyrics = false
-        context.lyricsCoordinator.cancelLyricLoad()
-        context.lyricsCoordinator.cancelSearch()
+        delegate?.reportBilibiliPlaybackError(nil)
+        delegate?.resetPlaybackLyrics()
     }
 
     func connectAppleMusic(autoplay: Bool = false) {
+        guard !isShuttingDown else { return }
         registerManualPlaybackControl()
         setSource(.appleMusic)
         if activatePlaybackSource(.appleMusic) { clearTransientPlaybackState() }
         if !appleMusicRunning {
             openAppleMusic()
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(1))
-                self?.finishAppleMusicConnection(autoplay: autoplay)
+            tasks.launch(key: "apple-connect-delay") { [weak self] generation in
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                guard let self, tasks.isCurrent(generation) else { return }
+                finishAppleMusicConnection(autoplay: autoplay)
             }
         } else {
             finishAppleMusicConnection(autoplay: autoplay)
@@ -97,10 +102,14 @@ extension MusicPlaybackCoordinator {
     }
 
     func finishAppleMusicConnection(autoplay: Bool) {
-        Task { [weak self] in
+        guard !isShuttingDown else { return }
+        tasks.launch(key: "apple-connect") { [weak self] generation in
             guard let self, activePlaybackSource == .appleMusic else { return }
             await refreshAppleMusic()
-            guard activePlaybackSource == .appleMusic else { return }
+            guard tasks.isCurrent(generation),
+                  activePlaybackSource == .appleMusic else {
+                return
+            }
             if appleMusicRunning { startAppleSyncTask() }
             if autoplay, appleMusicRunning, !playbackState.isPlaying {
                 lastAppleClockTime = Date.timeIntervalSinceReferenceDate
@@ -124,8 +133,9 @@ extension MusicPlaybackCoordinator {
     }
 
     func playPause() {
+        guard !isShuttingDown else { return }
         registerManualPlaybackControl()
-        errorMessage = nil
+        delegate?.reportBilibiliPlaybackError(nil)
         guard let activePlaybackSource else {
             if browsingSource != .appleMusic {
                 if let currentTrack, currentTrack.source == browsingSource { play(currentTrack, at: position) }
@@ -140,9 +150,10 @@ extension MusicPlaybackCoordinator {
             guard appleMusicRunning else { connectAppleMusic(autoplay: true); return }
             lastAppleClockTime = Date.timeIntervalSinceReferenceDate
             setPlaybackState(playbackState.isPlaying ? .paused : .playing)
-            Task { [weak self, appleMusic] in
+            tasks.launch(key: "apple-play-pause") { [weak self, appleMusic] generation in
                 await appleMusic.playPause()
-                self?.scheduleAppleRefresh()
+                guard let self, tasks.isCurrent(generation) else { return }
+                scheduleAppleRefresh()
             }
         case .bilibili:
             guard let urlPlayer else {
@@ -175,6 +186,7 @@ extension MusicPlaybackCoordinator {
     func next() { registerManualPlaybackControl(); move(by: 1) }
 
     func seek(to newPosition: TimeInterval) {
+        guard !isShuttingDown else { return }
         registerManualPlaybackControl()
         let lowerBounded = max(newPosition, 0)
         let target = duration > 0 ? min(lowerBounded, duration) : lowerBounded
@@ -182,11 +194,13 @@ extension MusicPlaybackCoordinator {
         if playbackSource == .bilibili { lastBilibiliPosition = target }
         if playbackSource == .appleMusic {
             lastAppleClockTime = Date.timeIntervalSinceReferenceDate
-            Task { [appleMusic] in await appleMusic.seek(to: target) }
+            tasks.launch(key: "apple-seek") { [appleMusic] _ in
+                await appleMusic.seek(to: target)
+            }
         } else if playbackSource == .bilibili || playbackSource == .local {
             urlPlayer?.seek(to: target)
         }
-        context.lyricsCoordinator.updateLyric()
+        delegate?.updatePlaybackLyric()
     }
 
     func seek(toLyric line: TimedLyricLine) {
@@ -203,9 +217,12 @@ extension MusicPlaybackCoordinator {
     }
 
     func setVolume(_ newValue: Double) {
+        guard !isShuttingDown else { return }
         volume = min(max(newValue, 0), 1)
         if playbackSource == .appleMusic {
-            Task { [appleMusic, volume] in await appleMusic.setVolume(volume) }
+            tasks.launch(key: "apple-volume") { [appleMusic, volume] _ in
+                await appleMusic.setVolume(volume)
+            }
         } else if playbackSource == .bilibili {
             bilibiliVolume = volume
             urlPlayer?.setVolume(volume)
@@ -218,10 +235,11 @@ extension MusicPlaybackCoordinator {
     }
 
     func setPlayMode(_ mode: MusicPlayMode) {
+        guard !isShuttingDown else { return }
         guard playMode != mode else { return }
         playMode = mode
         rebuildMusicPlaybackQueue()
-        context.libraryController.persistLibrary()
+        delegate?.persistPlaybackLibrary()
     }
 
 }

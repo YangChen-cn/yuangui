@@ -5,12 +5,18 @@ subscribe directly to the smallest music store they render. In particular,
 playback progress is isolated in `MusicPlaybackProgress`; library, account, and
 import updates must not invalidate progress or transport controls.
 
-There is intentionally no aggregate `MusicFeatureRuntime`. `MusicFeatureContext`
-contains only the seven stores and coordinator wiring. Playback, lyrics,
-Bilibili, local import, library, and persistence coordinators own their services,
-tasks, caches, queues, and cancellation state. `MusicObservationTests` rejects a
-new central runtime and verifies those ownership boundaries from production
-sources.
+There is intentionally no aggregate runtime, service-locator context, or
+all-domain coordinator base class. `MusicFeature` directly composes the stores
+and coordinators, and is the only place that orchestrates cross-domain flows.
+Coordinators receive their own stores and services plus narrow MainActor
+delegate/access protocols; they cannot look up concrete sibling coordinators.
+
+Every unstructured async operation is owned by a coordinator. Operations use a
+stored task handle or `MusicTaskRegistry`, including tasks that were cancelled
+because a newer task replaced them. Shutdown advances the generation, cancels
+and awaits every outstanding task, and blocks all post-await state or
+persistence commits. The lifecycle tests deliberately suspend providers across
+shutdown and then resume them to verify that late results are ignored.
 
 ## Repeatable Instruments check
 
@@ -27,6 +33,38 @@ sources.
    may follow `completedCount`.
 
 The automated companion checks live in `MusicObservationTests`. They verify
-publisher isolation, run a 100-update import sequence, prohibit
-`ObservedMusicFeature` and `MusicFeatureRuntime`, verify coordinator task
-ownership, and keep `MusicFeature.swift` below 500 lines.
+publisher isolation, run a 100-update import sequence, exercise suspended
+Bilibili and local requests across shutdown, and verify batch de-duplication.
+These are behavior tests rather than source-string, symbol-name, or line-count
+checks.
+
+## Recorded comparison
+
+Recorded on 2026-07-30 with macOS 26.5, Xcode/Instruments 26.5, and the
+`View Body (Legacy)` Instruments instrument. The baseline was tag `v2.7.0`
+(`2faaf5b`); the optimized build was the current music isolation worktree.
+
+The opt-in `MusicInstrumentsProfileTests` scenario mounts the production
+`MusicPlayerView` (including its real `MusicProgressView`) in an
+`NSHostingView`, then publishes 100 individual Bilibili favorite-import
+progress changes at 10 ms intervals. Run it with:
+
+```sh
+YUANGUI_MUSIC_INSTRUMENTS=1 swift test \
+  --filter MusicInstrumentsProfileTests
+```
+
+The same test executable was launched by Instruments for both revisions. The
+exported `swiftui-body-interval` table reported:
+
+| Revision | `MusicPlayerView` evaluations | `MusicProgressView` evaluations |
+| --- | ---: | ---: |
+| `v2.7.0` baseline | 103 | 103 |
+| optimized | 2 | 1 |
+
+The optimized progress view is evaluated only for its initial mount, while the
+full-player shell drops from 103 evaluations to 2 (initial lifecycle work
+included). Import progress is confined to the Bilibili import/error leaf
+subtree. The trace confirms that the production full-player hierarchy was
+mounted in both runs rather than inferring isolation from publisher names or
+source text.

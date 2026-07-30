@@ -246,9 +246,6 @@ struct MusicPlayerView: View {
     @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject private var library: MusicLibraryStore
     @ObservedObject private var lyricsPresentation: LyricsPresentationStore
-    @ObservedObject private var bilibiliAccount: BilibiliAccountStore
-    @ObservedObject private var bilibiliImport: BilibiliImportStore
-    @ObservedObject private var localImport: LocalMusicImportStore
     @State private var selectedTrackID: String?
     @State private var selectedCollectionID = "all"
     @State private var isCreatingPlaylist = false
@@ -268,9 +265,6 @@ struct MusicPlayerView: View {
         _playback = ObservedObject(wrappedValue: music.playback)
         _library = ObservedObject(wrappedValue: music.libraryStore)
         _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
-        _bilibiliAccount = ObservedObject(wrappedValue: music.bilibiliAccountStore)
-        _bilibiliImport = ObservedObject(wrappedValue: music.bilibiliImportStore)
-        _localImport = ObservedObject(wrappedValue: music.localImportStore)
     }
 
     var body: some View {
@@ -342,55 +336,12 @@ struct MusicPlayerView: View {
             localSidebar
         } else {
             VStack(spacing: 0) {
-                HStack {
-                    TextField(
-                        "粘贴 URL 或输入 BV 号",
-                        text: Binding(
-                            get: { music.bilibiliImportStore.input },
-                            set: { music.bilibiliImportStore.input = $0 }
-                        )
-                    )
-                        .onSubmit(music.importBilibili)
-                    Button { music.importBilibili() } label: {
-                        music.bilibiliImportStore.isImporting ? AnyView(ProgressView().controlSize(.small)) : AnyView(Image(systemName: "plus"))
-                    }.disabled(music.bilibiliImportStore.isImporting || music.bilibiliImportStore.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }.padding(10)
-                if let message = music.bilibiliImportStore.importMessage {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Label(message, systemImage: "checkmark.circle.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.green)
-                        HStack(spacing: 8) {
-                            Button("开始播放") { music.playLastBilibiliImport() }
-                                .buttonStyle(.borderedProminent)
-                            Button("继续浏览") { music.dismissBilibiliImportResult() }
-                                .buttonStyle(.bordered)
-                        }
-                        .controlSize(.small)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
-                }
+                BilibiliImportSidebarHeader(
+                    music: music,
+                    isLoginPresented: $isBilibiliLoginPresented,
+                    isFavoritesPresented: $isBilibiliFavoritesPresented
+                )
                 libraryFilterBar
-                HStack {
-                    Button {
-                        if music.bilibiliAccountStore.account == nil { isBilibiliLoginPresented = true }
-                        else { isBilibiliFavoritesPresented = true }
-                    } label: {
-                        Label(
-                            AppLocalizer.string(
-                                music.bilibiliAccountStore.account == nil
-                                    ? "登录后导入收藏夹"
-                                    : "导入哔哩哔哩收藏夹"
-                            ),
-                            systemImage: "folder.badge.plus"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
                 List(selection: $selectedTrackID) {
                     Section("资料库") {
                         collectionButton("播放列表", systemImage: "music.note.list", id: "all", count: bilibiliTracks.count)
@@ -479,35 +430,12 @@ struct MusicPlayerView: View {
 
     private var localSidebar: some View {
         VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    localImportFileButton
-                    localImportFolderButton
-                    localImportProgress
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    localImportFileButton
-                    localImportFolderButton
-                    localImportProgress
-                }
-            }
-            .padding(10)
-            if let message = music.localImportStore.message {
-                HStack(spacing: 8) {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if !music.localImportStore.failures.isEmpty {
-                        Button(AppLocalizer.string("music.local.import.failures.show")) {
-                            isLocalImportFailuresPresented = true
-                        }
-                        .buttonStyle(.link)
-                        .controlSize(.small)
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-            }
+            LocalMusicImportSidebarHeader(
+                music: music,
+                isFailuresPresented: $isLocalImportFailuresPresented,
+                onChooseFiles: chooseLocalFiles,
+                onChooseFolder: chooseLocalFolder
+            )
             if localTracks.isEmpty {
                 ContentUnavailableView {
                     Label("music.local.empty.title", systemImage: "music.note.house")
@@ -601,7 +529,10 @@ struct MusicPlayerView: View {
                         .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
                         .frame(maxWidth: .infinity)
                     if music.playback.source == .bilibili {
-                        bilibiliAccountButton
+                        BilibiliAccountButton(
+                            music: music,
+                            isLoginPresented: $isBilibiliLoginPresented
+                        )
                     }
                 }
                 VStack(spacing: 4) {
@@ -645,68 +576,14 @@ struct MusicPlayerView: View {
                     VStack(alignment: .leading, spacing: 7) { lyricsActionButtons }
                 }
                 lyricsAdjustments
-                if let error = music.bilibiliImportStore.errorMessage {
-                    Text(error).font(.caption).foregroundStyle(.orange).multilineTextAlignment(.center)
-                    if music.playback.playbackSource == .appleMusic { Button("打开自动化权限设置") { music.openAutomationSettings() } }
-                }
-                if let error = music.localImportStore.errorMessage {
-                    Text(error).font(.caption).foregroundStyle(.orange).multilineTextAlignment(.center)
-                    if let track = music.localImportStore.trackNeedingRelocation {
-                        HStack {
-                            Button("music.local.relocate") { chooseRelocation(for: track) }
-                            Button("music.local.remove", role: .destructive) { music.remove(track) }
-                        }
-                    }
-                }
+                MusicPlayerErrorSection(
+                    music: music,
+                    playbackSource: music.playback.playbackSource,
+                    onRelocate: chooseRelocation
+                )
             }
             .padding(28).frame(maxWidth: .infinity)
         }
-    }
-
-    private var bilibiliAccountButton: some View {
-        Button { isBilibiliLoginPresented = true } label: {
-            HStack(spacing: 7) {
-                if let account = music.bilibiliAccountStore.account {
-                    AsyncImage(url: account.avatarURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(width: 28, height: 28)
-                    .clipShape(Circle())
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(account.name)
-                            .font(.callout.weight(.semibold))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Text(verbatim: "UID \(account.mid)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .multilineTextAlignment(.leading)
-                    .frame(width: 136, alignment: .leading)
-                } else {
-                    Image(systemName: "person.crop.circle.badge.plus")
-                        .font(.system(size: 17, weight: .semibold))
-                    Text("登录哔哩哔哩")
-                        .font(.callout.weight(.semibold))
-                }
-            }
-            .padding(.horizontal, 4)
-            .frame(width: music.bilibiliAccountStore.account == nil ? 148 : 175, alignment: .leading)
-            .frame(minHeight: 30)
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.regular)
-        .fixedSize(horizontal: true, vertical: true)
-        .offset(x: music.bilibiliAccountStore.account == nil ? 0 : 20)
-        .help(music.bilibiliAccountStore.account.map {
-            AppLocalizer.format("music.bilibili.account.manage", $0.name)
-        } ?? AppLocalizer.string("扫码登录哔哩哔哩"))
     }
 
     private var emptyTitle: String {
@@ -848,26 +725,6 @@ struct MusicPlayerView: View {
         .foregroundStyle(selectedCollectionID == id ? Color.accentColor : Color.primary)
     }
 
-    private var localImportFileButton: some View {
-        Button("music.local.import.files", systemImage: "plus", action: chooseLocalFiles)
-            .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var localImportFolderButton: some View {
-        Button("music.local.import.folder", systemImage: "folder.badge.plus", action: chooseLocalFolder)
-            .fixedSize(horizontal: true, vertical: false)
-    }
-
-    @ViewBuilder
-    private var localImportProgress: some View {
-        if music.localImportStore.isImporting {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Button("取消", action: music.cancelLocalImport)
-            }
-        }
-    }
-
     private func createPlaylist() {
         if let created = music.createPlaylist(named: newPlaylistName) {
             selectedCollectionID = "playlist:\(created.id.uuidString)"
@@ -933,6 +790,254 @@ struct MusicPlayerView: View {
         lyricsSearchTitle = music.playback.currentTrack?.title ?? ""
         lyricsSearchArtist = music.playback.currentTrack?.artist ?? ""
         isSearchingLyrics = true
+    }
+}
+
+private struct BilibiliImportSidebarHeader: View {
+    let music: MusicFeature
+    @ObservedObject private var account: BilibiliAccountStore
+    @ObservedObject private var importer: BilibiliImportStore
+    @Binding var isLoginPresented: Bool
+    @Binding var isFavoritesPresented: Bool
+
+    init(
+        music: MusicFeature,
+        isLoginPresented: Binding<Bool>,
+        isFavoritesPresented: Binding<Bool>
+    ) {
+        self.music = music
+        _account = ObservedObject(wrappedValue: music.bilibiliAccountStore)
+        _importer = ObservedObject(wrappedValue: music.bilibiliImportStore)
+        _isLoginPresented = isLoginPresented
+        _isFavoritesPresented = isFavoritesPresented
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                TextField(
+                    "粘贴 URL 或输入 BV 号",
+                    text: Binding(
+                        get: { importer.input },
+                        set: { importer.input = $0 }
+                    )
+                )
+                .onSubmit(music.importBilibili)
+                Button(action: music.importBilibili) {
+                    if importer.isImporting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "plus")
+                    }
+                }
+                .disabled(
+                    importer.isImporting
+                        || importer.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+            }
+            .padding(10)
+
+            if let message = importer.importMessage {
+                VStack(alignment: .leading, spacing: 7) {
+                    Label(message, systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                    HStack(spacing: 8) {
+                        Button("开始播放", action: music.playLastBilibiliImport)
+                            .buttonStyle(.borderedProminent)
+                        Button("继续浏览", action: music.dismissBilibiliImportResult)
+                            .buttonStyle(.bordered)
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+            }
+
+            HStack {
+                Button {
+                    if account.account == nil {
+                        isLoginPresented = true
+                    } else {
+                        isFavoritesPresented = true
+                    }
+                } label: {
+                    Label(
+                        AppLocalizer.string(
+                            account.account == nil ? "登录后导入收藏夹" : "导入哔哩哔哩收藏夹"
+                        ),
+                        systemImage: "folder.badge.plus"
+                    )
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+        }
+    }
+}
+
+private struct LocalMusicImportSidebarHeader: View {
+    let music: MusicFeature
+    @ObservedObject private var importer: LocalMusicImportStore
+    @Binding var isFailuresPresented: Bool
+    let onChooseFiles: () -> Void
+    let onChooseFolder: () -> Void
+
+    init(
+        music: MusicFeature,
+        isFailuresPresented: Binding<Bool>,
+        onChooseFiles: @escaping () -> Void,
+        onChooseFolder: @escaping () -> Void
+    ) {
+        self.music = music
+        _importer = ObservedObject(wrappedValue: music.localImportStore)
+        _isFailuresPresented = isFailuresPresented
+        self.onChooseFiles = onChooseFiles
+        self.onChooseFolder = onChooseFolder
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { controls }
+                VStack(alignment: .leading, spacing: 8) { controls }
+            }
+            .padding(10)
+            if let message = importer.message {
+                HStack(spacing: 8) {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !importer.failures.isEmpty {
+                        Button(AppLocalizer.string("music.local.import.failures.show")) {
+                            isFailuresPresented = true
+                        }
+                        .buttonStyle(.link)
+                        .controlSize(.small)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+            }
+        }
+    }
+
+    @ViewBuilder private var controls: some View {
+        Button("music.local.import.files", systemImage: "plus", action: onChooseFiles)
+            .fixedSize(horizontal: true, vertical: false)
+        Button("music.local.import.folder", systemImage: "folder.badge.plus", action: onChooseFolder)
+            .fixedSize(horizontal: true, vertical: false)
+        if importer.isImporting {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Button("取消", action: music.cancelLocalImport)
+            }
+        }
+    }
+}
+
+private struct BilibiliAccountButton: View {
+    let music: MusicFeature
+    @ObservedObject private var account: BilibiliAccountStore
+    @Binding var isLoginPresented: Bool
+
+    init(music: MusicFeature, isLoginPresented: Binding<Bool>) {
+        self.music = music
+        _account = ObservedObject(wrappedValue: music.bilibiliAccountStore)
+        _isLoginPresented = isLoginPresented
+    }
+
+    var body: some View {
+        Button { isLoginPresented = true } label: {
+            HStack(spacing: 7) {
+                if let current = account.account {
+                    AsyncImage(url: current.avatarURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(current.name)
+                            .font(.callout.weight(.semibold))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(verbatim: "UID \(current.mid)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .multilineTextAlignment(.leading)
+                    .frame(width: 136, alignment: .leading)
+                } else {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("登录哔哩哔哩")
+                        .font(.callout.weight(.semibold))
+                }
+            }
+            .padding(.horizontal, 4)
+            .frame(width: account.account == nil ? 148 : 175, alignment: .leading)
+            .frame(minHeight: 30)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.regular)
+        .fixedSize(horizontal: true, vertical: true)
+        .offset(x: account.account == nil ? 0 : 20)
+        .help(account.account.map {
+            AppLocalizer.format("music.bilibili.account.manage", $0.name)
+        } ?? AppLocalizer.string("扫码登录哔哩哔哩"))
+    }
+}
+
+private struct MusicPlayerErrorSection: View {
+    let music: MusicFeature
+    let playbackSource: MusicSource
+    let onRelocate: (MusicTrack) -> Void
+    @ObservedObject private var bilibiliImport: BilibiliImportStore
+    @ObservedObject private var localImport: LocalMusicImportStore
+
+    init(
+        music: MusicFeature,
+        playbackSource: MusicSource,
+        onRelocate: @escaping (MusicTrack) -> Void
+    ) {
+        self.music = music
+        self.playbackSource = playbackSource
+        self.onRelocate = onRelocate
+        _bilibiliImport = ObservedObject(wrappedValue: music.bilibiliImportStore)
+        _localImport = ObservedObject(wrappedValue: music.localImportStore)
+    }
+
+    var body: some View {
+        Group {
+            if let error = bilibiliImport.errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                if playbackSource == .appleMusic {
+                    Button("打开自动化权限设置", action: music.openAutomationSettings)
+                }
+            }
+            if let error = localImport.errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                if let track = localImport.trackNeedingRelocation {
+                    HStack {
+                        Button("music.local.relocate") { onRelocate(track) }
+                        Button("music.local.remove", role: .destructive) { music.remove(track) }
+                    }
+                }
+            }
+        }
     }
 }
 

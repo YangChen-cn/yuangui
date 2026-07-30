@@ -51,6 +51,7 @@ extension MusicLyricsCoordinator {
     }
 
     func setOffset(_ offset: TimeInterval) {
+        guard !isShuttingDown else { return }
         guard let trackID = currentTrack?.id else { return }
         let clamped = min(max(offset, -30), 30)
         if abs(clamped) < 0.001 {
@@ -59,10 +60,11 @@ extension MusicLyricsCoordinator {
             lyricOffsets[trackID] = clamped
         }
         updateLyric()
-        libraryDomain.persistLibrary()
+        delegate?.persistLyricsChanges()
     }
 
     func search(title rawTitle: String, artist rawArtist: String) {
+        guard !isShuttingDown else { return }
         guard let track = currentTrack else { return }
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let artist = rawArtist.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -86,19 +88,23 @@ extension MusicLyricsCoordinator {
             } catch is CancellationError {
                 return
             } catch {
-                guard currentTrack?.id == track.id else { return }
+                guard !isShuttingDown, currentTrack?.id == track.id else { return }
                 lyricsSearchMessage = error.localizedDescription
                 isSearchingLyrics = false
                 lyricsSearchTask = nil
                 return
             }
-            guard !Task.isCancelled, currentTrack?.id == track.id else { return }
+            guard !isShuttingDown,
+                  !Task.isCancelled,
+                  currentTrack?.id == track.id else {
+                return
+            }
             if let found {
                 lyrics = found
                 cacheLyrics(found, for: track)
                 updateMetadata(for: track.id, title: title, artist: artist)
                 updateLyric()
-                libraryDomain.persistLibrary()
+                delegate?.persistLyricsChanges()
                 lyricsSearchMessage = AppLocalizer.format(
                     "music.lyrics.matchResult",
                     title,
@@ -134,15 +140,12 @@ extension MusicLyricsCoordinator {
         let resolvedArtist = artist.isEmpty
             ? (currentTrack?.artist ?? AppLocalizer.string("未知歌手"))
             : artist
-        if let index = playlist.firstIndex(where: { $0.id == trackID }) {
-            playlist[index].title = title
-            playlist[index].artist = resolvedArtist
-            currentTrack = playlist[index]
-            libraryDomain.persistLibrary()
-        } else if currentTrack?.id == trackID {
-            currentTrack?.title = title
-            currentTrack?.artist = resolvedArtist
-        }
+        delegate?.updateLyricsTrackMetadata(
+            trackID: trackID,
+            title: title,
+            artist: resolvedArtist
+        )
+        delegate?.persistLyricsChanges()
     }
 
     static func encodeColor(_ color: NSColor) -> String {
@@ -176,7 +179,7 @@ extension MusicLyricsCoordinator {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8)
                 ?? String(data: data, encoding: .utf16) else {
-            errorMessage = AppLocalizer.string("无法读取这个 LRC 文件")
+            delegate?.reportLyricsError(AppLocalizer.string("无法读取这个 LRC 文件"))
             return
         }
         cancelLyricLoad()
@@ -184,7 +187,7 @@ extension MusicLyricsCoordinator {
         lyrics = document
         if let track = currentTrack {
             cacheLyrics(document, for: track)
-            libraryDomain.persistLibrary()
+            delegate?.persistLyricsChanges()
         }
         updateLyric()
     }

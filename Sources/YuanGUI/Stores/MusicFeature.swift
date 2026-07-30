@@ -3,20 +3,19 @@ import Foundation
 
 @MainActor
 final class MusicFeature {
-    private let context: MusicFeatureContext
     private let playbackCommands: MusicPlaybackCoordinator
     private let libraryCommands: MusicLibraryController
     private let lyricsCommands: MusicLyricsCoordinator
     private let bilibiliCommands: BilibiliMusicCoordinator
     private let localCommands: LocalMusicCoordinator
 
-    var playback: MusicPlaybackStore { context.playback }
-    var libraryStore: MusicLibraryStore { context.library }
-    var lyricsStore: LyricsStore { context.lyrics }
-    var lyricsPresentation: LyricsPresentationStore { context.lyricsPresentation }
-    var bilibiliAccountStore: BilibiliAccountStore { context.bilibiliAccount }
-    var bilibiliImportStore: BilibiliImportStore { context.bilibiliImport }
-    var localImportStore: LocalMusicImportStore { context.localImport }
+    let playback: MusicPlaybackStore
+    let libraryStore: MusicLibraryStore
+    let lyricsStore: LyricsStore
+    let lyricsPresentation: LyricsPresentationStore
+    let bilibiliAccountStore: BilibiliAccountStore
+    let bilibiliImportStore: BilibiliImportStore
+    let localImportStore: LocalMusicImportStore
 
     var progress: Double { playback.fractionComplete }
     var position: TimeInterval { playback.progress.position }
@@ -72,19 +71,16 @@ final class MusicFeature {
             source: source,
             volume: source == .local ? localVolume : bilibiliVolume
         )
-        let context = MusicFeatureContext(
-            playback: playbackStore,
-            library: MusicLibraryStore(),
-            lyrics: LyricsStore(),
-            lyricsPresentation: LyricsPresentationStore(defaults: defaults),
-            bilibiliAccount: BilibiliAccountStore(),
-            bilibiliImport: BilibiliImportStore(),
-            localImport: LocalMusicImportStore(),
-            defaults: defaults
-        )
+        let libraryStore = MusicLibraryStore()
+        let lyricsStore = LyricsStore()
+        let lyricsPresentation = LyricsPresentationStore(defaults: defaults)
+        let bilibiliAccountStore = BilibiliAccountStore()
+        let bilibiliImportStore = BilibiliImportStore()
+        let localImportStore = LocalMusicImportStore()
         let persistence = MusicPersistenceCoordinator(library: library)
         let playbackCommands = MusicPlaybackCoordinator(
-            context: context,
+            playback: playbackStore,
+            defaults: defaults,
             appleMusic: appleMusic,
             bilibili: bilibili,
             localMusicImporter: localMusicImporter,
@@ -93,38 +89,48 @@ final class MusicFeature {
             urlPlayerReleaseDelay: urlPlayerReleaseDelay
         )
         let libraryCommands = MusicLibraryController(
-            context: context,
+            store: libraryStore,
             persistence: persistence
         )
         let lyricsCommands = MusicLyricsCoordinator(
-            context: context,
+            store: lyricsStore,
+            presentation: lyricsPresentation,
+            defaults: defaults,
             lyricsService: lyricsService,
             localMusicImporter: localMusicImporter,
             bilibili: bilibili
         )
         let bilibiliCommands = BilibiliMusicCoordinator(
-            context: context,
+            accountStore: bilibiliAccountStore,
+            importStore: bilibiliImportStore,
             bilibili: bilibili
         )
         let localCommands = LocalMusicCoordinator(
-            context: context,
+            importStore: localImportStore,
             importer: localMusicImporter,
             artworkRepository: localArtworkRepository,
             fileRevealer: localFileRevealer ?? WorkspaceLocalMusicFileRevealer.shared
         )
-        context.bind(
-            playback: playbackCommands,
-            library: libraryCommands,
-            lyrics: lyricsCommands,
-            bilibili: bilibiliCommands,
-            local: localCommands
-        )
-        self.context = context
+        playback = playbackStore
+        self.libraryStore = libraryStore
+        self.lyricsStore = lyricsStore
+        self.lyricsPresentation = lyricsPresentation
+        self.bilibiliAccountStore = bilibiliAccountStore
+        self.bilibiliImportStore = bilibiliImportStore
+        self.localImportStore = localImportStore
         self.playbackCommands = playbackCommands
         self.libraryCommands = libraryCommands
         self.lyricsCommands = lyricsCommands
         self.bilibiliCommands = bilibiliCommands
         self.localCommands = localCommands
+
+        playbackCommands.delegate = self
+        lyricsCommands.delegate = self
+        bilibiliCommands.delegate = self
+        localCommands.delegate = self
+        libraryCommands.playbackAccess = playbackCommands
+        libraryCommands.lyricsAccess = lyricsCommands
+        libraryCommands.artworkAccess = localCommands
 
         playbackCommands.start()
         bilibiliCommands.start()
@@ -209,11 +215,11 @@ final class MusicFeature {
     func removeArtwork(for track: MusicTrack) { localCommands.removeArtwork(for: track) }
 
     func shutdown() async {
-        bilibiliCommands.shutdown()
-        lyricsCommands.shutdown()
-        playbackCommands.shutdown()
-        await libraryCommands.shutdown()
+        await bilibiliCommands.shutdown()
         await localCommands.shutdown()
+        await playbackCommands.shutdown()
+        await lyricsCommands.shutdown()
+        await libraryCommands.shutdown()
     }
 
     nonisolated static func lyricSeekPosition(
@@ -230,5 +236,155 @@ final class MusicFeature {
 
     static func decodeLyricsColor(_ value: String?) -> NSColor? {
         MusicLyricsCoordinator.decodeColor(value)
+    }
+}
+
+extension MusicFeature: MusicPlaybackCoordinatorDelegate {
+    var playbackPlaylist: [MusicTrack] { libraryStore.playlist }
+    var playbackCurrentLyricOffset: TimeInterval { currentLyricOffset }
+
+    func resetPlaybackLyrics() {
+        lyricsCommands.resetLibraryLyrics()
+    }
+
+    func loadPlaybackLyrics(for track: MusicTrack) {
+        lyricsCommands.loadLyrics(for: track)
+    }
+
+    func updatePlaybackLyric() {
+        lyricsCommands.updateLyric()
+    }
+
+    func persistPlaybackLibrary() {
+        libraryCommands.persistLibrary()
+    }
+
+    func persistPlaybackProgressIfNeeded() {
+        libraryCommands.persistProgressIfNeeded()
+    }
+
+    func reportBilibiliPlaybackError(_ message: String?) {
+        bilibiliImportStore.errorMessage = message
+    }
+
+    func reportLocalPlaybackError(_ message: String?, relocating track: MusicTrack?) {
+        localImportStore.errorMessage = message
+        localImportStore.trackNeedingRelocation = track
+    }
+}
+
+extension MusicFeature: BilibiliMusicCoordinatorDelegate {
+    func importBilibiliTracks(
+        _ tracks: [MusicTrack],
+        playlistName: String?
+    ) -> [MusicTrack] {
+        let added = libraryCommands.importTracks(tracks, playlistName: playlistName)
+        if !added.isEmpty {
+            playbackCommands.rebuildMusicPlaybackQueue()
+        }
+        playbackCommands.setSource(.bilibili)
+        libraryCommands.persistLibrary()
+        return added
+    }
+
+    func bilibiliTrack(withID id: String) -> MusicTrack? {
+        libraryCommands.track(withID: id)
+    }
+
+    func playBilibiliTrack(_ track: MusicTrack) {
+        playbackCommands.play(track)
+    }
+
+    func refreshCurrentBilibiliLyricsAfterLogin() async {
+        await lyricsCommands.refreshCurrentBilibiliSubtitleAfterLogin()
+    }
+}
+
+extension MusicFeature: LocalMusicCoordinatorDelegate {
+    var localDuplicateKeys: Set<String> { libraryCommands.localDuplicateKeys }
+    var referencedArtworkKeys: Set<String> { libraryCommands.referencedArtworkKeys }
+
+    func appendImportedLocalTracks(_ tracks: [MusicTrack]) {
+        libraryCommands.appendImportedLocalTracks(tracks)
+    }
+
+    func didImportLocalTracks() {
+        playbackCommands.setSource(.local)
+        if playback.currentTrack?.source != .local {
+            playbackCommands.restoreSelection(for: .local)
+        }
+        playbackCommands.rebuildMusicPlaybackQueue()
+        libraryCommands.persistLibrary()
+    }
+
+    func replaceLocalTrack(_ original: MusicTrack, with updated: MusicTrack) -> Bool {
+        libraryCommands.replaceTrack(original, with: updated)
+    }
+
+    func didRelocateCurrentLocalTrack(_ original: MusicTrack, to updated: MusicTrack) {
+        lyricsCommands.removeCachedLyrics(for: original)
+        guard playback.currentTrack?.id == original.id else { return }
+        playbackCommands.urlPlayer?.stop()
+        playbackCommands.clearLoadedURLIdentity()
+        playbackCommands.releaseScopedLocalURL()
+        playback.currentTrack = updated
+        playback.progress.setDuration(updated.duration)
+        playback.progress.setPosition(min(position, updated.duration))
+        playbackCommands.setPlaybackState(.paused)
+        lyricsCommands.loadLyrics(for: updated)
+    }
+
+    func replaceArtwork(
+        for trackID: String,
+        with newKey: String
+    ) -> (didReplace: Bool, previousKey: String?) {
+        libraryCommands.replaceArtwork(for: trackID, with: newKey)
+    }
+
+    func removeArtwork(for trackID: String) -> String? {
+        libraryCommands.removeArtwork(for: trackID)
+    }
+
+    func persistLocalMusicChanges() {
+        libraryCommands.persistLibrary()
+    }
+}
+
+extension MusicFeature: MusicLyricsCoordinatorDelegate {
+    var lyricsCurrentTrack: MusicTrack? { playback.currentTrack }
+    var lyricsPlaybackPosition: TimeInterval { position }
+    var lyricsPlaybackDuration: TimeInterval { duration }
+
+    func seekLyricsPlayback(to position: TimeInterval) {
+        playbackCommands.seek(to: position)
+    }
+
+    func updateLyricsTrackMetadata(trackID: String, title: String, artist: String) {
+        if libraryCommands.track(withID: trackID) != nil {
+            libraryCommands.updateTrackMetadata(
+                trackID: trackID,
+                title: title,
+                artist: artist
+            )
+        } else if playback.currentTrack?.id == trackID {
+            playback.currentTrack?.title = title
+            playback.currentTrack?.artist = artist
+        }
+    }
+
+    func updateLyricsSubtitleURL(_ url: URL, trackID: String) {
+        if libraryCommands.track(withID: trackID) != nil {
+            libraryCommands.updateSubtitleURL(url, trackID: trackID)
+        } else if playback.currentTrack?.id == trackID {
+            playback.currentTrack?.subtitleURL = url
+        }
+    }
+
+    func persistLyricsChanges() {
+        libraryCommands.persistLibrary()
+    }
+
+    func reportLyricsError(_ message: String?) {
+        bilibiliImportStore.errorMessage = message
     }
 }

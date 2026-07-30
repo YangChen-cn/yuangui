@@ -1,53 +1,95 @@
 import Foundation
 
 @MainActor
-final class LocalMusicCoordinator: MusicDomainCoordinator {
+protocol LocalMusicCoordinatorDelegate: AnyObject {
+    var localDuplicateKeys: Set<String> { get }
+    var referencedArtworkKeys: Set<String> { get }
+
+    func appendImportedLocalTracks(_ tracks: [MusicTrack])
+    func didImportLocalTracks()
+    func replaceLocalTrack(_ original: MusicTrack, with updated: MusicTrack) -> Bool
+    func didRelocateCurrentLocalTrack(_ original: MusicTrack, to updated: MusicTrack)
+    func replaceArtwork(
+        for trackID: String,
+        with newKey: String
+    ) -> (didReplace: Bool, previousKey: String?)
+    func removeArtwork(for trackID: String) -> String?
+    func persistLocalMusicChanges()
+}
+
+@MainActor
+final class LocalMusicCoordinator {
+    weak var delegate: (any LocalMusicCoordinatorDelegate)?
+
+    let importStore: LocalMusicImportStore
     let importer: any LocalMusicImporting
     let artworkRepository: any LocalMusicArtworkManaging
     let fileRevealer: any LocalMusicFileRevealing
+    let tasks = MusicTaskRegistry()
 
-    var importTask: Task<Void, Never>?
-    var artworkMaintenanceTask: Task<Void, Never>?
+    var artworkMaintenanceTasks: [Task<Void, Never>] = []
 
     init(
-        context: MusicFeatureContext,
+        importStore: LocalMusicImportStore,
         importer: any LocalMusicImporting,
         artworkRepository: any LocalMusicArtworkManaging,
         fileRevealer: any LocalMusicFileRevealing
     ) {
+        self.importStore = importStore
         self.importer = importer
         self.artworkRepository = artworkRepository
         self.fileRevealer = fileRevealer
-        super.init(context: context)
     }
 
     func shutdown() async {
-        importTask?.cancel()
-        importTask = nil
-        await artworkMaintenanceTask?.value
-        artworkMaintenanceTask = nil
+        await tasks.shutdown()
+        importStore.isImporting = false
+        artworkMaintenanceTasks.forEach { $0.cancel() }
+        for task in artworkMaintenanceTasks {
+            await task.value
+        }
+        artworkMaintenanceTasks.removeAll()
     }
 
     func scheduleArtworkRemoval(keys: Set<String>) {
-        guard !keys.isEmpty else { return }
-        let previous = artworkMaintenanceTask
+        guard !tasks.isShuttingDown, !keys.isEmpty else { return }
+        let previous = artworkMaintenanceTasks.last
         let repository = artworkRepository
-        artworkMaintenanceTask = Task {
+        let task = Task {
             await previous?.value
+            guard !Task.isCancelled else { return }
             await repository.remove(keys: keys)
         }
+        artworkMaintenanceTasks.append(task)
     }
 
     func orphanedArtworkKeys(among candidates: Set<String>) -> Set<String> {
-        candidates.subtracting(Set(playlist.compactMap(\.localArtworkCacheKey)))
+        candidates.subtracting(delegate?.referencedArtworkKeys ?? [])
     }
 
     func scheduleArtworkPrune(keeping keys: Set<String>) {
-        let previous = artworkMaintenanceTask
+        guard !tasks.isShuttingDown else { return }
+        let previous = artworkMaintenanceTasks.last
         let repository = artworkRepository
-        artworkMaintenanceTask = Task {
+        let task = Task {
             await previous?.value
+            guard !Task.isCancelled else { return }
             await repository.removeOrphans(keeping: keys)
         }
+        artworkMaintenanceTasks.append(task)
+    }
+}
+
+extension LocalMusicCoordinator: MusicLibraryArtworkAccess {
+    func scheduleLibraryArtworkRemoval(keys: Set<String>) {
+        scheduleArtworkRemoval(keys: keys)
+    }
+
+    func orphanedLibraryArtworkKeys(among candidates: Set<String>) -> Set<String> {
+        orphanedArtworkKeys(among: candidates)
+    }
+
+    func pruneLibraryArtwork(keeping keys: Set<String>) {
+        scheduleArtworkPrune(keeping: keys)
     }
 }

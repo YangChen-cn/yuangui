@@ -4,10 +4,11 @@ import Foundation
 
 extension MusicPlaybackCoordinator {
     func refreshAppleMusic() async {
-        guard activePlaybackSource == .appleMusic else { return }
+        guard !isShuttingDown, activePlaybackSource == .appleMusic else { return }
         let performanceStart = RuntimePerformance.start()
         defer { RuntimePerformance.record("music.apple.sync", since: performanceStart) }
         let running = await appleMusic.isRunning()
+        guard !Task.isCancelled, !isShuttingDown else { return }
         if appleMusicRunning != running { appleMusicRunning = running }
         guard appleMusicRunning else {
             stopAppleSyncTask()
@@ -16,7 +17,11 @@ extension MusicPlaybackCoordinator {
         }
         do {
             let snapshot = try await appleMusic.requestSnapshot()
-            guard activePlaybackSource == .appleMusic else { return }
+            guard !Task.isCancelled,
+                  !isShuttingDown,
+                  activePlaybackSource == .appleMusic else {
+                return
+            }
             let changed = currentTrack?.id != snapshot.track?.id
             var publishedTrack = snapshot.track
             if publishedTrack?.id == currentTrack?.id, publishedTrack?.coverURL == nil {
@@ -28,16 +33,19 @@ extension MusicPlaybackCoordinator {
             playbackProgress.reset(position: snapshot.position, duration: snapshot.track?.duration ?? 0)
             if volume != snapshot.volume { volume = snapshot.volume }
             if changed, let track = publishedTrack {
-                context.lyricsCoordinator.loadLyrics(for: track)
+                delegate?.loadPlaybackLyrics(for: track)
                 loadAppleArtwork(for: track)
             }
-            context.lyricsCoordinator.updateLyric()
-            errorMessage = nil
-        } catch { errorMessage = error.localizedDescription }
+            delegate?.updatePlaybackLyric()
+            delegate?.reportBilibiliPlaybackError(nil)
+        } catch {
+            delegate?.reportBilibiliPlaybackError(error.localizedDescription)
+        }
     }
 
     func startAppleSyncTask() {
-        guard activePlaybackSource == .appleMusic,
+        guard !isShuttingDown,
+              activePlaybackSource == .appleMusic,
               appleMusicRunning,
               appleSyncTask == nil else { return }
         appleSyncGeneration &+= 1
@@ -71,7 +79,7 @@ extension MusicPlaybackCoordinator {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     guard let self,
                           let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
                             as? NSRunningApplication,
@@ -93,7 +101,8 @@ extension MusicPlaybackCoordinator {
     }
 
     func startAppleClockIfNeeded() {
-        guard activePlaybackSource == .appleMusic,
+        guard !isShuttingDown,
+              activePlaybackSource == .appleMusic,
               playbackState.isPlaying,
               appleClockTask == nil else { return }
         appleClockGeneration &+= 1
@@ -125,7 +134,7 @@ extension MusicPlaybackCoordinator {
                 let elapsed = min(max(now - lastAppleClockTime, 0), 1)
                 let advanced = duration > 0 ? min(position + elapsed, duration) : position + elapsed
                 playbackProgress.setPosition(advanced)
-                context.lyricsCoordinator.updateLyric()
+                delegate?.updatePlaybackLyric()
             }
             lastAppleClockTime = now
             do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
@@ -133,6 +142,7 @@ extension MusicPlaybackCoordinator {
     }
 
     func loadAppleArtwork(for track: MusicTrack) {
+        guard !isShuttingDown else { return }
         appleArtworkTask?.cancel()
         appleArtworkTask = Task { [weak self, appleMusic] in
             let url = await appleMusic.artworkURL(for: track.id)
@@ -143,6 +153,7 @@ extension MusicPlaybackCoordinator {
     }
 
     func scheduleAppleRefresh() {
+        guard !isShuttingDown else { return }
         appleRefreshTask?.cancel()
         appleRefreshTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
@@ -154,9 +165,10 @@ extension MusicPlaybackCoordinator {
         let controlSource = activePlaybackSource ?? currentTrack?.source ?? browsingSource
         if controlSource == .appleMusic {
             if activePlaybackSource == nil { connectAppleMusic() }
-            Task { [weak self, appleMusic] in
+            tasks.launch(key: "apple-move") { [weak self, appleMusic] generation in
                 if delta < 0 { await appleMusic.previous() } else { await appleMusic.next() }
-                self?.scheduleAppleRefresh()
+                guard let self, tasks.isCurrent(generation) else { return }
+                scheduleAppleRefresh()
             }
             return
         }
@@ -192,7 +204,7 @@ extension MusicPlaybackCoordinator {
         clearLoadedURLIdentity()
         if activePlaybackSource == .local {
             setPlaybackState(.failed(error.localizedDescription))
-            localImportStore.errorMessage = error.localizedDescription
+            delegate?.reportLocalPlaybackError(error.localizedDescription, relocating: nil)
             return
         }
         guard activePlaybackSource == .bilibili, let track = currentTrack else { return }
@@ -203,9 +215,11 @@ extension MusicPlaybackCoordinator {
         } else {
             let failure = AppLocalizer.string("播放地址已失效，刷新后仍无法播放")
             setPlaybackState(.failed(failure))
-            errorMessage = AppLocalizer.format(
-                "music.bilibili.playbackExpiredDetail",
-                error.localizedDescription
+            delegate?.reportBilibiliPlaybackError(
+                AppLocalizer.format(
+                    "music.bilibili.playbackExpiredDetail",
+                    error.localizedDescription
+                )
             )
         }
     }
@@ -220,11 +234,11 @@ extension MusicPlaybackCoordinator {
             let restoredPosition = min(max(savedPosition, 0), max(track.duration, 0))
             if source == .bilibili { lastBilibiliPosition = restoredPosition }
             currentTrack = track; playbackProgress.reset(position: restoredPosition, duration: track.duration); setPlaybackState(.paused)
-            context.lyricsCoordinator.loadLyrics(for: track)
+            delegate?.loadPlaybackLyrics(for: track)
         } else if let first = sourceTracks.first {
             if source == .bilibili { lastBilibiliPosition = 0 }
             currentTrack = first; currentTrackID = first.id; playbackProgress.reset(position: 0, duration: first.duration); setPlaybackState(.paused)
-            context.lyricsCoordinator.loadLyrics(for: first)
+            delegate?.loadPlaybackLyrics(for: first)
         } else {
             currentTrack = nil
             if source == .bilibili { lastBilibiliPosition = 0 }

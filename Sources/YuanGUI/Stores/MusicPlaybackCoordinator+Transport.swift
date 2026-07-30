@@ -4,6 +4,7 @@ import Foundation
 
 extension MusicPlaybackCoordinator {
     func play(_ track: MusicTrack, at savedPosition: TimeInterval = 0) {
+        guard !isShuttingDown else { return }
         registerManualPlaybackControl()
         switch track.source {
         case .local:
@@ -16,13 +17,16 @@ extension MusicPlaybackCoordinator {
     }
 
     func pauseForExternalAudio() {
+        guard !isShuttingDown else { return }
         guard isPlaying else { return }
         pausedForExternalAudio = true
         switch playbackSource {
         case .appleMusic:
             lastAppleClockTime = nil
             setPlaybackState(.paused)
-            Task { [appleMusic] in await appleMusic.pause() }
+            tasks.launch(key: "external-audio-pause") { [appleMusic] _ in
+                await appleMusic.pause()
+            }
         case .bilibili:
             urlPlayer?.pause()
         case .local:
@@ -31,6 +35,7 @@ extension MusicPlaybackCoordinator {
     }
 
     func resumeAfterExternalAudio() {
+        guard !isShuttingDown else { return }
         guard pausedForExternalAudio else { return }
         pausedForExternalAudio = false
         switch playbackSource {
@@ -38,9 +43,11 @@ extension MusicPlaybackCoordinator {
             guard appleMusicRunning else { return }
             lastAppleClockTime = Date.timeIntervalSinceReferenceDate
             setPlaybackState(.playing)
-            Task { [weak self, appleMusic] in
+            tasks.launch(key: "external-audio-resume") {
+                [weak self, appleMusic] generation in
                 await appleMusic.play()
-                self?.scheduleAppleRefresh()
+                guard let self, tasks.isCurrent(generation) else { return }
+                scheduleAppleRefresh()
             }
         case .bilibili:
             guard let currentTrack, hasLoadedCurrentURLTrack(currentTrack) else { return }
@@ -69,6 +76,7 @@ extension MusicPlaybackCoordinator {
         at savedPosition: TimeInterval = 0,
         rebuildQueue: Bool
     ) {
+        guard !isShuttingDown else { return }
         guard track.source == .bilibili else { return }
         activatePlaybackSource(.bilibili)
         _ = ensureURLMusicPlayer()
@@ -78,9 +86,9 @@ extension MusicPlaybackCoordinator {
         lastBilibiliPosition = savedPosition
         playbackProgress.reset(position: savedPosition, duration: track.duration)
         setPlaybackState(.loading)
-        errorMessage = nil
+        delegate?.reportBilibiliPlaybackError(nil)
         bilibiliRefreshAttempted = false
-        context.lyricsCoordinator.loadLyrics(for: track)
+        delegate?.loadPlaybackLyrics(for: track)
         loadBilibiliTrack(track, position: savedPosition)
     }
 
@@ -89,6 +97,7 @@ extension MusicPlaybackCoordinator {
         at savedPosition: TimeInterval = 0,
         rebuildQueue: Bool
     ) {
+        guard !isShuttingDown else { return }
         guard track.source == .local else { return }
         activatePlaybackSource(.local)
         let player = ensureURLMusicPlayer()
@@ -98,9 +107,8 @@ extension MusicPlaybackCoordinator {
         if rebuildQueue { rebuildMusicPlaybackQueue() }
         playbackProgress.reset(position: savedPosition, duration: track.duration)
         setPlaybackState(.loading)
-        localImportStore.errorMessage = nil
-        localImportStore.trackNeedingRelocation = nil
-        context.lyricsCoordinator.loadLyrics(for: track)
+        delegate?.reportLocalPlaybackError(nil, relocating: nil)
+        delegate?.loadPlaybackLyrics(for: track)
         localLoadTask?.cancel()
         localLoadTask = Task { [weak self, localMusicImporter] in
             guard let self else { return }
@@ -117,21 +125,28 @@ extension MusicPlaybackCoordinator {
                 player.load(urls: [url], headers: [:], position: savedPosition, autoplay: true)
                 loadedURLTrackID = track.id
                 loadedURLSource = .local
-                context.libraryController.persistLibrary()
+                delegate?.persistPlaybackLibrary()
             } catch {
                 guard !Task.isCancelled else { return }
                 setPlaybackState(.failed(error.localizedDescription))
-                localImportStore.errorMessage = error.localizedDescription
+                let relocationTrack: MusicTrack?
                 if error as? LocalMusicImportError == .staleBookmark
                     || error as? LocalMusicImportError == .missingFile {
-                    localImportStore.trackNeedingRelocation = track
+                    relocationTrack = track
+                } else {
+                    relocationTrack = nil
                 }
+                delegate?.reportLocalPlaybackError(
+                    error.localizedDescription,
+                    relocating: relocationTrack
+                )
             }
             localLoadTask = nil
         }
     }
 
     func loadBilibiliTrack(_ track: MusicTrack, position savedPosition: TimeInterval) {
+        guard !isShuttingDown else { return }
         bilibiliLoadTask?.cancel()
         bilibiliLoadTask = Task { [weak self] in
             guard let self else { return }
@@ -150,11 +165,11 @@ extension MusicPlaybackCoordinator {
                 )
                 loadedURLTrackID = track.id
                 loadedURLSource = .bilibili
-                context.libraryController.persistLibrary()
+                delegate?.persistPlaybackLibrary()
             } catch {
                 guard !Task.isCancelled, activePlaybackSource == .bilibili else { return }
                 setPlaybackState(.failed(error.localizedDescription))
-                errorMessage = error.localizedDescription
+                delegate?.reportBilibiliPlaybackError(error.localizedDescription)
             }
             bilibiliLoadTask = nil
         }

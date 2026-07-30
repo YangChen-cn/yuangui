@@ -4,16 +4,15 @@ import Foundation
 
 extension LocalMusicCoordinator {
     func importLocalMusic(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
-        importTask?.cancel()
-        localImportStore.isImporting = true
-        localImportStore.message = nil
-        localImportStore.errorMessage = nil
-        localImportStore.failures = []
-        importTask = Task(priority: .utility) { [weak self, importer] in
+        guard !tasks.isShuttingDown, !urls.isEmpty else { return }
+        importStore.isImporting = true
+        importStore.message = nil
+        importStore.errorMessage = nil
+        importStore.failures = []
+        tasks.launch(key: "import") { [weak self, importer] generation in
             let result = await importer.importFiles(urls)
-            guard !Task.isCancelled, let self else { return }
-            let existingKeys = Set(playlist.compactMap(\.localDuplicateKey))
+            guard let self, tasks.isCurrent(generation) else { return }
+            let existingKeys = delegate?.localDuplicateKeys ?? []
             var seen = existingKeys
             var added: [MusicTrack] = []
             var duplicateTracks: [MusicTrack] = []
@@ -29,133 +28,121 @@ extension LocalMusicCoordinator {
                 }
             }
             let duplicates = duplicateTracks.count
-            playlist.append(contentsOf: added)
-            localImportStore.importedCount = added.count
-            localImportStore.duplicateCount = duplicates
-            localImportStore.failedCount = result.failures.count
-            localImportStore.failures = result.failures
-            localImportStore.message = AppLocalizer.format(
+            delegate?.appendImportedLocalTracks(added)
+            importStore.importedCount = added.count
+            importStore.duplicateCount = duplicates
+            importStore.failedCount = result.failures.count
+            importStore.failures = result.failures
+            importStore.message = AppLocalizer.format(
                 "music.local.import.result",
                 added.count,
                 duplicates,
                 result.failures.count
             )
-            localImportStore.isImporting = false
-            importTask = nil
+            importStore.isImporting = false
             scheduleArtworkRemoval(
                 keys: orphanedArtworkKeys(
                     among: Set(duplicateTracks.compactMap(\.localArtworkCacheKey))
                 )
             )
             if !added.isEmpty {
-                context.playbackCoordinator.setSource(.local)
-                if currentTrack?.source != .local {
-                    context.playbackCoordinator.restoreSelection(for: .local)
-                }
-                context.playbackCoordinator.rebuildMusicPlaybackQueue()
-                context.libraryController.persistLibrary()
+                delegate?.didImportLocalTracks()
             }
         }
     }
 
     func cancelLocalImport() {
-        importTask?.cancel()
-        importTask = nil
-        localImportStore.isImporting = false
+        tasks.cancel(key: "import")
+        importStore.isImporting = false
     }
 
     func relocate(_ track: MusicTrack, to url: URL) {
-        Task { [weak self, importer] in
+        guard !tasks.isShuttingDown else { return }
+        tasks.launch(key: "relocate:\(track.id)") { [weak self, importer] generation in
             guard let self else { return }
             do {
                 let updated = try await importer.relocatedTrack(track, to: url)
-                guard let index = playlist.firstIndex(where: { $0.id == track.id }) else {
+                guard tasks.isCurrent(generation) else { return }
+                guard delegate?.replaceLocalTrack(track, with: updated) == true else {
                     scheduleArtworkRemoval(keys: Set([updated.localArtworkCacheKey].compactMap { $0 }))
                     return
                 }
-                playlist[index] = updated
-                context.lyricsCoordinator.removeCachedLyrics(for: track)
-                if currentTrack?.id == track.id {
-                    context.playbackCoordinator.urlPlayer?.stop()
-                    context.playbackCoordinator.clearLoadedURLIdentity()
-                    context.playbackCoordinator.releaseScopedLocalURL()
-                    currentTrack = updated
-                    playbackProgress.setDuration(updated.duration)
-                    playbackProgress.setPosition(min(position, updated.duration))
-                    context.playbackCoordinator.setPlaybackState(.paused)
-                    context.lyricsCoordinator.loadLyrics(for: updated)
-                }
-                localImportStore.trackNeedingRelocation = nil
-                localImportStore.errorMessage = nil
+                delegate?.didRelocateCurrentLocalTrack(track, to: updated)
+                importStore.trackNeedingRelocation = nil
+                importStore.errorMessage = nil
                 if let oldKey = track.localArtworkCacheKey, oldKey != updated.localArtworkCacheKey {
                     scheduleArtworkRemoval(keys: orphanedArtworkKeys(among: [oldKey]))
                 }
-                context.libraryController.persistLibrary()
+                delegate?.persistLocalMusicChanges()
             } catch {
-                localImportStore.errorMessage = error.localizedDescription
+                guard tasks.isCurrent(generation) else { return }
+                importStore.errorMessage = error.localizedDescription
             }
         }
     }
 
     func revealInFinder(_ track: MusicTrack) {
-        guard track.source == .local else { return }
-        Task { [weak self, importer] in
+        guard !tasks.isShuttingDown, track.source == .local else { return }
+        tasks.launch(key: "reveal:\(track.id)") {
+            [weak self, importer, fileRevealer] generation in
             guard let self else { return }
             do {
                 let url = try await importer.resolveURL(for: track)
+                guard tasks.isCurrent(generation) else { return }
                 let accessed = url.startAccessingSecurityScopedResource()
                 guard accessed else { throw LocalMusicImportError.securityScopeUnavailable }
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                 fileRevealer.reveal(url)
-                localImportStore.errorMessage = nil
+                importStore.errorMessage = nil
             } catch {
-                localImportStore.errorMessage = error.localizedDescription
+                guard tasks.isCurrent(generation) else { return }
+                importStore.errorMessage = error.localizedDescription
                 if error as? LocalMusicImportError == .staleBookmark
                     || error as? LocalMusicImportError == .missingFile {
-                    localImportStore.trackNeedingRelocation = track
+                    importStore.trackNeedingRelocation = track
                 }
             }
         }
     }
 
     func setArtwork(for track: MusicTrack, from imageURL: URL) {
-        guard track.source != .appleMusic else { return }
-        Task { [weak self, artworkRepository] in
+        guard !tasks.isShuttingDown, track.source != .appleMusic else { return }
+        tasks.launch(key: "artwork-import:\(track.id)") {
+            [weak self, artworkRepository] generation in
             guard let self else { return }
             do {
                 let newKey = try await artworkRepository.importArtwork(from: imageURL)
-                guard let index = playlist.firstIndex(where: { $0.id == track.id }) else {
+                guard tasks.isCurrent(generation) else {
                     scheduleArtworkRemoval(keys: [newKey])
                     return
                 }
-                let oldKey = playlist[index].localArtworkCacheKey
-                playlist[index].localArtworkCacheKey = newKey
-                let updated = playlist[index]
-                if currentTrack?.id == updated.id {
-                    currentTrack = updated
+                let replacement = delegate?.replaceArtwork(
+                    for: track.id,
+                    with: newKey
+                )
+                guard replacement?.didReplace == true else {
+                    scheduleArtworkRemoval(keys: [newKey])
+                    return
                 }
-                localImportStore.errorMessage = nil
-                context.libraryController.persistLibrary()
-                if let oldKey, oldKey != newKey {
+                importStore.errorMessage = nil
+                delegate?.persistLocalMusicChanges()
+                if let oldKey = replacement?.previousKey, oldKey != newKey {
                     scheduleArtworkRemoval(keys: orphanedArtworkKeys(among: [oldKey]))
                 }
             } catch {
-                localImportStore.errorMessage = error.localizedDescription
+                guard tasks.isCurrent(generation) else { return }
+                importStore.errorMessage = error.localizedDescription
             }
         }
     }
 
     func removeArtwork(for track: MusicTrack) {
         guard track.source != .appleMusic,
-              let index = playlist.firstIndex(where: { $0.id == track.id }),
-              let oldKey = playlist[index].localArtworkCacheKey else { return }
-        playlist[index].localArtworkCacheKey = nil
-        let updated = playlist[index]
-        if currentTrack?.id == updated.id {
-            currentTrack = updated
+              let oldKey = delegate?.removeArtwork(for: track.id) else {
+            return
         }
-        localImportStore.errorMessage = nil
-        context.libraryController.persistLibrary()
+        importStore.errorMessage = nil
+        delegate?.persistLocalMusicChanges()
         scheduleArtworkRemoval(keys: orphanedArtworkKeys(among: [oldKey]))
     }
 

@@ -4,124 +4,127 @@ import Foundation
 
 extension BilibiliMusicCoordinator {
     func importBilibili() {
-        let input = importText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else { return }
+        guard !tasks.isShuttingDown else { return }
+        let requestInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !requestInput.isEmpty else { return }
         isImporting = true
         errorMessage = nil
         dismissBilibiliImportResult()
-        Task { [weak self] in
+        tasks.launch(key: "import") { [weak self, bilibili] generation in
             guard let self else { return }
             do {
-                let tracks = try await bilibili.resolveTracks(from: input)
-                var added: [MusicTrack] = []
-                for track in tracks where !playlist.contains(where: { $0.id == track.id }) {
-                    playlist.append(track); added.append(track)
-                }
-                if !added.isEmpty {
-                    playbackDomain.rebuildMusicPlaybackQueue()
-                }
-                importText = ""
-                playbackDomain.setSource(.bilibili)
-                libraryDomain.persistLibrary()
+                let tracks = try await bilibili.resolveTracks(from: requestInput)
+                guard tasks.isCurrent(generation) else { return }
+                let added = delegate?.importBilibiliTracks(tracks, playlistName: nil) ?? []
+                input = ""
                 let importedTrackID = (added.first ?? tracks.first)?.id
                 let message = added.isEmpty
                     ? AppLocalizer.string("歌曲已在资料库中")
                     : AppLocalizer.format("music.import.addedCount", added.count)
                 showBilibiliImportResult(message, trackID: importedTrackID)
-            } catch { errorMessage = error.localizedDescription }
+            } catch {
+                guard tasks.isCurrent(generation) else { return }
+                errorMessage = error.localizedDescription
+            }
+            guard tasks.isCurrent(generation) else { return }
             isImporting = false
         }
     }
 
     func playLastBilibiliImport() {
         guard let lastImportedTrackID,
-              let track = playlist.first(where: { $0.id == lastImportedTrackID }) else {
+              let track = delegate?.bilibiliTrack(withID: lastImportedTrackID) else {
             dismissBilibiliImportResult()
             return
         }
         dismissBilibiliImportResult()
-        playbackDomain.play(track)
+        delegate?.playBilibiliTrack(track)
     }
 
     func dismissBilibiliImportResult() {
-        importResultTask?.cancel()
-        importResultTask = nil
-        bilibiliImportMessage = nil
+        tasks.cancel(key: "import-result")
+        importMessage = nil
         lastImportedTrackID = nil
     }
 
     func showBilibiliImportResult(_ message: String, trackID: String?) {
-        importResultTask?.cancel()
-        bilibiliImportMessage = message
+        guard !tasks.isShuttingDown else { return }
+        importMessage = message
         lastImportedTrackID = trackID
-        importResultTask = Task { [weak self] in
+        tasks.launch(key: "import-result") { [weak self] generation in
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
-            guard let self, bilibiliImportMessage == message, lastImportedTrackID == trackID else { return }
+            guard let self,
+                  tasks.isCurrent(generation),
+                  importMessage == message,
+                  lastImportedTrackID == trackID else {
+                return
+            }
             dismissBilibiliImportResult()
         }
     }
 
     func loadBilibiliFavoriteFolders() {
-        guard let account = bilibiliAccount else {
-            bilibiliFavoriteMessage = AppLocalizer.string("请先登录哔哩哔哩账号")
+        guard !tasks.isShuttingDown else { return }
+        guard let account else {
+            favoriteMessage = AppLocalizer.string("请先登录哔哩哔哩账号")
             return
         }
-        favoriteTask?.cancel()
-        isLoadingBilibiliFavoriteFolders = true
-        bilibiliFavoriteMessage = nil
-        favoriteTask = Task { [weak self] in
+        isLoadingFavoriteFolders = true
+        favoriteMessage = nil
+        tasks.launch(key: "favorite-operation") { [weak self, favoritesService] generation in
             guard let self else { return }
             do {
                 let folders = try await favoritesService.folders(for: account.mid)
-                guard !Task.isCancelled else { return }
-                bilibiliFavoriteFolders = folders
+                guard tasks.isCurrent(generation) else { return }
+                favoriteFolders = folders
                 if folders.isEmpty {
-                    bilibiliFavoriteMessage = AppLocalizer.string("这个账号没有可导入的视频收藏夹")
+                    favoriteMessage = AppLocalizer.string("这个账号没有可导入的视频收藏夹")
                 }
             } catch is CancellationError {
                 return
             } catch {
-                bilibiliFavoriteMessage = error.localizedDescription
+                guard tasks.isCurrent(generation) else { return }
+                favoriteMessage = error.localizedDescription
             }
-            isLoadingBilibiliFavoriteFolders = false
-            favoriteTask = nil
+            guard tasks.isCurrent(generation) else { return }
+            isLoadingFavoriteFolders = false
         }
     }
 
     func importBilibiliFavoriteFolder(_ folder: BilibiliFavoriteFolder) {
-        guard bilibiliAccount != nil, !isImportingBilibiliFavoriteFolder else { return }
-        favoriteTask?.cancel()
-        isLoadingBilibiliFavoriteFolders = false
-        isImportingBilibiliFavoriteFolder = true
-        bilibiliFavoriteImportCompleted = 0
-        bilibiliFavoriteImportTotal = max(folder.mediaCount, 0)
-        bilibiliFavoriteMessage = nil
-        favoriteTask = Task { [weak self] in
+        guard !tasks.isShuttingDown else { return }
+        guard account != nil, !isImportingFavoriteFolder else { return }
+        isLoadingFavoriteFolders = false
+        isImportingFavoriteFolder = true
+        favoriteImportCompleted = 0
+        favoriteImportTotal = max(folder.mediaCount, 0)
+        favoriteMessage = nil
+        tasks.launch(key: "favorite-operation") {
+            [weak self, favoritesService, bilibili] generation in
             guard let self else { return }
             do {
                 let bvids = try await favoritesService.videoBVIDs(in: folder)
+                guard tasks.isCurrent(generation) else { return }
                 guard !bvids.isEmpty else {
-                    bilibiliFavoriteMessage = AppLocalizer.format(
+                    favoriteMessage = AppLocalizer.format(
                         "music.bilibili.favorite.emptyFolder",
                         folder.title
                     )
-                    isImportingBilibiliFavoriteFolder = false
-                    favoriteTask = nil
+                    isImportingFavoriteFolder = false
                     return
                 }
-                bilibiliFavoriteImportTotal = bvids.count
+                favoriteImportTotal = bvids.count
                 var resolved: [(Int, [MusicTrack])] = []
                 var failedCount = 0
                 let batchSize = 4
-                let client = bilibili
                 for start in stride(from: 0, to: bvids.count, by: batchSize) {
-                    try Task.checkCancellation()
+                    guard tasks.isCurrent(generation) else { return }
                     let end = min(start + batchSize, bvids.count)
                     let batch = Array(bvids[start..<end].enumerated()).map { (start + $0.offset, $0.element) }
                     let batchResults = await withTaskGroup(of: (Int, [MusicTrack]?).self) { group in
                         for (index, bvid) in batch {
-                            group.addTask { [client] in
-                                do { return (index, try await client.resolveTracks(from: bvid)) }
+                            group.addTask { [bilibili] in
+                                do { return (index, try await bilibili.resolveTracks(from: bvid)) }
                                 catch { return (index, nil) }
                             }
                         }
@@ -132,22 +135,17 @@ extension BilibiliMusicCoordinator {
                     for (index, tracks) in batchResults {
                         if let tracks { resolved.append((index, tracks)) }
                         else { failedCount += 1 }
-                        bilibiliFavoriteImportCompleted += 1
+                        favoriteImportCompleted += 1
                     }
                 }
-                guard !Task.isCancelled else { return }
+                guard tasks.isCurrent(generation) else { return }
                 let tracks = resolved.sorted { $0.0 < $1.0 }.flatMap(\.1)
-                let existingIDs = Set(playlist.map(\.id))
-                let added = tracks.filter { !existingIDs.contains($0.id) }
-                playlist.append(contentsOf: added)
-                if !added.isEmpty {
-                    playbackDomain.rebuildMusicPlaybackQueue()
-                }
-                updateLocalPlaylist(named: folder.title, with: tracks)
-                playbackDomain.setSource(.bilibili)
-                libraryDomain.persistLibrary()
+                let added = delegate?.importBilibiliTracks(
+                    tracks,
+                    playlistName: folder.title
+                ) ?? []
                 let duplicateCount = tracks.count - added.count
-                bilibiliFavoriteMessage = AppLocalizer.format(
+                favoriteMessage = AppLocalizer.format(
                     "music.bilibili.favorite.importResult",
                     folder.title,
                     added.count,
@@ -157,109 +155,98 @@ extension BilibiliMusicCoordinator {
             } catch is CancellationError {
                 return
             } catch {
-                bilibiliFavoriteMessage = error.localizedDescription
+                guard tasks.isCurrent(generation) else { return }
+                favoriteMessage = error.localizedDescription
             }
-            isImportingBilibiliFavoriteFolder = false
-            favoriteTask = nil
+            guard tasks.isCurrent(generation) else { return }
+            isImportingFavoriteFolder = false
         }
     }
 
     func cancelBilibiliFavoriteOperation() {
-        favoriteTask?.cancel()
-        favoriteTask = nil
-        isLoadingBilibiliFavoriteFolders = false
-        isImportingBilibiliFavoriteFolder = false
-    }
-
-    func updateLocalPlaylist(named name: String, with tracks: [MusicTrack]) {
-        guard !tracks.isEmpty else { return }
-        if let index = savedPlaylists.firstIndex(where: { $0.name == name }) {
-            var existing = Set(savedPlaylists[index].trackIDs)
-            savedPlaylists[index].trackIDs.append(contentsOf: tracks.map(\.id).filter { existing.insert($0).inserted })
-        } else {
-            var seen = Set<String>()
-            savedPlaylists.append(SavedMusicPlaylist(
-                name: name,
-                trackIDs: tracks.map(\.id).filter { seen.insert($0).inserted }
-            ))
-        }
+        tasks.cancel(key: "favorite-operation")
+        isLoadingFavoriteFolders = false
+        isImportingFavoriteFolder = false
     }
 
     func refreshBilibiliAccount() {
-        Task { [weak self] in
+        guard !tasks.isShuttingDown else { return }
+        tasks.launch(key: "account-refresh") { [weak self, accountService] generation in
             guard let self else { return }
             do {
-                bilibiliAccount = try await accountService.currentAccount()
-                bilibiliLoginPhase = bilibiliAccount == nil ? .loggedOut : .loggedIn
+                let refreshedAccount = try await accountService.currentAccount()
+                guard tasks.isCurrent(generation) else { return }
+                account = refreshedAccount
+                loginPhase = refreshedAccount == nil ? .loggedOut : .loggedIn
             } catch {
-                bilibiliLoginPhase = .failed(error.localizedDescription)
+                guard tasks.isCurrent(generation) else { return }
+                loginPhase = .failed(error.localizedDescription)
             }
         }
     }
 
     func startBilibiliLogin() {
-        loginTask?.cancel()
-        bilibiliLoginPhase = .requestingQRCode
-        bilibiliQRCodeURL = nil
-        loginTask = Task { [weak self] in
+        guard !tasks.isShuttingDown else { return }
+        loginPhase = .requestingQRCode
+        qrCodeURL = nil
+        tasks.launch(key: "login") { [weak self, accountService] generation in
             guard let self else { return }
             do {
                 let code = try await accountService.generateQRCode()
-                guard !Task.isCancelled else { return }
-                bilibiliQRCodeURL = code.url
-                bilibiliLoginPhase = .waitingForScan
-                while !Task.isCancelled {
+                guard tasks.isCurrent(generation) else { return }
+                qrCodeURL = code.url
+                loginPhase = .waitingForScan
+                while tasks.isCurrent(generation) {
                     try await Task.sleep(for: .seconds(2))
                     switch try await accountService.pollQRCode(key: code.key) {
                     case .waitingForScan:
-                        bilibiliLoginPhase = .waitingForScan
+                        loginPhase = .waitingForScan
                     case .waitingForConfirmation:
-                        bilibiliLoginPhase = .waitingForConfirmation
+                        loginPhase = .waitingForConfirmation
                     case .expired:
-                        bilibiliLoginPhase = .expired
-                        bilibiliQRCodeURL = nil
-                        loginTask = nil
+                        loginPhase = .expired
+                        qrCodeURL = nil
                         return
                     case .succeeded:
                         guard let account = try await accountService.currentAccount() else {
                             throw BilibiliAccountError.api(AppLocalizer.string("登录凭据未生效"))
                         }
-                        bilibiliAccount = account
-                        bilibiliLoginPhase = .loggedIn
-                        bilibiliQRCodeURL = nil
-                        loginTask = nil
-                        await context.lyricsCoordinator.refreshCurrentBilibiliSubtitleAfterLogin()
+                        guard tasks.isCurrent(generation) else { return }
+                        self.account = account
+                        loginPhase = .loggedIn
+                        qrCodeURL = nil
+                        await delegate?.refreshCurrentBilibiliLyricsAfterLogin()
                         return
                     }
                 }
             } catch is CancellationError {
                 return
             } catch {
-                bilibiliLoginPhase = .failed(error.localizedDescription)
-                bilibiliQRCodeURL = nil
-                loginTask = nil
+                guard tasks.isCurrent(generation) else { return }
+                loginPhase = .failed(error.localizedDescription)
+                qrCodeURL = nil
             }
         }
     }
 
     func cancelBilibiliLogin() {
-        loginTask?.cancel()
-        loginTask = nil
-        bilibiliQRCodeURL = nil
-        if bilibiliAccount == nil { bilibiliLoginPhase = .loggedOut }
+        tasks.cancel(key: "login")
+        qrCodeURL = nil
+        if account == nil { loginPhase = .loggedOut }
     }
 
     func logoutBilibili() {
-        loginTask?.cancel()
-        loginTask = nil
-        Task { [weak self] in
+        guard !tasks.isShuttingDown else { return }
+        tasks.cancel(key: "login")
+        tasks.launch(key: "logout") { [weak self, accountService] generation in
             guard let self else { return }
             await accountService.logout()
-            bilibiliAccount = nil
-            bilibiliQRCodeURL = nil
-            bilibiliLoginPhase = .loggedOut
-            bilibiliFavoriteFolders = []
-            bilibiliFavoriteMessage = nil
+            guard tasks.isCurrent(generation) else { return }
+            account = nil
+            qrCodeURL = nil
+            loginPhase = .loggedOut
+            favoriteFolders = []
+            favoriteMessage = nil
         }
     }
 

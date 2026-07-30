@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 final class MusicPersistenceCoordinator {
     private let library: any MusicLibraryCoordinating
+    private let tasks = MusicTaskRegistry()
     private(set) var revision: UInt64 = 0
 
     init(library: any MusicLibraryCoordinating) {
@@ -21,7 +22,8 @@ final class MusicPersistenceCoordinator {
     func scheduleSave(_ snapshot: MusicLibrarySnapshot) {
         revision &+= 1
         let revision = revision
-        Task { [library] in
+        tasks.launch(key: "save:\(revision)", replacingExisting: false) {
+            [library] _ in
             await library.scheduleSave(snapshot, revision: revision)
         }
     }
@@ -29,5 +31,10 @@ final class MusicPersistenceCoordinator {
     func saveNow(_ snapshot: MusicLibrarySnapshot) async {
         revision &+= 1
         await library.saveNow(snapshot, revision: revision)
+    }
+
+    func shutdown(saving snapshot: MusicLibrarySnapshot) async {
+        await tasks.shutdown()
+        await saveNow(snapshot)
     }
 }

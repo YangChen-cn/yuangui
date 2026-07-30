@@ -411,7 +411,11 @@ swift test
 
 - `MusicFeature` 是非 Observable 的兼容门面和组合入口，不能重新加入 `ObservableObject`、`@Published` 或聚合 `objectWillChange`。播放、资料库、歌词、歌词呈现、Bilibili 账号/导入和本地导入继续由独立 Store 发布。
 - `ObservedMusicFeature` 已删除。SwiftUI 视图必须以普通 `let music` 发送命令，并只用 `@ObservedObject` 订阅自己读取的子 Store；只显示进度的视图直接观察 `MusicPlaybackProgress`。禁止为了少写初始化代码重新建立同时观察全部音乐 Store 的包装器。
-- 已删除聚合全部业务的 `MusicFeatureRuntime`。`MusicFeatureContext` 只负责连接七个 Store 和领域协作者，不得持有播放器、服务、队列、歌词缓存或异步 Task；禁止用 Runtime、Manager extension 或转发壳重新建立中心业务对象。
-- 播放器实例、Apple Music 同步、来源切换和播放队列由 `MusicPlaybackCoordinator` 持有；歌词任务与缓存由 `MusicLyricsCoordinator` 持有；账号/收藏夹任务和本地导入/封面维护任务分别由 Bilibili、本地音乐协调器持有。跨域调用必须明确经过对应 Coordinator，不能把实现放回门面或 Context。
+- 完整播放器的 Bilibili 导入、账号、本地导入和错误呈现必须保持为各自的观察叶节点，不能把这些 Store 提升回 `MusicPlayerView` 外壳；收藏夹导入进度不得重算播放器外壳或 `MusicProgressView`。
+- 已删除聚合全部业务的 `MusicFeatureRuntime`、`MusicFeatureContext` 和向子类暴露全部领域状态的 `MusicDomainCoordinator`。`MusicFeature` 直接组合七个 Store 与五个领域协作者，跨域流程只在门面中编排；禁止重新引入服务定位器、全域基类、Runtime、Manager extension 或转发壳。
+- Coordinator 只能持有自己的 Store、服务和任务，并通过 MainActor 窄协议访问必要能力：播放与歌词通过 delegate 请求门面编排，资料库只依赖 `MusicLibraryPlaybackAccess`、`MusicLibraryLyricsAccess` 和 `MusicLibraryArtworkAccess`，Bilibili 与本地音乐不能获取具体兄弟 Coordinator。
+- 播放器实例、Apple Music 同步、来源切换和播放队列由 `MusicPlaybackCoordinator` 持有；歌词任务与缓存由 `MusicLyricsCoordinator` 持有；账号/收藏夹任务和本地导入/封面维护任务分别由 Bilibili、本地音乐协调器持有。Facade 可以协调曲目切换、队列重建、歌词刷新与持久化，但业务实现不能回流到门面。
 - 播放、资料库、歌词、Bilibili 和本地音乐命令通过 MainActor 领域协议暴露；持久化 revision、恢复时的版本校验、延迟保存和 shutdown flush 由 `MusicPersistenceCoordinator` 负责。所有服务接口和 `MusicLibrarySnapshot` 格式保持兼容。
-- 音乐性能回归以 publisher 隔离和 SwiftUI Instruments 的 View Body Updates 验收：播放进度不得使资料库、设置或桌宠根视图刷新；账号、资料库和导入进度不得使播放进度与传输控制刷新。`MusicObservationTests` 同时禁止生产源码重新出现宽音乐观察包装器。
+- 所有非结构化异步操作必须有 Coordinator 所有的任务句柄或进入 `MusicTaskRegistry`；同 key 被替换的旧任务也必须保留到真正结束。shutdown 先设置关闭状态并推进 generation，再 cancel 和 await 全部任务；每个 await 后的 UI、资料库和持久化提交都要校验 cancellation、generation 或等价 revision，不能依赖服务正确响应 cancellation。
+- `MusicFeature.shutdown()` 按依赖方向关闭：先停止可能向兄弟域提交结果的 Bilibili 与本地音乐，再停止播放、歌词，最后由资料库完成 persistence flush；不能先释放/关闭下游再等待上游任务。
+- 音乐性能回归以 publisher 隔离、挂起服务后的 shutdown 生命周期测试和 SwiftUI Instruments 的 View Body Updates 验收：播放进度不得使资料库、设置或桌宠根视图刷新；账号、资料库和导入进度不得使播放进度与传输控制刷新。测试必须验证实际状态/发布结果，不能用文件行数、类型名称或任务变量字符串代替行为验证。

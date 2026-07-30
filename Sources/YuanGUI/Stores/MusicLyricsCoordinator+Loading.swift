@@ -4,6 +4,7 @@ import Foundation
 
 extension MusicLyricsCoordinator {
     func loadLyrics(for track: MusicTrack) {
+        guard !isShuttingDown else { return }
         let performanceStart = RuntimePerformance.start()
         defer { RuntimePerformance.record("music.lyrics.schedule", since: performanceStart) }
         lyricsSearchTask?.cancel()
@@ -31,7 +32,7 @@ extension MusicLyricsCoordinator {
                     guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
                     lyrics = local
                     cacheLyrics(local, for: track)
-                    libraryDomain.persistLibrary()
+                    delegate?.persistLyricsChanges()
                     updateLyric()
                     finishLyricLoad(revision, trackID: track.id)
                     return
@@ -74,7 +75,7 @@ extension MusicLyricsCoordinator {
             lyrics = found
             if let found {
                 cacheLyrics(found, for: track)
-                libraryDomain.persistLibrary()
+                delegate?.persistLyricsChanges()
             }
             updateLyric()
             finishLyricLoad(revision, trackID: track.id)
@@ -89,7 +90,10 @@ extension MusicLyricsCoordinator {
     }
 
     func isCurrentLyricLoad(_ revision: UInt64, trackID: String) -> Bool {
-        !Task.isCancelled && lyricLoadRevision == revision && currentTrack?.id == trackID
+        !isShuttingDown
+            && !Task.isCancelled
+            && lyricLoadRevision == revision
+            && currentTrack?.id == trackID
     }
 
     func finishLyricLoad(_ revision: UInt64, trackID: String) {
@@ -99,8 +103,15 @@ extension MusicLyricsCoordinator {
     }
 
     func refreshCurrentBilibiliSubtitleAfterLogin() async {
-        guard let track = currentTrack, track.source == .bilibili,
-              let subtitleURL = await bilibili.subtitleURL(for: track) else { return }
+        guard !isShuttingDown,
+              let track = currentTrack,
+              track.source == .bilibili,
+              let subtitleURL = await bilibili.subtitleURL(for: track),
+              !Task.isCancelled,
+              !isShuttingDown,
+              currentTrack?.id == track.id else {
+            return
+        }
         updateSubtitleURL(subtitleURL, for: track.id)
         if cachedLyrics(for: track)?.source == "LRCLIB" {
             removeCachedLyrics(for: track)
@@ -109,13 +120,8 @@ extension MusicLyricsCoordinator {
     }
 
     func updateSubtitleURL(_ url: URL, for trackID: String) {
-        if let index = playlist.firstIndex(where: { $0.id == trackID }) {
-            playlist[index].subtitleURL = url
-            if currentTrack?.id == trackID { currentTrack = playlist[index] }
-        } else if currentTrack?.id == trackID {
-            currentTrack?.subtitleURL = url
-        }
-        libraryDomain.persistLibrary()
+        delegate?.updateLyricsSubtitleURL(url, trackID: trackID)
+        delegate?.persistLyricsChanges()
     }
 
     func cachedLyrics(for track: MusicTrack) -> LyricsDocument? {
@@ -128,7 +134,7 @@ extension MusicLyricsCoordinator {
         }
         lyricsByTrackID[track.lyricsCacheKey] = legacy.value
         lyricsByTrackID.removeValue(forKey: legacy.key)
-        libraryDomain.persistLibrary()
+        delegate?.persistLyricsChanges()
         return legacy.value
     }
 
