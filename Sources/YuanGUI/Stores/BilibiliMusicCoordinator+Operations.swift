@@ -132,6 +132,7 @@ extension BilibiliMusicCoordinator {
                         for await value in group { values.append(value) }
                         return values
                     }
+                    guard tasks.isCurrent(generation) else { return }
                     for (index, tracks) in batchResults {
                         if let tracks { resolved.append((index, tracks)) }
                         else { failedCount += 1 }
@@ -197,8 +198,10 @@ extension BilibiliMusicCoordinator {
                 qrCodeURL = code.url
                 loginPhase = .waitingForScan
                 while tasks.isCurrent(generation) {
-                    try await Task.sleep(for: .seconds(2))
-                    switch try await accountService.pollQRCode(key: code.key) {
+                    try await Task.sleep(for: loginPollInterval)
+                    let result = try await accountService.pollQRCode(key: code.key)
+                    guard tasks.isCurrent(generation) else { return }
+                    switch result {
                     case .waitingForScan:
                         loginPhase = .waitingForScan
                     case .waitingForConfirmation:

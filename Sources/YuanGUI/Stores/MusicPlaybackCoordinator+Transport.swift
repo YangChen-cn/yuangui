@@ -115,6 +115,7 @@ extension MusicPlaybackCoordinator {
             do {
                 let url = try await localMusicImporter.resolveURL(for: track)
                 guard !Task.isCancelled,
+                      !isShuttingDown,
                       activePlaybackSource == .local,
                       currentTrack?.id == track.id else { return }
                 releaseScopedLocalURL()
@@ -127,7 +128,12 @@ extension MusicPlaybackCoordinator {
                 loadedURLSource = .local
                 delegate?.persistPlaybackLibrary()
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled,
+                      !isShuttingDown,
+                      activePlaybackSource == .local,
+                      currentTrack?.id == track.id else {
+                    return
+                }
                 setPlaybackState(.failed(error.localizedDescription))
                 let relocationTrack: MusicTrack?
                 if error as? LocalMusicImportError == .staleBookmark
@@ -154,6 +160,7 @@ extension MusicPlaybackCoordinator {
                 let location = try await bilibili.audioLocation(for: track)
                 let headers = await bilibili.playbackHeaders()
                 guard !Task.isCancelled,
+                      !isShuttingDown,
                       activePlaybackSource == .bilibili,
                       currentTrack?.id == track.id else { return }
                 guard let urlPlayer else { return }
@@ -167,7 +174,12 @@ extension MusicPlaybackCoordinator {
                 loadedURLSource = .bilibili
                 delegate?.persistPlaybackLibrary()
             } catch {
-                guard !Task.isCancelled, activePlaybackSource == .bilibili else { return }
+                guard !Task.isCancelled,
+                      !isShuttingDown,
+                      activePlaybackSource == .bilibili,
+                      currentTrack?.id == track.id else {
+                    return
+                }
                 setPlaybackState(.failed(error.localizedDescription))
                 delegate?.reportBilibiliPlaybackError(error.localizedDescription)
             }

@@ -28,6 +28,13 @@ enum BilibiliLoginPhase: Equatable {
     case failed(String)
 }
 
+protocol BilibiliAccountServicing: Sendable {
+    func currentAccount() async throws -> BilibiliAccount?
+    func generateQRCode() async throws -> BilibiliLoginQRCode
+    func pollQRCode(key: String) async throws -> BilibiliLoginPollState
+    func logout() async
+}
+
 protocol BilibiliSessionPersisting: Sendable {
     func load() throws -> BilibiliStoredSession?
     func save(_ session: BilibiliStoredSession) throws
@@ -79,7 +86,7 @@ struct BilibiliSessionFileStore: BilibiliSessionPersisting {
     }
 }
 
-actor BilibiliAccountService {
+actor BilibiliAccountService: BilibiliAccountServicing {
     private let session: URLSession
     private let store: BilibiliSessionPersisting
     private let cookieStorage: HTTPCookieStorage

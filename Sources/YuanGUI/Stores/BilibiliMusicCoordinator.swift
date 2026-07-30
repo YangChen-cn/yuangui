@@ -18,8 +18,9 @@ final class BilibiliMusicCoordinator {
     let accountStore: BilibiliAccountStore
     let importStore: BilibiliImportStore
     let bilibili: any BilibiliMusicProviding
-    let accountService: BilibiliAccountService
-    let favoritesService: BilibiliFavoritesService
+    let accountService: any BilibiliAccountServicing
+    let favoritesService: any BilibiliFavoritesProviding
+    let loginPollInterval: Duration
     let tasks = MusicTaskRegistry()
 
     var lastImportedTrackID: String?
@@ -28,14 +29,16 @@ final class BilibiliMusicCoordinator {
         accountStore: BilibiliAccountStore,
         importStore: BilibiliImportStore,
         bilibili: any BilibiliMusicProviding,
-        accountService: BilibiliAccountService = BilibiliAccountService(),
-        favoritesService: BilibiliFavoritesService = BilibiliFavoritesService()
+        accountService: any BilibiliAccountServicing = BilibiliAccountService(),
+        favoritesService: any BilibiliFavoritesProviding = BilibiliFavoritesService(),
+        loginPollInterval: Duration = .seconds(2)
     ) {
         self.accountStore = accountStore
         self.importStore = importStore
         self.bilibili = bilibili
         self.accountService = accountService
         self.favoritesService = favoritesService
+        self.loginPollInterval = loginPollInterval
     }
 
     func start() {

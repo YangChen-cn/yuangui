@@ -182,8 +182,17 @@ extension MusicPlaybackCoordinator {
         }
     }
 
-    func previous() { registerManualPlaybackControl(); move(by: -1) }
-    func next() { registerManualPlaybackControl(); move(by: 1) }
+    func previous() {
+        guard !isShuttingDown else { return }
+        registerManualPlaybackControl()
+        move(by: -1)
+    }
+
+    func next() {
+        guard !isShuttingDown else { return }
+        registerManualPlaybackControl()
+        move(by: 1)
+    }
 
     func seek(to newPosition: TimeInterval) {
         guard !isShuttingDown else { return }

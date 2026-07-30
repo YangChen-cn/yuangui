@@ -44,7 +44,6 @@ final class LocalMusicCoordinator {
     func shutdown() async {
         await tasks.shutdown()
         importStore.isImporting = false
-        artworkMaintenanceTasks.forEach { $0.cancel() }
         for task in artworkMaintenanceTasks {
             await task.value
         }

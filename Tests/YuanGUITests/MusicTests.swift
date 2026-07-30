@@ -1101,6 +1101,7 @@ final class MusicTests: XCTestCase {
         let feature = MusicFeature(
             defaults: defaults,
             urlPlayer: RecordingURLMusicPlayer(),
+            lyricsService: StubLyricsProvider(),
             localMusicImporter: importer,
             library: RecordingMusicLibraryCoordinator()
         )
@@ -1119,6 +1120,7 @@ final class MusicTests: XCTestCase {
         let feature = MusicFeature(
             defaults: UserDefaults(suiteName: "LocalStale-\(UUID().uuidString)")!,
             urlPlayer: RecordingURLMusicPlayer(),
+            lyricsService: StubLyricsProvider(),
             localMusicImporter: StubLocalMusicImporter(resolveError: .staleBookmark),
             library: RecordingMusicLibraryCoordinator()
         )

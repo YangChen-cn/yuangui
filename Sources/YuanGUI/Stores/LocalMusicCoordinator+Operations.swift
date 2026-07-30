@@ -9,9 +9,21 @@ extension LocalMusicCoordinator {
         importStore.message = nil
         importStore.errorMessage = nil
         importStore.failures = []
-        tasks.launch(key: "import") { [weak self, importer] generation in
+        tasks.launch(key: "import") {
+            [weak self, importer, artworkRepository] generation in
             let result = await importer.importFiles(urls)
-            guard let self, tasks.isCurrent(generation) else { return }
+            guard let self else {
+                await artworkRepository.remove(
+                    keys: Set(result.tracks.compactMap(\.localArtworkCacheKey))
+                )
+                return
+            }
+            guard tasks.isCurrent(generation) else {
+                await artworkRepository.remove(
+                    keys: Set(result.tracks.compactMap(\.localArtworkCacheKey))
+                )
+                return
+            }
             let existingKeys = delegate?.localDuplicateKeys ?? []
             var seen = existingKeys
             var added: [MusicTrack] = []
@@ -58,13 +70,23 @@ extension LocalMusicCoordinator {
 
     func relocate(_ track: MusicTrack, to url: URL) {
         guard !tasks.isShuttingDown else { return }
-        tasks.launch(key: "relocate:\(track.id)") { [weak self, importer] generation in
-            guard let self else { return }
+        tasks.launch(key: "relocate:\(track.id)") {
+            [weak self, importer, artworkRepository] generation in
             do {
                 let updated = try await importer.relocatedTrack(track, to: url)
-                guard tasks.isCurrent(generation) else { return }
+                let generatedArtworkKeys = Set(
+                    [updated.localArtworkCacheKey].compactMap { $0 }
+                ).subtracting(Set([track.localArtworkCacheKey].compactMap { $0 }))
+                guard let self else {
+                    await artworkRepository.remove(keys: generatedArtworkKeys)
+                    return
+                }
+                guard tasks.isCurrent(generation) else {
+                    await artworkRepository.remove(keys: generatedArtworkKeys)
+                    return
+                }
                 guard delegate?.replaceLocalTrack(track, with: updated) == true else {
-                    scheduleArtworkRemoval(keys: Set([updated.localArtworkCacheKey].compactMap { $0 }))
+                    await artworkRepository.remove(keys: generatedArtworkKeys)
                     return
                 }
                 delegate?.didRelocateCurrentLocalTrack(track, to: updated)
@@ -75,8 +97,8 @@ extension LocalMusicCoordinator {
                 }
                 delegate?.persistLocalMusicChanges()
             } catch {
-                guard tasks.isCurrent(generation) else { return }
-                importStore.errorMessage = error.localizedDescription
+                guard let self, self.tasks.isCurrent(generation) else { return }
+                self.importStore.errorMessage = error.localizedDescription
             }
         }
     }
@@ -113,7 +135,7 @@ extension LocalMusicCoordinator {
             do {
                 let newKey = try await artworkRepository.importArtwork(from: imageURL)
                 guard tasks.isCurrent(generation) else {
-                    scheduleArtworkRemoval(keys: [newKey])
+                    await artworkRepository.remove(keys: [newKey])
                     return
                 }
                 let replacement = delegate?.replaceArtwork(
@@ -121,7 +143,7 @@ extension LocalMusicCoordinator {
                     with: newKey
                 )
                 guard replacement?.didReplace == true else {
-                    scheduleArtworkRemoval(keys: [newKey])
+                    await artworkRepository.remove(keys: [newKey])
                     return
                 }
                 importStore.errorMessage = nil

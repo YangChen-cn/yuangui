@@ -38,7 +38,12 @@ enum BilibiliFavoritesError: LocalizedError {
     }
 }
 
-actor BilibiliFavoritesService {
+protocol BilibiliFavoritesProviding: Sendable {
+    func folders(for accountMID: Int64) async throws -> [BilibiliFavoriteFolder]
+    func videoBVIDs(in folder: BilibiliFavoriteFolder) async throws -> [String]
+}
+
+actor BilibiliFavoritesService: BilibiliFavoritesProviding {
     private let session: URLSession
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15"
 

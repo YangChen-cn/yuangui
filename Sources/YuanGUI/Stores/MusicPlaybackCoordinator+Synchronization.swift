@@ -39,6 +39,11 @@ extension MusicPlaybackCoordinator {
             delegate?.updatePlaybackLyric()
             delegate?.reportBilibiliPlaybackError(nil)
         } catch {
+            guard !Task.isCancelled,
+                  !isShuttingDown,
+                  activePlaybackSource == .appleMusic else {
+                return
+            }
             delegate?.reportBilibiliPlaybackError(error.localizedDescription)
         }
     }
@@ -81,6 +86,7 @@ extension MusicPlaybackCoordinator {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
                 MainActor.assumeIsolated {
                     guard let self,
+                          !self.isShuttingDown,
                           let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
                             as? NSRunningApplication,
                           application.bundleIdentifier == "com.apple.Music" else { return }
@@ -146,7 +152,12 @@ extension MusicPlaybackCoordinator {
         appleArtworkTask?.cancel()
         appleArtworkTask = Task { [weak self, appleMusic] in
             let url = await appleMusic.artworkURL(for: track.id)
-            guard !Task.isCancelled, let self, currentTrack?.id == track.id else { return }
+            guard !Task.isCancelled,
+                  let self,
+                  !isShuttingDown,
+                  currentTrack?.id == track.id else {
+                return
+            }
             if currentTrack?.coverURL != url { currentTrack?.coverURL = url }
             appleArtworkTask = nil
         }
@@ -162,6 +173,7 @@ extension MusicPlaybackCoordinator {
     }
 
     func move(by delta: Int) {
+        guard !isShuttingDown else { return }
         let controlSource = activePlaybackSource ?? currentTrack?.source ?? browsingSource
         if controlSource == .appleMusic {
             if activePlaybackSource == nil { connectAppleMusic() }
@@ -191,6 +203,7 @@ extension MusicPlaybackCoordinator {
     }
 
     func handleTrackFinished() {
+        guard !isShuttingDown else { return }
         guard activePlaybackSource == .bilibili || activePlaybackSource == .local else { return }
         guard !(blocksAutomaticPlaybackForExternalAudio?() ?? false) else {
             setPlaybackState(.paused)
@@ -201,6 +214,7 @@ extension MusicPlaybackCoordinator {
     }
 
     func handleURLPlayerFailure(_ error: Error) {
+        guard !isShuttingDown else { return }
         clearLoadedURLIdentity()
         if activePlaybackSource == .local {
             setPlaybackState(.failed(error.localizedDescription))

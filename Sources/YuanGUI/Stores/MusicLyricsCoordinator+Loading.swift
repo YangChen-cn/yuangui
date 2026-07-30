@@ -37,6 +37,7 @@ extension MusicLyricsCoordinator {
                     finishLyricLoad(revision, trackID: track.id)
                     return
                 }
+                guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
                 if let cached {
                     guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
                     lyrics = cached

@@ -86,6 +86,10 @@ final class MusicPlaybackCoordinator {
     }
 
     func shutdown() async {
+        urlPlayer?.onStateChange = nil
+        urlPlayer?.onProgress = nil
+        urlPlayer?.onFinished = nil
+        urlPlayer?.onFailure = nil
         cancelExternalAudioResume()
         let ownedTasks = [
             urlPlayerReleaseTask,
@@ -144,8 +148,14 @@ final class MusicPlaybackCoordinator {
             self.delegate?.updatePlaybackLyric()
             self.delegate?.persistPlaybackProgressIfNeeded()
         }
-        player.onFinished = { [weak self] in self?.handleTrackFinished() }
-        player.onFailure = { [weak self] error in self?.handleURLPlayerFailure(error) }
+        player.onFinished = { [weak self] in
+            guard let self, !self.isShuttingDown else { return }
+            self.handleTrackFinished()
+        }
+        player.onFailure = { [weak self] error in
+            guard let self, !self.isShuttingDown else { return }
+            self.handleURLPlayerFailure(error)
+        }
     }
 
     func ensureURLMusicPlayer() -> any URLMusicPlaying {
@@ -181,7 +191,7 @@ final class MusicPlaybackCoordinator {
             } catch {
                 return
             }
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, !self.isShuttingDown else { return }
             self.urlPlayerReleaseTask = nil
             guard self.activePlaybackSource != .bilibili else { return }
             self.unloadURLMusicPlayer()

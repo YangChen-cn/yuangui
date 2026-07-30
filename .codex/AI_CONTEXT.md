@@ -419,3 +419,6 @@ swift test
 - 所有非结构化异步操作必须有 Coordinator 所有的任务句柄或进入 `MusicTaskRegistry`；同 key 被替换的旧任务也必须保留到真正结束。shutdown 先设置关闭状态并推进 generation，再 cancel 和 await 全部任务；每个 await 后的 UI、资料库和持久化提交都要校验 cancellation、generation 或等价 revision，不能依赖服务正确响应 cancellation。
 - `MusicFeature.shutdown()` 按依赖方向关闭：先停止可能向兄弟域提交结果的 Bilibili 与本地音乐，再停止播放、歌词，最后由资料库完成 persistence flush；不能先释放/关闭下游再等待上游任务。
 - 音乐性能回归以 publisher 隔离、挂起服务后的 shutdown 生命周期测试和 SwiftUI Instruments 的 View Body Updates 验收：播放进度不得使资料库、设置或桌宠根视图刷新；账号、资料库和导入进度不得使播放进度与传输控制刷新。测试必须验证实际状态/发布结果，不能用文件行数、类型名称或任务变量字符串代替行为验证。
+- Bilibili 扫码轮询和收藏夹批处理必须在每个不可控服务 await（包括 `pollQRCode` 和 task group 汇合）之后重新校验 `MusicTaskRegistry` generation；取消登录、取消导入或 shutdown 后不得再发布登录阶段和批次进度。
+- 本地导入、重定位和自定义封面产生但尚未提交的封面键必须在任务过期时直接 await 删除，不能重新排入会被 shutdown 拒绝的维护队列。shutdown 取消领域任务后要等待已经排入的封面清理/裁剪完成，不得取消这些清理任务。
+- 歌词搜索取消必须同步清除 `LyricsStore.isSearching`。播放 shutdown 开始时先解除 URL Player 的全部回调；完成、失败、上一首、下一首、移动和 Apple Music 异步错误提交都必须检查关闭状态。

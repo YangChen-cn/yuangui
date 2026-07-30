@@ -64,6 +64,9 @@ final class MusicLyricsCoordinator {
     func cancelSearch() {
         lyricsSearchTask?.cancel()
         lyricsSearchTask = nil
+        if isSearching {
+            isSearching = false
+        }
     }
 
     func seek(to line: TimedLyricLine) {
