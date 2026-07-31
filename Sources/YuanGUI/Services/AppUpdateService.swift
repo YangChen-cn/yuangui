@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "2.7.0"
-    static let fallbackBuild = "16"
+    static let fallbackVersion = "2.7.1"
+    static let fallbackBuild = "17"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -15,13 +15,13 @@ enum AppVersionInfo {
 
     static var currentReleaseHighlights: [String] {
         [
-            "release.2.7.localMusic",
-            "release.2.7.cleanup",
-            "release.2.7.playerLyrics",
-            "release.2.7.focusChat",
-            "release.2.7.stability",
-            "release.2.7.english",
-            "release.2.7.localization"
+            "release.2.7.1.musicArchitecture",
+            "release.2.7.1.refreshBoundaries",
+            "release.2.7.1.focusCompanion",
+            "release.2.7.1.playerControls",
+            "release.2.7.1.lyricBubble",
+            "release.2.7.1.liquidGlass",
+            "release.2.7.1.stability"
         ].map { AppLocalizer.string($0) }
     }
 }

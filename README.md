@@ -23,7 +23,7 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The current stable release is `2.7.0`. Version `2.7.1` is in preparation with a focused music-player performance and lifecycle update. Music views now subscribe only to the state they display, so playback progress, lyrics, library changes, account state, and imports no longer refresh unrelated parts of the interface. See the [2.7.1 release notes](RELEASE_NOTES.md#271--music-performance-and-lifecycle-reliability) for details.
+The current stable release is `2.7.1`. This update tightens SwiftUI refresh boundaries across the Dashboard, companion, Settings, Journal, and music surfaces, adds focused companion actions and clearer mini-player state, and stabilizes lyric-bubble sizing and full-player activation. See the [2.7.1 release notes](RELEASE_NOTES.md#271--music-performance-swiftui-lifecycle-and-companion-polish) for details.
 
 ## Interface preview
 

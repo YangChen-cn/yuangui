@@ -28,6 +28,13 @@
 "about.legal" = "Licenses and Notices";
 "about.license" = "YuanGUI source code is licensed under GPL-3.0-only. Original visual assets are licensed under CC BY-SA 4.0.";
 "about.notice" = "This program is provided without warranty. See the bundled license and third-party notices for details.";
+"release.2.7.1.musicArchitecture" = "Music playback, lyrics, library, account, and import now use isolated stores with cancellation-safe async lifecycles.";
+"release.2.7.1.refreshBoundaries" = "Dashboard, companion, Settings, Journal, and music views use narrower SwiftUI refresh boundaries, reducing redraws during playback and monitoring.";
+"release.2.7.1.focusCompanion" = "Added focus artwork for all three companion modes; starting Focus closes its side controls, while interaction lock keeps only a read-only countdown badge.";
+"release.2.7.1.playerControls" = "Mini-player playback and lyric/lock selections now have clear blue state feedback, and opening the full player reliably makes it the active window.";
+"release.2.7.1.lyricBubble" = "Lyric bubbles now size to their lyric and alert text, including urgent-reminder appearance, disappearance, pulse, and mode changes.";
+"release.2.7.1.liquidGlass" = "Dashboard section selection now morphs one stable Liquid Glass indicator, with restrained content surfaces and Material fallback on macOS 15–25.";
+"release.2.7.1.stability" = "Fixed stale auxiliary-panel sizes and inactive full-player windows during repeated presentation and high-frequency status changes.";
 "release.2.7.localMusic" = "All-new Local Music with file and folder import, playlists, search, sorting, Finder reveal, relocation, and custom cover art.";
 "release.2.7.cleanup" = "Cleanup House now has safer on-demand scanning, risk-aware quick actions, clearer review controls, stronger protected-data rules, and Trash-only handling for project artifacts and installers.";
 "release.2.7.playerLyrics" = "Player and lyrics improvements unify local and network playback, sidecar LRC priority, seeking, offsets, desktop lyrics, and companion listening actions.";

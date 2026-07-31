@@ -244,10 +244,26 @@ final class PetPanelController {
         store.$urgentReminderPulseVisible
             .removeDuplicates()
             .sink { [weak self] visible in
-                guard visible else { return }
                 Task { @MainActor [weak self] in
-                    guard let self, self.store.smartState.isUrgent else { return }
+                    guard let self else { return }
+                    // @Published emits from willSet. Wait until the new pulse
+                    // state is committed before measuring the lyric bubble.
+                    await Task.yield()
+                    guard self.store.urgentReminderPulseVisible == visible else { return }
+                    self.updateAuxiliaryBubble()
+                    guard visible, self.store.smartState.isUrgent else { return }
                     self.presentEdgeSmartState(self.store.smartState, force: true)
+                }
+            }
+            .store(in: &cancellables)
+        store.$urgentReminderMode
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    // The mode changes whether the derived reminder badge is
+                    // present even when the pulse value itself stays still.
+                    await Task.yield()
+                    self?.updateAuxiliaryBubble()
                 }
             }
             .store(in: &cancellables)

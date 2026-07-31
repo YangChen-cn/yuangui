@@ -28,6 +28,13 @@
 "about.legal" = "许可证与声明";
 "about.license" = "YuanGUI 源代码采用 GPL-3.0-only；原创视觉素材采用 CC BY-SA 4.0。";
 "about.notice" = "本程序按“现状”提供，不附带任何担保。详见随应用提供的许可证和第三方声明。";
+"release.2.7.1.musicArchitecture" = "音乐播放、歌词、资料库、账号和导入现在使用相互隔离的 Store，并具备可取消、不会提交过期结果的异步生命周期。";
+"release.2.7.1.refreshBoundaries" = "Dashboard、桌宠、设置、日记和音乐界面采用更窄的 SwiftUI 刷新边界，播放和监控高频更新不会带动无关界面重算。";
+"release.2.7.1.focusCompanion" = "为三种角色新增专注动作图；开始专注后自动收起侧边控制，锁定时只保留只读的圆形倒计时。";
+"release.2.7.1.playerControls" = "迷你播放器的播放、歌词和锁定状态现在有明确的蓝色反馈，从迷你播放器打开完整播放器时也会可靠地激活窗口。";
+"release.2.7.1.lyricBubble" = "歌词气泡会根据歌词和提醒文字调整宽度，紧急提醒出现、消失、脉冲和模式变化时也会同步更新。";
+"release.2.7.1.liquidGlass" = "Dashboard 的 Section 选择使用同一个 Liquid Glass 选中指示器自然移动，内容层保持克制，并为 macOS 15–25 保留 Material fallback。";
+"release.2.7.1.stability" = "修复重复展示和高频状态变化期间辅助气泡尺寸过期，以及完整播放器窗口未成为活动窗口的问题。";
 "release.2.7.localMusic" = "全新的本地音乐能力：支持文件和文件夹导入、歌单、搜索、排序、Finder 定位、重新定位及自定义封面。";
 "release.2.7.cleanup" = "清理屋改为按需扫描，快捷操作按风险分级，强化受保护数据规则，并提供更清晰的检查交互；项目产物和安装包只移入废纸篓。";
 "release.2.7.playerLyrics" = "播放器与歌词改进统一了本地和网络播放状态，并完善同名 LRC、跳转、偏移、桌面歌词及桌宠听歌动作。";

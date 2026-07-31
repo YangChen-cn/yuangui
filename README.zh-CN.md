@@ -13,7 +13,7 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.7.0.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.7.1.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -22,7 +22,7 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-当前稳定版本为 `2.7.0`，`2.7.1` 正在准备中。这次更新主要处理音乐播放器的性能和异步生命周期：播放进度、歌词、资料库、账号和导入状态各自只刷新需要它们的界面，关闭应用或取消操作后，过期任务也不会再写回状态。详情见 [2.7.1 更新说明](RELEASE_NOTES.zh-CN.md#271--音乐性能与异步生命周期优化)。
+当前稳定版本为 `2.7.1`。这次更新收窄了 Dashboard、桌宠、设置、日记和音乐界面的 SwiftUI 刷新边界，新增专注动作与更清晰的迷你播放器选中反馈，并修复歌词气泡尺寸同步和完整播放器激活问题。详情见 [2.7.1 更新说明](RELEASE_NOTES.zh-CN.md#271--音乐性能-swiftui-生命周期与桌宠体验优化)。
 
 ## 界面预览
 
@@ -99,9 +99,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-2.7.0.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.7.0.dmg)
+[一键下载最新版 `YuanGUI-2.7.1.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.7.1.dmg)
 
-1. 打开 `YuanGUI-2.7.0.dmg`。
+1. 打开 `YuanGUI-2.7.1.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -178,7 +178,7 @@ swift test
 swift test
 ```
 
-当前测试套件包含 360 项测试，其中 3 项环境或网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
+当前测试套件包含 362 项测试，其中 3 项环境或网络集成测试默认跳过；每次 `push` 和 Pull Request 都会由 GitHub Actions 在 macOS runner 上自动执行。测试覆盖：
 
 - 系统指标读取与监控频率
 - 智能状态与动作切换
@@ -205,7 +205,7 @@ swift test
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
 
 ```text
-dist/YuanGUI-2.7.0.dmg
+dist/YuanGUI-2.7.1.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：

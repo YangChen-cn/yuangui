@@ -2,7 +2,7 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
-## 2.7.1 — Music performance and lifecycle reliability
+## 2.7.1 — Music performance, SwiftUI lifecycle, and companion polish
 
 - Reduced unnecessary SwiftUI work throughout the music interface. Playback progress, transport controls, lyrics, library, account, Bilibili import, and local import now observe separate stores instead of one broad music wrapper.
 - Split the music implementation into focused playback, library, lyrics, Bilibili, local-file, and persistence coordinators while keeping the existing library format, service interfaces, and user-facing behavior compatible.
@@ -10,6 +10,11 @@
 - Fixed duplicate tracks within a single Bilibili favorite-folder import, late progress updates after cancellation, lyric search remaining stuck in a loading state, and artwork files being left behind when an import or relocation was interrupted.
 - Avoided a Bilibili account request when no login session exists, and made Cleanup House scan only enabled categories. This removes the network and filesystem timeout paths that had pushed the GitHub Actions test phase past nine minutes.
 - Added deterministic publisher-isolation and suspended-service lifecycle tests. In the recorded 100-update Instruments scenario, `MusicPlayerView` evaluations dropped from 103 to 2 and `MusicProgressView` evaluations from 103 to 1.
+- Narrowed SwiftUI refresh boundaries across the Dashboard, desktop companion, Settings, Journal, and music surfaces, while keeping stable panel hosts and detaching hidden Dashboard content from high-frequency updates.
+- Added dedicated focus artwork for all three companion modes. Starting Focus now closes its side controls; interaction lock hides the music and lock controls and leaves a read-only countdown badge, and the companion exits the focus action when the timer ends.
+- Made mini-player playback and lyric/lock selections visibly stateful with a fixed blue primary treatment. Opening the full player from the mini player now dismisses the popover first and reliably activates the player window.
+- Sized lyric bubbles from their actual lyric and alert text, including urgent-reminder appearance, disappearance, pulse, and reminder-mode changes, so badges are not clipped or left in an oversized panel.
+- Refined Dashboard Liquid Glass selection into one stable morphing indicator and kept content surfaces restrained with a Material fallback on macOS 15–25.
 
 ## 2.7.0 — Local Music, safer cleanup, and a smoother companion
 
