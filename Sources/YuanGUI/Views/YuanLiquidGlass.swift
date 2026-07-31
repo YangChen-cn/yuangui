@@ -22,8 +22,16 @@ extension View {
 
     /// Native glass button chrome. Neutral controls explicitly clear inherited
     /// tint so their foreground remains readable over bright desktop content.
-    func yuanSystemGlassButton(isProminent: Bool = false) -> some View {
-        modifier(YuanSystemGlassButtonModifier(isProminent: isProminent))
+    func yuanSystemGlassButton(
+        isProminent: Bool = false,
+        prominentTint: Color = .accentColor
+    ) -> some View {
+        modifier(
+            YuanSystemGlassButtonModifier(
+                isProminent: isProminent,
+                prominentTint: prominentTint
+            )
+        )
     }
 
     func yuanGlassEffectContainer(spacing: CGFloat) -> some View {
@@ -178,6 +186,7 @@ private struct YuanLiquidGlassSurfaceModifier: ViewModifier {
 
 private struct YuanSystemGlassButtonModifier: ViewModifier {
     let isProminent: Bool
+    let prominentTint: Color
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -185,7 +194,7 @@ private struct YuanSystemGlassButtonModifier: ViewModifier {
             if isProminent {
                 content
                     .buttonStyle(.glassProminent)
-                    .tint(.accentColor)
+                    .tint(prominentTint)
             } else {
                 content
                     .buttonStyle(.glass)
@@ -195,7 +204,7 @@ private struct YuanSystemGlassButtonModifier: ViewModifier {
         } else if isProminent {
             content
                 .buttonStyle(.borderedProminent)
-                .tint(.accentColor)
+                .tint(prominentTint)
         } else {
             content.buttonStyle(.bordered)
         }

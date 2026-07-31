@@ -78,7 +78,7 @@ struct MusicTransportControls: View {
             }
             .modifier(MusicTransportButtonModifier(
                 usesGlass: usesGlassButtons,
-                isProminent: compact && usesGlassButtons && playback.isPlaying
+                isProminent: compact && usesGlassButtons
             ))
             .help(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
@@ -98,7 +98,10 @@ private struct MusicTransportButtonModifier: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if usesGlass {
-            content.yuanSystemGlassButton(isProminent: isProminent)
+            content.yuanSystemGlassButton(
+                isProminent: isProminent,
+                prominentTint: .blue
+            )
         } else {
             content.buttonStyle(.plain)
         }

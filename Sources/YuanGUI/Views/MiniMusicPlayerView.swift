@@ -77,19 +77,26 @@ private struct MiniPlayerToggleButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.72))
+                .foregroundStyle(
+                    isSelected
+                        ? Color.white
+                        : Color.primary.opacity(0.78)
+                )
                 .frame(width: 34, height: 28)
                 .background(
-                    isSelected ? Color.accentColor.opacity(0.16) : Color.clear,
+                    isSelected ? Color.blue.opacity(0.16) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )
         }
-        .yuanSystemGlassButton(isProminent: isSelected)
+        .yuanSystemGlassButton(
+            isProminent: isSelected,
+            prominentTint: .blue
+        )
         .controlSize(.small)
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(
-                    isSelected ? Color.accentColor.opacity(0.72) : Color.clear,
+                    isSelected ? Color.blue.opacity(0.75) : Color.clear,
                     lineWidth: 1
                 )
         }
