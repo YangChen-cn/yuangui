@@ -43,13 +43,12 @@ final class MusicWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         if window.isMiniaturized { window.deminiaturize(nil) }
-        window.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         // Activation of an accessory app and dismissal of its source panel can
-        // finish one run-loop turn later. Reassert key/main status after that.
+        // finish one run-loop turn later. Reassert key/main status only if needed.
         DispatchQueue.main.async { [weak window] in
-            guard let window, window.isVisible else { return }
+            guard let window, window.isVisible, !window.isKeyWindow else { return }
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             window.makeMain()

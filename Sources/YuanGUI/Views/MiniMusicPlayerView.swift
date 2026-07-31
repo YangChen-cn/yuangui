@@ -5,6 +5,7 @@ struct MiniMusicPlayerView: View {
     @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @Environment(\.appActions) private var appActions
+    @Environment(\.dismiss) private var dismiss
 
     init(music: MusicFeature) {
         self.music = music
@@ -51,7 +52,10 @@ struct MiniMusicPlayerView: View {
                 Spacer()
                 MusicTransportControls(music: music, compact: true, usesGlassButtons: true)
                 Spacer()
-                Button { appActions.open(.music) } label: { Image(systemName: "list.bullet") }
+                Button {
+                    dismiss()
+                    appActions.open(.music)
+                } label: { Image(systemName: "list.bullet") }
                     .yuanSystemGlassButton()
                     .controlSize(.small)
                     .help("打开完整播放器")
