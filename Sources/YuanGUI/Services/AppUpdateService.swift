@@ -2,8 +2,10 @@ import AppKit
 import Foundation
 
 enum AppVersionInfo {
-    static let fallbackVersion = "2.7.1"
-    static let fallbackBuild = "17"
+    // Keep the source fallback aligned with the temporary manual-verification
+    // build. Packaged builds still receive these values from Info.plist.
+    static let fallbackVersion = "2.7.0"
+    static let fallbackBuild = "16"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion

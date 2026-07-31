@@ -14,158 +14,121 @@ enum AutomaticUpdateLog {
     }
 }
 
-/// The surface that shows the "a new version is available" prompt. Kept as a
-/// protocol so tests can observe presentation without opening a real alert.
+/// The small environment surface needed before an automatic prompt is shown.
+/// Keeping AppKit state behind this protocol makes the coordinator testable
+/// without opening windows or changing the user's focus.
+@MainActor
+protocol UpdatePromptEnvironment: AnyObject {
+    var isApplicationActive: Bool { get }
+    var hasBlockingModalPresentation: Bool { get }
+}
+
+@MainActor
+final class AppKitUpdatePromptEnvironment: UpdatePromptEnvironment {
+    var isApplicationActive: Bool { NSApp.isActive }
+
+    var hasBlockingModalPresentation: Bool {
+        if NSApp.modalWindow != nil { return true }
+
+        return NSApp.windows.contains { window in
+            guard window.isVisible, !window.isMiniaturized else { return false }
+            if window is NSSavePanel { return true }
+            return window.attachedSheet != nil || window.sheetParent != nil
+        }
+    }
+}
+
 @MainActor
 protocol UpdatePromptPresenting: AnyObject {
     var isPresenting: Bool { get }
+
     func presentUpdate(
         currentVersion: String,
         release: GitHubRelease,
-        summary: String?,
+        highlights: [String],
         onInstall: @escaping () -> Void,
-        onLater: @escaping () -> Void
+        onLater: @escaping () -> Void,
+        onShowDetails: @escaping () -> Void
     )
-}
 
-/// AppKit `NSAlert` implementation for the automatic update prompt.
-///
-/// The app is an LSUIElement / accessory app, so there may be no ordinary key
-/// window at the moment the prompt appears. A sheet is used when a suitable
-/// (non-nonactivating) key/main window exists; otherwise a reliable app-modal
-/// alert is used. The app is activated only here, after a newer version has
-/// already been confirmed by the caller.
-@MainActor
-final class AppKitUpdatePromptPresenter: UpdatePromptPresenting {
-    private(set) var isPresenting = false
-    private var activeAlert: NSAlert?
-
-    func presentUpdate(
-        currentVersion: String,
-        release: GitHubRelease,
-        summary: String?,
-        onInstall: @escaping () -> Void,
-        onLater: @escaping () -> Void
-    ) {
-        guard !isPresenting else { return }
-        isPresenting = true
-
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = AppLocalizer.format("update.auto.prompt.title", release.version)
-
-        var lines: [String] = [
-            AppLocalizer.format("update.auto.prompt.currentVersion", currentVersion),
-            AppLocalizer.format("update.auto.prompt.newVersion", release.version)
-        ]
-        if let summary, !summary.isEmpty {
-            lines.append(summary)
-        }
-        lines.append(AppLocalizer.string("update.auto.prompt.message"))
-        alert.informativeText = lines.joined(separator: "\n")
-
-        let installButton = alert.addButton(withTitle: AppLocalizer.string("update.auto.prompt.install"))
-        installButton.keyEquivalent = "\r"
-        let laterButton = alert.addButton(withTitle: AppLocalizer.string("update.auto.prompt.later"))
-        laterButton.keyEquivalent = "\u{1b}"
-        activeAlert = alert
-
-        NSApp.activate(ignoringOtherApps: true)
-
-        let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard let self else { return }
-            self.isPresenting = false
-            self.activeAlert = nil
-            if response == .alertFirstButtonReturn {
-                onInstall()
-            } else {
-                onLater()
-            }
-        }
-
-        if let window = suitablePresentationWindow() {
-            alert.beginSheetModal(for: window, completionHandler: completion)
-        } else {
-            DispatchQueue.main.async {
-                let response = alert.runModal()
-                completion(response)
-            }
-        }
-    }
-
-    /// A regular window that can host a sheet. The companion and Dashboard are
-    /// nonactivating panels and must not become the host, or the prompt would
-    /// steal focus from a panel the user did not intend to be interactive.
-    private func suitablePresentationWindow() -> NSWindow? {
-        for candidate in [NSApp.keyWindow, NSApp.mainWindow].compactMap({ $0 }) {
-            if candidate.isVisible, !candidate.styleMask.contains(.nonactivatingPanel) {
-                return candidate
-            }
-        }
-        return NSApp.windows.first {
-            $0.isVisible && !$0.styleMask.contains(.nonactivatingPanel)
-        }
-    }
+    func dismiss()
 }
 
 /// Coordinates the once-per-natural-day automatic update check and prompt.
 ///
-/// The coordinator owns the *automatic* flow only: daily frequency, task
-/// lifecycle, concurrency guards, prompt decision, and persistence. Manual
-/// checks keep going through `AppUpdateStore.check()`, which is never blocked
-/// by the daily limit.
+/// The coordinator owns only the automatic flow: daily frequency, task
+/// lifecycle, concurrency guards, pending presentation, and persistence.
+/// Manual checks keep going through `AppUpdateStore.check()`, which is never
+/// blocked by the daily limit.
 @MainActor
 final class AutomaticUpdateCheckCoordinator {
-    /// Persisted key for the last natural day an automatic check was attempted.
     static let lastAutomaticCheckDayKey = "updates.lastAutomaticCheckDay"
-
-    /// Delay before the launch-time check, so the companion, menu bar item,
-    /// weather, and window setup get out of the way first.
     static let startupDelayNanoseconds: UInt64 = 2_500_000_000
+
+    private struct PendingUpdate {
+        let release: GitHubRelease
+        let notes: String?
+    }
 
     private let checker: UpdateChecking
     private let store: AppUpdateStore
     private let presenter: UpdatePromptPresenting
+    private let environment: UpdatePromptEnvironment
     private let defaults: UserDefaults
     private let calendar: Calendar
     private let now: () -> Date
     private let installAction: () -> Void
+    private let showDetailsAction: () -> Void
+    private let startupDelay: Duration
     private let log: (String) -> Void
 
-    private var observer: NSObjectProtocol?
+    private var activationObserver: NSObjectProtocol?
+    private var sheetObserver: NSObjectProtocol?
     private var startupTask: Task<Void, Never>?
     private var checkTask: Task<Void, Never>?
     private var stateCancellable: AnyCancellable?
+    private var pendingUpdate: PendingUpdate?
     private var isChecking = false
     private var isStopped = false
     private var installTriggered = false
+    private var startupDelayCompleted = false
+    private var activationOccurredDuringStartup = false
 
     init(
         checker: UpdateChecking = AppUpdateService(),
         store: AppUpdateStore,
         presenter: UpdatePromptPresenting? = nil,
+        environment: UpdatePromptEnvironment? = nil,
         defaults: UserDefaults = .standard,
         calendar: Calendar = .autoupdatingCurrent,
         now: @escaping () -> Date = Date.init,
+        startupDelay: Duration = .seconds(2.5),
         install: (() -> Void)? = nil,
+        showDetails: @escaping () -> Void = {},
         log: @escaping (String) -> Void = AutomaticUpdateLog.log
     ) {
         self.checker = checker
         self.store = store
-        self.presenter = presenter ?? AppKitUpdatePromptPresenter()
+        self.presenter = presenter ?? UpdateAvailableWindowController()
+        self.environment = environment ?? AppKitUpdatePromptEnvironment()
         self.defaults = defaults
         self.calendar = calendar
         self.now = now
+        self.startupDelay = startupDelay
         self.installAction = install ?? { [weak store] in store?.installLatest() }
+        self.showDetailsAction = showDetails
         self.log = log
     }
 
-    /// Installs the single activation observer and schedules the launch-time
-    /// check. Safe to call once; repeated calls are ignored.
+    /// Installs observers and schedules the launch-time check. Activation
+    /// notifications received before the delay completes are recorded only;
+    /// they cannot bypass the startup delay.
     func start() {
-        guard !isStopped, observer == nil else { return }
+        guard !isStopped, activationObserver == nil else { return }
 
-        observer = NotificationCenter.default.addObserver(
+        startupDelayCompleted = false
+        activationOccurredDuringStartup = false
+        activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
@@ -174,45 +137,83 @@ final class AutomaticUpdateCheckCoordinator {
                 self?.applicationDidBecomeActive()
             }
         }
+        sheetObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didEndSheetNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.tryPresentPendingUpdate()
+            }
+        }
 
         // A successful manual check also counts as "checked today", so an
         // automatic request is not fired right after the user checked by hand.
         stateCancellable = store.$state
             .sink { [weak self] state in
-                guard state == .available || state == .upToDate else { return }
                 Task { @MainActor [weak self] in
-                    self?.noteCheckCompleted()
+                    guard let self, !self.isStopped else { return }
+                    switch state {
+                    case .available, .upToDate:
+                        self.noteCheckCompleted()
+                    case .downloading, .installing:
+                        self.pendingUpdate = nil
+                        if self.presenter.isPresenting { self.presenter.dismiss() }
+                    default:
+                        break
+                    }
                 }
             }
 
         startupTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled, let self else { return }
+            guard let self else { return }
+            do {
+                try await Task.sleep(for: self.startupDelay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, !self.isStopped else { return }
+            self.startupDelayCompleted = true
+            if self.activationOccurredDuringStartup {
+                self.log("update.auto.startup.activationDeferred")
+            }
             self.runAutomaticCheckIfNeeded(trigger: .automatic)
+            self.tryPresentPendingUpdate()
         }
     }
 
-    /// Cancels the pending launch check and any in-flight check, and removes
-    /// the activation observer. No prompt is presented after this is called.
+    /// Cancels delayed and in-flight work, removes observers, and closes a
+    /// visible prompt. No prompt can be presented after this call.
     func stop() {
         isStopped = true
+        pendingUpdate = nil
         startupTask?.cancel()
         startupTask = nil
         checkTask?.cancel()
         checkTask = nil
         stateCancellable?.cancel()
         stateCancellable = nil
-        if let observer {
-            NotificationCenter.default.removeObserver(observer)
+        if let activationObserver {
+            NotificationCenter.default.removeObserver(activationObserver)
         }
-        observer = nil
+        if let sheetObserver {
+            NotificationCenter.default.removeObserver(sheetObserver)
+        }
+        activationObserver = nil
+        sheetObserver = nil
+        if presenter.isPresenting { presenter.dismiss() }
     }
 
-    /// The single entry point for an automatic check. Callable directly for
-    /// tests; in production it is reached by the launch delay and by the
-    /// didBecomeActive observer.
+    /// The single entry point for an automatic check. It remains callable
+    /// directly in unit tests; direct calls before `start()` intentionally skip
+    /// the launch-only delay guard.
     func runAutomaticCheckIfNeeded(trigger: UpdateCheckTrigger = .automatic) {
         guard !isStopped, !isChecking else { return }
+        if trigger == .automatic, activationObserver != nil, !startupDelayCompleted {
+            activationOccurredDuringStartup = true
+            log("update.auto.skipped.startupDelay")
+            return
+        }
         guard !store.isBusy else {
             log("update.auto.skipped.busy")
             return
@@ -225,6 +226,7 @@ final class AutomaticUpdateCheckCoordinator {
             log("update.auto.skipped.alreadyChecked")
             return
         }
+
         markCheckedToday()
         isChecking = true
         log("update.auto.check.started")
@@ -233,9 +235,32 @@ final class AutomaticUpdateCheckCoordinator {
         }
     }
 
+    /// Called by the AppKit activation observer and intentionally kept small:
+    /// activation may show an already-known pending update, but never makes a
+    /// background update discoverable by stealing focus.
     private func applicationDidBecomeActive() {
         guard !isStopped else { return }
+        guard startupDelayCompleted else {
+            activationOccurredDuringStartup = true
+            return
+        }
+        tryPresentPendingUpdate()
         runAutomaticCheckIfNeeded(trigger: .automatic)
+    }
+
+    /// Retries a pending update after an activation or sheet dismissal. This is
+    /// intentionally event-driven; it does not poll with a timer.
+    func tryPresentPendingUpdate() {
+        guard !isStopped,
+              (activationObserver == nil || startupDelayCompleted),
+              let pendingUpdate
+        else { return }
+        guard !presenter.isPresenting, !store.isBusy else { return }
+        guard environment.isApplicationActive else { return }
+        guard !environment.hasBlockingModalPresentation else { return }
+
+        self.pendingUpdate = nil
+        presentPrompt(for: pendingUpdate.release, notes: pendingUpdate.notes)
     }
 
     /// Test aid: waits for the in-flight automatic check (if any) to finish.
@@ -244,6 +269,7 @@ final class AutomaticUpdateCheckCoordinator {
     }
 
     private func performAutomaticCheck(trigger: UpdateCheckTrigger) async {
+        _ = trigger
         defer { isChecking = false }
         do {
             let result = try await checker.checkForUpdate()
@@ -257,7 +283,8 @@ final class AutomaticUpdateCheckCoordinator {
                     log("update.auto.skipped.busy")
                     return
                 }
-                presentPrompt(for: release, notes: notes)
+                pendingUpdate = PendingUpdate(release: release, notes: notes)
+                tryPresentPendingUpdate()
             }
         } catch {
             log("update.auto.check.failed")
@@ -271,33 +298,69 @@ final class AutomaticUpdateCheckCoordinator {
         presenter.presentUpdate(
             currentVersion: AppVersionInfo.version,
             release: release,
-            summary: Self.shortSummary(for: release, notes: notes),
+            highlights: Self.highlights(for: release, notes: notes),
             onInstall: { [weak self] in
                 guard let self, !self.installTriggered else { return }
                 self.installTriggered = true
+                self.pendingUpdate = nil
                 self.log("update.auto.prompt.install")
                 self.installAction()
             },
             onLater: { [weak self] in
-                self?.log("update.auto.prompt.later")
+                guard let self else { return }
+                self.pendingUpdate = nil
+                self.log("update.auto.prompt.later")
+            },
+            onShowDetails: { [weak self] in
+                guard let self else { return }
+                self.pendingUpdate = nil
+                self.log("update.auto.prompt.details")
+                self.showDetailsAction()
             }
         )
     }
 
-    /// A short, non-Markdown summary for the small alert: the release name, or
-    /// the first line of the release notes truncated, whichever is available.
-    static func shortSummary(for release: GitHubRelease, notes: String?) -> String? {
-        if let name = release.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
-            return name
+    /// Extracts useful release content for the compact prompt. Release names
+    /// are intentionally ignored because they commonly repeat the version.
+    static func highlights(for release: GitHubRelease, notes: String?) -> [String] {
+        let source = (notes?.isEmpty == false ? notes : nil) ?? release.body
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        let rows = ReleaseNoteRow.parse(source)
+        let bullets = rows.filter { $0.kind == .bullet }.map(\.text)
+        let candidates = bullets.isEmpty ? rows.filter { $0.kind == .paragraph }.map(\.text) : bullets
+
+        var result: [String] = []
+        for candidate in candidates {
+            let cleaned = cleanHighlight(candidate)
+            guard !cleaned.isEmpty,
+                  cleaned.caseInsensitiveCompare(release.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") != .orderedSame
+            else { continue }
+            result.append(truncateHighlight(cleaned))
+            if result.count == 2 { break }
         }
-        guard let notes, !notes.isEmpty else { return nil }
-        let firstLine = notes
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .first
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let firstLine, !firstLine.isEmpty else { return nil }
-        return String(firstLine.prefix(90))
+        return result
+    }
+
+    private static func cleanHighlight(_ value: String) -> String {
+        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        text = text.replacingOccurrences(of: "**", with: "")
+        text = text.replacingOccurrences(of: "__", with: "")
+        text = text.replacingOccurrences(of: "`", with: "")
+        text = text.replacingOccurrences(of: #"^[-*+•]\s*"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"^\d+[.)]\s*"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"#{1,6}\s*"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\[([^\]]+)\]\([^\)]+\)"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func truncateHighlight(_ value: String, limit: Int = 110) -> String {
+        guard value.count > limit else { return value }
+        let prefix = String(value.prefix(limit))
+        if let boundary = prefix.lastIndex(where: { $0.isWhitespace }) {
+            return prefix[..<boundary].trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+        }
+        return prefix + "…"
     }
 
     private func noteCheckCompleted() {

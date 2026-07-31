@@ -59,7 +59,10 @@ final class AppRuntime {
     }()
     private lazy var updateCoordinator = AutomaticUpdateCheckCoordinator(
         checker: updateService,
-        store: updateStore
+        store: updateStore,
+        showDetails: { [weak self] in
+            self?.showUpdateDetails()
+        }
     )
     private lazy var windows = WindowCoordinator(
         language: language,
@@ -131,6 +134,10 @@ final class AppRuntime {
         let saved = await diary.flush()
         if !saved { diary.operationError = AppLocalizer.string("diary.error.saveBeforeUpdate") }
         return saved
+    }
+
+    private func showUpdateDetails() {
+        windows.open(.settings(.about))
     }
 }
 

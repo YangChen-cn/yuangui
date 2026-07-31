@@ -38,28 +38,41 @@ private final class LogCollector {
 }
 
 @MainActor
+private final class FakeUpdatePromptEnvironment: UpdatePromptEnvironment {
+    var isApplicationActive = true
+    var hasBlockingModalPresentation = false
+}
+
+@MainActor
 private final class FakeUpdatePromptPresenter: UpdatePromptPresenting {
     private(set) var isPresenting = false
     private(set) var presentCount = 0
     private(set) var lastRelease: GitHubRelease?
-    private(set) var lastSummary: String?
+    private(set) var lastHighlights: [String] = []
     private var installAction: (() -> Void)?
     private var laterAction: (() -> Void)?
+    private var detailsAction: (() -> Void)?
 
     func presentUpdate(
         currentVersion: String,
         release: GitHubRelease,
-        summary: String?,
+        highlights: [String],
         onInstall: @escaping () -> Void,
-        onLater: @escaping () -> Void
+        onLater: @escaping () -> Void,
+        onShowDetails: @escaping () -> Void
     ) {
         guard !isPresenting else { return }
         presentCount += 1
         isPresenting = true
         lastRelease = release
-        lastSummary = summary
+        lastHighlights = highlights
         installAction = onInstall
         laterAction = onLater
+        detailsAction = onShowDetails
+    }
+
+    func dismiss() {
+        dismiss(choosingInstall: false)
     }
 
     func dismiss(choosingInstall: Bool) {
@@ -70,6 +83,12 @@ private final class FakeUpdatePromptPresenter: UpdatePromptPresenting {
         } else {
             laterAction?()
         }
+    }
+
+    func chooseDetails() {
+        guard isPresenting else { return }
+        isPresenting = false
+        detailsAction?()
     }
 }
 
@@ -82,14 +101,17 @@ private struct Fixture {
     let defaults: UserDefaults
     let provider: MutableDateProvider
     let installCount: Counter
+    let detailsCount: Counter
     let logs: LogCollector
+    let environment: FakeUpdatePromptEnvironment
     let suite: String
 
     static func make(
         result: Result<UpdateCheckResult, TestError>,
         store: AppUpdateStore? = nil,
         now: Date = Date(),
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        startupDelay: Duration = .zero
     ) -> Fixture {
         let suite = "AutomaticUpdateTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -97,17 +119,22 @@ private struct Fixture {
         let checker = StubUpdateChecker(result: result)
         let store = store ?? AppUpdateStore()
         let presenter = FakeUpdatePromptPresenter()
+        let environment = FakeUpdatePromptEnvironment()
         let provider = MutableDateProvider(now)
         let installCount = Counter()
+        let detailsCount = Counter()
         let logs = LogCollector()
         let coordinator = AutomaticUpdateCheckCoordinator(
             checker: checker,
             store: store,
             presenter: presenter,
+            environment: environment,
             defaults: defaults,
             calendar: calendar,
             now: { provider.now },
+            startupDelay: startupDelay,
             install: { installCount.count += 1 },
+            showDetails: { detailsCount.count += 1 },
             log: { logs.append($0) }
         )
         return Fixture(
@@ -118,7 +145,9 @@ private struct Fixture {
             defaults: defaults,
             provider: provider,
             installCount: installCount,
+            detailsCount: detailsCount,
             logs: logs,
+            environment: environment,
             suite: suite
         )
     }
@@ -130,11 +159,11 @@ private struct Fixture {
 }
 
 @MainActor
-private func makeRelease(_ version: String) -> GitHubRelease {
+private func makeRelease(_ version: String, body: String? = nil) -> GitHubRelease {
     GitHubRelease(
         tagName: "v\(version)",
         name: "YuanGUI \(version)",
-        body: "Release notes for \(version)",
+        body: body ?? "Release notes for \(version)",
         pageURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/tag/v\(version)")!,
         assets: []
     )
@@ -435,8 +464,22 @@ final class AutomaticUpdateTests: XCTestCase {
 
     func testPromptPresenterIgnoresSecondPresentation() async {
         let presenter = FakeUpdatePromptPresenter()
-        presenter.presentUpdate(currentVersion: "2.7.1", release: makeRelease("99.9.9"), summary: nil, onInstall: {}, onLater: {})
-        presenter.presentUpdate(currentVersion: "2.7.1", release: makeRelease("99.9.9"), summary: nil, onInstall: {}, onLater: {})
+        presenter.presentUpdate(
+            currentVersion: "2.7.1",
+            release: makeRelease("99.9.9"),
+            highlights: [],
+            onInstall: {},
+            onLater: {},
+            onShowDetails: {}
+        )
+        presenter.presentUpdate(
+            currentVersion: "2.7.1",
+            release: makeRelease("99.9.9"),
+            highlights: [],
+            onInstall: {},
+            onLater: {},
+            onShowDetails: {}
+        )
         XCTAssertEqual(presenter.presentCount, 1)
         XCTAssertTrue(presenter.isPresenting)
     }
@@ -570,6 +613,158 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(fixture.presenter.presentCount, 0)
     }
 
+    // MARK: - Presentation timing and pending state
+
+    func testStartupActivationDoesNotBypassDelayAndChecksOnceAfterwards() async {
+        let fixture = Fixture.make(
+            result: .success(.upToDate(makeRelease("2.7.1"))),
+            startupDelay: .milliseconds(120)
+        )
+        defer { fixture.cleanup() }
+
+        fixture.coordinator.start()
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        try? await Task.sleep(for: .milliseconds(30))
+        let earlyCallCount = await fixture.checker.callCount
+        XCTAssertEqual(earlyCallCount, 0)
+
+        let didCheck = await waitForCallCount(fixture.checker, 1, timeout: 1)
+        XCTAssertTrue(didCheck)
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        try? await Task.sleep(for: .milliseconds(30))
+        let finalCallCount = await fixture.checker.callCount
+        XCTAssertEqual(finalCallCount, 1)
+    }
+
+    func testInactiveApplicationKeepsUpdatePendingUntilNextActivation() async {
+        let fixture = Fixture.make(
+            result: .success(.available(makeRelease("99.9.9"), notes: "- Faster launch")),
+            startupDelay: .zero
+        )
+        defer { fixture.cleanup() }
+
+        fixture.environment.isApplicationActive = false
+        fixture.coordinator.start()
+        try? await Task.sleep(for: .milliseconds(20))
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+
+        XCTAssertEqual(fixture.presenter.presentCount, 0)
+        fixture.environment.isApplicationActive = true
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        let didPresent = await waitUntil { fixture.presenter.presentCount == 1 }
+        XCTAssertTrue(didPresent)
+    }
+
+    func testBlockingModalDefersPromptUntilSheetEnds() async {
+        let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: "- Safer updates")))
+        defer { fixture.cleanup() }
+
+        fixture.environment.hasBlockingModalPresentation = true
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        XCTAssertEqual(fixture.presenter.presentCount, 0)
+
+        fixture.environment.hasBlockingModalPresentation = false
+        NotificationCenter.default.post(name: NSWindow.didEndSheetNotification, object: nil)
+        fixture.coordinator.tryPresentPendingUpdate()
+        XCTAssertEqual(fixture.presenter.presentCount, 1)
+    }
+
+    func testStopDiscardsPendingUpdate() async {
+        let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: "- Deferred")))
+        defer { fixture.cleanup() }
+
+        fixture.environment.isApplicationActive = false
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        fixture.coordinator.stop()
+        fixture.environment.isApplicationActive = true
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertEqual(fixture.presenter.presentCount, 0)
+    }
+
+    func testManualAvailableResultDoesNotOpenAutomaticPrompt() async {
+        let checker = StubUpdateChecker(
+            result: .success(.available(makeRelease("99.9.9"), notes: "- Manual result"))
+        )
+        let store = AppUpdateStore(checking: checker)
+        let fixture = Fixture.make(
+            result: .success(.upToDate(makeRelease("2.7.1"))),
+            store: store
+        )
+        defer { fixture.cleanup() }
+
+        store.check()
+        let becameAvailable = await waitUntil { store.state == .available }
+        XCTAssertTrue(becameAvailable)
+        XCTAssertEqual(fixture.presenter.presentCount, 0)
+    }
+
+    func testDetailsActionKeepsAvailableStoreStateAndRunsOnce() async {
+        let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: "- Details")))
+        defer { fixture.cleanup() }
+
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        fixture.presenter.chooseDetails()
+        fixture.presenter.chooseDetails()
+
+        XCTAssertEqual(fixture.detailsCount.count, 1)
+        XCTAssertEqual(fixture.store.state, .available)
+    }
+
+    // MARK: - Prompt content and geometry
+
+    func testHighlightsPreferBulletsAndSkipReleaseHeading() {
+        let release = makeRelease(
+            "2.7.2",
+            body: "## YuanGUI 2.7.2\n\n- **Faster** dashboard refresh\n- Added `View Details` action\n- This third item is not shown"
+        )
+
+        XCTAssertEqual(
+            AutomaticUpdateCheckCoordinator.highlights(for: release, notes: nil),
+            ["Faster dashboard refresh", "Added View Details action"]
+        )
+    }
+
+    func testHighlightsReturnEmptyForEmptyOrHeadingOnlyNotes() {
+        XCTAssertEqual(
+            AutomaticUpdateCheckCoordinator.highlights(for: makeRelease("2.7.2", body: ""), notes: nil),
+            []
+        )
+        XCTAssertEqual(
+            AutomaticUpdateCheckCoordinator.highlights(for: makeRelease("2.7.2", body: "# 2.7.2"), notes: nil),
+            []
+        )
+    }
+
+    func testPromptPlacementCentersWithinVisibleFrameAndClampsSize() {
+        let visibleFrame = CGRect(x: -1280, y: 23, width: 1920, height: 1057)
+        let frame = UpdatePromptWindowPlacement.centeredFrame(
+            windowSize: CGSize(width: 900, height: 900),
+            visibleFrame: visibleFrame
+        )
+
+        XCTAssertEqual(frame.size, CGSize(width: 500, height: 360))
+        XCTAssertEqual(frame.midX, visibleFrame.midX, accuracy: 0.001)
+        XCTAssertEqual(frame.midY, visibleFrame.midY, accuracy: 0.001)
+        XCTAssertTrue(visibleFrame.contains(frame))
+    }
+
+    func testPromptPlacementHandlesVerticalMonitorAndDockOffset() {
+        let visibleFrame = CGRect(x: 0, y: 1080, width: 1440, height: 900)
+        let origin = UpdatePromptWindowPlacement.centeredOrigin(
+            windowSize: CGSize(width: 460, height: 300),
+            visibleFrame: visibleFrame
+        )
+
+        XCTAssertEqual(origin.x, 490, accuracy: 0.001)
+        XCTAssertEqual(origin.y, 1380, accuracy: 0.001)
+    }
+
     // MARK: - Store install guard
 
     func testInstallLatestIgnoresRapidRepeatedClicks() async {
@@ -592,27 +787,26 @@ final class AutomaticUpdateTests: XCTestCase {
         let english = AppLocalizer.localizedValues(for: "en")
         let chinese = AppLocalizer.localizedValues(for: "zh-Hans")
         let keys = [
+            "update.auto.window.title",
             "update.auto.prompt.title",
-            "update.auto.prompt.currentVersion",
-            "update.auto.prompt.newVersion",
-            "update.auto.prompt.message",
+            "update.auto.prompt.versionTransition",
+            "update.auto.prompt.highlights",
+            "update.auto.prompt.safeInstall",
             "update.auto.prompt.install",
-            "update.auto.prompt.later"
+            "update.auto.prompt.later",
+            "update.auto.prompt.details"
         ]
         for key in keys {
             XCTAssertNotNil(english[key], "Missing English key: \(key)")
             XCTAssertNotNil(chinese[key], "Missing Simplified Chinese key: \(key)")
         }
         XCTAssertEqual(
-            String(format: tryUnwrap(english["update.auto.prompt.currentVersion"]), "2.7.0"),
-            "Current version: 2.7.0"
-        )
-        XCTAssertEqual(
-            String(format: tryUnwrap(english["update.auto.prompt.newVersion"]), "2.7.1"),
-            "New version: 2.7.1"
+            String(format: tryUnwrap(english["update.auto.prompt.versionTransition"]), "2.7.0", "2.7.1"),
+            "2.7.0 → 2.7.1"
         )
         XCTAssertEqual(english["update.auto.prompt.install"], "Update Now")
         XCTAssertEqual(english["update.auto.prompt.later"], "Later")
+        XCTAssertEqual(english["update.auto.prompt.details"], "View Details")
     }
 
     private func tryUnwrap(_ value: String?) -> String {
