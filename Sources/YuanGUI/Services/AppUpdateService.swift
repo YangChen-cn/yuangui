@@ -441,10 +441,12 @@ actor AppUpdateService: UpdateChecking {
             return .upToDate(candidate)
         }
         let notes: String?
-        if mode == .manual {
+        if mode == .manual, candidate.metadataSource == .githubReleaseAPI {
             // The manifest carries concise automatic highlights. A manual
-            // check keeps the dual-source result, then enriches a matching
-            // GitHub release with the complete localized notes.
+            // check can enrich the GitHub API fallback with the complete
+            // localized notes. Manifest results are returned immediately;
+            // AppUpdateStore may enrich them in the background so a Gitee
+            // success never waits on an unreachable GitHub API.
             notes = (try? await fullReleaseNotes(for: candidate))
                 ?? candidate.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
         } else {
@@ -726,6 +728,7 @@ final class AppUpdateStore: ObservableObject {
     private let service: AppUpdateService
     private let checking: UpdateChecking
     private var terminateForUpdate: @MainActor () async -> Bool = { false }
+    private var notesTask: Task<Void, Never>?
 
     /// Test seam: replaces the DMG download/install pipeline. When set,
     /// `installLatest()` runs this closure instead of touching the network,
@@ -745,7 +748,10 @@ final class AppUpdateStore: ObservableObject {
 
     func check() {
         guard !isBusy else { return }
+        notesTask?.cancel()
+        notesTask = nil
         state = .checking
+        latestUpdate = nil
         latestUpdateNotes = nil
         Task {
             do {
@@ -755,14 +761,34 @@ final class AppUpdateStore: ObservableObject {
                     latestUpdate = update
                     latestUpdateNotes = notes
                     state = .available
+                    enrichReleaseNotesIfNeeded(for: update)
                 case .upToDate(let update):
                     latestUpdate = update
-                    latestUpdateNotes = (try? await service.fullReleaseNotes(for: update))
-                        ?? update.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
+                    latestUpdateNotes = update.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
                     state = .upToDate
+                    enrichReleaseNotesIfNeeded(for: update)
                 }
             } catch {
                 state = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func enrichReleaseNotesIfNeeded(for update: AvailableUpdate) {
+        guard update.metadataSource != .githubReleaseAPI else { return }
+        notesTask?.cancel()
+        notesTask = Task { [weak self, service] in
+            guard let notes = try? await service.fullReleaseNotes(for: update),
+                  !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !Task.isCancelled
+            else { return }
+            await MainActor.run {
+                guard let self,
+                      !Task.isCancelled,
+                      self.latestUpdate == update,
+                      self.state == .available || self.state == .upToDate
+                else { return }
+                self.latestUpdateNotes = notes
             }
         }
     }

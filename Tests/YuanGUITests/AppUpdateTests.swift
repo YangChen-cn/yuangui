@@ -225,6 +225,27 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(apiCalls, 1)
     }
 
+    func testManualManifestResultDoesNotRequireGitHubReleaseNotes() async throws {
+        let manifestUpdate = makeAvailableUpdate(
+            "99.9.9",
+            provider: .gitee,
+            highlights: ["国内镜像中的更新摘要"]
+        )
+        let fetcher = FakeUpdateSourceFetcher(
+            gitee: .update(manifestUpdate),
+            api: .update(makeAvailableUpdate("99.9.9", provider: .github))
+        )
+        let service = AppUpdateService(sourceFetcher: fetcher)
+
+        let result = try await service.checkForUpdate(mode: .manual)
+        guard case .available(_, let notes) = result else {
+            return XCTFail("A valid Gitee manifest should be available")
+        }
+        XCTAssertEqual(notes, "- 国内镜像中的更新摘要")
+        let apiCalls = await fetcher.apiCallCount
+        XCTAssertEqual(apiCalls, 0)
+    }
+
     func testUnsupportedManifestDoesNotFallBackToGitHubAPI() async {
         let apiUpdate = makeAvailableUpdate("99.9.9", provider: .github)
         let fetcher = FakeUpdateSourceFetcher(
