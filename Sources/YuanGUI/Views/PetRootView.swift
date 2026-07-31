@@ -134,7 +134,10 @@ private struct PetSceneRoot: View {
             withAnimation(.easeOut(duration: 0.18)) { isHovering = hovering }
         }
         .onChange(of: store.interactionLocked) { _, locked in
-            if locked { isHovering = false }
+            if locked {
+                isHovering = false
+                isMiniPlayerPresented = false
+            }
         }
         .onChange(of: focusTimer.state) { _, state in
             guard state == .running || state == .paused else { return }
@@ -334,7 +337,14 @@ private struct PetSceneRoot: View {
 
     private var focusModeSideControls: some View {
         VStack(spacing: 5) {
-            focusSideButton(size: 34)
+            if store.interactionLocked {
+                FocusCountdownBadge(timer: focusTimer)
+                    .accessibilityLabel(
+                        "\(AppLocalizer.string("专注中"))：\(focusTimer.timeText)"
+                    )
+            } else {
+                focusSideButton(size: 34)
+            }
 
             if !store.interactionLocked {
                 Button { isMiniPlayerPresented.toggle() } label: {
@@ -360,39 +370,11 @@ private struct PetSceneRoot: View {
 
     private func focusSideButton(size: CGFloat) -> some View {
         Button { showsFocusPopover.toggle() } label: {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: hasActiveFocusCountdown
-                                ? (focusTimer.state == .paused ? [.red.opacity(0.76), .orange.opacity(0.78)] : [.red, .orange])
-                                : [.white.opacity(0.92), .red.opacity(0.16)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                if hasActiveFocusCountdown {
-                    Text(focusTimer.timeText)
-                        .font(.system(size: max(8, size * 0.22), weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .minimumScaleFactor(0.72)
-                        .lineLimit(1)
-                        .padding(.horizontal, 4)
-                    Circle()
-                        .trim(from: 0, to: max(focusTimer.progress, 0.03))
-                        .stroke(.white, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .padding(2)
-                } else {
-                    Text("🍅")
-                        .font(.system(size: size * 0.52))
-                }
+            if hasActiveFocusCountdown {
+                FocusCountdownBadge(timer: focusTimer, size: size)
+            } else {
+                FocusIdleBadge(size: size)
             }
-            .frame(width: size, height: size)
-            .overlay(Circle().stroke(.white.opacity(0.72), lineWidth: 0.9))
-            .shadow(color: .red.opacity(0.24), radius: 8, y: 3)
-            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .allowsHitTesting(!store.interactionLocked)
