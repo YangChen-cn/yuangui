@@ -1,0 +1,419 @@
+name: Mirror release and update manifest to Gitee
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "GitHub Release tag, for example v2.7.2"
+        required: true
+        type: string
+      build:
+        description: "CFBundleVersion from the DMG"
+        required: true
+        type: string
+      minimum_system_version:
+        description: "LSMinimumSystemVersion"
+        required: false
+        default: "15.0"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  mirror-release:
+    name: Upload the same DMG and manifest to Gitee
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      # Verified public repository and main branch. There is no Gitee remote
+      # in this checkout, so keep the mirror destination explicit here.
+      GITEE_OWNER: yangchen716
+      GITEE_REPO: yuangui
+
+    steps:
+      - name: Check out the current GitHub main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            TAG='${{ github.event.release.tag_name }}'
+            MINIMUM_SYSTEM_VERSION="15.0"
+          else
+            TAG='${{ inputs.tag }}'
+            MINIMUM_SYSTEM_VERSION='${{ inputs.minimum_system_version }}'
+          fi
+
+          [[ "$TAG" == v* ]] || { echo "Release tag must start with v: $TAG" >&2; exit 1; }
+          VERSION="${TAG#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*([+-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid semantic version in tag: $TAG" >&2
+            exit 1
+          }
+          [[ "$MINIMUM_SYSTEM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
+            echo "Invalid minimum system version: $MINIMUM_SYSTEM_VERSION" >&2
+            exit 1
+          }
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > github-release.json
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            BUILD='${{ inputs.build }}'
+          else
+            # A release must carry the real CFBundleVersion. Failing here is
+            # safer than putting a guessed build number into the manifest.
+            BUILD="$(python3 - <<'PY'
+          import json, re
+          with open("github-release.json", encoding="utf-8") as handle:
+              body = json.load(handle).get("body") or ""
+          match = re.search(r"(?im)^\s*(?:build|cfbundleversion)\s*[:=]\s*([0-9]+)\s*$", body)
+          print(match.group(1) if match else "")
+          PY
+            )"
+          fi
+
+          [[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || {
+            echo "A positive CFBundleVersion is required. Add 'Build: N' to the release body or use workflow_dispatch." >&2
+            exit 1
+          }
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "minimum_system_version=$MINIMUM_SYSTEM_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download the exact GitHub Release DMG
+        id: asset
+        env:
+          TAG: ${{ steps.metadata.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'YuanGUI-*.dmg' \
+            --dir dist
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'RELEASE_NOTES*.md' \
+            --dir dist || true
+
+          mapfile -t DMG_FILES < <(find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print)
+          if (( ${#DMG_FILES[@]} != 1 )); then
+            echo "Expected exactly one YuanGUI-*.dmg, found ${#DMG_FILES[@]}" >&2
+            printf '%s\n' "${DMG_FILES[@]}" >&2
+            exit 1
+          fi
+
+          DMG="${DMG_FILES[0]}"
+          ASSET_NAME="$(basename "$DMG")"
+          SHA256="$(sha256sum "$DMG" | awk '{print $1}')"
+          SIZE="$(stat -c '%s' "$DMG")"
+          printf '%s  %s\n' "$SHA256" "$ASSET_NAME" > "$DMG.sha256"
+
+          echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
+          echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+          echo "Downloaded $ASSET_NAME ($SIZE bytes, $SHA256)"
+
+      - name: Validate the Gitee token
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${GITEE_TOKEN:-}" ]] || {
+            echo "Repository secret GITEE_TOKEN is required" >&2
+            exit 1
+          }
+
+      - name: Request Gitee source mirror before creating the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+          curl --silent --show-error --fail-with-body \
+            --request POST \
+            --data-urlencode "access_token=$GITEE_TOKEN" \
+            "$API/remote_mirror/pull" >/dev/null || true
+
+      - name: Wait briefly for the Gitee tag
+        env:
+          TAG: ${{ steps.metadata.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+          for attempt in $(seq 1 8); do
+            TAGS_FILE="$(mktemp)"
+            if curl --silent --show-error --fail \
+              "$API/tags?per_page=100" > "$TAGS_FILE" \
+              && jq -e --arg tag "$TAG" '.[] | select(.name == $tag)' "$TAGS_FILE" >/dev/null 2>&1; then
+              echo "Gitee tag $TAG is available"
+              break
+            fi
+            if [[ "$attempt" == 8 ]]; then
+              echo "::warning::Gitee tag $TAG is not visible yet; the release API will try to create it."
+              break
+            fi
+            sleep 15
+          done
+
+      - name: Create or reuse the Gitee release
+        id: gitee_release
+        env:
+          TAG: ${{ steps.metadata.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+          RELEASES_FILE="$(mktemp)"
+          curl --silent --show-error --fail-with-body \
+            "$API/releases?per_page=100" > "$RELEASES_FILE"
+          RELEASE_ID="$(jq -r --arg tag "$TAG" '.[] | select(.tag_name == $tag) | .id' "$RELEASES_FILE" | head -n 1)"
+
+          if [[ -z "$RELEASE_ID" || "$RELEASE_ID" == "null" ]]; then
+            RELEASE_NAME="$(jq -r '.name // .tag_name' github-release.json)"
+            RELEASE_BODY="$(jq -r '.body // ""' github-release.json)"
+            PRERELEASE="$(jq -r '.prerelease // false' github-release.json)"
+            curl --silent --show-error --fail-with-body \
+              --request POST \
+              --data-urlencode "access_token=$GITEE_TOKEN" \
+              --data-urlencode "tag_name=$TAG" \
+              --data-urlencode "name=$RELEASE_NAME" \
+              --data-urlencode "body=$RELEASE_BODY" \
+              --data-urlencode "target_commitish=main" \
+              --data-urlencode "prerelease=$PRERELEASE" \
+              "$API/releases" > gitee-release.json
+            RELEASE_ID="$(jq -er '.id' gitee-release.json)"
+          else
+            jq -c --arg tag "$TAG" '.[] | select(.tag_name == $tag)' "$RELEASES_FILE" > gitee-release.json
+          fi
+
+          rm -f "$RELEASES_FILE"
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the DMG and checksum to Gitee
+        id: gitee_asset
+        env:
+          API: https://gitee.com/api/v5/repos/${{ env.GITEE_OWNER }}/${{ env.GITEE_REPO }}
+          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
+          DMG: ${{ steps.asset.outputs.dmg }}
+          ASSET_NAME: ${{ steps.asset.outputs.asset_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          upload_if_missing() {
+            local path="$1"
+            local name
+            name="$(basename "$path")"
+            if jq -e --arg name "$name" '(.assets // []) | any(.name == $name)' gitee-release.json >/dev/null 2>&1; then
+              return
+            fi
+            curl --silent --show-error --fail-with-body \
+              --request POST \
+              --form "access_token=$GITEE_TOKEN" \
+              --form "file=@$path" \
+              "$API/releases/$RELEASE_ID/attach_files" >/dev/null
+          }
+
+          upload_if_missing "$DMG"
+          upload_if_missing "$DMG.sha256"
+          curl --silent --show-error --fail-with-body \
+            "$API/releases/$RELEASE_ID" > gitee-release.json
+
+          GITEE_DMG_URL="$(jq -r --arg name "$ASSET_NAME" \
+            '(.assets // [])[] | select(.name == $name) | (.browser_download_url // .url // empty)' \
+            gitee-release.json | head -n 1)"
+          [[ "$GITEE_DMG_URL" == https://gitee.com/* ]] || {
+            echo "Gitee did not return a usable HTTPS DMG URL" >&2
+            exit 1
+          }
+          echo "url=$GITEE_DMG_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Gitee contains the same DMG bytes
+        env:
+          GITEE_DMG_URL: ${{ steps.gitee_asset.outputs.url }}
+          EXPECTED_SHA256: ${{ steps.asset.outputs.sha256 }}
+          EXPECTED_SIZE: ${{ steps.asset.outputs.size }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --fail --location --retry 3 \
+            "$GITEE_DMG_URL" --output dist/gitee-verified.dmg
+          [[ "$(stat -c '%s' dist/gitee-verified.dmg)" == "$EXPECTED_SIZE" ]] || {
+            echo "Gitee DMG size differs from GitHub DMG" >&2
+            exit 1
+          }
+          [[ "$(sha256sum dist/gitee-verified.dmg | awk '{print $1}')" == "$EXPECTED_SHA256" ]] || {
+            echo "Gitee DMG SHA-256 differs from GitHub DMG" >&2
+            exit 1
+          }
+
+      - name: Extract localized highlights from the release
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+
+          with open("github-release.json", encoding="utf-8") as handle:
+              body = json.load(handle).get("body") or ""
+
+          def clean(line):
+              line = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", "", line.strip())
+              line = re.sub(r"[`*_#]", "", line)
+              line = re.sub(r"\s+", " ", line).strip()
+              return line[:120].rstrip() if line else None
+
+          def bullets(text):
+              values = []
+              for line in text.splitlines():
+                  if re.match(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", line):
+                      value = clean(line)
+                      if value and value not in values:
+                          values.append(value)
+                  if len(values) == 2:
+                      break
+              return values
+
+          zh_file = "dist/RELEASE_NOTES.zh-CN.md"
+          en_file = "dist/RELEASE_NOTES.md"
+          if os.path.exists(zh_file):
+              with open(zh_file, encoding="utf-8") as handle:
+                  zh = bullets(handle.read())
+          else:
+              zh = []
+          if os.path.exists(en_file):
+              with open(en_file, encoding="utf-8") as handle:
+                  en = bullets(handle.read())
+          else:
+              en = []
+          fallback = bullets(body)
+          zh = zh or fallback
+          en = en or fallback
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("zh_json=" + json.dumps(zh, ensure_ascii=False, separators=(",", ":")) + "\n")
+              output.write("en_json=" + json.dumps(en, ensure_ascii=False, separators=(",", ":")) + "\n")
+          PY
+
+      - name: Refresh latest.json on GitHub main
+        env:
+          UPDATE_VERSION: ${{ steps.metadata.outputs.version }}
+          UPDATE_BUILD: ${{ steps.metadata.outputs.build }}
+          UPDATE_MINIMUM_SYSTEM_VERSION: ${{ steps.metadata.outputs.minimum_system_version }}
+          DMG_PATH: ${{ steps.asset.outputs.dmg }}
+          GITHUB_DMG_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.metadata.outputs.tag }}/${{ steps.asset.outputs.asset_name }}
+          GITEE_DMG_URL: ${{ steps.gitee_asset.outputs.url }}
+          UPDATE_RELEASE_PAGE_URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.metadata.outputs.tag }}
+          UPDATE_HIGHLIGHTS_ZH_JSON: ${{ steps.notes.outputs.zh_json }}
+          UPDATE_HIGHLIGHTS_EN_JSON: ${{ steps.notes.outputs.en_json }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          ./script/generate_update_manifest.sh
+          ./script/verify_update_manifest.sh
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates/latest.json
+          if git diff --cached --quiet; then
+            echo "updates/latest.json is already current"
+          else
+            git commit -m "Publish update manifest for $UPDATE_VERSION"
+            git push origin HEAD:main
+          fi
+
+      - name: Request Gitee mirror refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+          curl --silent --show-error --fail-with-body \
+            --request POST \
+            --data-urlencode "access_token=$GITEE_TOKEN" \
+            "$API/remote_mirror/pull" >/dev/null || true
+
+      - name: Ensure latest.json is available from Gitee raw
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW_URL="https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/updates/latest.json"
+          EXPECTED_SHA="$(sha256sum updates/latest.json | awk '{print $1}')"
+          RAW_FILE="$(mktemp)"
+          FOUND=false
+
+          for attempt in $(seq 1 10); do
+            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              FOUND=true
+              break
+            fi
+            sleep 15
+          done
+
+          # A Gitee repository without a configured remote mirror can still be
+          # updated safely through its contents API. This only writes the
+          # generated manifest and never uploads a guessed asset.
+          if [[ "$FOUND" != true ]]; then
+            API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+            FILE_INFO="$(mktemp)"
+            curl --silent --show-error "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
+            FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO")"
+            CONTENT="$(base64 -w 0 updates/latest.json)"
+            if [[ -n "$FILE_SHA" ]]; then
+              curl --silent --show-error --fail-with-body \
+                --request PUT \
+                --data-urlencode "access_token=$GITEE_TOKEN" \
+                --data-urlencode "content=$CONTENT" \
+                --data-urlencode "message=Publish update manifest for ${{ steps.metadata.outputs.version }}" \
+                --data-urlencode "branch=main" \
+                --data-urlencode "sha=$FILE_SHA" \
+                "$API/contents/updates/latest.json" >/dev/null
+            else
+              curl --silent --show-error --fail-with-body \
+                --request POST \
+                --data-urlencode "access_token=$GITEE_TOKEN" \
+                --data-urlencode "content=$CONTENT" \
+                --data-urlencode "message=Publish update manifest for ${{ steps.metadata.outputs.version }}" \
+                --data-urlencode "branch=main" \
+                "$API/contents/updates/latest.json" >/dev/null
+            fi
+            rm -f "$FILE_INFO"
+          fi
+
+          for attempt in $(seq 1 10); do
+            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              FOUND=true
+              break
+            fi
+            sleep 15
+          done
+          rm -f "$RAW_FILE"
+          [[ "$FOUND" == true ]] || {
+            echo "Gitee raw manifest was not available or did not match GitHub" >&2
+            exit 1
+          }
+          echo "Gitee manifest: $RAW_URL"

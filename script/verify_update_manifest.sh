@@ -20,7 +20,7 @@ if manifest.get("schemaVersion") != 1:
     raise SystemExit("unsupported schemaVersion")
 if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[-+][0-9A-Za-z.-]+)?", manifest.get("version", "")):
     raise SystemExit("invalid version")
-if not isinstance(manifest.get("build"), int) or manifest["build"] < 0:
+if not isinstance(manifest.get("build"), int) or manifest["build"] <= 0:
     raise SystemExit("invalid build")
 if not isinstance(manifest.get("minimumSystemVersion"), str):
     raise SystemExit("invalid minimumSystemVersion")
@@ -43,10 +43,18 @@ if not assets:
     raise SystemExit("assets is empty")
 identities = set()
 for asset in assets:
+    provider = asset.get("provider")
+    if provider not in {"gitee", "github"}:
+        raise SystemExit("unsupported asset provider")
     url = asset.get("url", "")
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc:
         raise SystemExit("asset URL must use HTTPS")
+    host = parsed.hostname.lower()
+    if provider == "gitee" and not (host == "gitee.com" or host.endswith(".gitee.com")):
+        raise SystemExit("Gitee asset URL does not match provider")
+    if provider == "github" and host not in {"github.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"}:
+        raise SystemExit("GitHub asset URL does not match provider")
     if not re.fullmatch(r"[0-9a-f]{64}", asset.get("sha256", "")):
         raise SystemExit("invalid SHA-256")
     if not isinstance(asset.get("size"), int) or asset["size"] <= 0:

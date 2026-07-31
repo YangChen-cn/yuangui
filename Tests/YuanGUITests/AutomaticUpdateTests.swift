@@ -9,13 +9,19 @@ private struct TestError: LocalizedError, Sendable {
 private actor StubUpdateChecker: UpdateChecking {
     let result: Result<UpdateCheckResult, TestError>
     private(set) var callCount = 0
+    private(set) var modes: [UpdateCheckMode] = []
 
     init(result: Result<UpdateCheckResult, TestError>) {
         self.result = result
     }
 
     func checkForUpdate() async throws -> UpdateCheckResult {
+        try await checkForUpdate(mode: .automatic)
+    }
+
+    func checkForUpdate(mode: UpdateCheckMode) async throws -> UpdateCheckResult {
         callCount += 1
+        modes.append(mode)
         switch result {
         case .success(let value): return value
         case .failure(let error): throw error
@@ -238,7 +244,9 @@ final class AutomaticUpdateTests: XCTestCase {
         await fixture.coordinator.awaitCurrentCheck()
 
         let calls = await fixture.checker.callCount
+        let modes = await fixture.checker.modes
         XCTAssertEqual(calls, 1)
+        XCTAssertEqual(modes, [.automatic])
         XCTAssertEqual(fixture.presenter.presentCount, 1)
         XCTAssertEqual(fixture.store.state, .available)
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.check.started"))
@@ -376,7 +384,9 @@ final class AutomaticUpdateTests: XCTestCase {
         _ = await waitUntil { store.state == .upToDate }
 
         let manualCalls = await storeChecker.callCount
+        let manualModes = await storeChecker.modes
         XCTAssertEqual(manualCalls, 1)
+        XCTAssertEqual(manualModes, [.manual])
         XCTAssertEqual(store.state, .upToDate)
     }
 

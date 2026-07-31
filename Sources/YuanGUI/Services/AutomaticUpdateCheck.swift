@@ -287,7 +287,7 @@ final class AutomaticUpdateCheckCoordinator {
         }
         markAutomaticAttempt()
         do {
-            let result = try await checker.checkForUpdate()
+            let result = try await checker.checkForUpdate(mode: .automatic)
             guard !Task.isCancelled, !isStopped else { return }
             switch result {
             case .upToDate:

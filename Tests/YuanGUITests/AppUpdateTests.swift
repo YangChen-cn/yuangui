@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import YuanGUI
@@ -122,13 +123,26 @@ final class AppUpdateTests: XCTestCase {
         let cases = [
             ("http://github.com/update.dmg", String(repeating: "a", count: 64), 1024),
             ("https://github.com/update.dmg", String(repeating: "A", count: 64), 1024),
-            ("https://github.com/update.dmg", String(repeating: "a", count: 64), 0)
+            ("https://github.com/update.dmg", String(repeating: "a", count: 64), 0),
+            ("https://gitee.com/update.dmg", String(repeating: "a", count: 64), 1024)
         ]
 
         for (url, hash, size) in cases {
             let json = Data(String(format: base, url, hash, size).utf8)
             XCTAssertThrowsError(try UpdateManifestCodec.decodeAndValidate(jsonData: json))
         }
+    }
+
+    func testSHA256StreamsLargeFixtureAndReturnsLowercaseHex() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yuangui-sha256-(UUID().uuidString).fixture")
+        let data = Data(repeating: 0x5A, count: 2 * 1024 * 1024 + 17)
+        try data.write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let expected = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(try sha256(of: fileURL), expected)
+        XCTAssertEqual(try sha256(of: fileURL), try sha256(of: fileURL).lowercased())
     }
 
     func testDualSourceKeepsValidGiteeManifestWhenGitHubIsUnavailable() async throws {

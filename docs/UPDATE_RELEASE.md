@@ -41,6 +41,30 @@ DMG_PATH="$PWD/dist/YuanGUI-2.7.1.dmg" \
 
 ## Publish and mirror
 
+The repository contains `.github/workflows/mirror-release-to-gitee.yml`. It is
+the one-click release path for the verified Gitee repository
+`yangchen716/yuangui`:
+
+1. Publish a GitHub Release with exactly one `YuanGUI-*.dmg` asset.
+2. Include `Build: <CFBundleVersion>` in the release body, or run the workflow
+   manually with the tag and build inputs.
+3. Configure the repository secret `GITEE_TOKEN` with permission to create a
+   Gitee release and update the mirrored repository.
+
+The workflow uploads that exact DMG to Gitee, verifies that its size and
+SHA-256 are identical, generates `updates/latest.json`, commits it to GitHub
+`main`, and requests a Gitee mirror refresh. If the repository mirror is not
+configured, it uses the Gitee contents API to create or update that one
+manifest file. It then compares the Gitee raw response with the GitHub file.
+The production manifest URL is therefore:
+
+```text
+https://gitee.com/yangchen716/yuangui/raw/main/updates/latest.json
+```
+
+The workflow does not create a detached signature and does not put a private
+key or token in the repository.
+
 1. Upload the one verified DMG to the GitHub Release.
 2. If a Gitee DMG asset is available, upload the same bytes and regenerate the
    manifest with `GITEE_DMG_URL` set.

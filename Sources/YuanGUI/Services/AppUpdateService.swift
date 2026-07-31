@@ -76,7 +76,7 @@ struct GitHubRelease: Decodable, Equatable, Sendable {
         return assets.first { $0.name.caseInsensitiveCompare(preferredName) == .orderedSame }
     }
 
-    func asAvailableUpdate() -> AvailableUpdate {
+    func asAvailableUpdate(localizedHighlights: [String]? = nil) -> AvailableUpdate {
         let assets = assets
             .filter { $0.name.lowercased().hasSuffix(".dmg") }
             .map { asset in
@@ -92,7 +92,7 @@ struct GitHubRelease: Decodable, Equatable, Sendable {
             build: nil,
             minimumSystemVersion: nil,
             publishedAt: nil,
-            localizedHighlights: UpdateHighlightExtractor.highlights(from: body),
+            localizedHighlights: localizedHighlights ?? UpdateHighlightExtractor.highlights(from: body),
             releasePageURL: pageURL,
             assets: assets,
             metadataSource: .githubReleaseAPI
@@ -132,6 +132,11 @@ enum SemanticVersion {
 
 /// A typed, non-throwing outcome of a completed update check. Network and
 /// GitHub errors keep being expressed through `throws`.
+enum UpdateCheckMode: Sendable, Equatable {
+    case automatic
+    case manual
+}
+
 enum UpdateCheckResult: Equatable, Sendable {
     case upToDate(AvailableUpdate)
     case available(AvailableUpdate, notes: String?)
@@ -141,6 +146,16 @@ enum UpdateCheckResult: Equatable, Sendable {
 /// conforms so the store and the automatic coordinator share one comparison path.
 protocol UpdateChecking: Sendable {
     func checkForUpdate() async throws -> UpdateCheckResult
+
+    /// Manual checks retain their original, user-facing behavior while the
+    /// automatic coordinator can use shorter, quiet source checks.
+    func checkForUpdate(mode: UpdateCheckMode) async throws -> UpdateCheckResult
+}
+
+extension UpdateChecking {
+    func checkForUpdate(mode: UpdateCheckMode) async throws -> UpdateCheckResult {
+        try await checkForUpdate()
+    }
 }
 
 enum AppUpdateError: LocalizedError {
@@ -194,6 +209,20 @@ struct PreparedAppUpdate {
     let targetApp: URL
     let mountPoint: URL
     let dmgURL: URL
+}
+
+/// Streams the DMG through CryptoKit so large update files are not copied into
+/// one in-memory Data value. This is an asset checksum, not a manifest
+/// signature; manifest trust still relies on HTTPS and the app-bundle checks.
+func sha256(of fileURL: URL) throws -> String {
+    let handle = try FileHandle(forReadingFrom: fileURL)
+    defer { try? handle.close() }
+
+    var hasher = SHA256()
+    while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty {
+        hasher.update(data: chunk)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
 }
 
 enum AppUpdateInstallerScript {
@@ -265,6 +294,25 @@ actor URLUpdateSourceFetcher: UpdateSourceFetching {
         return release.asAvailableUpdate()
     }
 
+    func fetchGitHubRelease(timeout: TimeInterval, language: AppLanguage) async throws -> AvailableUpdate {
+        let url = AppUpdateService.latestReleaseURL
+        let data = try await fetch(url, timeout: timeout, accept: "application/vnd.github+json")
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+        let notes: String
+        if let notesAsset = release.releaseNotesAsset(for: language),
+           notesAsset.downloadURL.scheme?.lowercased() == "https",
+           notesAsset.downloadURL.host == "github.com",
+           let notesData = try? await fetch(notesAsset.downloadURL, timeout: timeout, accept: "text/markdown"),
+           let localizedNotes = String(data: notesData, encoding: .utf8) {
+            notes = localizedNotes
+        } else {
+            notes = release.body
+        }
+        return release.asAvailableUpdate(
+            localizedHighlights: UpdateHighlightExtractor.highlights(from: notes)
+        )
+    }
+
     private func fetch(_ url: URL, timeout: TimeInterval, accept: String) async throws -> Data {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(accept, forHTTPHeaderField: "Accept")
@@ -295,13 +343,26 @@ actor AppUpdateService: UpdateChecking {
     }
 
     func checkForUpdate() async throws -> UpdateCheckResult {
+        try await checkForUpdate(mode: .automatic)
+    }
+
+    func checkForUpdate(mode: UpdateCheckMode) async throws -> UpdateCheckResult {
         let validManifests = await withTaskGroup(of: AvailableUpdate?.self, returning: [AvailableUpdate].self) { group in
             for endpoint in UpdateEndpoint.manifests {
                 group.addTask { [sourceFetcher] in
-                    try? await sourceFetcher.fetchManifest(
-                        endpoint: endpoint,
-                        timeout: endpoint.automaticTimeout
-                    )
+                    let source = endpoint.provider.rawValue
+                    AutomaticUpdateLog.log("update.source.\(source).started")
+                    do {
+                        let update = try await sourceFetcher.fetchManifest(
+                            endpoint: endpoint,
+                            timeout: mode == .manual ? 20 : endpoint.automaticTimeout
+                        )
+                        AutomaticUpdateLog.log("update.source.\(source).succeeded")
+                        return update
+                    } catch {
+                        AutomaticUpdateLog.log("update.source.\(source).failed")
+                        return nil
+                    }
                 }
             }
             var updates: [AvailableUpdate] = []
@@ -316,7 +377,10 @@ actor AppUpdateService: UpdateChecking {
             candidate = selected
         } else {
             do {
-                candidate = try await sourceFetcher.fetchGitHubRelease(timeout: 8)
+                candidate = try await sourceFetcher.fetchGitHubRelease(
+                    timeout: mode == .manual ? 20 : 8,
+                    language: mode == .manual ? AppLocalizer.effectiveLanguage : .english
+                )
             } catch {
                 throw AppUpdateError.updateManifestUnavailable
             }
@@ -399,9 +463,17 @@ actor AppUpdateService: UpdateChecking {
 
         var lastError: Error = AppUpdateError.noCompatibleAsset
         for asset in orderedAssets {
+            AutomaticUpdateLog.log("update.download.\(asset.provider.rawValue).started")
             do {
-                return try await prepare(asset: asset, for: update)
+                let prepared = try await prepare(asset: asset, for: update)
+                AutomaticUpdateLog.log("update.download.verified")
+                return prepared
             } catch {
+                if case AppUpdateError.checksumMismatch = error {
+                    AutomaticUpdateLog.log("update.download.checksumMismatch")
+                } else {
+                    AutomaticUpdateLog.log("update.download.\(asset.provider.rawValue).failed")
+                }
                 lastError = error
             }
         }
@@ -466,8 +538,7 @@ actor AppUpdateService: UpdateChecking {
             throw AppUpdateError.assetSizeMismatch
         }
         guard let expectedHash = asset.sha256 else { throw AppUpdateError.checksumUnavailable }
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        let actualHash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let actualHash = try sha256(of: url)
         guard actualHash == expectedHash else { throw AppUpdateError.checksumMismatch }
     }
 
@@ -594,7 +665,7 @@ final class AppUpdateStore: ObservableObject {
         latestUpdateNotes = nil
         Task {
             do {
-                let result = try await checking.checkForUpdate()
+                let result = try await checking.checkForUpdate(mode: .manual)
                 switch result {
                 case .available(let update, let notes):
                     latestUpdate = update

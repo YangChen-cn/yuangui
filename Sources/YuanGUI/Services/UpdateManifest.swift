@@ -54,18 +54,22 @@ struct UpdateManifest: Codable, Equatable, Sendable {
     let highlights: [String: [String]]
     let assets: [UpdateManifestAsset]
 
-    func validate() throws {
+    func validate(currentSystemVersion: String? = nil) throws {
         guard schemaVersion == Self.supportedSchemaVersion else {
             throw AppUpdateError.invalidManifest("unsupported schemaVersion")
         }
         guard SemanticVersion.isValid(version) else {
             throw AppUpdateError.invalidManifest("invalid version")
         }
-        if let build, build < 0 {
-            throw AppUpdateError.invalidManifest("build must be non-negative")
+        guard let build, build > 0 else {
+            throw AppUpdateError.invalidManifest("build must be positive")
         }
-        if let minimumSystemVersion, !SemanticVersion.isValid(minimumSystemVersion) {
+        guard let minimumSystemVersion, SemanticVersion.isValid(minimumSystemVersion) else {
             throw AppUpdateError.invalidManifest("invalid minimumSystemVersion")
+        }
+        if let currentSystemVersion,
+           SemanticVersion.compare(currentSystemVersion, minimumSystemVersion) == .orderedAscending {
+            throw AppUpdateError.unsupportedSystemVersion
         }
         guard publishedAt != nil else {
             throw AppUpdateError.invalidManifest("publishedAt is missing or invalid")
@@ -81,6 +85,9 @@ struct UpdateManifest: Codable, Equatable, Sendable {
         for asset in assets {
             guard Self.isHTTPS(asset.url) else {
                 throw AppUpdateError.invalidManifest("asset URL must use HTTPS")
+            }
+            guard Self.isAllowedAssetURL(asset.url, provider: asset.provider) else {
+                throw AppUpdateError.invalidManifest("asset provider does not match its URL")
             }
             let lowercaseHex = Set("0123456789abcdef")
             guard asset.sha256.count == 64,
@@ -119,6 +126,22 @@ struct UpdateManifest: Codable, Equatable, Sendable {
     private static func isHTTPS(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && url.host != nil
     }
+
+    private static func isAllowedAssetURL(_ url: URL, provider: UpdateAsset.Provider) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        switch provider {
+        case .gitee:
+            return host == "gitee.com" || host.hasSuffix(".gitee.com")
+        case .github:
+            return [
+                "github.com",
+                "objects.githubusercontent.com",
+                "github-releases.githubusercontent.com"
+            ].contains(host)
+        case .other:
+            return false
+        }
+    }
 }
 
 enum UpdateManifestCodec {
@@ -131,7 +154,9 @@ enum UpdateManifestCodec {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let manifest = try decoder.decode(UpdateManifest.self, from: jsonData)
-            try manifest.validate()
+            let systemVersion = ProcessInfo.processInfo.operatingSystemVersion
+            let currentSystemVersion = "\(systemVersion.majorVersion).\(systemVersion.minorVersion).\(systemVersion.patchVersion)"
+            try manifest.validate(currentSystemVersion: currentSystemVersion)
             return manifest
         } catch let error as AppUpdateError {
             throw error
@@ -164,6 +189,13 @@ struct UpdateEndpoint: Equatable, Sendable {
 protocol UpdateSourceFetching: Sendable {
     func fetchManifest(endpoint: UpdateEndpoint, timeout: TimeInterval) async throws -> AvailableUpdate
     func fetchGitHubRelease(timeout: TimeInterval) async throws -> AvailableUpdate
+    func fetchGitHubRelease(timeout: TimeInterval, language: AppLanguage) async throws -> AvailableUpdate
+}
+
+extension UpdateSourceFetching {
+    func fetchGitHubRelease(timeout: TimeInterval, language: AppLanguage) async throws -> AvailableUpdate {
+        try await fetchGitHubRelease(timeout: timeout)
+    }
 }
 
 enum UpdateHighlightExtractor {

@@ -819,6 +819,12 @@
 "update.auto.prompt.install" = "Update Now";
 "update.auto.prompt.later" = "Later";
 "update.auto.prompt.details" = "View Details";
+"update.checking" = "Checking for updates…";
+"update.download.gitee.started" = "Downloading the update from Gitee";
+"update.download.gitee.failed" = "The Gitee download failed. Trying GitHub";
+"update.download.github.started" = "Downloading the update from GitHub";
+"update.download.checksumMismatch" = "The downloaded update failed integrity verification";
+"update.installDescription" = "The update tries Gitee first and falls back to GitHub; after download it verifies app identity, version, and code signature before replacing and reopening YuanGUI.";
 "检查更新" = "Check for Updates";
 "GitHub 项目主页" = "GitHub Project Page";
 "在 GitHub 查看" = "View on GitHub";

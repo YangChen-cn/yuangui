@@ -18,8 +18,16 @@ if [[ -n "${GITEE_DMG_URL:-}" && "$GITEE_DMG_URL" != https://* ]]; then
 fi
 
 mkdir -p "$(dirname "$MANIFEST_PATH")"
-DMG_SIZE="$(/usr/bin/stat -f '%z' "$DMG_PATH")"
-DMG_SHA256="$(/usr/bin/shasum -a 256 "$DMG_PATH" | /usr/bin/awk '{print $1}')"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  DMG_SIZE="$(/usr/bin/stat -f '%z' "$DMG_PATH")"
+else
+  DMG_SIZE="$(stat -c '%s' "$DMG_PATH")"
+fi
+if command -v shasum >/dev/null 2>&1; then
+  DMG_SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+else
+  DMG_SHA256="$(sha256sum "$DMG_PATH" | awk '{print $1}')"
+fi
 PUBLISHED_AT="${UPDATE_PUBLISHED_AT:-$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')}"
 MINIMUM_SYSTEM_VERSION="${UPDATE_MINIMUM_SYSTEM_VERSION:-15.0}"
 RELEASE_PAGE_URL="${UPDATE_RELEASE_PAGE_URL:-https://github.com/YangChen-cn/yuangui/releases/tag/v$UPDATE_VERSION}"
@@ -41,7 +49,7 @@ from urllib.parse import urlparse
 output = sys.argv[1]
 version = os.environ["UPDATE_VERSION"]
 build = int(os.environ["UPDATE_BUILD"])
-if build < 0 or not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[-+][0-9A-Za-z.-]+)?", version):
+if build <= 0 or not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[-+][0-9A-Za-z.-]+)?", version):
     raise SystemExit("invalid version or build")
 
 def https(value):

@@ -70,8 +70,17 @@ enum AppLocalizer {
     }
 
     static var effectiveLanguage: AppLanguage {
-        let moduleIdentifier = allowsModuleFallback ? Bundle.module.preferredLocalizations.first : nil
-        let identifier = Bundle.main.preferredLocalizations.first ?? moduleIdentifier ?? "en"
+        let configured = AppLanguage(rawValue: UserDefaults.standard.string(forKey: languageKey) ?? "") ?? .system
+        if configured != .system {
+            return configured
+        }
+
+        // Bundle.preferredLocalizations can describe the resource lookup order
+        // rather than the user's current system language in a SwiftPM app.
+        // Use the system locale explicitly so update notes match the UI.
+        let identifier = Locale.preferredLanguages.first
+            ?? Locale.current.language.languageCode?.identifier
+            ?? "en"
         return identifier.lowercased().hasPrefix("zh") ? .simplifiedChinese : .english
     }
 

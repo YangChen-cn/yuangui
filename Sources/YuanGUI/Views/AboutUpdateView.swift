@@ -96,7 +96,7 @@ struct AboutUpdateView: View {
                     .padding(.vertical, 4)
                 }
 
-                Text(AppLocalizer.string("更新会从 GitHub Release 下载 DMG，校验应用标识、版本号和代码签名后自动替换当前应用并重新打开。"))
+                Text(AppLocalizer.string("update.installDescription"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -124,7 +124,7 @@ struct AboutUpdateView: View {
             Label(AppLocalizer.string("尚未检查"), systemImage: "arrow.triangle.2.circlepath")
                 .foregroundStyle(.secondary)
         case .checking:
-            HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在读取 GitHub Release…")) }
+            HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("update.checking")) }
         case .upToDate:
             Label(AppLocalizer.string("当前已是最新版本"), systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
