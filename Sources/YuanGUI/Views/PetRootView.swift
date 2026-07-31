@@ -336,22 +336,24 @@ private struct PetSceneRoot: View {
         VStack(spacing: 5) {
             focusSideButton(size: 34)
 
-            Button { isMiniPlayerPresented.toggle() } label: {
-                sideToolIcon("music.note", tint: .purple, selected: playback.isPlaying, size: 30)
-            }
-            .buttonStyle(.plain)
-            .help(AppLocalizer.string("打开迷你播放器"))
-            .accessibilityLabel(AppLocalizer.string("打开迷你播放器"))
-            .popover(isPresented: $isMiniPlayerPresented, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
-                MiniMusicPlayerView(music: music)
-            }
+            if !store.interactionLocked {
+                Button { isMiniPlayerPresented.toggle() } label: {
+                    sideToolIcon("music.note", tint: .purple, selected: playback.isPlaying, size: 30)
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalizer.string("打开迷你播放器"))
+                .accessibilityLabel(AppLocalizer.string("打开迷你播放器"))
+                .popover(isPresented: $isMiniPlayerPresented, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
+                    MiniMusicPlayerView(music: music)
+                }
 
-            Button { store.toggleInteractionLock() } label: {
-                sideToolIcon("lock.open.fill", tint: .orange, selected: false, size: 30)
+                Button { store.toggleInteractionLock() } label: {
+                    sideToolIcon("lock.open.fill", tint: .orange, selected: false, size: 30)
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalizer.string("锁定并允许穿透"))
+                .accessibilityLabel(AppLocalizer.string("锁定并允许穿透"))
             }
-            .buttonStyle(.plain)
-            .help(AppLocalizer.string("锁定并允许穿透"))
-            .accessibilityLabel(AppLocalizer.string("锁定并允许穿透"))
         }
         .frame(width: 40)
     }
