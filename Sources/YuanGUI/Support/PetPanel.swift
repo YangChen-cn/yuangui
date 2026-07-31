@@ -877,11 +877,20 @@ final class PetPanelController {
         auxiliaryBubbleUnloadTask?.cancel()
         auxiliaryBubbleUnloadTask = nil
         let bubblePanel = ensureAuxiliaryBubblePanel()
+        let showsMusicLyric = Self.showsMusicLyric(
+            store: store,
+            isChatPresented: chatPresentation.keepsExpandedLayout,
+            maintenance: maintenance,
+            focusTimer: focusTimer,
+            music: music
+        )
         let size = PetLayout.auxiliaryBubblePanelSize(
             scale: store.petScale,
             showsMaintenance: maintenance.quickMode != nil,
             maintenanceIsBusy: maintenance.isScanning || maintenance.isWorking,
-            maintenanceIsCompleted: maintenance.quickCompleted
+            maintenanceIsCompleted: maintenance.quickCompleted,
+            musicLyricText: showsMusicLyric ? music.lyricsStore.currentLine?.text : nil,
+            musicAlertText: showsMusicLyric ? musicAlertText : nil
         )
         if bubblePanel.frame.size != size {
             bubblePanel.setContentSize(size)
@@ -903,6 +912,16 @@ final class PetPanelController {
                 focusTimer: focusTimer,
                 music: music
             )
+    }
+
+    private var musicAlertText: String? {
+        guard store.urgentReminderVisible else { return nil }
+        switch store.smartState {
+        case .lowBattery: return AppLocalizer.string("低电量")
+        case .memoryPressure: return AppLocalizer.string("内存紧张")
+        case .charging: return AppLocalizer.string("充电中")
+        default: return nil
+        }
     }
 
     private func positionAuxiliaryBubble() {

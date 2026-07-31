@@ -67,6 +67,18 @@ final class PetStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(longToast.fittingSize.width, 380.5)
     }
 
+    func testMusicLyricBubbleWidthFollowsTextUntilMaximumWidth() {
+        let shortWidth = PetLayout.musicLyricBubbleWidth(text: "几十个世纪")
+        let longerWidth = PetLayout.musicLyricBubbleWidth(text: "这是一句更长的同步歌词内容")
+        let clampedWidth = PetLayout.musicLyricBubbleWidth(
+            text: String(repeating: "这是一段需要换行的歌词", count: 8)
+        )
+
+        XCTAssertGreaterThanOrEqual(shortWidth, PetLayout.minimumMusicLyricBubbleWidth)
+        XCTAssertLessThan(longerWidth, clampedWidth)
+        XCTAssertEqual(clampedWidth, PetLayout.maximumMusicLyricBubbleWidth)
+    }
+
     func testChatterPeriodBoundariesUseExpectedTimeBuckets() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

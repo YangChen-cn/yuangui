@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 
 enum PetDockEdge: String, CaseIterable {
@@ -44,6 +45,8 @@ enum PetLayout {
     static let minimumBubbleWidth: CGFloat = 288
     static let minimumStatusBubbleWidth: CGFloat = 260
     static let minimumAmbientBubbleWidth: CGFloat = 240
+    static let minimumMusicLyricBubbleWidth: CGFloat = 148
+    static let maximumMusicLyricBubbleWidth: CGFloat = 350
     static let minimumChatWidth: CGFloat = 450
     static let minimumMaintenanceWidth: CGFloat = 360
     static let compactTopTransparentInset: CGFloat = 58
@@ -78,7 +81,9 @@ enum PetLayout {
         scale: Double,
         showsMaintenance: Bool,
         maintenanceIsBusy: Bool = false,
-        maintenanceIsCompleted: Bool = false
+        maintenanceIsCompleted: Bool = false,
+        musicLyricText: String? = nil,
+        musicAlertText: String? = nil
     ) -> CGSize {
         if showsMaintenance {
             let height: CGFloat
@@ -91,8 +96,11 @@ enum PetLayout {
             }
             return CGSize(width: minimumMaintenanceWidth, height: height + 18)
         }
+        let width = musicLyricText.map {
+            musicLyricBubbleWidth(text: $0, alertText: musicAlertText)
+        } ?? max(statusBubbleWidth(scale: scale), ambientBubbleWidth(scale: scale))
         return CGSize(
-            width: max(statusBubbleWidth(scale: scale), ambientBubbleWidth(scale: scale)),
+            width: width,
             height: bubbleHeight(scale: scale) + 18
         )
     }
@@ -149,6 +157,23 @@ enum PetLayout {
 
     static func ambientBubbleWidth(scale: Double) -> CGFloat {
         min(max(baseWidth * scale - 54, minimumAmbientBubbleWidth), 370)
+    }
+
+    static func musicLyricBubbleWidth(text: String, alertText: String? = nil) -> CGFloat {
+        let lyricFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let lyricWidth = ceil((text as NSString).size(withAttributes: [.font: lyricFont]).width)
+        var width = 30 + 15 + 9 + lyricWidth
+
+        if let alertText {
+            let alertFont = NSFont.systemFont(ofSize: 9, weight: .bold)
+            let alertWidth = ceil((alertText as NSString).size(withAttributes: [.font: alertFont]).width)
+            width += 9 + alertWidth + 26
+        }
+
+        return min(
+            max(width, minimumMusicLyricBubbleWidth),
+            maximumMusicLyricBubbleWidth
+        )
     }
 
     static func allowedTopOverflow(scale: Double, showsBubble: Bool, showsChat: Bool, showsMaintenance: Bool) -> CGFloat {

@@ -1475,7 +1475,7 @@ struct PetMusicLyricBubble: View {
             }
         }
         .padding(.horizontal, 15).padding(.vertical, 11)
-        .frame(maxWidth: 350)
+        .frame(width: PetLayout.musicLyricBubbleWidth(text: text, alertText: alertText))
         .fixedSize(horizontal: false, vertical: true)
         .yuanPetBubbleGlass(
             cornerRadius: 20,
