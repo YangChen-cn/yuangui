@@ -3,6 +3,9 @@ name: Mirror release and update manifest to Gitee
 on:
   release:
     types: [published]
+  push:
+    paths:
+      - updates/latest.json
   workflow_dispatch:
     inputs:
       tag:
@@ -28,6 +31,7 @@ concurrency:
 
 jobs:
   mirror-release:
+    if: github.event_name != 'push'
     name: Upload the same DMG and manifest to Gitee
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -414,6 +418,97 @@ jobs:
           rm -f "$RAW_FILE"
           [[ "$FOUND" == true ]] || {
             echo "Gitee raw manifest was not available or did not match GitHub" >&2
+            exit 1
+          }
+          echo "Gitee manifest: $RAW_URL"
+
+  sync-manifest:
+    if: github.event_name == 'push'
+    name: Sync latest.json to Gitee
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    env:
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      GITEE_OWNER: yangchen716
+      GITEE_REPO: yuangui
+
+    steps:
+      - name: Check out the pushed main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate the Gitee token and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${GITEE_TOKEN:-}" ]] || {
+            echo "Repository secret GITEE_TOKEN is required" >&2
+            exit 1
+          }
+          ./script/verify_update_manifest.sh
+
+      - name: Create or update the Gitee raw manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+          RAW_URL="https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/updates/latest.json"
+          EXPECTED_SHA="$(sha256sum updates/latest.json | awk '{print $1}')"
+          RAW_FILE="$(mktemp)"
+          FOUND=false
+
+          curl --silent --show-error --fail-with-body \
+            --request POST \
+            --data-urlencode "access_token=$GITEE_TOKEN" \
+            "$API/remote_mirror/pull" >/dev/null || true
+
+          for attempt in $(seq 1 8); do
+            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              FOUND=true
+              break
+            fi
+            sleep 15
+          done
+
+          if [[ "$FOUND" != true ]]; then
+            FILE_INFO="$(mktemp)"
+            curl --silent --show-error "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
+            FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO" 2>/dev/null || true)"
+            CONTENT="$(base64 -w 0 updates/latest.json)"
+            if [[ -n "$FILE_SHA" ]]; then
+              curl --silent --show-error --fail-with-body \
+                --request PUT \
+                --data-urlencode "access_token=$GITEE_TOKEN" \
+                --data-urlencode "content=$CONTENT" \
+                --data-urlencode "message=Sync update manifest" \
+                --data-urlencode "branch=main" \
+                --data-urlencode "sha=$FILE_SHA" \
+                "$API/contents/updates/latest.json" >/dev/null
+            else
+              curl --silent --show-error --fail-with-body \
+                --request POST \
+                --data-urlencode "access_token=$GITEE_TOKEN" \
+                --data-urlencode "content=$CONTENT" \
+                --data-urlencode "message=Create update manifest" \
+                --data-urlencode "branch=main" \
+                "$API/contents/updates/latest.json" >/dev/null
+            fi
+          fi
+
+          for attempt in $(seq 1 8); do
+            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              FOUND=true
+              break
+            fi
+            sleep 15
+          done
+          rm -f "$RAW_FILE"
+          [[ "$FOUND" == true ]] || {
+            echo "Gitee raw manifest was not created or does not match GitHub" >&2
             exit 1
           }
           echo "Gitee manifest: $RAW_URL"
