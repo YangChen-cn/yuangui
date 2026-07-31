@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - updates/latest.json
+      - .github/workflows/mirror-release-to-gitee.yml
   workflow_dispatch:
     inputs:
       tag:
