@@ -1465,7 +1465,6 @@ struct PetMusicLyricBubble: View {
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
             if let alertText {
                 Label(alertText, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 9, weight: .bold, design: .rounded))

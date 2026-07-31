@@ -62,6 +62,8 @@ struct MusicTransportControls: View {
     }
 
     var body: some View {
+        let isPrimaryCompactAction = compact && usesGlassButtons && commands.canControl
+
         HStack(spacing: compact ? 15 : 22) {
             Button(action: commands.previous) { Image(systemName: "backward.fill") }
                 .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
@@ -80,6 +82,11 @@ struct MusicTransportControls: View {
                 usesGlass: usesGlassButtons,
                 isProminent: compact && usesGlassButtons
             ))
+            .foregroundStyle(isPrimaryCompactAction ? Color.white : Color.primary)
+            .background(
+                isPrimaryCompactAction ? Color.blue : Color.clear,
+                in: Circle()
+            )
             .help(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
             Button(action: commands.next) { Image(systemName: "forward.fill") }
