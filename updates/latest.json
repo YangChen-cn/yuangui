@@ -3,19 +3,25 @@
   "version": "2.7.1",
   "build": 17,
   "minimumSystemVersion": "15.0",
-  "publishedAt": "2026-07-31T13:39:13Z",
+  "publishedAt": "2026-07-31T20:52:53Z",
   "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.1",
   "highlights": {
     "zh-Hans": [
-      "音乐界面改为精细订阅，减少无效 SwiftUI 刷新",
-      "收窄 Dashboard、桌宠、设置、日记和音乐界面的刷新边界"
+      "音乐界面改为精细订阅。播放进度、控制按钮、歌词、资料库、账号、哔哩哔哩导入和本地导入分别观察自己的 Store，不再由一个宽订阅包装器带动整片界面刷新。",
+      "音乐实现拆分为播放、资料库、歌词、哔哩哔哩、本地文件和持久化 Coordinator；现有资料库格式、服务接口和用户操作保持兼容，不需要迁移数据。"
     ],
     "en": [
-      "Reduced unnecessary SwiftUI work throughout the music interface",
-      "Narrowed refresh boundaries across the Dashboard, companion, Settings, Journal, and music surfaces"
+      "Reduced unnecessary SwiftUI work throughout the music interface. Playback progress, transport controls, lyrics, library,",
+      "Split the music implementation into focused playback, library, lyrics, Bilibili, local-file, and persistence coordinator"
     ]
   },
   "assets": [
+    {
+      "provider": "gitee",
+      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.7.1/YuanGUI-2.7.1.dmg",
+      "sha256": "09576ae0a85b359b7c0bb5d8668b205de3dc5fce2fb275457c38f4cf4aed9142",
+      "size": 28604286
+    },
     {
       "provider": "github",
       "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.7.1/YuanGUI-2.7.1.dmg",
