@@ -23,11 +23,10 @@ struct DashboardAtmosphereBackground: View {
         if palette.treatment == .liquidGlass {
             if #available(macOS 26.0, *) {
                 ZStack {
-                    Color.clear
                     ambientColorLayer
+                    Color.clear
                 }
                 .glassEffect(.regular, in: .rect(cornerRadius: 20))
-                .clipShape(.rect(cornerRadius: 20))
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             } else {
@@ -40,11 +39,9 @@ struct DashboardAtmosphereBackground: View {
 
     private var fallbackBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.regularMaterial)
             ambientColorLayer
             RoundedRectangle(cornerRadius: 20)
-                .strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
+                .fill(.regularMaterial)
         }
         .clipShape(.rect(cornerRadius: 20))
         .allowsHitTesting(false)
@@ -62,15 +59,15 @@ struct DashboardAtmosphereBackground: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            Circle()
-                .fill(characterGlow.opacity(ambientOpacity * 0.82))
-                .frame(width: 180, height: 180)
-                .blur(radius: 50)
+                Circle()
+                    .fill(characterGlow.opacity(ambientOpacity * 0.82))
+                .frame(width: 156, height: 156)
+                .blur(radius: 32)
                 .offset(x: -132, y: -208)
             Circle()
                 .fill(weatherGlow.opacity(ambientOpacity * 0.68))
-                .frame(width: 160, height: 160)
-                .blur(radius: 54)
+                .frame(width: 142, height: 142)
+                .blur(radius: 36)
                 .offset(x: 142, y: 218)
         }
     }
@@ -80,11 +77,6 @@ struct DashboardAtmosphereBackground: View {
         let darkMultiplier = colorScheme == .dark ? 0.72 : 1
         let contrastMultiplier = colorSchemeContrast == .increased ? 0.32 : 1
         return requested * darkMultiplier * contrastMultiplier
-    }
-
-    private var borderOpacity: Double {
-        if colorSchemeContrast == .increased { return 0.14 }
-        return colorScheme == .dark ? 0.10 : 0.06
     }
 
     private var characterGlow: Color {

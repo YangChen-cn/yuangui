@@ -4,7 +4,6 @@ struct DiaryEntryList: View {
     @ObservedObject var store: DiaryFeature
     let onCreateNew: () -> Void
     @Environment(\.undoManager) private var undoManager
-    @FocusState private var searchIsFocused: Bool
     @State private var pendingDelete: DiaryEntry?
     @State private var pendingDeleteIDs = Set<UUID>()
     @State private var selectedEntryIDs = Set<UUID>()
@@ -13,7 +12,13 @@ struct DiaryEntryList: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            searchHeader
+            DiaryEntryListHeader(
+                store: store,
+                isSelectionMode: $isSelectionMode,
+                selectedCount: selectedEntryIDs.count,
+                allVisibleEntriesSelected: allVisibleEntriesSelected,
+                toggleSelectAll: toggleSelectAll
+            )
             if store.filteredEntries.isEmpty {
                 DiaryEmptyState(
                     title: emptyTitle,
@@ -53,78 +58,6 @@ struct DiaryEntryList: View {
             selectedEntryIDs.removeAll()
             if enabled { pendingDeleteIDs.removeAll() }
         }
-        .background {
-            Button("") { searchIsFocused = true }
-                .keyboardShortcut("f", modifiers: .command)
-                .hidden()
-        }
-    }
-
-    private var searchHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField(AppLocalizer.string("搜索日记"), text: $store.searchText)
-                    .textFieldStyle(.plain)
-                    .focused($searchIsFocused)
-                if !store.searchText.isEmpty {
-                    Button { store.searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help(AppLocalizer.string("清除搜索"))
-                    .accessibilityLabel(AppLocalizer.string("清除搜索"))
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(Color.diarySecondarySurface, in: RoundedRectangle(cornerRadius: DiaryDesign.smallCornerRadius))
-
-            HStack {
-                Text(listTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if isSelectionMode {
-                    if !store.filteredEntries.isEmpty {
-                        Button {
-                            toggleSelectAll()
-                        } label: {
-                            Image(systemName: allVisibleEntriesSelected ? "minus.square" : "checkmark.square")
-                                .font(.system(size: 15, weight: .semibold))
-                                .frame(width: 26, height: 22)
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                        .help(AppLocalizer.string(allVisibleEntriesSelected ? "取消选择当前列表" : "选择当前列表"))
-                        .accessibilityLabel(AppLocalizer.string(allVisibleEntriesSelected ? "反全选" : "全选"))
-                    }
-                    if !selectedEntryIDs.isEmpty {
-                        Text(AppLocalizer.format("diary.list.selectedCount", selectedEntryIDs.count))
-                            .foregroundStyle(.tertiary)
-                    }
-                    Button(AppLocalizer.string("完成")) {
-                        isSelectionMode = false
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                } else {
-                    Button(AppLocalizer.string("选择"), systemImage: "checklist") {
-                        isSelectionMode = true
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .help(AppLocalizer.string("选择多篇日记"))
-                }
-                Text(AppLocalizer.format("diary.list.entryCount", store.filteredEntries.count))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
     }
 
     @ViewBuilder
@@ -200,15 +133,6 @@ struct DiaryEntryList: View {
         return groups.keys.sorted(by: >).map {
             DiaryTimelineGroup(day: $0, entries: groups[$0] ?? [])
         }
-    }
-
-    private var listTitle: String {
-        if !store.searchText.isEmpty { return AppLocalizer.string("搜索结果") }
-        if store.filter.favoritesOnly { return AppLocalizer.string("收藏") }
-        if let tag = store.filter.tag { return "#\(tag)" }
-        if let day = store.filter.day { return day.formatted(.dateTime.month().day()) }
-        if let month = store.filter.month { return month.formatted(.dateTime.year().month(.wide)) }
-        return AppLocalizer.string("时间线")
     }
 
     private var visibleEntryIDs: [UUID] {

@@ -243,6 +243,14 @@ private struct LyricsScrollWheelMonitor: NSViewRepresentable {
 
 struct MusicPlayerView: View {
     let music: MusicFeature
+
+    var body: some View {
+        MusicPlayerContentRoot(music: music)
+    }
+}
+
+private struct MusicPlayerContentRoot: View {
+    let music: MusicFeature
     @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject private var library: MusicLibraryStore
     @ObservedObject private var lyricsPresentation: LyricsPresentationStore
@@ -269,8 +277,13 @@ struct MusicPlayerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("浏览来源", selection: Binding(get: { music.playback.source }, set: music.setSource)) {
-                ForEach(MusicSource.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
+            Picker("浏览来源", selection: Binding(
+                get: { music.playback.source },
+                set: music.setSource
+            )) {
+                ForEach(MusicSource.allCases) {
+                    Label($0.title, systemImage: $0.systemImage).tag($0)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()

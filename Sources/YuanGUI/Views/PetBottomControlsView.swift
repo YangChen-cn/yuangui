@@ -44,7 +44,8 @@ struct PetBottomControlsView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: PetLayout.bottomToolbarSpacing) {
+        YuanFloatingControlGroup(spacing: PetLayout.bottomToolbarSpacing) {
+            HStack(spacing: PetLayout.bottomToolbarSpacing) {
             Button { store.toggleSystemStatus() } label: {
                 toolIcon(
                     store.shouldShowPetBubble
@@ -54,7 +55,8 @@ struct PetBottomControlsView: View {
                     selected: store.shouldShowPetBubble
                 )
             }
-            .buttonStyle(.plain)
+            .yuanSystemGlassButton()
+            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 30)
             .onHover { setTip($0 ? (store.shouldShowPetBubble ? "隐藏迷你监控" : "显示迷你监控") : nil) }
             .help(AppLocalizer.string(store.shouldShowPetBubble ? "隐藏桌宠迷你监控" : "显示 CPU、内存和电量迷你监控"))
             .accessibilityLabel(AppLocalizer.string(store.shouldShowPetBubble ? "隐藏迷你监控" : "显示迷你监控"))
@@ -64,7 +66,8 @@ struct PetBottomControlsView: View {
             } label: {
                 toolIcon("bubble.left.and.bubble.right", tint: .pink, selected: chat.isPresented)
             }
-            .buttonStyle(.plain)
+            .yuanSystemGlassButton()
+            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 30)
             .onHover { setTip($0 ? (chat.isPresented ? "收起 AI 对话" : "打开 AI 对话") : nil) }
             .help(AppLocalizer.string(chat.isPresented ? "收起 AI 输入框" : "和元圭、VCC 聊天，可粘贴图片或添加文件"))
             .accessibilityLabel(AppLocalizer.string(chat.isPresented ? "收起 AI 对话" : "打开 AI 对话"))
@@ -72,7 +75,8 @@ struct PetBottomControlsView: View {
             Button { isMiniPlayerPresented.toggle() } label: {
                 toolIcon("music.note", tint: .purple, selected: playback.isPlaying)
             }
-            .buttonStyle(.plain)
+            .yuanSystemGlassButton()
+            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 30)
             .onHover { setTip($0 ? (playback.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
             .help(AppLocalizer.string("YuanGUI 音乐播放器"))
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "正在播放音乐" : "打开迷你播放器"))
@@ -85,7 +89,8 @@ struct PetBottomControlsView: View {
             } label: {
                 toolIcon("square.and.pencil", tint: .pink)
             }
-            .buttonStyle(.plain)
+            .yuanSystemGlassButton()
+            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 30)
             .onHover { setTip($0 ? "快速记录" : nil) }
             .help(AppLocalizer.string("快速记录这一刻"))
             .accessibilityLabel(AppLocalizer.string("快速记录"))
@@ -97,16 +102,16 @@ struct PetBottomControlsView: View {
                     selected: false
                 )
             }
-            .buttonStyle(.plain)
+            .yuanSystemGlassButton()
+            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 30)
             .onHover { setTip($0 ? "锁定并允许穿透" : nil) }
             .help(AppLocalizer.string("锁定桌宠：主体允许点击穿透，悬停仍可唤出解锁按钮"))
             .accessibilityLabel(AppLocalizer.string("锁定并允许穿透"))
 
+            }
         }
+        .controlSize(.mini)
         .padding(PetLayout.bottomToolbarPanelPadding)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.6))
-        .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
     }
 
     private func setTip(_ text: String?) {
@@ -118,7 +123,7 @@ struct PetBottomControlsView: View {
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(selected ? tint : Color.primary.opacity(0.78))
             .frame(width: PetLayout.bottomToolbarButtonWidth, height: 28)
-            .background(selected ? tint.opacity(0.16) : Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(selected ? tint.opacity(0.16) : .clear, in: .rect(cornerRadius: 8))
             .contentShape(Rectangle())
     }
 }

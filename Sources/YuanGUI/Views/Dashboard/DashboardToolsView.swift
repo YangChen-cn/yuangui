@@ -47,7 +47,6 @@ struct DashboardToolsView: View {
                         launch(quickTools.beginScreenshotTranslation)
                     }
                 }
-                .modifier(DashboardQuickActionGlassContainerModifier())
                 Text(AppLocalizer.string("更多工具"))
                     .font(.caption)
                     .bold()
@@ -137,53 +136,16 @@ struct DashboardQuickAction: View {
 
 }
 
-private struct DashboardQuickActionGlassContainerModifier: ViewModifier {
-    @Environment(\.dashboardVisualTreatment) private var treatment
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if treatment == .liquidGlass {
-            if #available(macOS 26.0, *) {
-                GlassEffectContainer(spacing: DashboardDesign.compactSpacing) {
-                    content
-                }
-            } else {
-                content
-            }
-        } else {
-            content
-        }
-    }
-}
-
 private struct DashboardQuickActionSurfaceModifier: ViewModifier {
     let role: DashboardActionRole
     let isHovering: Bool
 
-    @Environment(\.dashboardVisualTreatment) private var treatment
-
     @ViewBuilder
     func body(content: Content) -> some View {
-        if treatment == .liquidGlass, role == .yuanGUI {
-            if #available(macOS 26.0, *) {
-                content.glassEffect(
-                    .regular
-                        .tint(Color.accentColor.opacity(0.04))
-                        .interactive(),
-                    in: .rect(cornerRadius: DashboardDesign.sectionRadius)
-                )
-            } else {
-                content.background(
-                    Color.accentColor.opacity(isHovering ? 0.13 : 0.08),
-                    in: .rect(cornerRadius: DashboardDesign.sectionRadius)
-                )
-            }
-        } else {
-            content.background(
-                backgroundColor,
-                in: .rect(cornerRadius: DashboardDesign.sectionRadius)
-            )
-        }
+        content.background(
+            backgroundColor,
+            in: .rect(cornerRadius: DashboardDesign.sectionRadius)
+        )
     }
 
     private var backgroundColor: Color {

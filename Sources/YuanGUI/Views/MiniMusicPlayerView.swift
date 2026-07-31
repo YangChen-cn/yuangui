@@ -35,7 +35,7 @@ struct MiniMusicPlayerView: View {
                 Button { music.toggleLyricsVisible() } label: {
                     Image(systemName: lyricsPresentation.isVisible ? "quote.bubble.fill" : "quote.bubble")
                 }
-                .yuanSystemGlassButton()
+                .yuanSystemGlassButton(isProminent: lyricsPresentation.isVisible)
                 .controlSize(.small)
                 .help(AppLocalizer.string(
                     lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
@@ -46,7 +46,7 @@ struct MiniMusicPlayerView: View {
                 Button { music.setLyricsPanelLocked(!lyricsPresentation.isPanelLocked) } label: {
                     Image(systemName: lyricsPresentation.isPanelLocked ? "lock.fill" : "lock.open")
                 }
-                .yuanSystemGlassButton()
+                .yuanSystemGlassButton(isProminent: lyricsPresentation.isPanelLocked)
                 .controlSize(.small)
                 .help(AppLocalizer.string(
                     lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词"

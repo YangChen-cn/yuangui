@@ -1,64 +1,65 @@
 import SwiftUI
 
+private enum DiarySidebarSelection: Hashable {
+    case timeline
+    case calendar
+    case photoWall
+    case onThisDay
+    case favorites
+    case recentlyDeleted
+    case month(Date)
+    case tag(String)
+}
+
 struct DiarySidebarView: View {
     @ObservedObject var store: DiaryFeature
+    @State private var selection: DiarySidebarSelection?
 
     var body: some View {
         VStack(spacing: 0) {
             brandHeader
-            List {
+            List(selection: $selection) {
                 Section(AppLocalizer.string("回忆")) {
-                    navigationButton("时间线", icon: "text.justify.left", active: isAllTimeline) {
-                        store.clearFilters()
-                        store.viewMode = .timeline
-                    }
-                    navigationButton("日历", icon: "calendar", active: store.viewMode == .calendar) {
-                        store.viewMode = .calendar
-                    }
-                    navigationButton("照片墙", icon: "photo.on.rectangle.angled", active: store.viewMode == .photoWall) {
-                        store.viewMode = .photoWall
-                    }
-                    navigationButton("那年今日", icon: "clock.arrow.circlepath", active: store.viewMode == .onThisDay) {
-                        store.viewMode = .onThisDay
-                    }
-                    navigationButton("收藏", icon: "star", active: store.viewMode == .timeline && store.filter.favoritesOnly) {
-                        store.filter = DiaryFilter(favoritesOnly: true)
-                        store.viewMode = .timeline
-                    }
-                    navigationButton("最近删除", icon: "trash", active: store.viewMode == .recentlyDeleted) {
-                        store.viewMode = .recentlyDeleted
-                    }
+                    Label("时间线", systemImage: "text.justify.left")
+                        .tag(DiarySidebarSelection.timeline)
+                    Label("日历", systemImage: "calendar")
+                        .tag(DiarySidebarSelection.calendar)
+                    Label("照片墙", systemImage: "photo.on.rectangle.angled")
+                        .tag(DiarySidebarSelection.photoWall)
+                    Label("那年今日", systemImage: "clock.arrow.circlepath")
+                        .tag(DiarySidebarSelection.onThisDay)
+                    Label("收藏", systemImage: "star")
+                        .tag(DiarySidebarSelection.favorites)
+                    Label("最近删除", systemImage: "trash")
+                        .tag(DiarySidebarSelection.recentlyDeleted)
                 }
 
                 Section(AppLocalizer.string("月份")) {
                     ForEach(availableMonths, id: \.self) { month in
-                        navigationButton(
+                        Label(
                             month.formatted(.dateTime.year().month(.wide)),
-                            icon: "calendar.day.timeline.left",
-                            active: isSelectedMonth(month)
-                        ) {
-                            store.selectMonth(month)
-                        }
+                            systemImage: "calendar.day.timeline.left"
+                        )
+                        .tag(DiarySidebarSelection.month(month))
                     }
                 }
 
                 if !store.allTags.isEmpty {
                     Section(AppLocalizer.string("标签")) {
                         ForEach(store.allTags, id: \.self) { tag in
-                            navigationButton(
-                                "#\(tag)",
-                                icon: "tag",
-                                active: store.viewMode == .timeline
-                                    && store.filter.tag?.caseInsensitiveCompare(tag) == .orderedSame
-                            ) {
-                                store.filter = DiaryFilter(tag: tag)
-                                store.viewMode = .timeline
-                            }
+                            Label("#\(tag)", systemImage: "tag")
+                                .tag(DiarySidebarSelection.tag(tag))
                         }
                     }
                 }
             }
             .listStyle(.sidebar)
+            .onChange(of: selection) { _, newSelection in
+                apply(newSelection)
+            }
+            .onAppear(perform: synchronizeSelection)
+            .onChange(of: store.viewMode) { _, _ in synchronizeSelection() }
+            .onChange(of: store.filter) { _, _ in synchronizeSelection() }
             sidebarFooter
         }
     }
@@ -99,10 +100,6 @@ struct DiarySidebarView: View {
         )
     }
 
-    private var isAllTimeline: Bool {
-        store.viewMode == .timeline && store.filter == DiaryFilter()
-    }
-
     private var photoCount: Int {
         store.entries.reduce(0) { $0 + $1.attachments.count }
     }
@@ -116,25 +113,51 @@ struct DiarySidebarView: View {
         return Array(Set(entryMonths + [currentMonth])).sorted(by: >)
     }
 
-    private func isSelectedMonth(_ month: Date) -> Bool {
-        guard store.viewMode == .timeline, let selected = store.filter.month else { return false }
-        return Calendar.current.isDate(month, equalTo: selected, toGranularity: .month)
+    private func apply(_ selection: DiarySidebarSelection?) {
+        guard let selection else { return }
+        switch selection {
+        case .timeline:
+            store.clearFilters()
+            store.viewMode = .timeline
+        case .calendar:
+            store.viewMode = .calendar
+        case .photoWall:
+            store.viewMode = .photoWall
+        case .onThisDay:
+            store.viewMode = .onThisDay
+        case .favorites:
+            store.filter = DiaryFilter(favoritesOnly: true)
+            store.viewMode = .timeline
+        case .recentlyDeleted:
+            store.viewMode = .recentlyDeleted
+        case .month(let month):
+            store.selectMonth(month)
+        case .tag(let tag):
+            store.filter = DiaryFilter(tag: tag)
+            store.viewMode = .timeline
+        }
     }
 
-    private func navigationButton(
-        _ title: String,
-        icon: String,
-        active: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(AppLocalizer.string(title), systemImage: icon)
-                .foregroundStyle(active ? AnyShapeStyle(Color.diaryAccent) : AnyShapeStyle(.primary))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+    private func synchronizeSelection() {
+        switch store.viewMode {
+        case .calendar:
+            selection = .calendar
+        case .photoWall:
+            selection = .photoWall
+        case .onThisDay:
+            selection = .onThisDay
+        case .recentlyDeleted:
+            selection = .recentlyDeleted
+        case .timeline:
+            if store.filter.favoritesOnly {
+                selection = .favorites
+            } else if let tag = store.filter.tag {
+                selection = .tag(tag)
+            } else if let month = store.filter.month {
+                selection = .month(month)
+            } else {
+                selection = .timeline
+            }
         }
-        .buttonStyle(.plain)
-        .listRowBackground(active ? Color.diarySelection : Color.clear)
-        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }

@@ -48,9 +48,9 @@ enum PetLayout {
     static let minimumMaintenanceWidth: CGFloat = 360
     static let compactTopTransparentInset: CGFloat = 58
     static let bottomToolbarButtonWidth: CGFloat = 28
-    static let bottomToolbarSpacing: CGFloat = 2
+    static let bottomToolbarSpacing: CGFloat = 0
     static let bottomToolbarButtonCount = 5
-    static let bottomToolbarPanelPadding: CGFloat = 6
+    static let bottomToolbarPanelPadding: CGFloat = 10
     static let bottomToolbarNormalBottomPadding: CGFloat = 6
     static let bottomToolbarChatBottomPadding: CGFloat = 70
     static let chatScreenEdgeInset: CGFloat = 12

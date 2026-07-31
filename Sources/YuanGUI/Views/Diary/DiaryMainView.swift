@@ -1,6 +1,14 @@
 import SwiftUI
 
 struct DiaryMainView: View {
+    let store: DiaryFeature
+
+    var body: some View {
+        DiaryContentRoot(store: store)
+    }
+}
+
+private struct DiaryContentRoot: View {
     @ObservedObject var store: DiaryFeature
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var previousColumnVisibility: NavigationSplitViewVisibility = .all
@@ -33,6 +41,11 @@ struct DiaryMainView: View {
                 )
         }
         .tint(.diaryAccent)
+        .searchable(
+            text: $store.searchText,
+            placement: .toolbar,
+            prompt: AppLocalizer.string("搜索日记")
+        )
         .toolbar { diaryToolbar }
         .sheet(isPresented: $showExport) { DiaryExportView(store: store) }
         .sheet(isPresented: $showQuickEntry) {
@@ -75,6 +88,9 @@ struct DiaryMainView: View {
             }
             .help(AppLocalizer.string("导出与备份"))
             .accessibilityLabel(AppLocalizer.string("导出与备份"))
+        }
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.flexible)
         }
     }
 

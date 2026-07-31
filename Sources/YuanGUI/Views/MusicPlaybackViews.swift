@@ -76,7 +76,7 @@ struct MusicTransportControls: View {
                         in: Circle()
                     )
             }
-            .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons))
+            .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons, isProminent: compact && usesGlassButtons))
             .help(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
             Button(action: commands.next) { Image(systemName: "forward.fill") }
@@ -90,11 +90,12 @@ struct MusicTransportControls: View {
 
 private struct MusicTransportButtonModifier: ViewModifier {
     let usesGlass: Bool
+    var isProminent = false
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if usesGlass {
-            content.yuanSystemGlassButton()
+            content.yuanSystemGlassButton(isProminent: isProminent)
         } else {
             content.buttonStyle(.plain)
         }

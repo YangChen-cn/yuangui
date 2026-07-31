@@ -31,22 +31,22 @@ struct QuickToolsSettingsView: View {
                         Button(AppLocalizer.string("选择…"), action: chooseScreenshotDirectory)
                     }
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        if ScreenCapturePermission.state != .granted {
+                            permissionButton("请求权限") { _ = ScreenCapturePermission.request() }
+                            permissionButton("系统设置", action: ScreenCapturePermission.openSettings)
+                        }
+                        actionButton("开始截图") { controller.beginRegionScreenshot() }
+                        actionButton("截图翻译") { controller.beginScreenshotTranslation() }
+                    }
+                    .controlSize(.small)
+                } label: {
                     Text(AppLocalizer.string(
                         ScreenCapturePermission.state == .granted
                             ? "屏幕录制权限已开启"
                             : "尚未开启屏幕录制权限"
                     ))
-                    if ScreenCapturePermission.state != .granted {
-                        HStack(spacing: 8) {
-                            permissionButton("请求权限") { _ = ScreenCapturePermission.request() }
-                            permissionButton("系统设置", action: ScreenCapturePermission.openSettings)
-                        }
-                    }
-                    HStack(spacing: 8) {
-                        actionButton("开始截图") { controller.beginRegionScreenshot() }
-                        actionButton("截图翻译") { controller.beginScreenshotTranslation() }
-                    }
                 }
                 Toggle(AppLocalizer.string("将截图译文覆盖显示在原位置"), isOn: Binding(
                     get: { settings.screenshotTranslationOverlayEnabled },
@@ -89,18 +89,20 @@ struct QuickToolsSettingsView: View {
                 )) {
                     ForEach(QuickToolLanguage.allCases.filter { $0 != .simplifiedChinese }) { Text($0.title).tag($0) }
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        if !AccessibilityPermission.isGranted {
+                            permissionButton("请求权限") { _ = AccessibilityPermission.request() }
+                            permissionButton("系统设置", action: AccessibilityPermission.openSettings)
+                        }
+                    }
+                    .controlSize(.small)
+                } label: {
                     Text(AppLocalizer.string(
                         AccessibilityPermission.isGranted
                             ? "辅助功能权限已开启"
                             : "尚未开启辅助功能权限"
                     ))
-                    if !AccessibilityPermission.isGranted {
-                        HStack(spacing: 8) {
-                            permissionButton("请求权限") { _ = AccessibilityPermission.request() }
-                            permissionButton("系统设置", action: AccessibilityPermission.openSettings)
-                        }
-                    }
                 }
                 Text(AppLocalizer.string("划词后按快捷键；没有选中文字时会打开手动输入窗口。原文可修正并重新翻译，也可复制译文或安全替换可编辑的原选区。"))
                     .font(.caption).foregroundStyle(.secondary)

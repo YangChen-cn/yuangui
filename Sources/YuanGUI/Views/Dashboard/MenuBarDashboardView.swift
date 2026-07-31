@@ -3,6 +3,40 @@ import SwiftUI
 struct MenuBarDashboardView: View {
     static let preferredWidth = DashboardDesign.preferredWidth
 
+    let store: PetStore
+    let focusTimer: FocusTimerStore
+    let music: MusicFeature
+    let externalAudioInterruption: ExternalAudioInterruptionController
+    let quickTools: QuickToolsController
+    let panelState: DashboardPanelState
+    let hostModel: DashboardHostModel
+    let togglePet: () -> Void
+    let showPet: () -> Void
+    let openSettings: () -> Void
+    let dismiss: () -> Void
+    let layoutDidChange: (DashboardSection, MusicSource) -> Void
+
+    var body: some View {
+        DashboardContentRoot(
+            store: store,
+            focusTimer: focusTimer,
+            music: music,
+            externalAudioInterruption: externalAudioInterruption,
+            quickTools: quickTools,
+            panelState: panelState,
+            hostModel: hostModel,
+            togglePet: togglePet,
+            showPet: showPet,
+            openSettings: openSettings,
+            dismiss: dismiss,
+            layoutDidChange: layoutDidChange
+        )
+    }
+}
+
+private struct DashboardContentRoot: View {
+    static let preferredWidth = DashboardDesign.preferredWidth
+
     @ObservedObject var store: PetStore
     @ObservedObject var focusTimer: FocusTimerStore
     let music: MusicFeature
@@ -10,8 +44,7 @@ struct MenuBarDashboardView: View {
     @ObservedObject var externalAudioInterruption: ExternalAudioInterruptionController
     @ObservedObject var quickTools: QuickToolsController
     @ObservedObject var panelState: DashboardPanelState
-    let dashboardWidth: CGFloat
-    let dashboardHeight: CGFloat
+    @ObservedObject var hostModel: DashboardHostModel
     let togglePet: () -> Void
     let showPet: () -> Void
     let openSettings: () -> Void
@@ -30,8 +63,7 @@ struct MenuBarDashboardView: View {
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
         panelState: DashboardPanelState,
-        dashboardWidth: CGFloat,
-        dashboardHeight: CGFloat,
+        hostModel: DashboardHostModel,
         togglePet: @escaping () -> Void,
         showPet: @escaping () -> Void,
         openSettings: @escaping () -> Void,
@@ -45,8 +77,7 @@ struct MenuBarDashboardView: View {
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
         self.panelState = panelState
-        self.dashboardWidth = dashboardWidth
-        self.dashboardHeight = dashboardHeight
+        self.hostModel = hostModel
         self.togglePet = togglePet
         self.showPet = showPet
         self.openSettings = openSettings
@@ -60,16 +91,25 @@ struct MenuBarDashboardView: View {
 
     var body: some View {
         VStack(spacing: DashboardDesign.sectionSpacing) {
-            DashboardHeaderView(
+            DashboardHeaderContainer(
                 store: store,
                 focusTimer: focusTimer,
                 showsFocusPopover: $showsFocusPopover,
                 showPet: showPet
             )
             DashboardSectionPicker(selection: $panelState.selectedSection)
-            pageContent
+            DashboardPageContainer(
+                selection: panelState.selectedSection,
+                music: music,
+                externalAudioInterruption: externalAudioInterruption,
+                quickTools: quickTools,
+                updater: updater,
+                openSettings: openSettings,
+                dismiss: dismiss,
+                store: store
+            )
                 .frame(maxWidth: .infinity, alignment: .top)
-            DashboardFooterView(
+            DashboardFooterContainer(
                 store: store,
                 togglePet: togglePet,
                 showPet: showPet,
@@ -79,23 +119,18 @@ struct MenuBarDashboardView: View {
         }
         .padding(DashboardDesign.outerPadding)
         .frame(
-            width: dashboardWidth,
+            width: hostModel.width,
             height: DashboardPanelLayout.height(
                 for: panelState.selectedSection,
                 musicSource: playback.source,
-                maximumHeight: dashboardHeight
+                maximumHeight: hostModel.maximumHeight
             )
         )
-        .background {
-            DashboardAtmosphereBackground(
-                palette: palette,
-                mode: store.mode,
-                smartState: store.smartState
-            )
-        }
+        .background { DashboardAtmosphereContainer(store: store) }
         .tint(palette.accent)
         .environment(\.dashboardVisualTreatment, palette.treatment)
         .preferredColorScheme(palette.preferredColorScheme)
+        .opacity(hostModel.isPresented ? 1 : 0)
         .onAppear(perform: prepareDashboard)
         .onChange(of: panelState.selectedSection) { _, section in
             layoutDidChange(section, playback.source)
@@ -107,27 +142,6 @@ struct MenuBarDashboardView: View {
         .onMoveCommand(perform: moveSelection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("元圭与 VCC 快速控制中心")
-    }
-
-    @ViewBuilder
-    private var pageContent: some View {
-        switch panelState.selectedSection {
-        case .overview:
-            DashboardOverviewView(store: store)
-        case .music:
-            DashboardMusicView(
-                music: music,
-                externalAudioInterruption: externalAudioInterruption,
-                dismiss: dismiss
-            )
-        case .tools:
-            DashboardToolsView(
-                quickTools: quickTools,
-                updater: updater,
-                openSettings: openSettings,
-                dismiss: dismiss
-            )
-        }
     }
 
     private func prepareDashboard() {

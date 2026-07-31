@@ -21,60 +21,43 @@ struct PetReplyBubble: View {
     @State private var contentHeight = PetReplyBubbleLayout.minimumContentHeight
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ZStack {
-                Circle().fill(.pink.opacity(0.15))
-                Image(systemName: pet.mode == .vcc ? "cat.fill" : "heart.fill")
-                    .foregroundStyle(.pink)
-            }
-            .frame(width: 28, height: 28)
+        YuanSpeechBubbleSurface(
+            variant: .regular,
+            cornerRadius: 23,
+            placement: .abovePet,
+            tailWidth: 25,
+            tailHeight: 13,
+            tailOffset: 9,
+            tailHorizontalOffset: 92
+        ) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    Circle().fill(.pink.opacity(0.15))
+                    Image(systemName: pet.mode == .vcc ? "cat.fill" : "heart.fill")
+                        .foregroundStyle(.pink)
+                }
+                .frame(width: 28, height: 28)
 
-            ScrollView {
-                replyContent
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: PetReplyBubbleContentHeightKey.self,
-                                value: proxy.size.height
-                            )
+                ScrollView {
+                    replyContent
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: PetReplyBubbleContentHeightKey.self,
+                                    value: proxy.size.height
+                                )
+                            }
                         }
-                    }
+                }
+                .frame(height: contentHeight)
             }
-            .frame(height: contentHeight)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(width: 410)
-        .foregroundStyle(.primary)
-        .background(
-            Color(nsColor: .windowBackgroundColor).opacity(0.96),
-            in: RoundedRectangle(cornerRadius: 23, style: .continuous)
-        )
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
-        .background(
-            LinearGradient(
-                colors: [.pink.opacity(0.12), .purple.opacity(0.07), .blue.opacity(0.04)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 23, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 23, style: .continuous)
-                .stroke(
-                    LinearGradient(colors: [.white.opacity(0.55), .pink.opacity(0.32)], startPoint: .top, endPoint: .bottom),
-                    lineWidth: 0.9
-                )
-        }
-        .shadow(color: .pink.opacity(0.20), radius: 17, y: 7)
-        .overlay(alignment: .bottom) {
-            ReplyBubbleTail()
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
-                .frame(width: 25, height: 13)
-                .offset(x: 92, y: 9)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(width: 410)
+            .foregroundStyle(.primary)
         }
         .onPreferenceChange(PetReplyBubbleContentHeightKey.self) { measuredHeight in
             let boundedHeight = min(
@@ -207,13 +190,7 @@ struct PetChatComposer: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(minWidth: 330, idealWidth: 388, maxWidth: 388)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .background(
-            LinearGradient(colors: [.white.opacity(0.38), .pink.opacity(0.11)], startPoint: .top, endPoint: .bottom),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.64), lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.13), radius: 13, y: 5)
+        .yuanLiquidGlassSurface(.regular, cornerRadius: 22)
         .onAppear { inputFocused = true }
         .onExitCommand { chat.dismiss() }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleDrop)

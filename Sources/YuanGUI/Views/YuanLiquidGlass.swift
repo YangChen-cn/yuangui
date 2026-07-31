@@ -30,16 +30,18 @@ extension View {
         modifier(YuanGlassEffectContainerModifier(spacing: spacing))
     }
 
-    /// Speech bubbles sit directly over rich desktop content, where Apple's
-    /// clear glass variant is appropriate. The tail participates in the same
-    /// glass container so it visually joins the main surface.
+    /// Speech bubbles default to regular glass so text remains legible over
+    /// both light and dark desktops. Callers may opt into clear glass only
+    /// when the underlying image has enough contrast. The tail participates
+    /// in the same glass container so it visually joins the main surface.
     func yuanPetBubbleGlass(
-        _ variant: YuanLiquidGlassVariant = .clear,
+        _ variant: YuanLiquidGlassVariant = .regular,
         cornerRadius: CGFloat,
         placement: PetAuxiliaryBubblePlacement,
         tailWidth: CGFloat,
         tailHeight: CGFloat,
-        tailOffset: CGFloat
+        tailOffset: CGFloat,
+        tailHorizontalOffset: CGFloat = 0
     ) -> some View {
         modifier(
             YuanPetBubbleGlassModifier(
@@ -48,9 +50,95 @@ extension View {
                 placement: placement,
                 tailWidth: tailWidth,
                 tailHeight: tailHeight,
-                tailOffset: tailOffset
+                tailOffset: tailOffset,
+                tailHorizontalOffset: tailHorizontalOffset
             )
         )
+    }
+}
+
+struct YuanFloatingControl<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        Button(action: action) {
+            label
+        }
+        .yuanSystemGlassButton()
+        .controlSize(.small)
+    }
+}
+
+struct YuanFloatingControlGroup<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .yuanGlassEffectContainer(spacing: spacing)
+    }
+}
+
+struct YuanSpeechBubbleSurface<Content: View>: View {
+    let variant: YuanLiquidGlassVariant
+    let cornerRadius: CGFloat
+    let placement: PetAuxiliaryBubblePlacement
+    let tailWidth: CGFloat
+    let tailHeight: CGFloat
+    let tailOffset: CGFloat
+    let tailHorizontalOffset: CGFloat
+    @ViewBuilder let content: Content
+
+    init(
+        variant: YuanLiquidGlassVariant,
+        cornerRadius: CGFloat,
+        placement: PetAuxiliaryBubblePlacement,
+        tailWidth: CGFloat,
+        tailHeight: CGFloat,
+        tailOffset: CGFloat,
+        tailHorizontalOffset: CGFloat = 0,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.variant = variant
+        self.cornerRadius = cornerRadius
+        self.placement = placement
+        self.tailWidth = tailWidth
+        self.tailHeight = tailHeight
+        self.tailOffset = tailOffset
+        self.tailHorizontalOffset = tailHorizontalOffset
+        self.content = content()
+    }
+
+    var body: some View {
+        content.yuanPetBubbleGlass(
+            variant,
+            cornerRadius: cornerRadius,
+            placement: placement,
+            tailWidth: tailWidth,
+            tailHeight: tailHeight,
+            tailOffset: tailOffset,
+            tailHorizontalOffset: tailHorizontalOffset
+        )
+    }
+}
+
+struct YuanTransientPanelSurface<Content: View>: View {
+    let cornerRadius: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.yuanLiquidGlassSurface(.regular, cornerRadius: cornerRadius)
+    }
+}
+
+struct YuanContentCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(10)
+            .background(Color.primary.opacity(0.04), in: .rect(cornerRadius: 12))
     }
 }
 
@@ -83,13 +171,7 @@ private struct YuanLiquidGlassSurfaceModifier: ViewModifier {
                 content.glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
             }
         } else {
-            content
-                .background(.regularMaterial, in: .rect(cornerRadius: cornerRadius))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.6)
-                }
-                .shadow(color: .black.opacity(0.12), radius: 9, y: 4)
+            content.background(.regularMaterial, in: .rect(cornerRadius: cornerRadius))
         }
     }
 }
@@ -127,6 +209,7 @@ private struct YuanPetBubbleGlassModifier: ViewModifier {
     let tailWidth: CGFloat
     let tailHeight: CGFloat
     let tailOffset: CGFloat
+    let tailHorizontalOffset: CGFloat
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -146,23 +229,24 @@ private struct YuanPetBubbleGlassModifier: ViewModifier {
                                 in: PetBubbleTail()
                             )
                             .rotationEffect(.degrees(placement == .abovePet ? 0 : 180))
-                            .offset(y: placement == .abovePet ? tailOffset : -tailOffset)
+                            .offset(
+                                x: tailHorizontalOffset,
+                                y: placement == .abovePet ? tailOffset : -tailOffset
+                            )
                     }
             }
         } else {
             content
                 .background(.regularMaterial, in: .rect(cornerRadius: cornerRadius))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.6)
-                }
-                .shadow(color: .black.opacity(0.12), radius: 9, y: 4)
                 .overlay(alignment: placement == .abovePet ? .bottom : .top) {
                     PetBubbleTail()
                         .fill(.regularMaterial)
                         .frame(width: tailWidth, height: tailHeight)
                         .rotationEffect(.degrees(placement == .abovePet ? 0 : 180))
-                        .offset(y: placement == .abovePet ? tailOffset : -tailOffset)
+                        .offset(
+                            x: tailHorizontalOffset,
+                            y: placement == .abovePet ? tailOffset : -tailOffset
+                        )
                 }
         }
     }

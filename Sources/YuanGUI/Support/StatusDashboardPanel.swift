@@ -6,7 +6,7 @@ private final class StatusDashboardPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-final class StatusDashboardHostingView: NSHostingView<AnyView> {
+final class StatusDashboardHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
@@ -40,8 +40,9 @@ final class StatusDashboardPanelController {
     private let openSettings: () -> Void
     private let appActions: AppActions
     private let dashboardState = DashboardPanelState()
+    private let hostModel = DashboardHostModel()
     private let panel: StatusDashboardPanel
-    private var hostingView: StatusDashboardHostingView!
+    private var hostingView: StatusDashboardHostingView<StatusDashboardRootView>!
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var localKeyMonitor: Any?
@@ -89,7 +90,7 @@ final class StatusDashboardPanelController {
         panel.isReleasedWhenClosed = false
         panel.tabbingMode = .disallowed
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        installContent(width: Self.preferredWidth, maximumHeight: DashboardDesign.expandedHeight)
+        installContent()
     }
 
     func toggle(relativeTo button: NSStatusBarButton) {
@@ -101,6 +102,7 @@ final class StatusDashboardPanelController {
     }
 
     func hide() {
+        hostModel.isPresented = false
         panel.orderOut(nil)
         removeClickMonitors()
         store.monitor.setDashboardVisible(false)
@@ -117,10 +119,9 @@ final class StatusDashboardPanelController {
         )
         let width = size.width
         let height = size.height
-        installContent(
-            width: width,
-            maximumHeight: max(visible.height - DashboardPanelLayout.screenInset * 2, 0)
-        )
+        hostModel.width = width
+        hostModel.maximumHeight = max(visible.height - DashboardPanelLayout.screenInset * 2, 0)
+        hostModel.isPresented = true
         panel.setContentSize(NSSize(width: width, height: height))
 
         if let window = button.window {
@@ -145,33 +146,27 @@ final class StatusDashboardPanelController {
         installClickMonitors()
     }
 
-    private func installContent(width: CGFloat, maximumHeight: CGFloat) {
-        let rootView = AnyView(
-            MenuBarDashboardView(
-                store: store,
-                focusTimer: focusTimer,
-                music: music,
-                externalAudioInterruption: externalAudioInterruption,
-                quickTools: quickTools,
-                panelState: dashboardState,
-                dashboardWidth: width,
-                dashboardHeight: maximumHeight,
-                togglePet: togglePet,
-                showPet: showPet,
-                openSettings: openSettings,
-                dismiss: { [weak self] in self?.hide() },
-                layoutDidChange: { [weak self] section, source in
-                    self?.resize(for: section, musicSource: source)
-                }
-            )
-            .environment(\.appActions, appActions)
+    private func installContent() {
+        guard hostingView == nil else { return }
+        let rootView = StatusDashboardRootView(
+            store: store,
+            focusTimer: focusTimer,
+            music: music,
+            externalAudioInterruption: externalAudioInterruption,
+            quickTools: quickTools,
+            panelState: dashboardState,
+            hostModel: hostModel,
+            togglePet: togglePet,
+            showPet: showPet,
+            openSettings: openSettings,
+            dismiss: { [weak self] in self?.hide() },
+            layoutDidChange: { [weak self] section, source in
+                self?.resize(for: section, musicSource: source)
+            },
+            appActions: appActions
         )
-        if hostingView == nil {
-            hostingView = StatusDashboardHostingView(rootView: rootView)
-            panel.contentView = hostingView
-        } else {
-            hostingView.rootView = rootView
-        }
+        hostingView = StatusDashboardHostingView<StatusDashboardRootView>(rootView: rootView)
+        panel.contentView = hostingView
     }
 
     private func resize(for section: DashboardSection, musicSource: MusicSource) {
@@ -181,6 +176,8 @@ final class StatusDashboardPanelController {
             section: section,
             musicSource: musicSource
         )
+        hostModel.width = size.width
+        hostModel.maximumHeight = max(visibleFrame.height - DashboardPanelLayout.screenInset * 2, 0)
         let inset = DashboardPanelLayout.screenInset
         let top = min(anchorRect.minY - 6, visibleFrame.maxY - inset)
         let y = max(visibleFrame.minY + inset, top - size.height)

@@ -23,6 +23,8 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
+The current stable release is `2.7.0`. Version `2.7.1` is in preparation with a focused music-player performance and lifecycle update. Music views now subscribe only to the state they display, so playback progress, lyrics, library changes, account state, and imports no longer refresh unrelated parts of the interface. See the [2.7.1 release notes](RELEASE_NOTES.md#271--music-performance-and-lifecycle-reliability) for details.
+
 ## Interface preview
 
 <p align="center">
@@ -51,6 +53,7 @@ Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, 
 - **Journal**: local photos, Markdown, calendar, mood, weather, music, search, favorites, recently deleted items, and Markdown/JSON/ZIP export.
 - **AI chat**: OpenAI-compatible endpoints, streaming replies, attachments, local history, and editable prompts.
 - **Music player**: Apple Music, Bilibili, and local audio. Local Music supports MP3, M4A, AAC, WAV, and AIFF, with search, stable sorting, playlists, favorites, custom cover art, matching LRC lyrics, lyric cache, and desktop lyrics.
+- **Efficient music updates**: playback progress, transport controls, lyrics, library, account, Bilibili import, and local import use separate observable state, keeping frequent updates inside the smallest relevant view.
 - **Bilibili library**: QR login, authorized subtitles, and deduplicated favorites import without storing passwords.
 - **Screenshots and translation**: region capture, annotations, on-device Vision OCR, screenshot translation, selected-text translation, and Apple or online translation engines.
 - **Cleanup House**: conservative cleanup, uninstall tools, allowlists, operation logs, and path safety checks.
@@ -116,7 +119,7 @@ swift test
 ./script/package_dmg.sh
 ```
 
-Tests cover system metrics, companion states, weather, AI services, music sources and local import, lyrics, translation layout, cleanup safety, settings persistence, and resource loading. GitHub Actions runs `swift test` for pushes and pull requests.
+Tests cover system metrics, companion states, weather, AI services, music sources and local import, lyrics, translation layout, cleanup safety, settings persistence, and resource loading. The music suite also verifies publisher isolation and cancellation-safe shutdown with suspended services. GitHub Actions runs `swift test` for pushes and pull requests. A repeatable SwiftUI Instruments comparison is documented in [Music observation performance](docs/MUSIC_PERFORMANCE.md).
 
 ## License
 

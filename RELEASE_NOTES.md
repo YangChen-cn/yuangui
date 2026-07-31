@@ -2,6 +2,15 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
+## 2.7.1 — Music performance and lifecycle reliability
+
+- Reduced unnecessary SwiftUI work throughout the music interface. Playback progress, transport controls, lyrics, library, account, Bilibili import, and local import now observe separate stores instead of one broad music wrapper.
+- Split the music implementation into focused playback, library, lyrics, Bilibili, local-file, and persistence coordinators while keeping the existing library format, service interfaces, and user-facing behavior compatible.
+- Hardened cancellation and shutdown. QR login polling, favorite-folder imports, local imports, file relocation, artwork maintenance, lyric searches, Apple Music refreshes, and URL-player callbacks now reject stale results after cancellation or shutdown.
+- Fixed duplicate tracks within a single Bilibili favorite-folder import, late progress updates after cancellation, lyric search remaining stuck in a loading state, and artwork files being left behind when an import or relocation was interrupted.
+- Avoided a Bilibili account request when no login session exists, and made Cleanup House scan only enabled categories. This removes the network and filesystem timeout paths that had pushed the GitHub Actions test phase past nine minutes.
+- Added deterministic publisher-isolation and suspended-service lifecycle tests. In the recorded 100-update Instruments scenario, `MusicPlayerView` evaluations dropped from 103 to 2 and `MusicProgressView` evaluations from 103 to 1.
+
 ## 2.7.0 — Local Music, safer cleanup, and a smoother companion
 
 - Added Local Music as a complete third playback source alongside Apple Music and Bilibili. Import MP3, M4A, AAC, WAV, and AIFF files or folders through the system picker, with security-scoped bookmarks, metadata and embedded-artwork extraction, local playlists, favorites, progress restoration, and recoverable missing-file relocation.

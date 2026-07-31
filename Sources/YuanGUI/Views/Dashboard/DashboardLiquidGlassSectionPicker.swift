@@ -5,6 +5,7 @@ struct DashboardLiquidGlassSectionPicker: View {
     @Binding var selection: DashboardSection
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var glassNamespace
 
     var body: some View {
         GlassEffectContainer(spacing: DashboardDesign.compactSpacing) {
@@ -13,6 +14,7 @@ struct DashboardLiquidGlassSectionPicker: View {
                     DashboardLiquidGlassSectionButton(
                         section: section,
                         isSelected: selection == section,
+                        glassNamespace: glassNamespace,
                         select: { select(section) }
                     )
                 }
@@ -42,6 +44,7 @@ struct DashboardLiquidGlassSectionPicker: View {
 private struct DashboardLiquidGlassSectionButton: View {
     let section: DashboardSection
     let isSelected: Bool
+    let glassNamespace: Namespace.ID
     let select: () -> Void
 
     @State private var isHovering = false
@@ -61,6 +64,7 @@ private struct DashboardLiquidGlassSectionButton: View {
                             .interactive(),
                         in: .rect(cornerRadius: DashboardDesign.controlRadius - 1)
                     )
+                    .glassEffectID(section.id, in: glassNamespace)
             } else {
                 Label(section.title, systemImage: section.systemImage)
                     .font(.callout)

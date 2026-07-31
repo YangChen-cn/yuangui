@@ -1,8 +1,51 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct PetRootView: View {
+    let window: PetPanel
+    let store: PetStore
+    let chat: ChatStore
+    let chatPresentation: ChatPresentationCoordinator
+    let maintenance: MaintenanceStore
+    let focusTimer: FocusTimerStore
+    let music: MusicFeature
+    let auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
+
+    init(
+        window: PetPanel,
+        store: PetStore,
+        chat: ChatStore,
+        chatPresentation: ChatPresentationCoordinator,
+        maintenance: MaintenanceStore,
+        focusTimer: FocusTimerStore,
+        music: MusicFeature,
+        auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
+    ) {
+        self.window = window
+        self.store = store
+        self.chat = chat
+        self.chatPresentation = chatPresentation
+        self.maintenance = maintenance
+        self.focusTimer = focusTimer
+        self.music = music
+        self.auxiliaryBubblePresentation = auxiliaryBubblePresentation
+    }
+
+    var body: some View {
+        PetSceneRoot(
+            window: window,
+            store: store,
+            chat: chat,
+            chatPresentation: chatPresentation,
+            maintenance: maintenance,
+            focusTimer: focusTimer,
+            music: music,
+            auxiliaryBubblePresentation: auxiliaryBubblePresentation
+        )
+    }
+}
+
+private struct PetSceneRoot: View {
     @ObservedObject var window: PetPanel
     @ObservedObject var store: PetStore
     @ObservedObject var chat: ChatStore
@@ -108,78 +151,34 @@ struct PetRootView: View {
     }
 
     private var petLayer: some View {
-        VStack(spacing: -12) {
-            if let toast = store.toast {
-                PetToastView(
-                    message: toast,
-                    maximumWidth: max(220, panelSize.width - 24)
-                )
-                    .transition(.scale(scale: 0.82).combined(with: .opacity))
-                    .zIndex(3)
-            }
-
-            AnimatedPetSprite(
-                mode: store.mode,
-                action: displayedPetAction,
-                motionEnabled: store.isPetPresented,
-                sequencePlaybackEnabled: store.petMotionEnabled
-                    && (!displayedPetAction.file.contains("chatting") || store.ambientMessage != nil)
-            )
-                .overlay(alignment: .topTrailing) {
-                    PetMusicIndicatorView(
-                        music: music,
-                        isChatPresented: chatPresentation.keepsExpandedLayout,
-                        hasMaintenanceTask: maintenance.quickMode != nil,
-                        focusState: focusTimer.state,
-                        scale: scale
-                    )
-                }
-                .frame(width: 326 * scale, height: 326 * scale)
-                .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
-                .scaleEffect(dockPreviewScale)
-                .rotationEffect(dockPreviewRotation)
-                .opacity(dockPreviewOpacity)
-                .contentShape(Rectangle())
-                .onTapGesture { store.interact() }
-                .simultaneousGesture(windowDragGesture)
-                .onDrop(of: [UTType.fileURL.identifier], isTargeted: $store.isDropTargeted) { providers in
-                    handleDrop(providers)
-                }
-        }
-        .frame(maxWidth: .infinity)
-        .offset(x: 35 * scale)
-        .padding(.bottom, chatPresentation.keepsExpandedLayout ? PetLayout.chatPetBottomInset : 0)
+        PetSpriteLayer(
+            store: store,
+            music: music,
+            chatIsPresented: chatPresentation.keepsExpandedLayout,
+            hasMaintenanceTask: maintenance.quickMode != nil,
+            focusState: focusTimer.state,
+            scale: scale,
+            panelWidth: panelSize.width,
+            displayedAction: displayedPetAction,
+            dockPreviewScale: dockPreviewScale,
+            dockPreviewOpacity: dockPreviewOpacity,
+            dockPreviewRotation: dockPreviewRotation,
+            dragStartOrigin: $dragStartOrigin,
+            dragStartMouseLocation: $dragStartMouseLocation,
+            updateAdaptiveControlSide: updateAdaptiveControlSide
+        )
     }
 
     @ViewBuilder
     private var chatLayer: some View {
-        if chatPresentation.showsChatLayer {
-            ZStack(alignment: .bottom) {
-                if chat.latestReply != nil || chat.isSending || chat.errorMessage != nil {
-                    PetReplyBubble(chat: chat, pet: store)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 291 * scale + PetLayout.chatPetBottomInset + 4)
-                        .zIndex(4)
-                }
-
-                if maintenance.quickMode == nil {
-                    PetChatComposer(chat: chat, pet: store)
-                        .padding(.bottom, 3)
-                        .zIndex(5)
-                }
-            }
-            .opacity(chatPresentation.showsChatContent ? 1 : 0)
-            .scaleEffect(
-                chatPresentation.showsChatContent ? 1 : 0.97,
-                anchor: .bottom
-            )
-            .animation(
-                reduceMotion
-                    ? nil
-                    : .easeOut(duration: ChatPresentationCoordinator.contentAnimationDuration),
-                value: chatPresentation.showsChatContent
-            )
-        }
+        PetChatLayer(
+            chat: chat,
+            pet: store,
+            presentation: chatPresentation,
+            maintenance: maintenance,
+            scale: scale,
+            reduceMotion: reduceMotion
+        )
     }
 
     @ViewBuilder
@@ -223,7 +222,7 @@ struct PetRootView: View {
                     }
                 }
                 if !store.interactionLocked && (isHovering || isMiniPlayerPresented) {
-                    PetBottomControlsView(
+                    PetBottomControlLayer(
                         store: store,
                         chat: chat,
                         music: music,
@@ -530,36 +529,6 @@ struct PetRootView: View {
         Button("退出元圭与 VCC") { NSApp.terminate(nil) }
     }
 
-    private var windowDragGesture: some Gesture {
-        DragGesture(minimumDistance: 7)
-            .onChanged { _ in
-                guard let window = NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel else { return }
-                if dragStartOrigin == nil {
-                    window.isUserDragging = true
-                    dragStartOrigin = window.frame.origin
-                    dragStartMouseLocation = NSEvent.mouseLocation
-                }
-                guard let origin = dragStartOrigin,
-                      let mouseOrigin = dragStartMouseLocation else { return }
-                let mouse = NSEvent.mouseLocation
-                window.setFrameOrigin(NSPoint(
-                    x: origin.x + mouse.x - mouseOrigin.x,
-                    y: origin.y + mouse.y - mouseOrigin.y
-                ))
-                window.dragMovedAction?()
-                updateAdaptiveControlSide(for: window)
-            }
-            .onEnded { _ in
-                if let window = NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel {
-                    window.isUserDragging = false
-                    updateAdaptiveControlSide(for: window)
-                    window.dragEndedAction?()
-                }
-                dragStartOrigin = nil
-                dragStartMouseLocation = nil
-            }
-    }
-
     private func updateAdaptiveControlSide(for providedWindow: PetPanel? = nil) {
         guard let window = providedWindow ?? NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel else { return }
         let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
@@ -575,35 +544,45 @@ struct PetRootView: View {
         }
     }
 
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        let matching = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
-        guard !matching.isEmpty else { return false }
+}
 
-        let group = DispatchGroup()
-        let lock = NSLock()
-        var urls: [URL] = []
-        for provider in matching {
-            group.enter()
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                defer { group.leave() }
-                let url: URL?
-                if let itemURL = item as? URL {
-                    url = itemURL
-                } else if let data = item as? Data {
-                    url = URL(dataRepresentation: data, relativeTo: nil)
-                } else if let itemURL = item as? NSURL {
-                    url = itemURL as URL
-                } else {
-                    url = nil
+private struct PetChatLayer: View {
+    @ObservedObject var chat: ChatStore
+    @ObservedObject var pet: PetStore
+    @ObservedObject var presentation: ChatPresentationCoordinator
+    @ObservedObject var maintenance: MaintenanceStore
+    let scale: CGFloat
+    let reduceMotion: Bool
+
+    @ViewBuilder
+    var body: some View {
+        if presentation.showsChatLayer {
+            ZStack(alignment: .bottom) {
+                if chat.latestReply != nil || chat.isSending || chat.errorMessage != nil {
+                    PetReplyBubble(chat: chat, pet: pet)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 291 * scale + PetLayout.chatPetBottomInset + 4)
+                        .zIndex(4)
                 }
-                guard let url else { return }
-                lock.lock()
-                urls.append(url)
-                lock.unlock()
+
+                if maintenance.quickMode == nil {
+                    PetChatComposer(chat: chat, pet: pet)
+                        .padding(.bottom, 3)
+                        .zIndex(5)
+                }
             }
+            .opacity(presentation.showsChatContent ? 1 : 0)
+            .scaleEffect(
+                presentation.showsChatContent ? 1 : 0.97,
+                anchor: .bottom
+            )
+            .animation(
+                reduceMotion
+                    ? nil
+                    : .easeOut(duration: ChatPresentationCoordinator.contentAnimationDuration),
+                value: presentation.showsChatContent
+            )
         }
-        group.notify(queue: .main) { store.recycle(urls) }
-        return true
     }
 }
 

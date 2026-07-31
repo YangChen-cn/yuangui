@@ -744,6 +744,7 @@
 "backup.weeklyCount" = "%ld weekly";
 "backup.manualCount" = "%ld manual";
 "YuanGUI 音乐播放器" = "YuanGUI Music";
+"音乐播放器" = "Music Player";
 "master，现在内存有点挤，元圭陪你看看要不要休息一下应用吧～" = "Memory is a little tight. Let’s see whether an app could take a break.";
 "API 基础地址" = "API base URL";
 "查看或编辑角色提示词…" = "View or Edit Character Prompt…";

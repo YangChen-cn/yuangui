@@ -24,7 +24,7 @@ final class MusicWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         super.init()
-        window.title = AppLocalizer.string("YuanGUI 音乐播放器")
+        window.title = AppLocalizer.string("音乐播放器")
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.minSize = NSSize(width: 760, height: 520)
