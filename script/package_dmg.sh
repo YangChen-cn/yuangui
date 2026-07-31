@@ -136,4 +136,7 @@ fi
 rm -rf "$STAGING_DIR"
 
 echo "Created: $DMG_PATH"
+echo "Version: $VERSION"
+echo "Build: $BUILD"
+echo "Size: $(/usr/bin/stat -f '%z' "$DMG_PATH")"
 echo "SHA-256: $(/usr/bin/shasum -a 256 "$DMG_PATH" | /usr/bin/awk '{print $1}')"

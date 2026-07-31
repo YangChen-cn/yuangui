@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "version": "2.7.1",
+  "build": 17,
+  "minimumSystemVersion": "15.0",
+  "publishedAt": "2026-07-31T13:39:13Z",
+  "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.1",
+  "highlights": {
+    "zh-Hans": [
+      "音乐界面改为精细订阅，减少无效 SwiftUI 刷新",
+      "收窄 Dashboard、桌宠、设置、日记和音乐界面的刷新边界"
+    ],
+    "en": [
+      "Reduced unnecessary SwiftUI work throughout the music interface",
+      "Narrowed refresh boundaries across the Dashboard, companion, Settings, Journal, and music surfaces"
+    ]
+  },
+  "assets": [
+    {
+      "provider": "github",
+      "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.7.1/YuanGUI-2.7.1.dmg",
+      "sha256": "09576ae0a85b359b7c0bb5d8668b205de3dc5fce2fb275457c38f4cf4aed9142",
+      "size": 28604286
+    }
+  ]
+}

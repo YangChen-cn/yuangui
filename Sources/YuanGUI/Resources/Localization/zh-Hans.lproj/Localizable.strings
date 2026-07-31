@@ -799,8 +799,16 @@
 "about.error.releaseUnavailable" = "读取 Release 失败：%@";
 "about.error.mountFailed" = "无法打开更新镜像：%@";
 "about.error.invalidVersion" = "下载的应用版本（%@）与 Release 不一致。";
+"about.error.invalidBuild" = "下载的应用构建号（%@）与 Release 不一致。";
 "about.error.installLocation" = "没有权限更新 %@，请先把应用移到可写位置或“应用程序”文件夹。";
 "about.error.helperFailed" = "无法启动更新安装器：%@";
+"update.error.manifestUnavailable" = "更新信息暂时不可用，请稍后重试。";
+"update.error.invalidManifest" = "更新清单无效：%@";
+"update.error.checksumMismatch" = "更新文件校验和不匹配，安装已取消。";
+"update.error.checksumUnavailable" = "更新没有提供可验证的 SHA-256 校验和。";
+"update.error.assetSizeMismatch" = "更新文件大小校验失败，安装已取消。";
+"update.error.noCompatibleAsset" = "没有找到可用的更新文件。";
+"update.error.unsupportedSystemVersion" = "此更新不支持当前 macOS 版本。";
 "update.auto.window.title" = "软件更新";
 "update.auto.prompt.title" = "YuanGUI 有新版本";
 "update.auto.prompt.versionTransition" = "%@ → %@";

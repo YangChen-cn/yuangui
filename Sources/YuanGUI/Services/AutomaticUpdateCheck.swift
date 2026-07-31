@@ -44,7 +44,7 @@ protocol UpdatePromptPresenting: AnyObject {
 
     func presentUpdate(
         currentVersion: String,
-        release: GitHubRelease,
+        update: AvailableUpdate,
         highlights: [String],
         onInstall: @escaping () -> Void,
         onLater: @escaping () -> Void,
@@ -62,11 +62,16 @@ protocol UpdatePromptPresenting: AnyObject {
 /// blocked by the daily limit.
 @MainActor
 final class AutomaticUpdateCheckCoordinator {
-    static let lastAutomaticCheckDayKey = "updates.lastAutomaticCheckDay"
-    static let startupDelayNanoseconds: UInt64 = 2_500_000_000
+    static let lastSuccessfulAutomaticCheckDayKey = "updates.lastSuccessfulAutomaticCheckDay"
+    static let lastAutomaticCheckDayKey = lastSuccessfulAutomaticCheckDayKey
+    static let lastAutomaticAttemptAtKey = "updates.lastAutomaticAttemptAt"
+    static let automaticAttemptDayKey = "updates.automaticAttemptDay"
+    static let automaticAttemptCountKey = "updates.automaticAttemptCount"
+    static let automaticRetryInterval: TimeInterval = 4 * 60 * 60
+    static let automaticMaximumAttemptsPerDay = 2
 
     private struct PendingUpdate {
-        let release: GitHubRelease
+        let update: AvailableUpdate
         let notes: String?
     }
 
@@ -74,6 +79,7 @@ final class AutomaticUpdateCheckCoordinator {
     private let store: AppUpdateStore
     private let presenter: UpdatePromptPresenting
     private let environment: UpdatePromptEnvironment
+    private let networkStatus: UpdateNetworkStatusProviding
     private let defaults: UserDefaults
     private let calendar: Calendar
     private let now: () -> Date
@@ -99,6 +105,7 @@ final class AutomaticUpdateCheckCoordinator {
         store: AppUpdateStore,
         presenter: UpdatePromptPresenting? = nil,
         environment: UpdatePromptEnvironment? = nil,
+        networkStatus: UpdateNetworkStatusProviding? = nil,
         defaults: UserDefaults = .standard,
         calendar: Calendar = .autoupdatingCurrent,
         now: @escaping () -> Date = Date.init,
@@ -111,6 +118,7 @@ final class AutomaticUpdateCheckCoordinator {
         self.store = store
         self.presenter = presenter ?? UpdateAvailableWindowController()
         self.environment = environment ?? AppKitUpdatePromptEnvironment()
+        self.networkStatus = networkStatus ?? NWPathMonitorStatusProvider()
         self.defaults = defaults
         self.calendar = calendar
         self.now = now
@@ -151,17 +159,15 @@ final class AutomaticUpdateCheckCoordinator {
         // automatic request is not fired right after the user checked by hand.
         stateCancellable = store.$state
             .sink { [weak self] state in
-                Task { @MainActor [weak self] in
-                    guard let self, !self.isStopped else { return }
-                    switch state {
-                    case .available, .upToDate:
-                        self.noteCheckCompleted()
-                    case .downloading, .installing:
-                        self.pendingUpdate = nil
-                        if self.presenter.isPresenting { self.presenter.dismiss() }
-                    default:
-                        break
-                    }
+                guard let self, !self.isStopped else { return }
+                switch state {
+                case .available, .upToDate:
+                    self.noteCheckCompleted()
+                case .downloading, .installing:
+                    self.pendingUpdate = nil
+                    if self.presenter.isPresenting { self.presenter.dismiss() }
+                default:
+                    break
                 }
             }
 
@@ -177,7 +183,7 @@ final class AutomaticUpdateCheckCoordinator {
             if self.activationOccurredDuringStartup {
                 self.log("update.auto.startup.activationDeferred")
             }
-            self.runAutomaticCheckIfNeeded(trigger: .automatic)
+            self.runAutomaticCheckIfNeeded()
             self.tryPresentPendingUpdate()
         }
     }
@@ -207,9 +213,9 @@ final class AutomaticUpdateCheckCoordinator {
     /// The single entry point for an automatic check. It remains callable
     /// directly in unit tests; direct calls before `start()` intentionally skip
     /// the launch-only delay guard.
-    func runAutomaticCheckIfNeeded(trigger: UpdateCheckTrigger = .automatic) {
+    func runAutomaticCheckIfNeeded() {
         guard !isStopped, !isChecking else { return }
-        if trigger == .automatic, activationObserver != nil, !startupDelayCompleted {
+        if activationObserver != nil, !startupDelayCompleted {
             activationOccurredDuringStartup = true
             log("update.auto.skipped.startupDelay")
             return
@@ -222,16 +228,20 @@ final class AutomaticUpdateCheckCoordinator {
             log("update.auto.skipped.promptPresented")
             return
         }
-        guard !hasCheckedToday else {
+        guard !hasSuccessfulCheckToday else {
             log("update.auto.skipped.alreadyChecked")
             return
         }
 
-        markCheckedToday()
+        guard canAttemptAgainToday else {
+            log("update.auto.skipped.retryWindow")
+            return
+        }
+
         isChecking = true
         log("update.auto.check.started")
         checkTask = Task { [weak self] in
-            await self?.performAutomaticCheck(trigger: trigger)
+            await self?.performAutomaticCheck()
         }
     }
 
@@ -245,7 +255,7 @@ final class AutomaticUpdateCheckCoordinator {
             return
         }
         tryPresentPendingUpdate()
-        runAutomaticCheckIfNeeded(trigger: .automatic)
+        runAutomaticCheckIfNeeded()
     }
 
     /// Retries a pending update after an activation or sheet dismissal. This is
@@ -260,7 +270,7 @@ final class AutomaticUpdateCheckCoordinator {
         guard !environment.hasBlockingModalPresentation else { return }
 
         self.pendingUpdate = nil
-        presentPrompt(for: pendingUpdate.release, notes: pendingUpdate.notes)
+        presentPrompt(for: pendingUpdate.update, notes: pendingUpdate.notes)
     }
 
     /// Test aid: waits for the in-flight automatic check (if any) to finish.
@@ -268,22 +278,29 @@ final class AutomaticUpdateCheckCoordinator {
         await checkTask?.value
     }
 
-    private func performAutomaticCheck(trigger: UpdateCheckTrigger) async {
-        _ = trigger
+    private func performAutomaticCheck() async {
         defer { isChecking = false }
+        guard !Task.isCancelled, !isStopped else { return }
+        if networkStatus.isClearlyOffline() {
+            log("update.auto.skipped.offline")
+            return
+        }
+        markAutomaticAttempt()
         do {
             let result = try await checker.checkForUpdate()
             guard !Task.isCancelled, !isStopped else { return }
             switch result {
             case .upToDate:
+                markSuccessfulAutomaticCheck()
                 log("update.auto.check.upToDate")
             case .available(let release, let notes):
+                markSuccessfulAutomaticCheck()
                 log("update.auto.check.available")
                 guard store.commitAutomaticUpdate(release: release, notes: notes) else {
                     log("update.auto.skipped.busy")
                     return
                 }
-                pendingUpdate = PendingUpdate(release: release, notes: notes)
+                pendingUpdate = PendingUpdate(update: release, notes: notes)
                 tryPresentPendingUpdate()
             }
         } catch {
@@ -291,14 +308,14 @@ final class AutomaticUpdateCheckCoordinator {
         }
     }
 
-    private func presentPrompt(for release: GitHubRelease, notes: String?) {
+    private func presentPrompt(for update: AvailableUpdate, notes: String?) {
         guard !isStopped, !presenter.isPresenting else { return }
         installTriggered = false
         log("update.auto.prompt.presented")
         presenter.presentUpdate(
             currentVersion: AppVersionInfo.version,
-            release: release,
-            highlights: Self.highlights(for: release, notes: notes),
+            update: update,
+            highlights: Self.highlights(for: update, notes: notes),
             onInstall: { [weak self] in
                 guard let self, !self.installTriggered else { return }
                 self.installTriggered = true
@@ -320,63 +337,48 @@ final class AutomaticUpdateCheckCoordinator {
         )
     }
 
-    /// Extracts useful release content for the compact prompt. Release names
-    /// are intentionally ignored because they commonly repeat the version.
-    static func highlights(for release: GitHubRelease, notes: String?) -> [String] {
-        let source = (notes?.isEmpty == false ? notes : nil) ?? release.body
-        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
-        let rows = ReleaseNoteRow.parse(source)
-        let bullets = rows.filter { $0.kind == .bullet }.map(\.text)
-        let candidates = bullets.isEmpty ? rows.filter { $0.kind == .paragraph }.map(\.text) : bullets
-
-        var result: [String] = []
-        for candidate in candidates {
-            let cleaned = cleanHighlight(candidate)
-            guard !cleaned.isEmpty,
-                  cleaned.caseInsensitiveCompare(release.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") != .orderedSame
-            else { continue }
-            result.append(truncateHighlight(cleaned))
-            if result.count == 2 { break }
+    static func highlights(for update: AvailableUpdate, notes: String?) -> [String] {
+        if let notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return UpdateHighlightExtractor.highlights(from: notes)
         }
-        return result
-    }
-
-    private static func cleanHighlight(_ value: String) -> String {
-        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        text = text.replacingOccurrences(of: "**", with: "")
-        text = text.replacingOccurrences(of: "__", with: "")
-        text = text.replacingOccurrences(of: "`", with: "")
-        text = text.replacingOccurrences(of: #"^[-*+•]\s*"#, with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"^\d+[.)]\s*"#, with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"#{1,6}\s*"#, with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"\[([^\]]+)\]\([^\)]+\)"#, with: "$1", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func truncateHighlight(_ value: String, limit: Int = 110) -> String {
-        guard value.count > limit else { return value }
-        let prefix = String(value.prefix(limit))
-        if let boundary = prefix.lastIndex(where: { $0.isWhitespace }) {
-            return prefix[..<boundary].trimmingCharacters(in: .whitespacesAndNewlines) + "…"
-        }
-        return prefix + "…"
+        return Array(update.localizedHighlights.prefix(2))
     }
 
     private func noteCheckCompleted() {
         guard !isStopped else { return }
-        markCheckedToday()
+        markSuccessfulAutomaticCheck()
     }
 
-    private var hasCheckedToday: Bool {
-        guard let stored = defaults.object(forKey: Self.lastAutomaticCheckDayKey) as? Double else { return false }
+    private var hasSuccessfulCheckToday: Bool {
+        guard let stored = defaults.object(forKey: Self.lastSuccessfulAutomaticCheckDayKey) as? Double else { return false }
         return calendar.isDate(Date(timeIntervalSince1970: stored), inSameDayAs: now())
     }
 
-    private func markCheckedToday() {
+    private var canAttemptAgainToday: Bool {
+        guard let storedDay = defaults.object(forKey: Self.automaticAttemptDayKey) as? Double,
+              calendar.isDate(Date(timeIntervalSince1970: storedDay), inSameDayAs: now())
+        else { return true }
+
+        let count = defaults.integer(forKey: Self.automaticAttemptCountKey)
+        guard count < Self.automaticMaximumAttemptsPerDay else { return false }
+        guard let attempt = defaults.object(forKey: Self.lastAutomaticAttemptAtKey) as? Double else { return true }
+        return now().timeIntervalSince1970 - attempt >= Self.automaticRetryInterval
+    }
+
+    private func markAutomaticAttempt() {
+        let currentDay = calendar.startOfDay(for: now())
+        let sameDay = (defaults.object(forKey: Self.automaticAttemptDayKey) as? Double)
+            .map { calendar.isDate(Date(timeIntervalSince1970: $0), inSameDayAs: currentDay) } ?? false
+        let count = sameDay ? defaults.integer(forKey: Self.automaticAttemptCountKey) + 1 : 1
+        defaults.set(currentDay.timeIntervalSince1970, forKey: Self.automaticAttemptDayKey)
+        defaults.set(now().timeIntervalSince1970, forKey: Self.lastAutomaticAttemptAtKey)
+        defaults.set(count, forKey: Self.automaticAttemptCountKey)
+    }
+
+    private func markSuccessfulAutomaticCheck() {
         defaults.set(
             calendar.startOfDay(for: now()).timeIntervalSince1970,
-            forKey: Self.lastAutomaticCheckDayKey
+            forKey: Self.lastSuccessfulAutomaticCheckDayKey
         )
     }
 }

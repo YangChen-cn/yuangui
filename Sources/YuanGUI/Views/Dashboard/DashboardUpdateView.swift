@@ -33,7 +33,7 @@ struct DashboardUpdateView: View {
         case .idle: AppLocalizer.string("尚未检查")
         case .checking: AppLocalizer.string("正在检查…")
         case .upToDate: AppLocalizer.string("当前已是最新版")
-        case .available: "\(AppLocalizer.string("发现")) \(updater.latestRelease?.version ?? AppLocalizer.string("新版本"))"
+        case .available: "\(AppLocalizer.string("发现")) \(updater.latestUpdate?.version ?? AppLocalizer.string("新版本"))"
         case .downloading: AppLocalizer.string("正在下载…")
         case .installing: AppLocalizer.string("正在安装…")
         case .failed: AppLocalizer.string("失败，点按查看")
@@ -71,7 +71,7 @@ struct DashboardUpdateView: View {
                 Button("重新检查", action: updater.check)
                     .disabled(updater.isBusy)
                 if updater.state == .available {
-                    Button("更新到 \(updater.latestRelease?.version ?? "新版本")", action: updater.installLatest)
+                    Button("更新到 \(updater.latestUpdate?.version ?? "新版本")", action: updater.installLatest)
                         .buttonStyle(.borderedProminent)
                 }
             }

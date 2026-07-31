@@ -217,7 +217,7 @@ final class UpdateAvailableWindowController: NSWindowController, NSWindowDelegat
 
     func presentUpdate(
         currentVersion: String,
-        release: GitHubRelease,
+        update: AvailableUpdate,
         highlights: [String],
         onInstall: @escaping () -> Void,
         onLater: @escaping () -> Void,
@@ -228,7 +228,7 @@ final class UpdateAvailableWindowController: NSWindowController, NSWindowDelegat
 
         model.configure(
             currentVersion: currentVersion,
-            releaseVersion: release.version,
+            releaseVersion: update.version,
             highlights: highlights,
             onInstall: { [weak self] in
                 self?.finish { onInstall() }

@@ -37,6 +37,11 @@ private final class LogCollector {
     func append(_ message: String) { messages.append(message) }
 }
 
+private final class FakeNetworkStatus: UpdateNetworkStatusProviding, @unchecked Sendable {
+    var offline = false
+    func isClearlyOffline() -> Bool { offline }
+}
+
 @MainActor
 private final class FakeUpdatePromptEnvironment: UpdatePromptEnvironment {
     var isApplicationActive = true
@@ -47,7 +52,7 @@ private final class FakeUpdatePromptEnvironment: UpdatePromptEnvironment {
 private final class FakeUpdatePromptPresenter: UpdatePromptPresenting {
     private(set) var isPresenting = false
     private(set) var presentCount = 0
-    private(set) var lastRelease: GitHubRelease?
+    private(set) var lastRelease: AvailableUpdate?
     private(set) var lastHighlights: [String] = []
     private var installAction: (() -> Void)?
     private var laterAction: (() -> Void)?
@@ -55,7 +60,7 @@ private final class FakeUpdatePromptPresenter: UpdatePromptPresenting {
 
     func presentUpdate(
         currentVersion: String,
-        release: GitHubRelease,
+        update: AvailableUpdate,
         highlights: [String],
         onInstall: @escaping () -> Void,
         onLater: @escaping () -> Void,
@@ -64,7 +69,7 @@ private final class FakeUpdatePromptPresenter: UpdatePromptPresenting {
         guard !isPresenting else { return }
         presentCount += 1
         isPresenting = true
-        lastRelease = release
+        lastRelease = update
         lastHighlights = highlights
         installAction = onInstall
         laterAction = onLater
@@ -104,6 +109,7 @@ private struct Fixture {
     let detailsCount: Counter
     let logs: LogCollector
     let environment: FakeUpdatePromptEnvironment
+    let network: FakeNetworkStatus
     let suite: String
 
     static func make(
@@ -124,11 +130,13 @@ private struct Fixture {
         let installCount = Counter()
         let detailsCount = Counter()
         let logs = LogCollector()
+        let network = FakeNetworkStatus()
         let coordinator = AutomaticUpdateCheckCoordinator(
             checker: checker,
             store: store,
             presenter: presenter,
             environment: environment,
+            networkStatus: network,
             defaults: defaults,
             calendar: calendar,
             now: { provider.now },
@@ -148,6 +156,7 @@ private struct Fixture {
             detailsCount: detailsCount,
             logs: logs,
             environment: environment,
+            network: network,
             suite: suite
         )
     }
@@ -159,13 +168,17 @@ private struct Fixture {
 }
 
 @MainActor
-private func makeRelease(_ version: String, body: String? = nil) -> GitHubRelease {
-    GitHubRelease(
-        tagName: "v\(version)",
-        name: "YuanGUI \(version)",
-        body: body ?? "Release notes for \(version)",
-        pageURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/tag/v\(version)")!,
-        assets: []
+private func makeRelease(_ version: String, body: String? = nil) -> AvailableUpdate {
+    let notes = body ?? "Release notes for \(version)"
+    return AvailableUpdate(
+        version: version,
+        build: nil,
+        minimumSystemVersion: nil,
+        publishedAt: nil,
+        localizedHighlights: UpdateHighlightExtractor.highlights(from: notes),
+        releasePageURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/tag/v\(version)"),
+        assets: [],
+        metadataSource: .githubReleaseAPI
     )
 }
 
@@ -403,7 +416,7 @@ final class AutomaticUpdateTests: XCTestCase {
         } else {
             XCTFail("Manual check error should leave the store in failed state")
         }
-        XCTAssertNil(store.latestRelease)
+        XCTAssertNil(store.latestUpdate)
     }
 
     // MARK: - Prompt behavior
@@ -466,7 +479,7 @@ final class AutomaticUpdateTests: XCTestCase {
         let presenter = FakeUpdatePromptPresenter()
         presenter.presentUpdate(
             currentVersion: "2.7.1",
-            release: makeRelease("99.9.9"),
+            update: makeRelease("99.9.9"),
             highlights: [],
             onInstall: {},
             onLater: {},
@@ -474,7 +487,7 @@ final class AutomaticUpdateTests: XCTestCase {
         )
         presenter.presentUpdate(
             currentVersion: "2.7.1",
-            release: makeRelease("99.9.9"),
+            update: makeRelease("99.9.9"),
             highlights: [],
             onInstall: {},
             onLater: {},
@@ -559,6 +572,97 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(fixture.presenter.presentCount, 0)
         XCTAssertEqual(fixture.store.state, .idle)
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.check.failed"))
+    }
+
+    func testClearlyOfflineDoesNotStartOrConsumeAnAutomaticAttempt() async {
+        let fixture = Fixture.make(result: .failure(TestError(message: "offline")))
+        defer { fixture.cleanup() }
+        fixture.network.offline = true
+
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+
+        let initialCalls = await fixture.checker.callCount
+        XCTAssertEqual(initialCalls, 0)
+        XCTAssertNil(fixture.defaults.object(forKey: AutomaticUpdateCheckCoordinator.automaticAttemptCountKey))
+        XCTAssertNil(fixture.defaults.object(forKey: AutomaticUpdateCheckCoordinator.lastSuccessfulAutomaticCheckDayKey))
+    }
+
+    func testAutomaticFailureWaitsFourHoursBeforeRetrying() async {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let fixture = Fixture.make(
+            result: .failure(TestError(message: "offline")),
+            now: makeDate(2026, 8, 1, 9, 0, 0, calendar: calendar),
+            calendar: calendar
+        )
+        defer { fixture.cleanup() }
+
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        var calls = await fixture.checker.callCount
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(fixture.defaults.integer(forKey: AutomaticUpdateCheckCoordinator.automaticAttemptCountKey), 1)
+
+        fixture.provider.now = fixture.provider.now.addingTimeInterval(3.5 * 60 * 60)
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        calls = await fixture.checker.callCount
+        XCTAssertEqual(calls, 1)
+
+        fixture.provider.now = fixture.provider.now.addingTimeInterval(30 * 60 + 1)
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        calls = await fixture.checker.callCount
+        XCTAssertEqual(calls, 2)
+    }
+
+    func testAutomaticFailureStopsAtTwoAttemptsAndResetsNextDay() async {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let fixture = Fixture.make(
+            result: .failure(TestError(message: "offline")),
+            now: makeDate(2026, 8, 1, 9, 0, 0, calendar: calendar),
+            calendar: calendar
+        )
+        defer { fixture.cleanup() }
+
+        for _ in 0..<2 {
+            fixture.coordinator.runAutomaticCheckIfNeeded()
+            await fixture.coordinator.awaitCurrentCheck()
+            fixture.provider.now = fixture.provider.now.addingTimeInterval(4 * 60 * 60 + 1)
+        }
+        var calls = await fixture.checker.callCount
+        XCTAssertEqual(calls, 2)
+
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        calls = await fixture.checker.callCount
+        XCTAssertEqual(calls, 2)
+
+        fixture.provider.now = makeDate(2026, 8, 2, 9, 0, 0, calendar: calendar)
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        calls = await fixture.checker.callCount
+        XCTAssertEqual(calls, 3)
+    }
+
+    func testNetworkRecoveryChecksOnNextActiveEvent() async {
+        let fixture = Fixture.make(
+            result: .success(.upToDate(makeRelease("2.7.1"))),
+            startupDelay: .zero
+        )
+        defer { fixture.cleanup() }
+        fixture.network.offline = true
+        fixture.coordinator.start()
+        try? await Task.sleep(for: .milliseconds(30))
+        let initialCalls = await fixture.checker.callCount
+        XCTAssertEqual(initialCalls, 0)
+
+        fixture.network.offline = false
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        let didCheck = await waitForCallCount(fixture.checker, 1)
+        XCTAssertTrue(didCheck)
     }
 
     func testAutomaticCheckSkippedWhileStoreIsBusy() async {

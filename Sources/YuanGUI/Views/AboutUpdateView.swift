@@ -52,25 +52,27 @@ struct AboutUpdateView: View {
                             }
                         }
 
-                        if let release = updater.latestRelease {
+                        if let update = updater.latestUpdate {
                             Divider()
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(release.name ?? AppLocalizer.format("about.version.short", release.version))
+                                Text(AppLocalizer.format("about.version.short", update.version))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .fixedSize(horizontal: false, vertical: true)
                                 HStack(spacing: 8) {
-                                    Text("v\(release.version)")
+                                    Text("v\(update.version)")
                                         .font(.caption.monospaced().weight(.semibold))
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 3)
                                         .background(.blue.opacity(0.12), in: Capsule())
                                         .foregroundStyle(.blue)
-                                    Link(AppLocalizer.string("在 GitHub 查看"), destination: release.pageURL)
-                                        .font(.caption)
+                                    if let releasePageURL = update.releasePageURL {
+                                        Link(AppLocalizer.string("在 GitHub 查看"), destination: releasePageURL)
+                                            .font(.caption)
+                                    }
                                 }
                             }
-                            releaseNotes(updater.latestReleaseNotes ?? release.body)
+                            releaseNotes(updater.latestUpdateNotes ?? update.localizedHighlights.map { "- \($0)" }.joined(separator: "\n"))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,7 +109,7 @@ struct AboutUpdateView: View {
             Button(AppLocalizer.string("检查更新")) { updater.check() }
                 .disabled(updater.isBusy)
             if updater.state == .available {
-                Button(AppLocalizer.format("about.updateTo", updater.latestRelease?.version ?? AppLocalizer.string("新版本"))) {
+                Button(AppLocalizer.format("about.updateTo", updater.latestUpdate?.version ?? AppLocalizer.string("新版本"))) {
                     updater.installLatest()
                 }
                 .buttonStyle(.borderedProminent)
@@ -127,7 +129,7 @@ struct AboutUpdateView: View {
             Label(AppLocalizer.string("当前已是最新版本"), systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
         case .available:
-            Label(AppLocalizer.format("about.releaseAvailable", updater.latestRelease?.version ?? ""), systemImage: "arrow.down.circle.fill")
+            Label(AppLocalizer.format("about.releaseAvailable", updater.latestUpdate?.version ?? ""), systemImage: "arrow.down.circle.fill")
                 .foregroundStyle(.blue)
         case .downloading:
             HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在下载 DMG…")) }

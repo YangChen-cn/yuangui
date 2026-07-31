@@ -801,8 +801,16 @@
 "about.error.releaseUnavailable" = "Unable to read the release: %@";
 "about.error.mountFailed" = "Unable to open the update image: %@";
 "about.error.invalidVersion" = "The downloaded app version (%@) does not match the release.";
+"about.error.invalidBuild" = "The downloaded app build (%@) does not match the release.";
 "about.error.installLocation" = "YuanGUI cannot update %@. Move the app to a writable location or the Applications folder first.";
 "about.error.helperFailed" = "Unable to start the update installer: %@";
+"update.error.manifestUnavailable" = "Update information is temporarily unavailable. Try again later.";
+"update.error.invalidManifest" = "The update manifest is invalid: %@";
+"update.error.checksumMismatch" = "The update file checksum does not match. Installation was cancelled.";
+"update.error.checksumUnavailable" = "The update does not include a trusted SHA-256 checksum.";
+"update.error.assetSizeMismatch" = "The update file size does not match. Installation was cancelled.";
+"update.error.noCompatibleAsset" = "No compatible update file was found.";
+"update.error.unsupportedSystemVersion" = "This update does not support the current macOS version.";
 "update.auto.window.title" = "Software Update";
 "update.auto.prompt.title" = "A New Version of YuanGUI Is Available";
 "update.auto.prompt.versionTransition" = "%@ → %@";

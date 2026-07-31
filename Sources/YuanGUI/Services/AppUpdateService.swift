@@ -1,4 +1,7 @@
 import AppKit
+// Used only for downloaded-asset SHA-256 verification; manifest signing is
+// intentionally not part of this update flow.
+import CryptoKit
 import Foundation
 
 enum AppVersionInfo {
@@ -32,11 +35,13 @@ struct GitHubReleaseAsset: Decodable, Equatable, Sendable {
     let name: String
     let downloadURL: URL
     let size: Int
+    let digest: String?
 
     enum CodingKeys: String, CodingKey {
         case name
         case downloadURL = "browser_download_url"
         case size
+        case digest
     }
 }
 
@@ -70,9 +75,37 @@ struct GitHubRelease: Decodable, Equatable, Sendable {
             : "RELEASE_NOTES.md"
         return assets.first { $0.name.caseInsensitiveCompare(preferredName) == .orderedSame }
     }
+
+    func asAvailableUpdate() -> AvailableUpdate {
+        let assets = assets
+            .filter { $0.name.lowercased().hasSuffix(".dmg") }
+            .map { asset in
+                UpdateAsset(
+                    provider: .github,
+                    downloadURL: asset.downloadURL,
+                    sha256: asset.digest?.replacingOccurrences(of: "sha256:", with: ""),
+                    size: Int64(asset.size)
+                )
+            }
+        return AvailableUpdate(
+            version: version,
+            build: nil,
+            minimumSystemVersion: nil,
+            publishedAt: nil,
+            localizedHighlights: UpdateHighlightExtractor.highlights(from: body),
+            releasePageURL: pageURL,
+            assets: assets,
+            metadataSource: .githubReleaseAPI
+        )
+    }
 }
 
 enum SemanticVersion {
+    static func isValid(_ value: String) -> Bool {
+        let pattern = #"^[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[-+][0-9A-Za-z.-]+)?$"#
+        return value.range(of: pattern, options: .regularExpression) != nil
+    }
+
     static func isNewer(_ candidate: String, than current: String) -> Bool {
         compare(candidate, current) == .orderedDescending
     }
@@ -97,18 +130,11 @@ enum SemanticVersion {
     }
 }
 
-/// The source of an update check. Used to keep the automatic flow quiet and
-/// the manual flow visible, without relying on an ambiguous boolean parameter.
-enum UpdateCheckTrigger: Equatable, Sendable {
-    case manual
-    case automatic
-}
-
 /// A typed, non-throwing outcome of a completed update check. Network and
 /// GitHub errors keep being expressed through `throws`.
 enum UpdateCheckResult: Equatable, Sendable {
-    case upToDate(GitHubRelease)
-    case available(GitHubRelease, notes: String?)
+    case upToDate(AvailableUpdate)
+    case available(AvailableUpdate, notes: String?)
 }
 
 /// The minimal capability an update checker must expose. `AppUpdateService`
@@ -120,12 +146,20 @@ protocol UpdateChecking: Sendable {
 enum AppUpdateError: LocalizedError {
     case invalidResponse
     case releaseUnavailable(String)
+    case updateManifestUnavailable
+    case invalidManifest(String)
+    case checksumMismatch
+    case checksumUnavailable
+    case assetSizeMismatch
+    case noCompatibleAsset
+    case unsupportedSystemVersion
     case dmgMissing
     case invalidDownloadURL
     case mountFailed(String)
     case appMissing
     case invalidBundle
     case invalidVersion(String)
+    case invalidBuild(String)
     case invalidSignature
     case installLocationNotWritable(String)
     case helperFailed(String)
@@ -134,12 +168,20 @@ enum AppUpdateError: LocalizedError {
         switch self {
         case .invalidResponse: return AppLocalizer.string("GitHub 返回了无法识别的响应。")
         case .releaseUnavailable(let message): return AppLocalizer.format("about.error.releaseUnavailable", message)
+        case .updateManifestUnavailable: return AppLocalizer.string("update.error.manifestUnavailable")
+        case .invalidManifest(let message): return AppLocalizer.format("update.error.invalidManifest", message)
+        case .checksumMismatch: return AppLocalizer.string("update.error.checksumMismatch")
+        case .checksumUnavailable: return AppLocalizer.string("update.error.checksumUnavailable")
+        case .assetSizeMismatch: return AppLocalizer.string("update.error.assetSizeMismatch")
+        case .noCompatibleAsset: return AppLocalizer.string("update.error.noCompatibleAsset")
+        case .unsupportedSystemVersion: return AppLocalizer.string("update.error.unsupportedSystemVersion")
         case .dmgMissing: return AppLocalizer.string("这个 Release 没有可用的 DMG 文件。")
         case .invalidDownloadURL: return AppLocalizer.string("Release 下载地址不安全或无效。")
         case .mountFailed(let message): return AppLocalizer.format("about.error.mountFailed", message)
         case .appMissing: return AppLocalizer.string("更新镜像中没有 YuanGUI.app。")
         case .invalidBundle: return AppLocalizer.string("下载的应用标识与 YuanGUI 不一致。")
         case .invalidVersion(let version): return AppLocalizer.format("about.error.invalidVersion", version)
+        case .invalidBuild(let build): return AppLocalizer.format("about.error.invalidBuild", build)
         case .invalidSignature: return AppLocalizer.string("下载的应用代码签名校验失败。")
         case .installLocationNotWritable(let path): return AppLocalizer.format("about.error.installLocation", path)
         case .helperFailed(let message): return AppLocalizer.format("about.error.helperFailed", message)
@@ -200,23 +242,125 @@ enum AppUpdateInstallerScript {
     """
 }
 
+actor URLUpdateSourceFetcher: UpdateSourceFetching {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func fetchManifest(endpoint: UpdateEndpoint, timeout: TimeInterval) async throws -> AvailableUpdate {
+        let jsonData = try await fetch(endpoint.manifestURL, timeout: timeout, accept: "application/json")
+        let manifest = try UpdateManifestCodec.decodeAndValidate(jsonData: jsonData)
+        return manifest.asAvailableUpdate(
+            source: .manifest(endpoint.manifestURL),
+            language: AppLocalizer.effectiveLanguage
+        )
+    }
+
+    func fetchGitHubRelease(timeout: TimeInterval) async throws -> AvailableUpdate {
+        let url = AppUpdateService.latestReleaseURL
+        let data = try await fetch(url, timeout: timeout, accept: "application/vnd.github+json")
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+        return release.asAvailableUpdate()
+    }
+
+    private func fetch(_ url: URL, timeout: TimeInterval, accept: String) async throws -> Data {
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.setValue(accept, forHTTPHeaderField: "Accept")
+        request.setValue("YuanGUI/\(AppVersionInfo.version)", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw AppUpdateError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw AppUpdateError.releaseUnavailable("HTTP \(http.statusCode)")
+        }
+        return data
+    }
+}
+
 actor AppUpdateService: UpdateChecking {
     static let latestReleaseURL = URL(string: "https://api.github.com/repos/YangChen-cn/yuangui/releases/latest")!
     private let session: URLSession
     private let fileManager: FileManager
+    private let sourceFetcher: UpdateSourceFetching
 
-    init(session: URLSession = .shared, fileManager: FileManager = .default) {
+    init(
+        session: URLSession = .shared,
+        fileManager: FileManager = .default,
+        sourceFetcher: UpdateSourceFetching? = nil
+    ) {
         self.session = session
         self.fileManager = fileManager
+        self.sourceFetcher = sourceFetcher ?? URLUpdateSourceFetcher(session: session)
     }
 
     func checkForUpdate() async throws -> UpdateCheckResult {
-        let release = try await latestRelease()
-        guard SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) else {
-            return .upToDate(release)
+        let validManifests = await withTaskGroup(of: AvailableUpdate?.self, returning: [AvailableUpdate].self) { group in
+            for endpoint in UpdateEndpoint.manifests {
+                group.addTask { [sourceFetcher] in
+                    try? await sourceFetcher.fetchManifest(
+                        endpoint: endpoint,
+                        timeout: endpoint.automaticTimeout
+                    )
+                }
+            }
+            var updates: [AvailableUpdate] = []
+            for await update in group {
+                if let update { updates.append(update) }
+            }
+            return updates
         }
-        let notes = (try? await releaseNotes(for: release)) ?? release.body
-        return .available(release, notes: notes)
+
+        let candidate: AvailableUpdate
+        if let selected = Self.selectBest(validManifests) {
+            candidate = selected
+        } else {
+            do {
+                candidate = try await sourceFetcher.fetchGitHubRelease(timeout: 8)
+            } catch {
+                throw AppUpdateError.updateManifestUnavailable
+            }
+        }
+
+        guard SemanticVersion.isNewer(candidate.version, than: AppVersionInfo.version) else {
+            return .upToDate(candidate)
+        }
+        let notes = candidate.localizedHighlights.isEmpty
+            ? nil
+            : candidate.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
+        return .available(candidate, notes: notes)
+    }
+
+    static func selectBest(_ updates: [AvailableUpdate]) -> AvailableUpdate? {
+        guard let highestVersion = updates.map(\.version).max(by: {
+            SemanticVersion.compare($0, $1) == .orderedAscending
+        }) else { return nil }
+        let sameVersion = updates.filter {
+            SemanticVersion.compare($0.version, highestVersion) == .orderedSame
+        }
+        guard let first = sameVersion.first else { return nil }
+        var mergedAssets: [UpdateAsset] = []
+        var identities = Set<String>()
+        for update in sameVersion.sorted(by: { $0.assets.count > $1.assets.count }) {
+            for asset in update.assets {
+                let identity = "\(asset.provider.rawValue)|\(asset.downloadURL.absoluteString)"
+                if identities.insert(identity).inserted { mergedAssets.append(asset) }
+            }
+        }
+        let highlights = sameVersion.max(by: { $0.localizedHighlights.count < $1.localizedHighlights.count })?.localizedHighlights
+            ?? first.localizedHighlights
+        let preferredSource = sameVersion.first(where: { $0.metadataSource != .githubReleaseAPI })?.metadataSource
+            ?? first.metadataSource
+        return AvailableUpdate(
+            version: first.version,
+            build: sameVersion.compactMap(\.build).max(),
+            minimumSystemVersion: sameVersion.compactMap(\.minimumSystemVersion).first,
+            publishedAt: sameVersion.compactMap(\.publishedAt).max(),
+            localizedHighlights: highlights,
+            releasePageURL: sameVersion.compactMap(\.releasePageURL).first,
+            assets: mergedAssets,
+            metadataSource: preferredSource
+        )
     }
 
     func latestRelease() async throws -> GitHubRelease {
@@ -232,10 +376,8 @@ actor AppUpdateService: UpdateChecking {
     }
 
     func releaseNotes(for release: GitHubRelease, language: AppLanguage = AppLocalizer.effectiveLanguage) async throws -> String {
-        guard let asset = release.releaseNotesAsset(for: language) else {
-            return release.body
-        }
-        guard asset.downloadURL.scheme == "https", asset.downloadURL.host == "github.com" else {
+        guard let asset = release.releaseNotesAsset(for: language) else { return release.body }
+        guard asset.downloadURL.scheme?.lowercased() == "https", asset.downloadURL.host == "github.com" else {
             throw AppUpdateError.invalidDownloadURL
         }
 
@@ -245,15 +387,42 @@ actor AppUpdateService: UpdateChecking {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw AppUpdateError.invalidResponse
         }
-        guard let notes = String(data: data, encoding: .utf8) else {
-            throw AppUpdateError.invalidResponse
-        }
+        guard let notes = String(data: data, encoding: .utf8) else { throw AppUpdateError.invalidResponse }
         return notes
     }
 
-    func prepare(_ release: GitHubRelease) async throws -> PreparedAppUpdate {
-        guard let asset = release.dmgAsset else { throw AppUpdateError.dmgMissing }
-        guard asset.downloadURL.scheme == "https", asset.downloadURL.host == "github.com" else {
+    func prepare(_ update: AvailableUpdate) async throws -> PreparedAppUpdate {
+        let orderedAssets = update.assets.sorted { lhs, rhs in
+            Self.assetPriority(lhs.provider) < Self.assetPriority(rhs.provider)
+        }
+        guard !orderedAssets.isEmpty else { throw AppUpdateError.noCompatibleAsset }
+
+        var lastError: Error = AppUpdateError.noCompatibleAsset
+        for asset in orderedAssets {
+            do {
+                return try await prepare(asset: asset, for: update)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    func discard(_ update: PreparedAppUpdate) {
+        try? detach(update.mountPoint)
+        try? fileManager.removeItem(at: update.dmgURL.deletingLastPathComponent())
+    }
+
+    private static func assetPriority(_ provider: UpdateAsset.Provider) -> Int {
+        switch provider {
+        case .gitee: 0
+        case .github: 1
+        case .other: 2
+        }
+    }
+
+    private func prepare(asset: UpdateAsset, for update: AvailableUpdate) async throws -> PreparedAppUpdate {
+        guard asset.downloadURL.scheme?.lowercased() == "https", asset.downloadURL.host != nil else {
             throw AppUpdateError.invalidDownloadURL
         }
 
@@ -267,42 +436,88 @@ actor AppUpdateService: UpdateChecking {
         let updateDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("YuanGUI-Update-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: updateDirectory, withIntermediateDirectories: true)
-        let dmgURL = updateDirectory.appendingPathComponent(asset.name)
-        try fileManager.moveItem(at: temporaryURL, to: dmgURL)
+        let fileName = asset.downloadURL.lastPathComponent.isEmpty ? "YuanGUI-update.dmg" : asset.downloadURL.lastPathComponent
+        let dmgURL = updateDirectory.appendingPathComponent(fileName)
 
-        let mountPoint = try mount(dmgURL)
-        let sourceApp = mountPoint.appendingPathComponent("YuanGUI.app", isDirectory: true)
-        guard fileManager.fileExists(atPath: sourceApp.path) else {
-            try? detach(mountPoint)
-            throw AppUpdateError.appMissing
+        do {
+            try fileManager.moveItem(at: temporaryURL, to: dmgURL)
+            try verifyDownloadedAsset(at: dmgURL, asset: asset)
+            let mountPoint = try mount(dmgURL)
+            do {
+                return try validateMountedUpdate(
+                    mountPoint: mountPoint,
+                    dmgURL: dmgURL,
+                    update: update
+                )
+            } catch {
+                try? detach(mountPoint)
+                throw error
+            }
+        } catch {
+            try? fileManager.removeItem(at: updateDirectory)
+            throw error
+        }
+    }
+
+    private func verifyDownloadedAsset(at url: URL, asset: UpdateAsset) throws {
+        let attributes = try fileManager.attributesOfItem(atPath: url.path)
+        let actualSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        if let expectedSize = asset.size, actualSize != expectedSize {
+            throw AppUpdateError.assetSizeMismatch
+        }
+        guard let expectedHash = asset.sha256 else { throw AppUpdateError.checksumUnavailable }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let actualHash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard actualHash == expectedHash else { throw AppUpdateError.checksumMismatch }
+    }
+
+    private func validateMountedUpdate(
+        mountPoint: URL,
+        dmgURL: URL,
+        update: AvailableUpdate
+    ) throws -> PreparedAppUpdate {
+        if let minimumSystemVersion = update.minimumSystemVersion,
+           SemanticVersion.compare(currentSystemVersion(), minimumSystemVersion) == .orderedAscending {
+            throw AppUpdateError.unsupportedSystemVersion
         }
 
-        guard let bundle = Bundle(url: sourceApp),
-              bundle.bundleIdentifier == "com.yang.yuangui" else {
-            try? detach(mountPoint)
+        return try validateMountedUpdateWithoutSystemRequirement(
+            mountPoint: mountPoint,
+            dmgURL: dmgURL,
+            update: update
+        )
+    }
+
+    private func validateMountedUpdateWithoutSystemRequirement(
+        mountPoint: URL,
+        dmgURL: URL,
+        update: AvailableUpdate
+    ) throws -> PreparedAppUpdate {
+        let sourceApp = mountPoint.appendingPathComponent("YuanGUI.app", isDirectory: true)
+        guard fileManager.fileExists(atPath: sourceApp.path) else { throw AppUpdateError.appMissing }
+        guard let bundle = Bundle(url: sourceApp), bundle.bundleIdentifier == "com.yang.yuangui" else {
             throw AppUpdateError.invalidBundle
         }
         let bundledVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        guard SemanticVersion.compare(bundledVersion, release.version) == .orderedSame else {
-            try? detach(mountPoint)
+        guard SemanticVersion.compare(bundledVersion, update.version) == .orderedSame else {
             throw AppUpdateError.invalidVersion(bundledVersion)
         }
-        guard verifySignature(sourceApp) else {
-            try? detach(mountPoint)
-            throw AppUpdateError.invalidSignature
+        if let expectedBuild = update.build {
+            let bundledBuild = Int(bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")
+            guard bundledBuild == expectedBuild else { throw AppUpdateError.invalidBuild(bundledBuild.map(String.init) ?? "unknown") }
         }
+        guard verifySignature(sourceApp) else { throw AppUpdateError.invalidSignature }
 
         let targetApp = installationTarget()
         guard fileManager.isWritableFile(atPath: targetApp.deletingLastPathComponent().path) else {
-            try? detach(mountPoint)
             throw AppUpdateError.installLocationNotWritable(targetApp.path)
         }
         return PreparedAppUpdate(sourceApp: sourceApp, targetApp: targetApp, mountPoint: mountPoint, dmgURL: dmgURL)
     }
 
-    func discard(_ update: PreparedAppUpdate) {
-        try? detach(update.mountPoint)
-        try? fileManager.removeItem(at: update.dmgURL.deletingLastPathComponent())
+    private func currentSystemVersion() -> String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
     }
 
     private func installationTarget() -> URL {
@@ -351,8 +566,8 @@ final class AppUpdateStore: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
-    @Published private(set) var latestRelease: GitHubRelease?
-    @Published private(set) var latestReleaseNotes: String?
+    @Published private(set) var latestUpdate: AvailableUpdate?
+    @Published private(set) var latestUpdateNotes: String?
     private let service: AppUpdateService
     private let checking: UpdateChecking
     private var terminateForUpdate: @MainActor () async -> Bool = { false }
@@ -360,7 +575,7 @@ final class AppUpdateStore: ObservableObject {
     /// Test seam: replaces the DMG download/install pipeline. When set,
     /// `installLatest()` runs this closure instead of touching the network,
     /// so tests can observe install attempts without real downloads.
-    var installLauncher: ((GitHubRelease) async throws -> Void)?
+    var installLauncher: ((AvailableUpdate) async throws -> Void)?
 
     init(service: AppUpdateService = AppUpdateService(), checking: UpdateChecking? = nil) {
         self.service = service
@@ -376,18 +591,18 @@ final class AppUpdateStore: ObservableObject {
     func check() {
         guard !isBusy else { return }
         state = .checking
-        latestReleaseNotes = nil
+        latestUpdateNotes = nil
         Task {
             do {
                 let result = try await checking.checkForUpdate()
                 switch result {
-                case .available(let release, let notes):
-                    latestRelease = release
-                    latestReleaseNotes = notes
+                case .available(let update, let notes):
+                    latestUpdate = update
+                    latestUpdateNotes = notes
                     state = .available
-                case .upToDate(let release):
-                    latestRelease = release
-                    latestReleaseNotes = (try? await service.releaseNotes(for: release)) ?? release.body
+                case .upToDate(let update):
+                    latestUpdate = update
+                    latestUpdateNotes = update.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
                     state = .upToDate
                 }
             } catch {
@@ -401,16 +616,16 @@ final class AppUpdateStore: ObservableObject {
     /// false when a manual check or install is already in flight, so the
     /// coordinator stays quiet instead of fighting the other operation.
     @discardableResult
-    func commitAutomaticUpdate(release: GitHubRelease, notes: String?) -> Bool {
+    func commitAutomaticUpdate(release: AvailableUpdate, notes: String?) -> Bool {
         guard !isBusy else { return false }
-        latestRelease = release
-        latestReleaseNotes = notes
+        latestUpdate = release
+        latestUpdateNotes = notes
         state = .available
         return true
     }
 
     func installLatest() {
-        guard let release = latestRelease, SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) else { return }
+        guard let release = latestUpdate, SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) else { return }
         guard !isBusy else { return }
         state = .downloading
         Task {
