@@ -20,6 +20,7 @@ struct SettingsView: View {
     let diary: DiaryFeature
     let externalAudioInterruption: ExternalAudioInterruptionController
     let quickTools: QuickToolsController
+    let updater: AppUpdateStore
     let selection: SettingsSelectionModel
     let showPet: () -> Void
 
@@ -33,6 +34,7 @@ struct SettingsView: View {
         diary: DiaryFeature,
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
+        updater: AppUpdateStore,
         selection: SettingsSelectionModel,
         showPet: @escaping () -> Void
     ) {
@@ -45,6 +47,7 @@ struct SettingsView: View {
         self.diary = diary
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
+        self.updater = updater
         self.selection = selection
         self.showPet = showPet
     }
@@ -65,6 +68,7 @@ struct SettingsView: View {
                 diary: diary,
                 externalAudioInterruption: externalAudioInterruption,
                 quickTools: quickTools,
+                updater: updater,
                 showPet: showPet
             )
         }
@@ -125,6 +129,7 @@ struct SettingsDetailView: View {
     let diary: DiaryFeature
     let externalAudioInterruption: ExternalAudioInterruptionController
     let quickTools: QuickToolsController
+    let updater: AppUpdateStore
     let showPet: () -> Void
 
     @ViewBuilder
@@ -149,7 +154,7 @@ struct SettingsDetailView: View {
             case .diary:
                 DiaryBackupSettingsView(diary: diary)
             case .about:
-                AboutUpdateView()
+                AboutUpdateView(updater: updater)
             }
         }
         .padding(16)

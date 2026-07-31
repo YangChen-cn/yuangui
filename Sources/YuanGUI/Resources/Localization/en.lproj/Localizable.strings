@@ -803,6 +803,12 @@
 "about.error.invalidVersion" = "The downloaded app version (%@) does not match the release.";
 "about.error.installLocation" = "YuanGUI cannot update %@. Move the app to a writable location or the Applications folder first.";
 "about.error.helperFailed" = "Unable to start the update installer: %@";
+"update.auto.prompt.title" = "A New Version Is Available";
+"update.auto.prompt.currentVersion" = "Current version: %@";
+"update.auto.prompt.newVersion" = "New version: %@";
+"update.auto.prompt.message" = "Would you like to download and install it now?";
+"update.auto.prompt.install" = "Update Now";
+"update.auto.prompt.later" = "Later";
 "检查更新" = "Check for Updates";
 "GitHub 项目主页" = "GitHub Project Page";
 "在 GitHub 查看" = "View on GitHub";

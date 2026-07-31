@@ -38,6 +38,7 @@ final class AppRuntime {
     let pet = PetStore()
     let aiSettings = AISettingsStore()
     let loginItem = LoginItemStore()
+    let updateService = AppUpdateService()
     lazy var focusTimer = FocusTimerStore(pet: pet)
     lazy var chat = ChatStore(settings: aiSettings)
     lazy var maintenance = MaintenanceStore(pet: pet)
@@ -48,6 +49,18 @@ final class AppRuntime {
     )
     lazy var externalAudioInterruption = ExternalAudioInterruptionController(music: music)
     lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
+    lazy var updateStore: AppUpdateStore = {
+        let store = AppUpdateStore(service: updateService)
+        store.setTerminationHandler { [weak self] in
+            guard let self else { return false }
+            return await self.prepareToTerminateForUpdate()
+        }
+        return store
+    }()
+    private lazy var updateCoordinator = AutomaticUpdateCheckCoordinator(
+        checker: updateService,
+        store: updateStore
+    )
     private lazy var windows = WindowCoordinator(
         language: language,
         pet: pet,
@@ -60,6 +73,7 @@ final class AppRuntime {
         diary: diary,
         externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
+        updater: updateStore,
         terminateForUpdate: { [weak self] in
             guard let self else { return false }
             return await self.prepareToTerminateForUpdate()
@@ -72,6 +86,7 @@ final class AppRuntime {
         NSApp.setActivationPolicy(.accessory)
         windows.start()
         externalAudioInterruption.start()
+        updateCoordinator.start()
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers = [
             center.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
@@ -84,6 +99,7 @@ final class AppRuntime {
     }
 
     func stop() {
+        updateCoordinator.stop()
         externalAudioInterruption.stop()
         windows.stop()
         let center = NSWorkspace.shared.notificationCenter
@@ -131,6 +147,7 @@ final class WindowCoordinator: NSObject {
     private let diary: DiaryFeature
     private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
+    private let updater: AppUpdateStore
     private let terminateForUpdate: () async -> Bool
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
@@ -164,6 +181,7 @@ final class WindowCoordinator: NSObject {
         diary: DiaryFeature,
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
+        updater: AppUpdateStore,
         terminateForUpdate: @escaping () async -> Bool
     ) {
         self.language = language
@@ -177,6 +195,7 @@ final class WindowCoordinator: NSObject {
         self.diary = diary
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
+        self.updater = updater
         self.terminateForUpdate = terminateForUpdate
     }
 
@@ -319,6 +338,7 @@ final class WindowCoordinator: NSObject {
             music: music,
             externalAudioInterruption: externalAudioInterruption,
             quickTools: quickTools,
+            updater: updater,
             togglePet: { [weak self] in self?.panelController?.toggle() },
             showPet: { [weak self] in self?.panelController?.show() },
             openSettings: { [weak self] in self?.open(.settings(.pet)) },
@@ -340,6 +360,7 @@ final class WindowCoordinator: NSObject {
                 diary: diary,
                 externalAudioInterruption: externalAudioInterruption,
                 quickTools: quickTools,
+                updater: updater,
                 showPet: { [weak self] in self?.panelController?.show() },
                 appActions: actions
             )

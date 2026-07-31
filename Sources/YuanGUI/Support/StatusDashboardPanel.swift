@@ -39,7 +39,7 @@ final class StatusDashboardPanelController {
     private let showPet: () -> Void
     private let openSettings: () -> Void
     private let appActions: AppActions
-    private let updater = AppUpdateStore()
+    private let updater: AppUpdateStore
     private let dashboardState = DashboardPanelState()
     private let hostModel = DashboardHostModel()
     private let panel: StatusDashboardPanel
@@ -56,6 +56,7 @@ final class StatusDashboardPanelController {
         music: MusicFeature,
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
+        updater: AppUpdateStore,
         togglePet: @escaping () -> Void,
         showPet: @escaping () -> Void,
         openSettings: @escaping () -> Void,
@@ -66,11 +67,11 @@ final class StatusDashboardPanelController {
         self.music = music
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
+        self.updater = updater
         self.togglePet = togglePet
         self.showPet = showPet
         self.openSettings = openSettings
         self.appActions = appActions
-        updater.setTerminationHandler(appActions.terminateForUpdate)
         panel = StatusDashboardPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.preferredWidth, height: Self.preferredHeight),
             styleMask: [.borderless, .nonactivatingPanel],

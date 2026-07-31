@@ -26,7 +26,7 @@ enum AppVersionInfo {
     }
 }
 
-struct GitHubReleaseAsset: Decodable, Equatable {
+struct GitHubReleaseAsset: Decodable, Equatable, Sendable {
     let name: String
     let downloadURL: URL
     let size: Int
@@ -38,7 +38,7 @@ struct GitHubReleaseAsset: Decodable, Equatable {
     }
 }
 
-struct GitHubRelease: Decodable, Equatable {
+struct GitHubRelease: Decodable, Equatable, Sendable {
     let tagName: String
     let name: String?
     let body: String
@@ -93,6 +93,26 @@ enum SemanticVersion {
                 Int(component.prefix { $0.isNumber }) ?? 0
             }
     }
+}
+
+/// The source of an update check. Used to keep the automatic flow quiet and
+/// the manual flow visible, without relying on an ambiguous boolean parameter.
+enum UpdateCheckTrigger: Equatable, Sendable {
+    case manual
+    case automatic
+}
+
+/// A typed, non-throwing outcome of a completed update check. Network and
+/// GitHub errors keep being expressed through `throws`.
+enum UpdateCheckResult: Equatable, Sendable {
+    case upToDate(GitHubRelease)
+    case available(GitHubRelease, notes: String?)
+}
+
+/// The minimal capability an update checker must expose. `AppUpdateService`
+/// conforms so the store and the automatic coordinator share one comparison path.
+protocol UpdateChecking: Sendable {
+    func checkForUpdate() async throws -> UpdateCheckResult
 }
 
 enum AppUpdateError: LocalizedError {
@@ -178,7 +198,7 @@ enum AppUpdateInstallerScript {
     """
 }
 
-actor AppUpdateService {
+actor AppUpdateService: UpdateChecking {
     static let latestReleaseURL = URL(string: "https://api.github.com/repos/YangChen-cn/yuangui/releases/latest")!
     private let session: URLSession
     private let fileManager: FileManager
@@ -186,6 +206,15 @@ actor AppUpdateService {
     init(session: URLSession = .shared, fileManager: FileManager = .default) {
         self.session = session
         self.fileManager = fileManager
+    }
+
+    func checkForUpdate() async throws -> UpdateCheckResult {
+        let release = try await latestRelease()
+        guard SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) else {
+            return .upToDate(release)
+        }
+        let notes = (try? await releaseNotes(for: release)) ?? release.body
+        return .available(release, notes: notes)
     }
 
     func latestRelease() async throws -> GitHubRelease {
@@ -323,10 +352,17 @@ final class AppUpdateStore: ObservableObject {
     @Published private(set) var latestRelease: GitHubRelease?
     @Published private(set) var latestReleaseNotes: String?
     private let service: AppUpdateService
+    private let checking: UpdateChecking
     private var terminateForUpdate: @MainActor () async -> Bool = { false }
 
-    init(service: AppUpdateService = AppUpdateService()) {
+    /// Test seam: replaces the DMG download/install pipeline. When set,
+    /// `installLatest()` runs this closure instead of touching the network,
+    /// so tests can observe install attempts without real downloads.
+    var installLauncher: ((GitHubRelease) async throws -> Void)?
+
+    init(service: AppUpdateService = AppUpdateService(), checking: UpdateChecking? = nil) {
         self.service = service
+        self.checking = checking ?? service
     }
 
     var isBusy: Bool { state == .checking || state == .downloading || state == .installing }
@@ -341,21 +377,47 @@ final class AppUpdateStore: ObservableObject {
         latestReleaseNotes = nil
         Task {
             do {
-                let release = try await service.latestRelease()
-                latestRelease = release
-                latestReleaseNotes = (try? await service.releaseNotes(for: release)) ?? release.body
-                state = SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) ? .available : .upToDate
+                let result = try await checking.checkForUpdate()
+                switch result {
+                case .available(let release, let notes):
+                    latestRelease = release
+                    latestReleaseNotes = notes
+                    state = .available
+                case .upToDate(let release):
+                    latestRelease = release
+                    latestReleaseNotes = (try? await service.releaseNotes(for: release)) ?? release.body
+                    state = .upToDate
+                }
             } catch {
                 state = .failed(error.localizedDescription)
             }
         }
     }
 
+    /// Publishes an update discovered by the automatic coordinator without
+    /// moving the store through `.checking` or surfacing an error. Returns
+    /// false when a manual check or install is already in flight, so the
+    /// coordinator stays quiet instead of fighting the other operation.
+    @discardableResult
+    func commitAutomaticUpdate(release: GitHubRelease, notes: String?) -> Bool {
+        guard !isBusy else { return false }
+        latestRelease = release
+        latestReleaseNotes = notes
+        state = .available
+        return true
+    }
+
     func installLatest() {
         guard let release = latestRelease, SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) else { return }
+        guard !isBusy else { return }
         state = .downloading
         Task {
             do {
+                if let installLauncher {
+                    try await installLauncher(release)
+                    state = .installing
+                    return
+                }
                 let prepared = try await service.prepare(release)
                 state = .installing
                 guard await terminateForUpdate() else {
