@@ -161,6 +161,10 @@ extension PetMode {
         PetAction(file: "20-listening", label: "正在听音乐")
     }
 
+    var focusAction: PetAction {
+        PetAction(file: "21-focus", label: "专注中")
+    }
+
     func smartAction(for state: SmartPetState) -> PetAction? {
         switch state {
         case .normal: return nil

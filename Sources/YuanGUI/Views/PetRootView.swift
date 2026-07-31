@@ -136,6 +136,11 @@ private struct PetSceneRoot: View {
         .onChange(of: store.interactionLocked) { _, locked in
             if locked { isHovering = false }
         }
+        .onChange(of: focusTimer.state) { _, state in
+            guard state == .running || state == .paused else { return }
+            showsFocusPopover = false
+            isHovering = false
+        }
         .onAppear { updateAdaptiveControlSide() }
         // AppKit changes the window frame atomically. Keep the root frame out
         // of SwiftUI's implicit animation system; only the chat and controls
@@ -190,7 +195,18 @@ private struct PetSceneRoot: View {
             }
 
             if !store.isDropTargeted && !chatPresentation.keepsExpandedLayout {
-                if showsInteractiveSideControls || hasActiveFocusCountdown {
+                if hasActiveFocusCountdown {
+                    focusModeSideControls
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading
+                        )
+                        .padding(sideControlsOnRight ? .trailing : .leading, focusSideControlsPadding)
+                        .padding(.bottom, PetLayout.usesCompactControls(scale: store.petScale) ? 8 : 36)
+                        .transition(.scale(scale: 0.82).combined(with: .opacity))
+                        .zIndex(8)
+                } else if showsInteractiveSideControls {
                     if PetLayout.usesCompactControls(scale: store.petScale) {
                         compactSideControls
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
@@ -211,7 +227,7 @@ private struct PetSceneRoot: View {
                                 .padding(.bottom, 22)
                                 .transition(.scale(scale: 0.82).combined(with: .opacity))
                         }
-                        if showsInteractiveSideControls || hasActiveFocusCountdown {
+                        if showsInteractiveSideControls {
                             focusSideButton(size: 40)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
                                 .padding(sideControlsOnRight ? .trailing : .leading, sideControlsPadding + 55)
@@ -221,7 +237,7 @@ private struct PetSceneRoot: View {
                         }
                     }
                 }
-                if !store.interactionLocked && (isHovering || isMiniPlayerPresented) {
+                if !hasActiveFocusCountdown && !store.interactionLocked && (isHovering || isMiniPlayerPresented) {
                     PetBottomControlLayer(
                         store: store,
                         chat: chat,
@@ -316,6 +332,30 @@ private struct PetSceneRoot: View {
         .frame(width: PetLayout.compactSideControlsWidth)
     }
 
+    private var focusModeSideControls: some View {
+        VStack(spacing: 5) {
+            focusSideButton(size: 34)
+
+            Button { isMiniPlayerPresented.toggle() } label: {
+                sideToolIcon("music.note", tint: .purple, selected: playback.isPlaying, size: 30)
+            }
+            .buttonStyle(.plain)
+            .help(AppLocalizer.string("打开迷你播放器"))
+            .accessibilityLabel(AppLocalizer.string("打开迷你播放器"))
+            .popover(isPresented: $isMiniPlayerPresented, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
+                MiniMusicPlayerView(music: music)
+            }
+
+            Button { store.toggleInteractionLock() } label: {
+                sideToolIcon("lock.open.fill", tint: .orange, selected: false, size: 30)
+            }
+            .buttonStyle(.plain)
+            .help(AppLocalizer.string("锁定并允许穿透"))
+            .accessibilityLabel(AppLocalizer.string("锁定并允许穿透"))
+        }
+        .frame(width: 40)
+    }
+
     private func focusSideButton(size: CGFloat) -> some View {
         Button { showsFocusPopover.toggle() } label: {
             ZStack {
@@ -374,6 +414,12 @@ private struct PetSceneRoot: View {
 
     private var hasActiveFocusCountdown: Bool {
         focusTimer.state == .running || focusTimer.state == .paused
+    }
+
+    private var focusSideControlsPadding: CGFloat {
+        PetLayout.usesCompactControls(scale: store.petScale)
+            ? PetLayout.compactSideControlsInset + 8
+            : sideControlsPadding + 40
     }
 
     private var sideControlsPadding: CGFloat {

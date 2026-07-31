@@ -41,7 +41,7 @@ enum PetActionResolver {
            let action = context.mode.smartAction(for: context.smartState) {
             return action
         }
-        if context.isFocusActive { return context.mode.actions[0] }
+        if context.isFocusActive { return context.mode.focusAction }
         if context.smartReactionsEnabled,
            !context.smartActionSuppressed,
            let state = context.transientSmartState,

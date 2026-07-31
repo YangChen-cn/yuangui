@@ -210,6 +210,7 @@ final class PetStoreTests: XCTestCase {
         store.beginFocus()
 
         XCTAssertTrue(store.isFocusActive)
+        XCTAssertEqual(store.currentAction.file, "21-focus")
         XCTAssertFalse(store.shouldShowPetBubble)
         store.showAmbientMessage("不应该出现")
         XCTAssertNil(store.ambientMessage)

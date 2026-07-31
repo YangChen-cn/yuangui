@@ -44,6 +44,19 @@ final class SpriteResourceTests: XCTestCase {
         }
     }
 
+    func testFocusSpritesLoadForEveryCharacterAtExpectedSize() throws {
+        for mode in PetMode.allCases {
+            let image = try XCTUnwrap(
+                SpriteLoader.image(mode: mode, action: mode.focusAction),
+                "Missing \(mode.resourceFolder)/21-focus.png"
+            )
+            XCTAssertEqual(image.size.width, 512, accuracy: 0.5)
+            XCTAssertEqual(image.size.height, 512, accuracy: 0.5)
+            let representation = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
+            XCTAssertTrue(representation.hasAlpha)
+        }
+    }
+
     func testVCCCuriousSpriteHasNoDetachedRightEdgePixels() throws {
         let image = try XCTUnwrap(SpriteLoader.image(
             mode: .vcc,
