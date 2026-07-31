@@ -770,6 +770,53 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(didPresent)
     }
 
+    func testExplicitInteractionPresentsPendingUpdateImmediately() async {
+        let fixture = Fixture.make(
+            result: .success(.available(makeRelease("99.9.9"), notes: "- Faster launch")),
+            startupDelay: .zero
+        )
+        defer { fixture.cleanup() }
+
+        fixture.environment.isApplicationActive = false
+        fixture.coordinator.runAutomaticCheckIfNeeded()
+        await fixture.coordinator.awaitCurrentCheck()
+        XCTAssertEqual(fixture.presenter.presentCount, 0)
+
+        fixture.environment.isApplicationActive = true
+        fixture.coordinator.handleExplicitUserInteraction()
+
+        XCTAssertEqual(fixture.presenter.presentCount, 1)
+    }
+
+    func testExplicitInteractionStartsAutomaticCheckWhenApplicationIsActive() async {
+        let fixture = Fixture.make(
+            result: .success(.upToDate(makeRelease("2.7.1"))),
+            startupDelay: .zero
+        )
+        defer { fixture.cleanup() }
+
+        fixture.coordinator.handleExplicitUserInteraction()
+        await fixture.coordinator.awaitCurrentCheck()
+
+        let callCount = await fixture.checker.callCount
+        XCTAssertEqual(callCount, 1)
+    }
+
+    func testExplicitInteractionDoesNotStartDuringBlockingModalPresentation() async {
+        let fixture = Fixture.make(
+            result: .success(.upToDate(makeRelease("2.7.1"))),
+            startupDelay: .zero
+        )
+        defer { fixture.cleanup() }
+
+        fixture.environment.hasBlockingModalPresentation = true
+        fixture.coordinator.handleExplicitUserInteraction()
+        await Task.yield()
+
+        let callCount = await fixture.checker.callCount
+        XCTAssertEqual(callCount, 0)
+    }
+
     func testBlockingModalDefersPromptUntilSheetEnds() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: "- Safer updates")))
         defer { fixture.cleanup() }

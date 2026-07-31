@@ -77,6 +77,9 @@ final class AppRuntime {
         externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
         updater: updateStore,
+        onSafeUserInteraction: { [weak self] in
+            self?.updateCoordinator.handleExplicitUserInteraction()
+        },
         terminateForUpdate: { [weak self] in
             guard let self else { return false }
             return await self.prepareToTerminateForUpdate()
@@ -155,6 +158,7 @@ final class WindowCoordinator: NSObject {
     private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
     private let updater: AppUpdateStore
+    private let onSafeUserInteraction: () -> Void
     private let terminateForUpdate: () async -> Bool
     private var panelController: PetPanelController?
     private var statusItem: NSStatusItem?
@@ -189,6 +193,7 @@ final class WindowCoordinator: NSObject {
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
         updater: AppUpdateStore,
+        onSafeUserInteraction: @escaping () -> Void,
         terminateForUpdate: @escaping () async -> Bool
     ) {
         self.language = language
@@ -203,6 +208,7 @@ final class WindowCoordinator: NSObject {
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
         self.updater = updater
+        self.onSafeUserInteraction = onSafeUserInteraction
         self.terminateForUpdate = terminateForUpdate
     }
 
@@ -245,6 +251,8 @@ final class WindowCoordinator: NSObject {
     }
 
     func open(_ route: AppRoute) {
+        onSafeUserInteraction()
+
         switch route {
         case .statusDashboard:
             guard let button = statusItem?.button else { return }
@@ -333,6 +341,7 @@ final class WindowCoordinator: NSObject {
     }
 
     @objc private func toggleDashboard() {
+        onSafeUserInteraction()
         guard let button = statusItem?.button else { return }
         dashboard().toggle(relativeTo: button)
     }

@@ -245,6 +245,23 @@ final class AutomaticUpdateCheckCoordinator {
         }
     }
 
+    /// Handles a deliberate entry into YuanGUI, such as clicking the menu-bar
+    /// item or opening one of the app's main windows. Background checks still
+    /// never activate the app; this is the explicit user gesture that makes
+    /// activation and pending-prompt presentation appropriate.
+    func handleExplicitUserInteraction() {
+        guard !isStopped, !environment.hasBlockingModalPresentation else { return }
+
+        if environment.isApplicationActive {
+            tryPresentPendingUpdate()
+            runAutomaticCheckIfNeeded()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            // didBecomeActiveNotification continues the flow after AppKit has
+            // completed activation, without racing the window route itself.
+        }
+    }
+
     /// Called by the AppKit activation observer and intentionally kept small:
     /// activation may show an already-known pending update, but never makes a
     /// background update discoverable by stealing focus.
