@@ -1,8 +1,13 @@
 import Foundation
 
 enum UpdateMetadataSource: Equatable, Sendable {
-    case manifest(URL)
+    case manifest(URL, provider: UpdateAsset.Provider)
     case githubReleaseAPI
+
+    var manifestProvider: UpdateAsset.Provider? {
+        guard case .manifest(_, let provider) = self else { return nil }
+        return provider
+    }
 }
 
 struct UpdateAsset: Equatable, Sendable {
@@ -183,7 +188,16 @@ struct UpdateEndpoint: Equatable, Sendable {
         automaticTimeout: 8
     )
 
-    static let manifests = [giteeManifest, githubManifest]
+}
+
+struct UpdateManifestHedgeConfiguration: Equatable, Sendable {
+    let giteeStartDelay: Duration
+    let githubPrimaryDeadline: Duration
+
+    static let production = UpdateManifestHedgeConfiguration(
+        giteeStartDelay: .seconds(2),
+        githubPrimaryDeadline: .seconds(5)
+    )
 }
 
 protocol UpdateSourceFetching: Sendable {

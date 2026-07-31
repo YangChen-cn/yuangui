@@ -805,6 +805,7 @@
 "about.error.installLocation" = "YuanGUI cannot update %@. Move the app to a writable location or the Applications folder first.";
 "about.error.helperFailed" = "Unable to start the update installer: %@";
 "update.error.manifestUnavailable" = "Update information is temporarily unavailable. Try again later.";
+"update.error.sourcesUnavailable" = "All update sources are currently unavailable. Try again later.";
 "update.error.invalidManifest" = "The update manifest is invalid: %@";
 "update.error.checksumMismatch" = "The update file checksum does not match. Installation was cancelled.";
 "update.error.checksumUnavailable" = "The update does not include a trusted SHA-256 checksum.";

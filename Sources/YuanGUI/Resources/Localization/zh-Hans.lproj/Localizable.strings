@@ -803,6 +803,7 @@
 "about.error.installLocation" = "没有权限更新 %@，请先把应用移到可写位置或“应用程序”文件夹。";
 "about.error.helperFailed" = "无法启动更新安装器：%@";
 "update.error.manifestUnavailable" = "更新信息暂时不可用，请稍后重试。";
+"update.error.sourcesUnavailable" = "所有更新源暂时不可用，请稍后重试。";
 "update.error.invalidManifest" = "更新清单无效：%@";
 "update.error.checksumMismatch" = "更新文件校验和不匹配，安装已取消。";
 "update.error.checksumUnavailable" = "更新没有提供可验证的 SHA-256 校验和。";

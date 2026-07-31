@@ -159,9 +159,34 @@ enum UpdateCheckResult: Equatable, Sendable {
 }
 
 private enum ManifestFetchOutcome: Sendable {
+    case succeeded(AvailableUpdate)
+    case availability(UpdateSourceAvailabilityError)
+    case invalid(AppUpdateError)
+}
+
+private enum ManifestHedgeEvent: Sendable {
+    case github(ManifestFetchOutcome)
+    case gitee(ManifestFetchOutcome)
+    case startGitee
+    case githubDeadline
+}
+
+private enum ManifestHedgeDecision: Sendable {
     case update(AvailableUpdate)
-    case unsupportedSystemVersion
-    case failed
+    case apiFallback
+    case failure(AppUpdateError)
+}
+
+private actor DownloadProgressTracker {
+    private var lastProgress = Date()
+
+    func markProgress() {
+        lastProgress = Date()
+    }
+
+    func isStale(after interval: TimeInterval) -> Bool {
+        Date().timeIntervalSince(lastProgress) >= interval
+    }
 }
 
 /// The minimal capability an update checker must expose. `AppUpdateService`
@@ -180,10 +205,11 @@ extension UpdateChecking {
     }
 }
 
-enum AppUpdateError: LocalizedError {
+enum AppUpdateError: LocalizedError, Sendable {
     case invalidResponse
     case releaseUnavailable(String)
     case updateManifestUnavailable
+    case updateSourcesUnavailable
     case prereleaseNotSupported
     case invalidManifest(String)
     case checksumMismatch
@@ -207,6 +233,7 @@ enum AppUpdateError: LocalizedError {
         case .invalidResponse: return AppLocalizer.string("GitHub 返回了无法识别的响应。")
         case .releaseUnavailable(let message): return AppLocalizer.format("about.error.releaseUnavailable", message)
         case .updateManifestUnavailable: return AppLocalizer.string("update.error.manifestUnavailable")
+        case .updateSourcesUnavailable: return AppLocalizer.string("update.error.sourcesUnavailable")
         case .prereleaseNotSupported: return AppLocalizer.string("update.error.manifestUnavailable")
         case .invalidManifest(let message): return AppLocalizer.format("update.error.invalidManifest", message)
         case .checksumMismatch: return AppLocalizer.string("update.error.checksumMismatch")
@@ -228,7 +255,38 @@ enum AppUpdateError: LocalizedError {
     }
 }
 
-struct PreparedAppUpdate {
+/// Only transport failures in this set may trigger a source fallback. Package
+/// validation, local file errors, and HTTP configuration errors deliberately
+/// remain outside this type so they stop the update immediately.
+enum UpdateSourceAvailabilityError: Error, Equatable, Sendable {
+    case timedOut
+    case cannotFindHost
+    case cannotConnectToHost
+    case dnsLookupFailed
+    case networkConnectionLost
+    case notConnectedToInternet
+    case resourceUnavailable
+    case httpStatus(Int)
+
+    init?(urlError: URLError) {
+        switch urlError.code {
+        case .timedOut: self = .timedOut
+        case .cannotFindHost: self = .cannotFindHost
+        case .cannotConnectToHost: self = .cannotConnectToHost
+        case .dnsLookupFailed: self = .dnsLookupFailed
+        case .networkConnectionLost: self = .networkConnectionLost
+        case .notConnectedToInternet: self = .notConnectedToInternet
+        case .resourceUnavailable: self = .resourceUnavailable
+        default: return nil
+        }
+    }
+
+    static func isFallbackHTTPStatus(_ status: Int) -> Bool {
+        status == 408 || status == 429 || (500...599).contains(status)
+    }
+}
+
+struct PreparedAppUpdate: Sendable {
     let sourceApp: URL
     let targetApp: URL
     let mountPoint: URL
@@ -306,7 +364,7 @@ actor URLUpdateSourceFetcher: UpdateSourceFetching {
         let jsonData = try await fetch(endpoint.manifestURL, timeout: timeout, accept: "application/json")
         let manifest = try UpdateManifestCodec.decodeAndValidate(jsonData: jsonData)
         return manifest.asAvailableUpdate(
-            source: .manifest(endpoint.manifestURL),
+            source: .manifest(endpoint.manifestURL, provider: endpoint.provider),
             language: AppLocalizer.effectiveLanguage
         )
     }
@@ -347,9 +405,19 @@ actor URLUpdateSourceFetcher: UpdateSourceFetching {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(accept, forHTTPHeaderField: "Accept")
         request.setValue("YuanGUI/\(AppVersionInfo.version)", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let error as URLError {
+            throw UpdateSourceAvailabilityError(urlError: error)
+                ?? error
+        }
         guard let http = response as? HTTPURLResponse else { throw AppUpdateError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
+            if UpdateSourceAvailabilityError.isFallbackHTTPStatus(http.statusCode) {
+                throw UpdateSourceAvailabilityError.httpStatus(http.statusCode)
+            }
             throw AppUpdateError.releaseUnavailable("HTTP \(http.statusCode)")
         }
         return data
@@ -361,15 +429,21 @@ actor AppUpdateService: UpdateChecking {
     private let session: URLSession
     private let fileManager: FileManager
     private let sourceFetcher: UpdateSourceFetching
+    private let assetPreparer: (@Sendable (UpdateAsset, AvailableUpdate) async throws -> PreparedAppUpdate)?
+    private let manifestHedge: UpdateManifestHedgeConfiguration
 
     init(
         session: URLSession = .shared,
         fileManager: FileManager = .default,
-        sourceFetcher: UpdateSourceFetching? = nil
+        sourceFetcher: UpdateSourceFetching? = nil,
+        assetPreparer: (@Sendable (UpdateAsset, AvailableUpdate) async throws -> PreparedAppUpdate)? = nil,
+        manifestHedge: UpdateManifestHedgeConfiguration = .production
     ) {
         self.session = session
         self.fileManager = fileManager
         self.sourceFetcher = sourceFetcher ?? URLUpdateSourceFetcher(session: session)
+        self.assetPreparer = assetPreparer
+        self.manifestHedge = manifestHedge
     }
 
     func checkForUpdate() async throws -> UpdateCheckResult {
@@ -377,58 +451,23 @@ actor AppUpdateService: UpdateChecking {
     }
 
     func checkForUpdate(mode: UpdateCheckMode) async throws -> UpdateCheckResult {
-        let manifestResults = await withTaskGroup(of: ManifestFetchOutcome.self, returning: [ManifestFetchOutcome].self) { group in
-            for endpoint in UpdateEndpoint.manifests {
-                group.addTask { [sourceFetcher] in
-                    let source = endpoint.provider.rawValue
-                    AutomaticUpdateLog.log("update.source.\(source).started")
-                    do {
-                        let update = try await sourceFetcher.fetchManifest(
-                            endpoint: endpoint,
-                            timeout: mode == .manual ? 20 : endpoint.automaticTimeout
-                        )
-                        AutomaticUpdateLog.log("update.source.\(source).succeeded")
-                        return .update(update)
-                    } catch AppUpdateError.unsupportedSystemVersion {
-                        AutomaticUpdateLog.log("update.source.\(source).unsupportedSystemVersion")
-                        return .unsupportedSystemVersion
-                    } catch {
-                        AutomaticUpdateLog.log("update.source.\(source).failed")
-                        return .failed
-                    }
-                }
-            }
-            var results: [ManifestFetchOutcome] = []
-            for await result in group { results.append(result) }
-            return results
-        }
-
-        let hasUnsupportedManifest = manifestResults.contains(where: {
-            if case .unsupportedSystemVersion = $0 { return true }
-            return false
-        })
-
-        let validManifests = manifestResults.compactMap { result -> AvailableUpdate? in
-            guard case .update(let update) = result else { return nil }
-            return update
-        }
-
-        if validManifests.isEmpty, hasUnsupportedManifest {
-            // Do not let the GitHub API fallback bypass a valid manifest that
-            // explicitly excludes this macOS version. Automatic callers keep
-            // this error silent; manual callers can explain it in the UI.
-            throw AppUpdateError.unsupportedSystemVersion
-        }
-
         let candidate: AvailableUpdate
-        if let selected = Self.selectBest(validManifests) {
-            candidate = selected
-        } else {
+        switch await fetchManifestWithHedgedFallback(mode: mode) {
+        case .update(let update):
+            candidate = update
+        case .failure(let error):
+            throw error
+        case .apiFallback:
             do {
                 candidate = try await sourceFetcher.fetchGitHubRelease(
                     timeout: mode == .manual ? 20 : 8,
                     language: AppLocalizer.effectiveLanguage
                 )
+                AutomaticUpdateLog.log("update.source.github.api.succeeded")
+            } catch AppUpdateError.unsupportedSystemVersion {
+                throw AppUpdateError.unsupportedSystemVersion
+            } catch AppUpdateError.prereleaseNotSupported {
+                throw AppUpdateError.prereleaseNotSupported
             } catch {
                 throw AppUpdateError.updateManifestUnavailable
             }
@@ -457,6 +496,162 @@ actor AppUpdateService: UpdateChecking {
         return .available(candidate, notes: notes)
     }
 
+    private func fetchManifestWithHedgedFallback(mode: UpdateCheckMode) async -> ManifestHedgeDecision {
+        let githubTimeout = mode == .manual ? 20 : UpdateEndpoint.githubManifest.automaticTimeout
+        let giteeTimeout = mode == .manual ? 20 : UpdateEndpoint.giteeManifest.automaticTimeout
+        let sourceFetcher = self.sourceFetcher
+        let hedge = self.manifestHedge
+
+        return await withTaskGroup(of: ManifestHedgeEvent.self, returning: ManifestHedgeDecision.self) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                .github(await Self.fetchManifestOutcome(
+                    sourceFetcher: sourceFetcher,
+                    endpoint: .githubManifest,
+                    timeout: githubTimeout
+                ))
+            }
+            group.addTask {
+                do {
+                    try await Task.sleep(for: hedge.giteeStartDelay)
+                    return .startGitee
+                } catch {
+                    return .githubDeadline
+                }
+            }
+            group.addTask {
+                do {
+                    try await Task.sleep(for: hedge.githubPrimaryDeadline)
+                    return .githubDeadline
+                } catch {
+                    return .startGitee
+                }
+            }
+
+            var giteeStarted = false
+            var githubAvailability: UpdateSourceAvailabilityError?
+            var giteeOutcome: ManifestFetchOutcome?
+            var githubDeadlinePassed = false
+
+            while let event = await group.next() {
+                switch event {
+                case .startGitee:
+                    guard !giteeStarted else { continue }
+                    giteeStarted = true
+                    AutomaticUpdateLog.log("update.source.gitee.fallback.started")
+                    group.addTask {
+                        .gitee(await Self.fetchManifestOutcome(
+                            sourceFetcher: sourceFetcher,
+                            endpoint: .giteeManifest,
+                            timeout: giteeTimeout
+                        ))
+                    }
+
+                case .github(let outcome):
+                    switch outcome {
+                    case .succeeded(let update):
+                        // GitHub remains authoritative whenever it returns a
+                        // valid manifest before its short primary deadline.
+                        if !githubDeadlinePassed {
+                            return .update(update)
+                        }
+                    case .invalid(let error):
+                        if !githubDeadlinePassed {
+                            AutomaticUpdateLog.log("update.source.github.invalid")
+                            AutomaticUpdateLog.log("update.source.gitee.fallback.notAllowed")
+                            return .failure(error)
+                        }
+                    case .availability(let error):
+                        githubAvailability = error
+                        AutomaticUpdateLog.log("update.source.github.unavailable")
+                        if let giteeOutcome,
+                           let decision = Self.decisionAfterGitHubAvailability(giteeOutcome) {
+                            return decision
+                        }
+                        if !giteeStarted {
+                            giteeStarted = true
+                            AutomaticUpdateLog.log("update.source.gitee.fallback.started")
+                            group.addTask {
+                                .gitee(await Self.fetchManifestOutcome(
+                                    sourceFetcher: sourceFetcher,
+                                    endpoint: .giteeManifest,
+                                    timeout: giteeTimeout
+                                ))
+                            }
+                        }
+                    }
+
+                case .gitee(let outcome):
+                    giteeOutcome = outcome
+                    if githubAvailability != nil,
+                       let decision = Self.decisionAfterGitHubAvailability(outcome) {
+                        return decision
+                    }
+
+                case .githubDeadline:
+                    githubDeadlinePassed = true
+                    // A late GitHub response is no longer allowed to hold up
+                    // the fallback. Only a Gitee result already available at
+                    // this deadline can be used for this check.
+                    if let giteeOutcome,
+                       let decision = Self.decisionAfterGitHubAvailability(giteeOutcome) {
+                        return decision
+                    }
+                    if githubAvailability != nil {
+                        // GitHub explicitly failed as a network source before
+                        // the deadline. Let the already-started Gitee request
+                        // finish instead of treating the two requests as a
+                        // serial timeout.
+                        continue
+                    }
+                    AutomaticUpdateLog.log("update.source.github.unavailable")
+                    AutomaticUpdateLog.log("update.source.gitee.fallback.failed")
+                    return .failure(.updateManifestUnavailable)
+                }
+            }
+
+            return .failure(.updateManifestUnavailable)
+        }
+    }
+
+    private static func fetchManifestOutcome(
+        sourceFetcher: UpdateSourceFetching,
+        endpoint: UpdateEndpoint,
+        timeout: TimeInterval
+    ) async -> ManifestFetchOutcome {
+        let source = endpoint.provider.rawValue
+        AutomaticUpdateLog.log("update.source.\(source).started")
+        do {
+            let update = try await sourceFetcher.fetchManifest(endpoint: endpoint, timeout: timeout)
+            AutomaticUpdateLog.log("update.source.\(source).succeeded")
+            return .succeeded(update)
+        } catch let error as UpdateSourceAvailabilityError {
+            return .availability(error)
+        } catch let error as AppUpdateError {
+            if case .unsupportedSystemVersion = error {
+                AutomaticUpdateLog.log("update.source.\(source).unsupportedSystemVersion")
+            }
+            return .invalid(error)
+        } catch {
+            return .invalid(.updateManifestUnavailable)
+        }
+    }
+
+    private static func decisionAfterGitHubAvailability(
+        _ outcome: ManifestFetchOutcome
+    ) -> ManifestHedgeDecision? {
+        switch outcome {
+        case .succeeded(let update): return .update(update)
+        case .availability:
+            AutomaticUpdateLog.log("update.source.gitee.fallback.failed")
+            return .apiFallback
+        case .invalid(let error):
+            AutomaticUpdateLog.log("update.source.gitee.invalid")
+            AutomaticUpdateLog.log("update.source.gitee.fallback.notAllowed")
+            return .failure(error)
+        }
+    }
+
     func fullReleaseNotes(for update: AvailableUpdate) async throws -> String? {
         let release = try await latestRelease()
         guard SemanticVersion.compare(release.version, update.version) == .orderedSame else {
@@ -465,39 +660,6 @@ actor AppUpdateService: UpdateChecking {
         return try await releaseNotes(
             for: release,
             language: AppLocalizer.effectiveLanguage
-        )
-    }
-
-    static func selectBest(_ updates: [AvailableUpdate]) -> AvailableUpdate? {
-        let stableUpdates = updates.filter { SemanticVersion.isStable($0.version) }
-        guard let highestVersion = stableUpdates.map(\.version).max(by: {
-            SemanticVersion.compare($0, $1) == .orderedAscending
-        }) else { return nil }
-        let sameVersion = stableUpdates.filter {
-            SemanticVersion.compare($0.version, highestVersion) == .orderedSame
-        }
-        guard let first = sameVersion.first else { return nil }
-        var mergedAssets: [UpdateAsset] = []
-        var identities = Set<String>()
-        for update in sameVersion.sorted(by: { $0.assets.count > $1.assets.count }) {
-            for asset in update.assets {
-                let identity = "\(asset.provider.rawValue)|\(asset.downloadURL.absoluteString)"
-                if identities.insert(identity).inserted { mergedAssets.append(asset) }
-            }
-        }
-        let highlights = sameVersion.max(by: { $0.localizedHighlights.count < $1.localizedHighlights.count })?.localizedHighlights
-            ?? first.localizedHighlights
-        let preferredSource = sameVersion.first(where: { $0.metadataSource != .githubReleaseAPI })?.metadataSource
-            ?? first.metadataSource
-        return AvailableUpdate(
-            version: first.version,
-            build: sameVersion.compactMap(\.build).max(),
-            minimumSystemVersion: sameVersion.compactMap(\.minimumSystemVersion).first,
-            publishedAt: sameVersion.compactMap(\.publishedAt).max(),
-            localizedHighlights: highlights,
-            releasePageURL: sameVersion.compactMap(\.releasePageURL).first,
-            assets: mergedAssets,
-            metadataSource: preferredSource
         )
     }
 
@@ -534,28 +696,59 @@ actor AppUpdateService: UpdateChecking {
     }
 
     func prepare(_ update: AvailableUpdate) async throws -> PreparedAppUpdate {
-        let orderedAssets = update.assets.sorted { lhs, rhs in
-            Self.assetPriority(lhs.provider) < Self.assetPriority(rhs.provider)
-        }
-        guard !orderedAssets.isEmpty else { throw AppUpdateError.noCompatibleAsset }
+        let githubAsset = update.assets.first { $0.provider == .github }
+        let giteeAsset = update.assets.first { $0.provider == .gitee }
+        let manifestProvider = update.metadataSource.manifestProvider
 
-        var lastError: Error = AppUpdateError.noCompatibleAsset
-        for asset in orderedAssets {
-            AutomaticUpdateLog.log("update.download.\(asset.provider.rawValue).started")
+        // A GitHub manifest must contain a GitHub asset. A Gitee fallback
+        // manifest may contain only a Gitee asset, because it is already the
+        // selected metadata source after GitHub was unavailable.
+        guard githubAsset != nil || (manifestProvider == .gitee && giteeAsset != nil) else {
+            throw AppUpdateError.noCompatibleAsset
+        }
+
+        if let githubAsset {
+            AutomaticUpdateLog.log("update.download.github.started")
             do {
-                let prepared = try await prepare(asset: asset, for: update)
+                let prepared = try await prepare(asset: githubAsset, for: update)
                 AutomaticUpdateLog.log("update.download.verified")
                 return prepared
-            } catch {
-                if case AppUpdateError.checksumMismatch = error {
-                    AutomaticUpdateLog.log("update.download.checksumMismatch")
-                } else {
-                    AutomaticUpdateLog.log("update.download.\(asset.provider.rawValue).failed")
+            } catch is UpdateSourceAvailabilityError {
+                AutomaticUpdateLog.log("update.download.github.unavailable")
+                guard let giteeAsset else {
+                    throw AppUpdateError.updateSourcesUnavailable
                 }
-                lastError = error
+                AutomaticUpdateLog.log("update.download.gitee.fallback.started")
+                do {
+                    let prepared = try await prepare(asset: giteeAsset, for: update)
+                    AutomaticUpdateLog.log("update.download.verified")
+                    return prepared
+                } catch is UpdateSourceAvailabilityError {
+                    AutomaticUpdateLog.log("update.download.gitee.fallback.failed")
+                    throw AppUpdateError.updateSourcesUnavailable
+                } catch {
+                    logIntegrityOrConfigurationFailure(error, provider: .gitee)
+                    throw error
+                }
+            } catch {
+                logIntegrityOrConfigurationFailure(error, provider: .github)
+                throw error
             }
         }
-        throw lastError
+
+        guard let giteeAsset else { throw AppUpdateError.noCompatibleAsset }
+        AutomaticUpdateLog.log("update.download.gitee.started")
+        do {
+            let prepared = try await prepare(asset: giteeAsset, for: update)
+            AutomaticUpdateLog.log("update.download.verified")
+            return prepared
+        } catch is UpdateSourceAvailabilityError {
+            AutomaticUpdateLog.log("update.download.gitee.failed")
+            throw AppUpdateError.updateSourcesUnavailable
+        } catch {
+            logIntegrityOrConfigurationFailure(error, provider: .gitee)
+            throw error
+        }
     }
 
     func discard(_ update: PreparedAppUpdate) {
@@ -563,25 +756,21 @@ actor AppUpdateService: UpdateChecking {
         try? fileManager.removeItem(at: update.dmgURL.deletingLastPathComponent())
     }
 
-    private static func assetPriority(_ provider: UpdateAsset.Provider) -> Int {
-        switch provider {
-        case .gitee: 0
-        case .github: 1
-        case .other: 2
-        }
-    }
-
     private func prepare(asset: UpdateAsset, for update: AvailableUpdate) async throws -> PreparedAppUpdate {
+        if let assetPreparer {
+            return try await assetPreparer(asset, update)
+        }
+
         guard asset.downloadURL.scheme?.lowercased() == "https", asset.downloadURL.host != nil else {
             throw AppUpdateError.invalidDownloadURL
         }
 
+        // Keep a long resource timeout for slow DMG transfers. The helper below
+        // races only the first HTTP response against a short connection window;
+        // once headers arrive, the body is streamed without using that short
+        // window as the total download timeout.
         var request = URLRequest(url: asset.downloadURL, timeoutInterval: 120)
         request.setValue("YuanGUI/\(AppVersionInfo.version)", forHTTPHeaderField: "User-Agent")
-        let (temporaryURL, response) = try await session.download(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw AppUpdateError.invalidResponse
-        }
 
         let updateDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("YuanGUI-Update-\(UUID().uuidString)", isDirectory: true)
@@ -590,7 +779,7 @@ actor AppUpdateService: UpdateChecking {
         let dmgURL = updateDirectory.appendingPathComponent(fileName)
 
         do {
-            try fileManager.moveItem(at: temporaryURL, to: dmgURL)
+            let response = try await streamDownload(request, to: dmgURL)
             try verifyDownloadedAsset(at: dmgURL, asset: asset)
             let mountPoint = try mount(dmgURL)
             do {
@@ -607,6 +796,118 @@ actor AppUpdateService: UpdateChecking {
             try? fileManager.removeItem(at: updateDirectory)
             throw error
         }
+    }
+
+    private func streamDownload(_ request: URLRequest, to destination: URL) async throws -> URLResponse {
+        let session = self.session
+        let (bytes, response) = try await withThrowingTaskGroup(
+            of: (URLSession.AsyncBytes, URLResponse).self,
+            returning: (URLSession.AsyncBytes, URLResponse).self
+        ) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                try await session.bytes(for: request)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(12))
+                throw UpdateSourceAvailabilityError.timedOut
+            }
+            guard let first = try await group.next() else {
+                throw UpdateSourceAvailabilityError.resourceUnavailable
+            }
+            return first
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw AppUpdateError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            if UpdateSourceAvailabilityError.isFallbackHTTPStatus(http.statusCode) {
+                throw UpdateSourceAvailabilityError.httpStatus(http.statusCode)
+            }
+            throw AppUpdateError.invalidResponse
+        }
+
+        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let handle = try FileHandle(forWritingTo: destination)
+        let progress = DownloadProgressTracker()
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                defer { group.cancelAll() }
+                group.addTask {
+                    var buffer = Data()
+                    var bytesSinceProgressMark = 0
+                    buffer.reserveCapacity(64 * 1024)
+                    for try await byte in bytes {
+                        buffer.append(byte)
+                        bytesSinceProgressMark += 1
+                        if buffer.count >= 64 * 1024 {
+                            try handle.write(contentsOf: buffer)
+                            buffer.removeAll(keepingCapacity: true)
+                        }
+                        if bytesSinceProgressMark >= 16 * 1024 {
+                            await progress.markProgress()
+                            bytesSinceProgressMark = 0
+                        }
+                    }
+                    if !buffer.isEmpty {
+                        try handle.write(contentsOf: buffer)
+                    }
+                    await progress.markProgress()
+                }
+                group.addTask {
+                    do {
+                        while true {
+                            try await Task.sleep(for: .seconds(25))
+                            if await progress.isStale(after: 25) {
+                                throw UpdateSourceAvailabilityError.timedOut
+                            }
+                        }
+                    } catch is CancellationError {
+                        return
+                    }
+                }
+                _ = try await group.next()
+            }
+            try handle.close()
+        } catch {
+            try? handle.close()
+            if let availabilityError = error as? UpdateSourceAvailabilityError {
+                throw availabilityError
+            }
+            if let urlError = error as? URLError {
+                throw UpdateSourceAvailabilityError(urlError: urlError) ?? urlError
+            }
+            throw error
+        }
+        return response
+    }
+
+    private func logIntegrityOrConfigurationFailure(
+        _ error: Error,
+        provider: UpdateAsset.Provider
+    ) {
+        switch error {
+        case AppUpdateError.checksumMismatch,
+             AppUpdateError.checksumUnavailable,
+             AppUpdateError.assetSizeMismatch,
+             AppUpdateError.dmgMissing,
+             AppUpdateError.mountFailed,
+             AppUpdateError.appMissing,
+             AppUpdateError.invalidBundle,
+             AppUpdateError.invalidVersion,
+             AppUpdateError.invalidBuild,
+             AppUpdateError.unsupportedSystemVersion,
+             AppUpdateError.invalidSignature,
+             AppUpdateError.installLocationNotWritable,
+             AppUpdateError.invalidDownloadURL:
+            AutomaticUpdateLog.log("update.download.integrityValidationFailed")
+        default:
+            AutomaticUpdateLog.log("update.download.\(provider.rawValue).failed")
+        }
+        AutomaticUpdateLog.log("update.download.fallback.notAllowed")
     }
 
     private func verifyDownloadedAsset(at url: URL, asset: UpdateAsset) throws {

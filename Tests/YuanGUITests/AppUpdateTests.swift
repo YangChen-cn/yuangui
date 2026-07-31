@@ -3,48 +3,110 @@ import Foundation
 import XCTest
 @testable import YuanGUI
 
-private enum UpdateSourceStubError: Error, Sendable {
-    case unavailable
-}
-
 private actor FakeUpdateSourceFetcher: UpdateSourceFetching {
     enum ResultValue: Sendable {
         case update(AvailableUpdate)
         case unsupportedSystemVersion
         case unavailable
+        case timedOut
+        case invalidManifest
     }
 
     private let manifestResults: [UpdateAsset.Provider: ResultValue]
     private let apiResult: ResultValue
+    private let manifestDelays: [UpdateAsset.Provider: Duration]
     private(set) var manifestCallCount = 0
     private(set) var apiCallCount = 0
+    private var manifestCalls: [UpdateAsset.Provider: Int] = [:]
 
     init(
         gitee: ResultValue = .unavailable,
         github: ResultValue = .unavailable,
-        api: ResultValue = .unavailable
+        api: ResultValue = .unavailable,
+        manifestDelays: [UpdateAsset.Provider: Duration] = [:]
     ) {
         manifestResults = [.gitee: gitee, .github: github]
         apiResult = api
+        self.manifestDelays = manifestDelays
     }
 
     func fetchManifest(endpoint: UpdateEndpoint, timeout: TimeInterval) async throws -> AvailableUpdate {
         manifestCallCount += 1
+        manifestCalls[endpoint.provider, default: 0] += 1
+        if let delay = manifestDelays[endpoint.provider] {
+            try await Task.sleep(for: delay)
+        }
         guard case .update(let update) = manifestResults[endpoint.provider] else {
-            if case .unsupportedSystemVersion = manifestResults[endpoint.provider] {
+            switch manifestResults[endpoint.provider] {
+            case .unsupportedSystemVersion:
                 throw AppUpdateError.unsupportedSystemVersion
+            case .timedOut:
+                throw UpdateSourceAvailabilityError.timedOut
+            case .invalidManifest:
+                throw AppUpdateError.invalidManifest("fixture")
+            default:
+                throw UpdateSourceAvailabilityError.resourceUnavailable
             }
-            throw UpdateSourceStubError.unavailable
         }
         return update
+    }
+
+    func manifestCallCount(for provider: UpdateAsset.Provider) -> Int {
+        manifestCalls[provider, default: 0]
     }
 
     func fetchGitHubRelease(timeout: TimeInterval) async throws -> AvailableUpdate {
         apiCallCount += 1
         guard case .update(let update) = apiResult else {
-            throw UpdateSourceStubError.unavailable
+            throw UpdateSourceAvailabilityError.resourceUnavailable
         }
         return update
+    }
+}
+
+private actor FakeAssetPreparer {
+    enum ResultValue: Sendable {
+        case success
+        case availability(UpdateSourceAvailabilityError)
+        case checksumMismatch
+        case checksumUnavailable
+        case assetSizeMismatch
+        case appMissing
+        case invalidBundle
+        case invalidVersion
+        case invalidBuild
+        case unsupportedSystemVersion
+        case invalidSignature
+    }
+
+    private let results: [UpdateAsset.Provider: ResultValue]
+    private(set) var attempts: [UpdateAsset.Provider] = []
+
+    init(results: [UpdateAsset.Provider: ResultValue]) {
+        self.results = results
+    }
+
+    func prepare(asset: UpdateAsset, update: AvailableUpdate) throws -> PreparedAppUpdate {
+        attempts.append(asset.provider)
+        switch results[asset.provider] ?? .success {
+        case .success:
+            return PreparedAppUpdate(
+                sourceApp: URL(fileURLWithPath: "/tmp/YuanGUI.app"),
+                targetApp: URL(fileURLWithPath: "/Applications/YuanGUI.app"),
+                mountPoint: URL(fileURLWithPath: "/Volumes/YuanGUI"),
+                dmgURL: URL(fileURLWithPath: "/tmp/YuanGUI.dmg")
+            )
+        case .availability(let error): throw error
+        case .checksumMismatch: throw AppUpdateError.checksumMismatch
+        case .checksumUnavailable: throw AppUpdateError.checksumUnavailable
+        case .assetSizeMismatch: throw AppUpdateError.assetSizeMismatch
+        case .appMissing: throw AppUpdateError.appMissing
+        case .invalidBundle: throw AppUpdateError.invalidBundle
+        case .invalidVersion: throw AppUpdateError.invalidVersion("fixture")
+        case .invalidBuild: throw AppUpdateError.invalidBuild("fixture")
+        case .unsupportedSystemVersion: throw AppUpdateError.unsupportedSystemVersion
+        case .invalidSignature: throw AppUpdateError.invalidSignature
+        }
     }
 }
 
@@ -70,7 +132,28 @@ private func makeAvailableUpdate(
         localizedHighlights: highlights,
         releasePageURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/tag/v\(version)"),
         assets: assets,
-        metadataSource: .manifest(URL(string: "https://updates.example.com/\(provider.rawValue)/latest.json")!)
+        metadataSource: .manifest(
+            URL(string: "https://updates.example.com/\(provider.rawValue)/latest.json")!,
+            provider: provider
+        )
+    )
+}
+
+private func makeUpdateWithGitHubAndGiteeAssets(_ version: String = "99.9.9") -> AvailableUpdate {
+    let github = makeAvailableUpdate(version, provider: .github).assets[0]
+    let gitee = makeAvailableUpdate(version, provider: .gitee).assets[0]
+    return AvailableUpdate(
+        version: version,
+        build: 17,
+        minimumSystemVersion: "15.0",
+        publishedAt: Date(timeIntervalSince1970: 1_754_000_000),
+        localizedHighlights: ["A useful update"],
+        releasePageURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/tag/v\(version)"),
+        assets: [github, gitee],
+        metadataSource: .manifest(
+            URL(string: "https://raw.githubusercontent.com/YangChen-cn/yuangui/main/updates/latest.json")!,
+            provider: .github
+        )
     )
 }
 
@@ -82,6 +165,24 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertFalse(SemanticVersion.isNewer("1.0.1", than: "1.0.2"))
         XCTAssertEqual(SemanticVersion.compare("1.0", "1.0.0"), .orderedSame)
         XCTAssertFalse(SemanticVersion.isStable("2.8.0-beta.1"))
+    }
+
+    func testOnlyNetworkAvailabilityFailuresPermitSourceFallback() {
+        XCTAssertEqual(
+            UpdateSourceAvailabilityError(urlError: URLError(.timedOut)),
+            .timedOut
+        )
+        XCTAssertEqual(
+            UpdateSourceAvailabilityError(urlError: URLError(.cannotConnectToHost)),
+            .cannotConnectToHost
+        )
+        XCTAssertNil(UpdateSourceAvailabilityError(urlError: URLError(.badURL)))
+
+        XCTAssertTrue(UpdateSourceAvailabilityError.isFallbackHTTPStatus(408))
+        XCTAssertTrue(UpdateSourceAvailabilityError.isFallbackHTTPStatus(429))
+        XCTAssertTrue(UpdateSourceAvailabilityError.isFallbackHTTPStatus(503))
+        XCTAssertFalse(UpdateSourceAvailabilityError.isFallbackHTTPStatus(404))
+        XCTAssertFalse(UpdateSourceAvailabilityError.isFallbackHTTPStatus(401))
     }
 
     func testManifestDecodesAndValidatesStrictAssetMetadata() throws {
@@ -173,7 +274,7 @@ final class AppUpdateTests: XCTestCase {
 
     func testDualSourceKeepsValidGiteeManifestWhenGitHubIsUnavailable() async throws {
         let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
-        let fetcher = FakeUpdateSourceFetcher(gitee: .update(gitee))
+        let fetcher = FakeUpdateSourceFetcher(gitee: .update(gitee), github: .timedOut)
         let service = AppUpdateService(sourceFetcher: fetcher)
 
         let result = try await service.checkForUpdate()
@@ -184,21 +285,121 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(update.metadataSource, gitee.metadataSource)
         let apiCalls = await fetcher.apiCallCount
         XCTAssertEqual(apiCalls, 0)
+        let giteeCalls = await fetcher.manifestCallCount(for: .gitee)
+        XCTAssertEqual(giteeCalls, 1)
     }
 
-    func testDualSourceSelectsTheHighestVersionAndMergesSameVersionAssets() {
-        let older = makeAvailableUpdate("2.7.2", provider: .gitee)
-        let newer = makeAvailableUpdate("2.7.3", provider: .github)
-        let giteeSame = makeAvailableUpdate("2.7.4", provider: .gitee, assetCount: 1)
-        let githubSame = makeAvailableUpdate("2.7.4", provider: .github, assetCount: 1)
+    func testUnsupportedGitHubManifestDoesNotRequestGiteeOrReleaseAPI() async {
+        let fetcher = FakeUpdateSourceFetcher(
+            github: .unsupportedSystemVersion,
+            api: .update(makeAvailableUpdate("99.9.9"))
+        )
+        let service = AppUpdateService(sourceFetcher: fetcher)
 
-        let highest = AppUpdateService.selectBest([older, newer])
-        XCTAssertEqual(highest?.version, "2.7.3")
-        XCTAssertEqual(highest?.metadataSource, newer.metadataSource)
+        do {
+            _ = try await service.checkForUpdate()
+            XCTFail("An unsupported primary manifest must stop the check")
+        } catch AppUpdateError.unsupportedSystemVersion {
+            let giteeCalls = await fetcher.manifestCallCount(for: .gitee)
+            let apiCalls = await fetcher.apiCallCount
+            XCTAssertEqual(giteeCalls, 0)
+            XCTAssertEqual(apiCalls, 0)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
 
-        let merged = AppUpdateService.selectBest([giteeSame, githubSame])
-        XCTAssertEqual(merged?.version, "2.7.4")
-        XCTAssertEqual(merged?.assets.count, 2)
+    func testGitHubManifestWinsAndDoesNotRequestGiteeWhenGiteeIsNewer() async throws {
+        let github = makeAvailableUpdate("99.9.8", provider: .github)
+        let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
+        let fetcher = FakeUpdateSourceFetcher(
+            gitee: .update(gitee),
+            github: .update(github)
+        )
+        let service = AppUpdateService(sourceFetcher: fetcher)
+
+        let result = try await service.checkForUpdate()
+        guard case .available(let update, _) = result else {
+            return XCTFail("GitHub manifest should be selected")
+        }
+        XCTAssertEqual(update.version, "99.9.8")
+        XCTAssertEqual(update.metadataSource, github.metadataSource)
+        let giteeCalls = await fetcher.manifestCallCount(for: .gitee)
+        XCTAssertEqual(giteeCalls, 0)
+    }
+
+    func testHedgedGiteeCannotOverrideGitHubBeforePrimaryDeadline() async throws {
+        let github = makeAvailableUpdate("99.9.8", provider: .github)
+        let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
+        let fetcher = FakeUpdateSourceFetcher(
+            gitee: .update(gitee),
+            github: .update(github),
+            manifestDelays: [
+                .github: .milliseconds(30),
+                .gitee: .milliseconds(5)
+            ]
+        )
+        let service = AppUpdateService(
+            sourceFetcher: fetcher,
+            manifestHedge: UpdateManifestHedgeConfiguration(
+                giteeStartDelay: .milliseconds(5),
+                githubPrimaryDeadline: .milliseconds(100)
+            )
+        )
+
+        let result = try await service.checkForUpdate()
+        guard case .available(let update, _) = result else {
+            return XCTFail("GitHub should remain authoritative before its deadline")
+        }
+        XCTAssertEqual(update.version, "99.9.8")
+        let giteeCalls = await fetcher.manifestCallCount(for: .gitee)
+        XCTAssertEqual(giteeCalls, 1)
+    }
+
+    func testHedgedGiteeIsUsedWhenGitHubMissesPrimaryDeadline() async throws {
+        let github = makeAvailableUpdate("99.9.8", provider: .github)
+        let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
+        let fetcher = FakeUpdateSourceFetcher(
+            gitee: .update(gitee),
+            github: .update(github),
+            manifestDelays: [
+                .github: .milliseconds(200),
+                .gitee: .milliseconds(10)
+            ]
+        )
+        let service = AppUpdateService(
+            sourceFetcher: fetcher,
+            manifestHedge: UpdateManifestHedgeConfiguration(
+                giteeStartDelay: .milliseconds(5),
+                githubPrimaryDeadline: .milliseconds(40)
+            )
+        )
+
+        let result = try await service.checkForUpdate()
+        guard case .available(let update, _) = result else {
+            return XCTFail("Gitee should be used after the GitHub primary deadline")
+        }
+        XCTAssertEqual(update.version, "99.9.9")
+        let giteeCalls = await fetcher.manifestCallCount(for: .gitee)
+        XCTAssertEqual(giteeCalls, 1)
+    }
+
+    func testInvalidGitHubManifestDoesNotRequestGitee() async {
+        let fetcher = FakeUpdateSourceFetcher(
+            gitee: .update(makeAvailableUpdate("99.9.9", provider: .gitee)),
+            github: .invalidManifest
+        )
+        let service = AppUpdateService(sourceFetcher: fetcher)
+
+        do {
+            _ = try await service.checkForUpdate()
+            XCTFail("An invalid primary manifest must not fall back")
+        } catch AppUpdateError.invalidManifest {
+            let giteeCalls = await fetcher.manifestCallCount(for: .gitee)
+            XCTAssertEqual(giteeCalls, 0)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testGitHubAPIIsUsedOnlyWhenBothManifestsFail() async throws {
@@ -246,6 +447,81 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(apiCalls, 0)
     }
 
+    func testGitHubDMGSuccessDoesNotTryGitee() async throws {
+        let preparer = FakeAssetPreparer(results: [.github: .success, .gitee: .availability(.timedOut)])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        _ = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+        let attempts = await preparer.attempts
+        XCTAssertEqual(attempts, [.github])
+    }
+
+    func testGitHubDMGNetworkFailureFallsBackToGitee() async throws {
+        let preparer = FakeAssetPreparer(results: [
+            .github: .availability(.cannotConnectToHost),
+            .gitee: .success
+        ])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        let prepared = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+        XCTAssertEqual(prepared.dmgURL.path, "/tmp/YuanGUI.dmg")
+        let attempts = await preparer.attempts
+        XCTAssertEqual(attempts, [.github, .gitee])
+    }
+
+    func testGitHubDMGIntegrityFailureDoesNotTryGitee() async {
+        let failures: [FakeAssetPreparer.ResultValue] = [
+            .checksumMismatch,
+            .checksumUnavailable,
+            .assetSizeMismatch,
+            .appMissing,
+            .invalidBundle,
+            .invalidVersion,
+            .invalidBuild,
+            .unsupportedSystemVersion,
+            .invalidSignature
+        ]
+
+        for failure in failures {
+            let preparer = FakeAssetPreparer(results: [.github: failure, .gitee: .success])
+            let service = AppUpdateService(assetPreparer: { asset, update in
+                try await preparer.prepare(asset: asset, update: update)
+            })
+
+            do {
+                _ = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+                XCTFail("Integrity/configuration failure should stop without fallback: \(failure)")
+            } catch {
+                let attempts = await preparer.attempts
+                XCTAssertEqual(attempts, [.github])
+            }
+        }
+    }
+
+    func testGitHubAndGiteeDownloadNetworkFailuresReturnStableError() async {
+        let preparer = FakeAssetPreparer(results: [
+            .github: .availability(.timedOut),
+            .gitee: .availability(.httpStatus(503))
+        ])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        do {
+            _ = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+            XCTFail("Both network failures should be reported")
+        } catch AppUpdateError.updateSourcesUnavailable {
+            let attempts = await preparer.attempts
+            XCTAssertEqual(attempts, [.github, .gitee])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testUnsupportedManifestDoesNotFallBackToGitHubAPI() async {
         let apiUpdate = makeAvailableUpdate("99.9.9", provider: .github)
         let fetcher = FakeUpdateSourceFetcher(
@@ -275,7 +551,11 @@ final class AppUpdateTests: XCTestCase {
             XCTFail("All update sources should fail")
         } catch AppUpdateError.updateManifestUnavailable {
             let apiCalls = await fetcher.apiCallCount
+            let githubCalls = await fetcher.manifestCallCount(for: .github)
+            let giteeCalls = await fetcher.manifestCallCount(for: .gitee)
             XCTAssertEqual(apiCalls, 1)
+            XCTAssertEqual(githubCalls, 1)
+            XCTAssertEqual(giteeCalls, 1)
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
