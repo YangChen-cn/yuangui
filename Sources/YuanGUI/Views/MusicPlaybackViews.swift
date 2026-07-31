@@ -76,7 +76,10 @@ struct MusicTransportControls: View {
                         in: Circle()
                     )
             }
-            .modifier(MusicTransportButtonModifier(usesGlass: usesGlassButtons, isProminent: compact && usesGlassButtons))
+            .modifier(MusicTransportButtonModifier(
+                usesGlass: usesGlassButtons,
+                isProminent: compact && usesGlassButtons && playback.isPlaying
+            ))
             .help(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "暂停" : "播放"))
             Button(action: commands.next) { Image(systemName: "forward.fill") }

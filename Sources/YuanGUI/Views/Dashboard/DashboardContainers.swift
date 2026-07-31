@@ -3,8 +3,8 @@ import SwiftUI
 struct DashboardHeaderContainer: View {
     @ObservedObject var store: PetStore
     @ObservedObject var focusTimer: FocusTimerStore
-    @Binding var showsFocusPopover: Bool
     let showPet: () -> Void
+    @State private var showsFocusPopover = false
 
     var body: some View {
         DashboardHeaderView(
@@ -13,6 +13,19 @@ struct DashboardHeaderContainer: View {
             showsFocusPopover: $showsFocusPopover,
             showPet: showPet
         )
+    }
+}
+
+struct DashboardAppearanceContainer<Content: View>: View {
+    @ObservedObject var store: PetStore
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        let palette = DashboardDesign.palette(for: store.dashboardStyle)
+        content
+            .tint(palette.accent)
+            .environment(\.dashboardVisualTreatment, palette.treatment)
+            .preferredColorScheme(palette.preferredColorScheme)
     }
 }
 

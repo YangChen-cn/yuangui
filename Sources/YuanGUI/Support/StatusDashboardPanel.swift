@@ -39,6 +39,7 @@ final class StatusDashboardPanelController {
     private let showPet: () -> Void
     private let openSettings: () -> Void
     private let appActions: AppActions
+    private let updater = AppUpdateStore()
     private let dashboardState = DashboardPanelState()
     private let hostModel = DashboardHostModel()
     private let panel: StatusDashboardPanel
@@ -69,6 +70,7 @@ final class StatusDashboardPanelController {
         self.showPet = showPet
         self.openSettings = openSettings
         self.appActions = appActions
+        updater.setTerminationHandler(appActions.terminateForUpdate)
         panel = StatusDashboardPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.preferredWidth, height: Self.preferredHeight),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -110,6 +112,7 @@ final class StatusDashboardPanelController {
 
     func show(relativeTo button: NSStatusBarButton) {
         guard let screen = button.window?.screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
+        store.refreshDesktopIconVisibility()
         let visible = screen.visibleFrame
         visibleFrame = visible
         let size = DashboardPanelLayout.size(
@@ -156,6 +159,7 @@ final class StatusDashboardPanelController {
             quickTools: quickTools,
             panelState: dashboardState,
             hostModel: hostModel,
+            updater: updater,
             togglePet: togglePet,
             showPet: showPet,
             openSettings: openSettings,

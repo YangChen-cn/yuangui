@@ -32,28 +32,22 @@ struct MiniMusicPlayerView: View {
             }
             MusicProgressView(music: music)
             HStack {
-                Button { music.toggleLyricsVisible() } label: {
-                    Image(systemName: lyricsPresentation.isVisible ? "quote.bubble.fill" : "quote.bubble")
+                MiniPlayerToggleButton(
+                    systemImage: lyricsPresentation.isVisible ? "quote.bubble.fill" : "quote.bubble",
+                    isSelected: lyricsPresentation.isVisible,
+                    selectedTitle: "隐藏桌面歌词",
+                    unselectedTitle: "显示桌面歌词"
+                ) {
+                    music.toggleLyricsVisible()
                 }
-                .yuanSystemGlassButton(isProminent: lyricsPresentation.isVisible)
-                .controlSize(.small)
-                .help(AppLocalizer.string(
-                    lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
-                ))
-                .accessibilityLabel(AppLocalizer.string(
-                    lyricsPresentation.isVisible ? "隐藏桌面歌词" : "显示桌面歌词"
-                ))
-                Button { music.setLyricsPanelLocked(!lyricsPresentation.isPanelLocked) } label: {
-                    Image(systemName: lyricsPresentation.isPanelLocked ? "lock.fill" : "lock.open")
+                MiniPlayerToggleButton(
+                    systemImage: lyricsPresentation.isPanelLocked ? "lock.fill" : "lock.open",
+                    isSelected: lyricsPresentation.isPanelLocked,
+                    selectedTitle: "解锁桌面歌词",
+                    unselectedTitle: "锁定桌面歌词"
+                ) {
+                    music.setLyricsPanelLocked(!lyricsPresentation.isPanelLocked)
                 }
-                .yuanSystemGlassButton(isProminent: lyricsPresentation.isPanelLocked)
-                .controlSize(.small)
-                .help(AppLocalizer.string(
-                    lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词"
-                ))
-                .accessibilityLabel(AppLocalizer.string(
-                    lyricsPresentation.isPanelLocked ? "解锁桌面歌词" : "锁定桌面歌词"
-                ))
                 Spacer()
                 MusicTransportControls(music: music, compact: true, usesGlassButtons: true)
                 Spacer()
@@ -69,5 +63,38 @@ struct MiniMusicPlayerView: View {
         .yuanLiquidGlassSurface(.regular, cornerRadius: 22)
         .padding(6)
         .presentationBackground(.clear)
+    }
+}
+
+private struct MiniPlayerToggleButton: View {
+    let systemImage: String
+    let isSelected: Bool
+    let selectedTitle: String
+    let unselectedTitle: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.72))
+                .frame(width: 34, height: 28)
+                .background(
+                    isSelected ? Color.accentColor.opacity(0.16) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+        }
+        .yuanSystemGlassButton(isProminent: isSelected)
+        .controlSize(.small)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(
+                    isSelected ? Color.accentColor.opacity(0.72) : Color.clear,
+                    lineWidth: 1
+                )
+        }
+        .help(AppLocalizer.string(isSelected ? selectedTitle : unselectedTitle))
+        .accessibilityLabel(AppLocalizer.string(isSelected ? selectedTitle : unselectedTitle))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

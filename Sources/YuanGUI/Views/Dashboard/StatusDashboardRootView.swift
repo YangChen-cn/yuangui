@@ -7,7 +7,8 @@ struct StatusDashboardRootView: View {
     let externalAudioInterruption: ExternalAudioInterruptionController
     let quickTools: QuickToolsController
     let panelState: DashboardPanelState
-    let hostModel: DashboardHostModel
+    @ObservedObject var hostModel: DashboardHostModel
+    let updater: AppUpdateStore
     let togglePet: () -> Void
     let showPet: () -> Void
     let openSettings: () -> Void
@@ -16,20 +17,28 @@ struct StatusDashboardRootView: View {
     let appActions: AppActions
 
     var body: some View {
-        MenuBarDashboardView(
-            store: store,
-            focusTimer: focusTimer,
-            music: music,
-            externalAudioInterruption: externalAudioInterruption,
-            quickTools: quickTools,
-            panelState: panelState,
-            hostModel: hostModel,
-            togglePet: togglePet,
-            showPet: showPet,
-            openSettings: openSettings,
-            dismiss: dismiss,
-            layoutDidChange: layoutDidChange
-        )
+        Group {
+            if hostModel.isPresented {
+                MenuBarDashboardView(
+                    width: hostModel.width,
+                    maximumHeight: hostModel.maximumHeight,
+                    store: store,
+                    focusTimer: focusTimer,
+                    music: music,
+                    externalAudioInterruption: externalAudioInterruption,
+                    quickTools: quickTools,
+                    panelState: panelState,
+                    updater: updater,
+                    togglePet: togglePet,
+                    showPet: showPet,
+                    openSettings: openSettings,
+                    dismiss: dismiss,
+                    layoutDidChange: layoutDidChange
+                )
+            } else {
+                Color.clear
+            }
+        }
         .environment(\.appActions, appActions)
     }
 }
