@@ -4,8 +4,16 @@ set -euo pipefail
 APP_NAME="YuanGUI"
 DISPLAY_NAME="YuanGUI"
 BUNDLE_ID="com.yang.yuangui"
-VERSION="${VERSION:-2.7.0}"
-BUILD="${BUILD:-16}"
+: "${VERSION:?VERSION is required, for example VERSION=2.7.1}"
+: "${BUILD:?BUILD is required, for example BUILD=17}"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
+  echo "VERSION must be a stable numeric version such as 2.7.1: $VERSION" >&2
+  exit 1
+}
+[[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || {
+  echo "BUILD must be a positive integer: $BUILD" >&2
+  exit 1
+}
 MIN_SYSTEM_VERSION="15.0"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"

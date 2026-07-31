@@ -18,7 +18,7 @@ with open(path, encoding="utf-8") as handle:
     manifest = json.load(handle)
 if manifest.get("schemaVersion") != 1:
     raise SystemExit("unsupported schemaVersion")
-if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[-+][0-9A-Za-z.-]+)?", manifest.get("version", "")):
+if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)*", manifest.get("version", "")):
     raise SystemExit("invalid version")
 if not isinstance(manifest.get("build"), int) or manifest["build"] <= 0:
     raise SystemExit("invalid build")

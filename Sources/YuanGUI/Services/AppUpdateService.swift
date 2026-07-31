@@ -51,6 +51,7 @@ struct GitHubRelease: Decodable, Equatable, Sendable {
     let body: String
     let pageURL: URL
     let assets: [GitHubReleaseAsset]
+    let isPrerelease: Bool
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
@@ -58,6 +59,17 @@ struct GitHubRelease: Decodable, Equatable, Sendable {
         case body
         case pageURL = "html_url"
         case assets
+        case isPrerelease = "prerelease"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tagName = try container.decode(String.self, forKey: .tagName)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        body = try container.decodeIfPresent(String.self, forKey: .body) ?? ""
+        pageURL = try container.decode(URL.self, forKey: .pageURL)
+        assets = try container.decodeIfPresent([GitHubReleaseAsset].self, forKey: .assets) ?? []
+        isPrerelease = try container.decodeIfPresent(Bool.self, forKey: .isPrerelease) ?? false
     }
 
     var version: String {
@@ -102,7 +114,11 @@ struct GitHubRelease: Decodable, Equatable, Sendable {
 
 enum SemanticVersion {
     static func isValid(_ value: String) -> Bool {
-        let pattern = #"^[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[-+][0-9A-Za-z.-]+)?$"#
+        isStable(value)
+    }
+
+    static func isStable(_ value: String) -> Bool {
+        let pattern = #"^[0-9]+\.[0-9]+(?:\.[0-9]+)*$"#
         return value.range(of: pattern, options: .regularExpression) != nil
     }
 
@@ -142,6 +158,12 @@ enum UpdateCheckResult: Equatable, Sendable {
     case available(AvailableUpdate, notes: String?)
 }
 
+private enum ManifestFetchOutcome: Sendable {
+    case update(AvailableUpdate)
+    case unsupportedSystemVersion
+    case failed
+}
+
 /// The minimal capability an update checker must expose. `AppUpdateService`
 /// conforms so the store and the automatic coordinator share one comparison path.
 protocol UpdateChecking: Sendable {
@@ -162,6 +184,7 @@ enum AppUpdateError: LocalizedError {
     case invalidResponse
     case releaseUnavailable(String)
     case updateManifestUnavailable
+    case prereleaseNotSupported
     case invalidManifest(String)
     case checksumMismatch
     case checksumUnavailable
@@ -184,6 +207,7 @@ enum AppUpdateError: LocalizedError {
         case .invalidResponse: return AppLocalizer.string("GitHub 返回了无法识别的响应。")
         case .releaseUnavailable(let message): return AppLocalizer.format("about.error.releaseUnavailable", message)
         case .updateManifestUnavailable: return AppLocalizer.string("update.error.manifestUnavailable")
+        case .prereleaseNotSupported: return AppLocalizer.string("update.error.manifestUnavailable")
         case .invalidManifest(let message): return AppLocalizer.format("update.error.invalidManifest", message)
         case .checksumMismatch: return AppLocalizer.string("update.error.checksumMismatch")
         case .checksumUnavailable: return AppLocalizer.string("update.error.checksumUnavailable")
@@ -291,6 +315,9 @@ actor URLUpdateSourceFetcher: UpdateSourceFetching {
         let url = AppUpdateService.latestReleaseURL
         let data = try await fetch(url, timeout: timeout, accept: "application/vnd.github+json")
         let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+        guard !release.isPrerelease, SemanticVersion.isStable(release.version) else {
+            throw AppUpdateError.prereleaseNotSupported
+        }
         return release.asAvailableUpdate()
     }
 
@@ -298,6 +325,9 @@ actor URLUpdateSourceFetcher: UpdateSourceFetching {
         let url = AppUpdateService.latestReleaseURL
         let data = try await fetch(url, timeout: timeout, accept: "application/vnd.github+json")
         let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+        guard !release.isPrerelease, SemanticVersion.isStable(release.version) else {
+            throw AppUpdateError.prereleaseNotSupported
+        }
         let notes: String
         if let notesAsset = release.releaseNotesAsset(for: language),
            notesAsset.downloadURL.scheme?.lowercased() == "https",
@@ -347,7 +377,7 @@ actor AppUpdateService: UpdateChecking {
     }
 
     func checkForUpdate(mode: UpdateCheckMode) async throws -> UpdateCheckResult {
-        let validManifests = await withTaskGroup(of: AvailableUpdate?.self, returning: [AvailableUpdate].self) { group in
+        let manifestResults = await withTaskGroup(of: ManifestFetchOutcome.self, returning: [ManifestFetchOutcome].self) { group in
             for endpoint in UpdateEndpoint.manifests {
                 group.addTask { [sourceFetcher] in
                     let source = endpoint.provider.rawValue
@@ -358,18 +388,36 @@ actor AppUpdateService: UpdateChecking {
                             timeout: mode == .manual ? 20 : endpoint.automaticTimeout
                         )
                         AutomaticUpdateLog.log("update.source.\(source).succeeded")
-                        return update
+                        return .update(update)
+                    } catch AppUpdateError.unsupportedSystemVersion {
+                        AutomaticUpdateLog.log("update.source.\(source).unsupportedSystemVersion")
+                        return .unsupportedSystemVersion
                     } catch {
                         AutomaticUpdateLog.log("update.source.\(source).failed")
-                        return nil
+                        return .failed
                     }
                 }
             }
-            var updates: [AvailableUpdate] = []
-            for await update in group {
-                if let update { updates.append(update) }
-            }
-            return updates
+            var results: [ManifestFetchOutcome] = []
+            for await result in group { results.append(result) }
+            return results
+        }
+
+        let hasUnsupportedManifest = manifestResults.contains(where: {
+            if case .unsupportedSystemVersion = $0 { return true }
+            return false
+        })
+
+        let validManifests = manifestResults.compactMap { result -> AvailableUpdate? in
+            guard case .update(let update) = result else { return nil }
+            return update
+        }
+
+        if validManifests.isEmpty, hasUnsupportedManifest {
+            // Do not let the GitHub API fallback bypass a valid manifest that
+            // explicitly excludes this macOS version. Automatic callers keep
+            // this error silent; manual callers can explain it in the UI.
+            throw AppUpdateError.unsupportedSystemVersion
         }
 
         let candidate: AvailableUpdate
@@ -386,6 +434,9 @@ actor AppUpdateService: UpdateChecking {
             }
         }
 
+        guard SemanticVersion.isStable(candidate.version) else {
+            throw AppUpdateError.prereleaseNotSupported
+        }
         guard SemanticVersion.isNewer(candidate.version, than: AppVersionInfo.version) else {
             return .upToDate(candidate)
         }
@@ -416,10 +467,11 @@ actor AppUpdateService: UpdateChecking {
     }
 
     static func selectBest(_ updates: [AvailableUpdate]) -> AvailableUpdate? {
-        guard let highestVersion = updates.map(\.version).max(by: {
+        let stableUpdates = updates.filter { SemanticVersion.isStable($0.version) }
+        guard let highestVersion = stableUpdates.map(\.version).max(by: {
             SemanticVersion.compare($0, $1) == .orderedAscending
         }) else { return nil }
-        let sameVersion = updates.filter {
+        let sameVersion = stableUpdates.filter {
             SemanticVersion.compare($0.version, highestVersion) == .orderedSame
         }
         guard let first = sameVersion.first else { return nil }
@@ -456,7 +508,11 @@ actor AppUpdateService: UpdateChecking {
         guard (200..<300).contains(http.statusCode) else {
             throw AppUpdateError.releaseUnavailable("HTTP \(http.statusCode)")
         }
-        return try JSONDecoder().decode(GitHubRelease.self, from: data)
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+        guard !release.isPrerelease, SemanticVersion.isStable(release.version) else {
+            throw AppUpdateError.prereleaseNotSupported
+        }
+        return release
     }
 
     func releaseNotes(for release: GitHubRelease, language: AppLanguage = AppLocalizer.effectiveLanguage) async throws -> String {
@@ -588,6 +644,14 @@ actor AppUpdateService: UpdateChecking {
         guard fileManager.fileExists(atPath: sourceApp.path) else { throw AppUpdateError.appMissing }
         guard let bundle = Bundle(url: sourceApp), bundle.bundleIdentifier == "com.yang.yuangui" else {
             throw AppUpdateError.invalidBundle
+        }
+        guard let bundledMinimumSystemVersion = bundle.object(forInfoDictionaryKey: "LSMinimumSystemVersion") as? String,
+              SemanticVersion.isStable(bundledMinimumSystemVersion)
+        else {
+            throw AppUpdateError.invalidBundle
+        }
+        guard SemanticVersion.compare(currentSystemVersion(), bundledMinimumSystemVersion) != .orderedAscending else {
+            throw AppUpdateError.unsupportedSystemVersion
         }
         let bundledVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         guard SemanticVersion.compare(bundledVersion, update.version) == .orderedSame else {

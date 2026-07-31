@@ -10,6 +10,7 @@ private enum UpdateSourceStubError: Error, Sendable {
 private actor FakeUpdateSourceFetcher: UpdateSourceFetching {
     enum ResultValue: Sendable {
         case update(AvailableUpdate)
+        case unsupportedSystemVersion
         case unavailable
     }
 
@@ -30,6 +31,9 @@ private actor FakeUpdateSourceFetcher: UpdateSourceFetching {
     func fetchManifest(endpoint: UpdateEndpoint, timeout: TimeInterval) async throws -> AvailableUpdate {
         manifestCallCount += 1
         guard case .update(let update) = manifestResults[endpoint.provider] else {
+            if case .unsupportedSystemVersion = manifestResults[endpoint.provider] {
+                throw AppUpdateError.unsupportedSystemVersion
+            }
             throw UpdateSourceStubError.unavailable
         }
         return update
@@ -77,6 +81,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertFalse(SemanticVersion.isNewer("1.0.2", than: "1.0.2"))
         XCTAssertFalse(SemanticVersion.isNewer("1.0.1", than: "1.0.2"))
         XCTAssertEqual(SemanticVersion.compare("1.0", "1.0.0"), .orderedSame)
+        XCTAssertFalse(SemanticVersion.isStable("2.8.0-beta.1"))
     }
 
     func testManifestDecodesAndValidatesStrictAssetMetadata() throws {
@@ -131,6 +136,27 @@ final class AppUpdateTests: XCTestCase {
             let json = Data(String(format: base, url, hash, size).utf8)
             XCTAssertThrowsError(try UpdateManifestCodec.decodeAndValidate(jsonData: json))
         }
+    }
+
+    func testManifestRejectsPrereleaseVersionOnStableChannel() throws {
+        let json = Data("""
+        {
+          "schemaVersion": 1,
+          "version": "2.8.0-beta.1",
+          "build": 18,
+          "minimumSystemVersion": "15.0",
+          "publishedAt": "2026-08-01T00:00:00Z",
+          "highlights": {},
+          "assets": [{
+            "provider": "github",
+            "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.0-beta.1/YuanGUI.dmg",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "size": 1024
+          }]
+        }
+        """.utf8)
+
+        XCTAssertThrowsError(try UpdateManifestCodec.decodeAndValidate(jsonData: json))
     }
 
     func testSHA256StreamsLargeFixtureAndReturnsLowercaseHex() throws {
@@ -197,6 +223,26 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(update.metadataSource, .githubReleaseAPI)
         let apiCalls = await fetcher.apiCallCount
         XCTAssertEqual(apiCalls, 1)
+    }
+
+    func testUnsupportedManifestDoesNotFallBackToGitHubAPI() async {
+        let apiUpdate = makeAvailableUpdate("99.9.9", provider: .github)
+        let fetcher = FakeUpdateSourceFetcher(
+            gitee: .unsupportedSystemVersion,
+            github: .unsupportedSystemVersion,
+            api: .update(apiUpdate)
+        )
+        let service = AppUpdateService(sourceFetcher: fetcher)
+
+        do {
+            _ = try await service.checkForUpdate()
+            XCTFail("Unsupported manifests must not be bypassed by the API fallback")
+        } catch AppUpdateError.unsupportedSystemVersion {
+            let apiCalls = await fetcher.apiCallCount
+            XCTAssertEqual(apiCalls, 0)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testAllUpdateSourcesFailWithoutSurfacingAFalseUpdate() async {

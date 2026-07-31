@@ -77,7 +77,7 @@ git clone https://github.com/YangChen-cn/yuangui.git
 cd yuangui
 swift test
 ./script/build_and_run.sh --verify
-./script/package_dmg.sh
+VERSION=2.7.1 BUILD=17 ./script/package_dmg.sh
 ```
 
 The run script builds and launches a verified app bundle. The package script creates and checks a DMG and prints its SHA-256. An ad-hoc signature is sufficient for local builds; Developer ID and notarization are optional.
@@ -116,7 +116,7 @@ YuanGUI supports English and Simplified Chinese. Open **Settings → General →
 
 ```bash
 swift test
-./script/package_dmg.sh
+VERSION=2.7.1 BUILD=17 ./script/package_dmg.sh
 ```
 
 Tests cover system metrics, companion states, weather, AI services, music sources and local import, lyrics, translation layout, cleanup safety, settings persistence, and resource loading. The music suite also verifies publisher isolation and cancellation-safe shutdown with suspended services. GitHub Actions runs `swift test` for pushes and pull requests. A repeatable SwiftUI Instruments comparison is documented in [Music observation performance](docs/MUSIC_PERFORMANCE.md).

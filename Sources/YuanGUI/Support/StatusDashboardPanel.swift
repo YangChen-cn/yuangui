@@ -200,7 +200,7 @@ final class StatusDashboardPanelController {
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self,
                   event.window !== self.panel,
-                  event.window?.level != .popUpMenu else {
+                  !self.isAuxiliaryPopupWindow(event.window) else {
                 return event
             }
             Task { @MainActor in self.closeIfPointerIsOutside() }
@@ -215,6 +215,15 @@ final class StatusDashboardPanelController {
             }
             return nil
         }
+    }
+
+    private func isAuxiliaryPopupWindow(_ window: NSWindow?) -> Bool {
+        guard let window, window !== panel else { return true }
+        if window.level == .popUpMenu || window is NSPanel { return true }
+        if window.parent === panel || panel.childWindows?.contains(where: { $0 === window }) == true {
+            return true
+        }
+        return false
     }
 
     private func closeIfPointerIsOutside() {

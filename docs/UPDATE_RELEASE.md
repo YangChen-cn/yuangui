@@ -45,17 +45,24 @@ The repository contains `.github/workflows/mirror-release-to-gitee.yml`. It is
 the one-click release path for the verified Gitee repository
 `yangchen716/yuangui`:
 
-1. Publish a GitHub Release with exactly one `YuanGUI-*.dmg` asset.
-2. Include `Build: <CFBundleVersion>` in the release body, or run the workflow
-   manually with the tag and build inputs.
-3. Configure the repository secret `GITEE_TOKEN` with permission to create a
+1. Publish a stable GitHub Release with exactly one `YuanGUI-*.dmg` asset.
+   Prerelease tags and prerelease Releases are rejected from `latest.json`.
+2. Configure the repository secret `GITEE_TOKEN` with permission to create a
    Gitee release and update the mirrored repository.
 
-The workflow uploads that exact DMG to Gitee, verifies that its size and
-SHA-256 are identical, generates `updates/latest.json`, commits it to GitHub
-`main`, and requests a Gitee mirror refresh. If the repository mirror is not
-configured, it uses the Gitee contents API to create or update that one
+The workflow runs on a macOS runner, reads the version, build, and minimum
+system version from the DMG's `Info.plist`, verifies the bundle ID and code
+signature, and compares the embedded version with the stable release tag. It
+uploads that exact DMG to Gitee, verifies that its size and SHA-256 are
+identical, generates `updates/latest.json`, commits it to GitHub `main`, and
+requests a Gitee mirror refresh. If a same-named Gitee asset already exists,
+the workflow reuses it only after downloading and matching its size and
+SHA-256; stale content is deleted and uploaded again. If the repository mirror
+is not configured, it uses the Gitee contents API to create or update that one
 manifest file. It then compares the Gitee raw response with the GitHub file.
+All release and manual runs share one non-canceling concurrency group, and the
+workflow refuses to publish a version that is not greater than the current
+stable manifest unless `allow_rollback` is explicitly enabled for a manual run.
 The production manifest URL is therefore:
 
 ```text

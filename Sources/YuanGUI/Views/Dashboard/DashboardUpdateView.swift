@@ -19,13 +19,21 @@ struct DashboardUpdateView: View {
         .popover(isPresented: $showsPopover, arrowEdge: .leading) {
             popover
         }
+        .onChange(of: showsPopover) { _, isPresented in
+            guard isPresented, !updater.isBusy, updater.state != .available else { return }
+            // Run after the presentation state has committed so the
+            // non-activating Dashboard panel does not rebuild the popover's
+            // anchor in the same transaction.
+            Task { @MainActor in
+                await Task.yield()
+                guard showsPopover else { return }
+                updater.check()
+            }
+        }
     }
 
     private func presentUpdate() {
         showsPopover = true
-        if !updater.isBusy && updater.state != .available {
-            updater.check()
-        }
     }
 
     private var subtitle: String {

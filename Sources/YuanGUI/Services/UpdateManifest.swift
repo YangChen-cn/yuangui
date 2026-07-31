@@ -58,7 +58,7 @@ struct UpdateManifest: Codable, Equatable, Sendable {
         guard schemaVersion == Self.supportedSchemaVersion else {
             throw AppUpdateError.invalidManifest("unsupported schemaVersion")
         }
-        guard SemanticVersion.isValid(version) else {
+        guard SemanticVersion.isStable(version) else {
             throw AppUpdateError.invalidManifest("invalid version")
         }
         guard let build, build > 0 else {

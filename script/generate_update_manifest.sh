@@ -49,7 +49,7 @@ from urllib.parse import urlparse
 output = sys.argv[1]
 version = os.environ["UPDATE_VERSION"]
 build = int(os.environ["UPDATE_BUILD"])
-if build <= 0 or not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[-+][0-9A-Za-z.-]+)?", version):
+if build <= 0 or not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)*", version):
     raise SystemExit("invalid version or build")
 
 def https(value):

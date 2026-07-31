@@ -199,7 +199,7 @@ swift test
 ## 打包 DMG
 
 ```bash
-./script/package_dmg.sh
+VERSION=2.7.1 BUILD=17 ./script/package_dmg.sh
 ```
 
 默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
@@ -213,7 +213,7 @@ dist/YuanGUI-2.7.1.dmg
 ```bash
 SIGNING_IDENTITY="Developer ID Application: ..." \
 NOTARY_PROFILE="your-notary-profile" \
-./script/package_dmg.sh
+VERSION=2.7.1 BUILD=17 ./script/package_dmg.sh
 ```
 
 ## 项目结构

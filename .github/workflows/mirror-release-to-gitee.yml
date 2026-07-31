@@ -4,6 +4,8 @@ on:
   release:
     types: [published]
   push:
+    branches:
+      - main
     paths:
       - updates/latest.json
       - .github/workflows/mirror-release-to-gitee.yml
@@ -13,28 +15,26 @@ on:
         description: "GitHub Release tag, for example v2.7.2"
         required: true
         type: string
-      build:
-        description: "CFBundleVersion from the DMG"
-        required: true
-        type: string
-      minimum_system_version:
-        description: "LSMinimumSystemVersion"
+      allow_rollback:
+        description: "Allow a manifest version lower than or equal to the current stable version"
         required: false
-        default: "15.0"
-        type: string
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 concurrency:
-  group: mirror-release-${{ github.event.release.tag_name || inputs.tag }}
+  group: publish-update-manifest
   cancel-in-progress: false
 
 jobs:
   mirror-release:
-    if: github.event_name != 'push'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'release' && github.event.release.prerelease == false)
     name: Upload the same DMG and manifest to Gitee
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     timeout-minutes: 20
 
     env:
@@ -60,49 +60,28 @@ jobs:
 
           if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
             TAG='${{ github.event.release.tag_name }}'
-            MINIMUM_SYSTEM_VERSION="15.0"
+            ALLOW_ROLLBACK="false"
           else
             TAG='${{ inputs.tag }}'
-            MINIMUM_SYSTEM_VERSION='${{ inputs.minimum_system_version }}'
+            ALLOW_ROLLBACK='${{ inputs.allow_rollback }}'
           fi
 
           [[ "$TAG" == v* ]] || { echo "Release tag must start with v: $TAG" >&2; exit 1; }
           VERSION="${TAG#v}"
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*([+-][0-9A-Za-z.-]+)?$ ]] || {
-            echo "Invalid semantic version in tag: $TAG" >&2
-            exit 1
-          }
-          [[ "$MINIMUM_SYSTEM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
-            echo "Invalid minimum system version: $MINIMUM_SYSTEM_VERSION" >&2
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
+            echo "Stable release tags must contain only numeric versions: $TAG" >&2
             exit 1
           }
 
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > github-release.json
-
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            BUILD='${{ inputs.build }}'
-          else
-            # A release must carry the real CFBundleVersion. Failing here is
-            # safer than putting a guessed build number into the manifest.
-            BUILD="$(python3 - <<'PY'
-          import json, re
-          with open("github-release.json", encoding="utf-8") as handle:
-              body = json.load(handle).get("body") or ""
-          match = re.search(r"(?im)^\s*(?:build|cfbundleversion)\s*[:=]\s*([0-9]+)\s*$", body)
-          print(match.group(1) if match else "")
-          PY
-            )"
-          fi
-
-          [[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || {
-            echo "A positive CFBundleVersion is required. Add 'Build: N' to the release body or use workflow_dispatch." >&2
+          [[ "$(jq -r '.prerelease // false' github-release.json)" == "false" ]] || {
+            echo "Stable update channel refuses prerelease GitHub Releases: $TAG" >&2
             exit 1
           }
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-          echo "minimum_system_version=$MINIMUM_SYSTEM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "allow_rollback=$ALLOW_ROLLBACK" >> "$GITHUB_OUTPUT"
 
       - name: Download the exact GitHub Release DMG
         id: asset
@@ -122,17 +101,17 @@ jobs:
             --pattern 'RELEASE_NOTES*.md' \
             --dir dist || true
 
-          mapfile -t DMG_FILES < <(find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print)
-          if (( ${#DMG_FILES[@]} != 1 )); then
-            echo "Expected exactly one YuanGUI-*.dmg, found ${#DMG_FILES[@]}" >&2
-            printf '%s\n' "${DMG_FILES[@]}" >&2
+          DMG_COUNT="$(find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print | wc -l | tr -d ' ')"
+          if [[ "$DMG_COUNT" != "1" ]]; then
+            echo "Expected exactly one YuanGUI-*.dmg, found $DMG_COUNT" >&2
+            find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print >&2
             exit 1
           fi
 
-          DMG="${DMG_FILES[0]}"
+          DMG="$(find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print -quit)"
           ASSET_NAME="$(basename "$DMG")"
-          SHA256="$(sha256sum "$DMG" | awk '{print $1}')"
-          SIZE="$(stat -c '%s' "$DMG")"
+          SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          SIZE="$(stat -f '%z' "$DMG")"
           printf '%s  %s\n' "$SHA256" "$ASSET_NAME" > "$DMG.sha256"
 
           echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
@@ -140,6 +119,74 @@ jobs:
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "size=$SIZE" >> "$GITHUB_OUTPUT"
           echo "Downloaded $ASSET_NAME ($SIZE bytes, $SHA256)"
+
+      - name: Validate DMG bundle metadata and signature
+        id: bundle
+        env:
+          DMG: ${{ steps.asset.outputs.dmg }}
+          EXPECTED_VERSION: ${{ steps.metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ATTACH_PLIST="$(mktemp)"
+          MOUNT_POINT=""
+          cleanup() {
+            if [[ -n "$MOUNT_POINT" ]]; then
+              hdiutil detach "$MOUNT_POINT" -quiet || true
+            fi
+            rm -f "$ATTACH_PLIST"
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$DMG" -nobrowse -readonly -plist > "$ATTACH_PLIST"
+          MOUNT_POINT="$(python3 - "$ATTACH_PLIST" <<'PY'
+          import plistlib
+          import sys
+          with open(sys.argv[1], "rb") as handle:
+              plist = plistlib.load(handle)
+          for entity in plist.get("system-entities", []):
+              mount_point = entity.get("mount-point")
+              if mount_point:
+                  print(mount_point)
+                  break
+          else:
+              raise SystemExit("DMG did not expose a mount point")
+          PY
+          )"
+
+          APP="$MOUNT_POINT/YuanGUI.app"
+          INFO_PLIST="$APP/Contents/Info.plist"
+          [[ -d "$APP" && -f "$INFO_PLIST" ]] || {
+            echo "DMG does not contain YuanGUI.app" >&2
+            exit 1
+          }
+
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
+          BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
+          BUNDLE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")"
+          MINIMUM_SYSTEM_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$INFO_PLIST")"
+
+          [[ "$BUNDLE_ID" == "com.yang.yuangui" ]] || {
+            echo "Unexpected bundle identifier: $BUNDLE_ID" >&2
+            exit 1
+          }
+          [[ "$BUNDLE_VERSION" == "$EXPECTED_VERSION" ]] || {
+            echo "DMG version $BUNDLE_VERSION does not match tag version $EXPECTED_VERSION" >&2
+            exit 1
+          }
+          [[ "$BUNDLE_BUILD" =~ ^[1-9][0-9]*$ ]] || {
+            echo "Invalid CFBundleVersion in DMG: $BUNDLE_BUILD" >&2
+            exit 1
+          }
+          [[ "$MINIMUM_SYSTEM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
+            echo "Invalid LSMinimumSystemVersion in DMG: $MINIMUM_SYSTEM_VERSION" >&2
+            exit 1
+          }
+          codesign --verify --deep --strict "$APP"
+
+          echo "build=$BUNDLE_BUILD" >> "$GITHUB_OUTPUT"
+          echo "minimum_system_version=$MINIMUM_SYSTEM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "DMG metadata verified: version=$BUNDLE_VERSION build=$BUNDLE_BUILD minimum=$MINIMUM_SYSTEM_VERSION"
 
       - name: Validate the Gitee token
         shell: bash
@@ -227,12 +274,41 @@ jobs:
         run: |
           set -euo pipefail
 
-          upload_if_missing() {
+          upload_if_validated() {
             local path="$1"
+            local expected_size="$2"
+            local expected_sha="$3"
             local name
             name="$(basename "$path")"
-            if jq -e --arg name "$name" '(.assets // []) | any(.name == $name)' gitee-release.json >/dev/null 2>&1; then
-              return
+
+            local existing
+            existing="$(jq -c --arg name "$name" '(.assets // []) | map(select(.name == $name)) | first // empty' gitee-release.json)"
+            if [[ -n "$existing" ]]; then
+              local existing_id
+              local existing_url
+              existing_id="$(jq -r '.id // empty' <<< "$existing")"
+              existing_url="$(jq -r '(.browser_download_url // .url // empty)' <<< "$existing")"
+              local existing_file
+              existing_file="$(mktemp)"
+              if [[ -n "$existing_url" ]] \
+                && curl --silent --show-error --fail --location --retry 3 "$existing_url" --output "$existing_file" \
+                && [[ "$(stat -f '%z' "$existing_file")" == "$expected_size" ]] \
+                && [[ "$(shasum -a 256 "$existing_file" | awk '{print $1}')" == "$expected_sha" ]]; then
+                rm -f "$existing_file"
+                echo "Reusing verified Gitee asset $name"
+                return
+              fi
+              rm -f "$existing_file"
+
+              [[ -n "$existing_id" ]] || {
+                echo "Gitee asset $name exists but has no deletable id" >&2
+                exit 1
+              }
+              echo "Replacing stale Gitee asset $name"
+              curl --silent --show-error --fail-with-body \
+                --request DELETE \
+                --data-urlencode "access_token=$GITEE_TOKEN" \
+                "$API/releases/$RELEASE_ID/attach_files/$existing_id" >/dev/null
             fi
             curl --silent --show-error --fail-with-body \
               --request POST \
@@ -241,8 +317,10 @@ jobs:
               "$API/releases/$RELEASE_ID/attach_files" >/dev/null
           }
 
-          upload_if_missing "$DMG"
-          upload_if_missing "$DMG.sha256"
+          CHECKSUM_SIZE="$(stat -f '%z' "$DMG.sha256")"
+          CHECKSUM_SHA="$(shasum -a 256 "$DMG.sha256" | awk '{print $1}')"
+          upload_if_validated "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}"
+          upload_if_validated "$DMG.sha256" "$CHECKSUM_SIZE" "$CHECKSUM_SHA"
           curl --silent --show-error --fail-with-body \
             "$API/releases/$RELEASE_ID" > gitee-release.json
 
@@ -265,11 +343,11 @@ jobs:
           set -euo pipefail
           curl --silent --show-error --fail --location --retry 3 \
             "$GITEE_DMG_URL" --output dist/gitee-verified.dmg
-          [[ "$(stat -c '%s' dist/gitee-verified.dmg)" == "$EXPECTED_SIZE" ]] || {
+          [[ "$(stat -f '%z' dist/gitee-verified.dmg)" == "$EXPECTED_SIZE" ]] || {
             echo "Gitee DMG size differs from GitHub DMG" >&2
             exit 1
           }
-          [[ "$(sha256sum dist/gitee-verified.dmg | awk '{print $1}')" == "$EXPECTED_SHA256" ]] || {
+          [[ "$(shasum -a 256 dist/gitee-verified.dmg | awk '{print $1}')" == "$EXPECTED_SHA256" ]] || {
             echo "Gitee DMG SHA-256 differs from GitHub DMG" >&2
             exit 1
           }
@@ -325,8 +403,9 @@ jobs:
       - name: Refresh latest.json on GitHub main
         env:
           UPDATE_VERSION: ${{ steps.metadata.outputs.version }}
-          UPDATE_BUILD: ${{ steps.metadata.outputs.build }}
-          UPDATE_MINIMUM_SYSTEM_VERSION: ${{ steps.metadata.outputs.minimum_system_version }}
+          UPDATE_BUILD: ${{ steps.bundle.outputs.build }}
+          UPDATE_MINIMUM_SYSTEM_VERSION: ${{ steps.bundle.outputs.minimum_system_version }}
+          ALLOW_ROLLBACK: ${{ steps.metadata.outputs.allow_rollback }}
           DMG_PATH: ${{ steps.asset.outputs.dmg }}
           GITHUB_DMG_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.metadata.outputs.tag }}/${{ steps.asset.outputs.asset_name }}
           GITEE_DMG_URL: ${{ steps.gitee_asset.outputs.url }}
@@ -338,6 +417,25 @@ jobs:
           set -euo pipefail
           git fetch origin main
           git reset --hard origin/main
+
+          ALLOW_ROLLBACK="$ALLOW_ROLLBACK" UPDATE_VERSION="$UPDATE_VERSION" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def version_key(value):
+              parts = [int(part) for part in value.split(".")]
+              return tuple(parts + [0] * (3 - len(parts)))
+
+          current = json.loads(Path("updates/latest.json").read_text(encoding="utf-8"))["version"]
+          candidate = os.environ["UPDATE_VERSION"]
+          if os.environ.get("ALLOW_ROLLBACK", "false").lower() != "true" and version_key(candidate) <= version_key(current):
+              raise SystemExit(
+                  f"Refusing to publish non-increasing stable version {candidate}; current manifest is {current}. "
+                  "Use allow_rollback only for an intentional rollback."
+              )
+          PY
+
           ./script/generate_update_manifest.sh
           ./script/verify_update_manifest.sh
           git config user.name "github-actions[bot]"
@@ -365,13 +463,13 @@ jobs:
         run: |
           set -euo pipefail
           RAW_URL="https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/updates/latest.json"
-          EXPECTED_SHA="$(sha256sum updates/latest.json | awk '{print $1}')"
+          EXPECTED_SHA="$(shasum -a 256 updates/latest.json | awk '{print $1}')"
           RAW_FILE="$(mktemp)"
           FOUND=false
 
           for attempt in $(seq 1 10); do
             if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              && [[ "$(shasum -a 256 "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break
             fi
@@ -386,7 +484,7 @@ jobs:
             FILE_INFO="$(mktemp)"
             curl --silent --show-error "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
             FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO")"
-            CONTENT="$(base64 -w 0 updates/latest.json)"
+            CONTENT="$(base64 < updates/latest.json | tr -d '\n')"
             if [[ -n "$FILE_SHA" ]]; then
               curl --silent --show-error --fail-with-body \
                 --request PUT \
@@ -410,7 +508,7 @@ jobs:
 
           for attempt in $(seq 1 10); do
             if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              && [[ "$(shasum -a 256 "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break
             fi
@@ -478,7 +576,7 @@ jobs:
             FILE_INFO="$(mktemp)"
             curl --silent --show-error "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
             FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO" 2>/dev/null || true)"
-            CONTENT="$(base64 -w 0 updates/latest.json)"
+            CONTENT="$(base64 < updates/latest.json | tr -d '\n')"
             if [[ -n "$FILE_SHA" ]]; then
               curl --silent --show-error --fail-with-body \
                 --request PUT \
