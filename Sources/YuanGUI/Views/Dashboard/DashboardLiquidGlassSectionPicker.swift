@@ -64,7 +64,7 @@ private struct DashboardLiquidGlassSectionButton: View {
                             .interactive(),
                         in: .rect(cornerRadius: DashboardDesign.controlRadius - 1)
                     )
-                    .glassEffectID(section.id, in: glassNamespace)
+                    .glassEffectID("dashboard-selection", in: glassNamespace)
             } else {
                 Label(section.title, systemImage: section.systemImage)
                     .font(.callout)
