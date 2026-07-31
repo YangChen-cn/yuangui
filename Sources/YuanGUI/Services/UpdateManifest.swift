@@ -193,10 +193,26 @@ struct UpdateEndpoint: Equatable, Sendable {
 struct UpdateManifestHedgeConfiguration: Equatable, Sendable {
     let giteeStartDelay: Duration
     let githubPrimaryDeadline: Duration
+    let automaticBackupDeadline: Duration
+    let manualBackupDeadline: Duration
+
+    init(
+        giteeStartDelay: Duration,
+        githubPrimaryDeadline: Duration,
+        automaticBackupDeadline: Duration = .seconds(9),
+        manualBackupDeadline: Duration = .seconds(15)
+    ) {
+        self.giteeStartDelay = giteeStartDelay
+        self.githubPrimaryDeadline = githubPrimaryDeadline
+        self.automaticBackupDeadline = automaticBackupDeadline
+        self.manualBackupDeadline = manualBackupDeadline
+    }
 
     static let production = UpdateManifestHedgeConfiguration(
         giteeStartDelay: .seconds(2),
-        githubPrimaryDeadline: .seconds(5)
+        githubPrimaryDeadline: .seconds(5),
+        automaticBackupDeadline: .seconds(9),
+        manualBackupDeadline: .seconds(15)
     )
 }
 

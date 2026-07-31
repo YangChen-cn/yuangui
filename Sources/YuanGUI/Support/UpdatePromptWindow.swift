@@ -67,7 +67,8 @@ struct UpdateAvailablePromptView: View {
                     ForEach(model.highlights.prefix(2), id: \.self) { highlight in
                         Label {
                             Text(highlight)
-                                .fixedSize(horizontal: false, vertical: true)
+                                .lineLimit(3)
+                                .truncationMode(.tail)
                         } icon: {
                             Image(systemName: "circle.fill")
                                 .font(.system(size: 5))

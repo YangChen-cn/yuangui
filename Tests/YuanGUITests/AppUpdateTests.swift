@@ -139,7 +139,10 @@ private func makeAvailableUpdate(
     )
 }
 
-private func makeUpdateWithGitHubAndGiteeAssets(_ version: String = "99.9.9") -> AvailableUpdate {
+private func makeUpdateWithGitHubAndGiteeAssets(
+    _ version: String = "99.9.9",
+    metadataProvider: UpdateAsset.Provider = .github
+) -> AvailableUpdate {
     let github = makeAvailableUpdate(version, provider: .github).assets[0]
     let gitee = makeAvailableUpdate(version, provider: .gitee).assets[0]
     return AvailableUpdate(
@@ -151,8 +154,10 @@ private func makeUpdateWithGitHubAndGiteeAssets(_ version: String = "99.9.9") ->
         releasePageURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/tag/v\(version)"),
         assets: [github, gitee],
         metadataSource: .manifest(
-            URL(string: "https://raw.githubusercontent.com/YangChen-cn/yuangui/main/updates/latest.json")!,
-            provider: .github
+            URL(string: metadataProvider == .gitee
+                ? "https://gitee.com/yangchen716/yuangui/raw/main/updates/latest.json"
+                : "https://raw.githubusercontent.com/YangChen-cn/yuangui/main/updates/latest.json")!,
+            provider: metadataProvider
         )
     )
 }
@@ -335,15 +340,15 @@ final class AppUpdateTests: XCTestCase {
             gitee: .update(gitee),
             github: .update(github),
             manifestDelays: [
-                .github: .milliseconds(30),
-                .gitee: .milliseconds(5)
+                .github: .milliseconds(200),
+                .gitee: .milliseconds(20)
             ]
         )
         let service = AppUpdateService(
             sourceFetcher: fetcher,
             manifestHedge: UpdateManifestHedgeConfiguration(
-                giteeStartDelay: .milliseconds(5),
-                githubPrimaryDeadline: .milliseconds(100)
+                giteeStartDelay: .milliseconds(50),
+                githubPrimaryDeadline: .milliseconds(500)
             )
         )
 
@@ -363,15 +368,16 @@ final class AppUpdateTests: XCTestCase {
             gitee: .update(gitee),
             github: .update(github),
             manifestDelays: [
-                .github: .milliseconds(200),
-                .gitee: .milliseconds(10)
+                .github: .milliseconds(1_500),
+                .gitee: .milliseconds(350)
             ]
         )
         let service = AppUpdateService(
             sourceFetcher: fetcher,
             manifestHedge: UpdateManifestHedgeConfiguration(
-                giteeStartDelay: .milliseconds(5),
-                githubPrimaryDeadline: .milliseconds(40)
+                giteeStartDelay: .milliseconds(100),
+                githubPrimaryDeadline: .milliseconds(250),
+                automaticBackupDeadline: .seconds(2)
             )
         )
 
@@ -458,6 +464,22 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(attempts, [.github])
     }
 
+    func testGiteeManifestDownloadsGiteeBeforeGitHub() async throws {
+        let preparer = FakeAssetPreparer(results: [
+            .gitee: .success,
+            .github: .availability(.timedOut)
+        ])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        _ = try await service.prepare(
+            makeUpdateWithGitHubAndGiteeAssets(metadataProvider: .gitee)
+        )
+        let attempts = await preparer.attempts
+        XCTAssertEqual(attempts, [.gitee])
+    }
+
     func testGitHubDMGNetworkFailureFallsBackToGitee() async throws {
         let preparer = FakeAssetPreparer(results: [
             .github: .availability(.cannotConnectToHost),
@@ -519,6 +541,44 @@ final class AppUpdateTests: XCTestCase {
             XCTAssertEqual(attempts, [.github, .gitee])
         } catch {
             XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testStreamDownloadWritesBodyAndMapsFallbackHTTPStatuses() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-StreamDownload-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("update.dmg")
+        let url = URL(string: "https://updates.example.com/YuanGUI.dmg")!
+        let body = Data("streamed fixture body".utf8)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+        let response = try await service.streamDownload(URLRequest(url: url), to: destination)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try Data(contentsOf: destination), body)
+
+        for statusCode in [408, 429, 503] {
+            UpdateStreamURLProtocol.statusCode = statusCode
+            do {
+                _ = try await service.streamDownload(
+                    URLRequest(url: url),
+                    to: directory.appendingPathComponent("status-\(statusCode).dmg")
+                )
+                XCTFail("HTTP \(statusCode) should permit source fallback")
+            } catch let error as UpdateSourceAvailabilityError {
+                XCTAssertEqual(error, .httpStatus(statusCode))
+            } catch {
+                XCTFail("Unexpected error for HTTP \(statusCode): \(error)")
+            }
         }
     }
 
@@ -622,7 +682,10 @@ final class AppUpdateTests: XCTestCase {
         }
         defer { UpdateReleaseURLProtocol.handler = nil }
 
-        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let service = AppUpdateService(
+            session: URLSession(configuration: configuration),
+            languageProvider: { .simplifiedChinese }
+        )
         let result = try await service.checkForUpdate(mode: .manual)
         guard case .available(_, let notes) = result else {
             return XCTFail("Manual check should find the fixture update")
@@ -692,6 +755,35 @@ private final class UpdateReleaseURLProtocol: URLProtocol {
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
+    }
+
+    override func stopLoading() {}
+}
+
+private final class UpdateStreamURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var statusCode = 200
+    nonisolated(unsafe) static var body = Data()
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: Self.statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+              ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if (200..<300).contains(Self.statusCode) {
+            client?.urlProtocol(self, didLoad: Self.body)
+        }
+        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

@@ -169,6 +169,7 @@ private enum ManifestHedgeEvent: Sendable {
     case gitee(ManifestFetchOutcome)
     case startGitee
     case githubDeadline
+    case backupDeadline
 }
 
 private enum ManifestHedgeDecision: Sendable {
@@ -355,9 +356,14 @@ enum AppUpdateInstallerScript {
 
 actor URLUpdateSourceFetcher: UpdateSourceFetching {
     private let session: URLSession
+    private let languageProvider: @Sendable () -> AppLanguage
 
-    init(session: URLSession = .shared) {
+    init(
+        session: URLSession = .shared,
+        languageProvider: @escaping @Sendable () -> AppLanguage = { AppLocalizer.effectiveLanguage }
+    ) {
         self.session = session
+        self.languageProvider = languageProvider
     }
 
     func fetchManifest(endpoint: UpdateEndpoint, timeout: TimeInterval) async throws -> AvailableUpdate {
@@ -365,7 +371,7 @@ actor URLUpdateSourceFetcher: UpdateSourceFetching {
         let manifest = try UpdateManifestCodec.decodeAndValidate(jsonData: jsonData)
         return manifest.asAvailableUpdate(
             source: .manifest(endpoint.manifestURL, provider: endpoint.provider),
-            language: AppLocalizer.effectiveLanguage
+            language: languageProvider()
         )
     }
 
@@ -431,19 +437,28 @@ actor AppUpdateService: UpdateChecking {
     private let sourceFetcher: UpdateSourceFetching
     private let assetPreparer: (@Sendable (UpdateAsset, AvailableUpdate) async throws -> PreparedAppUpdate)?
     private let manifestHedge: UpdateManifestHedgeConfiguration
+    private let languageProvider: @Sendable () -> AppLanguage
+    private var githubUnavailableUntil: Date? = nil
+
+    private static let githubUnavailableCacheDuration: TimeInterval = 30 * 60
 
     init(
         session: URLSession = .shared,
         fileManager: FileManager = .default,
         sourceFetcher: UpdateSourceFetching? = nil,
         assetPreparer: (@Sendable (UpdateAsset, AvailableUpdate) async throws -> PreparedAppUpdate)? = nil,
-        manifestHedge: UpdateManifestHedgeConfiguration = .production
+        manifestHedge: UpdateManifestHedgeConfiguration = .production,
+        languageProvider: @escaping @Sendable () -> AppLanguage = { AppLocalizer.effectiveLanguage }
     ) {
         self.session = session
         self.fileManager = fileManager
-        self.sourceFetcher = sourceFetcher ?? URLUpdateSourceFetcher(session: session)
+        self.sourceFetcher = sourceFetcher ?? URLUpdateSourceFetcher(
+            session: session,
+            languageProvider: languageProvider
+        )
         self.assetPreparer = assetPreparer
         self.manifestHedge = manifestHedge
+        self.languageProvider = languageProvider
     }
 
     func checkForUpdate() async throws -> UpdateCheckResult {
@@ -454,14 +469,19 @@ actor AppUpdateService: UpdateChecking {
         let candidate: AvailableUpdate
         switch await fetchManifestWithHedgedFallback(mode: mode) {
         case .update(let update):
+            updateGitHubAvailabilityCache(for: update)
             candidate = update
         case .failure(let error):
+            if case .updateManifestUnavailable = error {
+                githubUnavailableUntil = Date().addingTimeInterval(Self.githubUnavailableCacheDuration)
+            }
             throw error
         case .apiFallback:
+            githubUnavailableUntil = Date().addingTimeInterval(Self.githubUnavailableCacheDuration)
             do {
                 candidate = try await sourceFetcher.fetchGitHubRelease(
                     timeout: mode == .manual ? 20 : 8,
-                    language: AppLocalizer.effectiveLanguage
+                    language: languageProvider()
                 )
                 AutomaticUpdateLog.log("update.source.github.api.succeeded")
             } catch AppUpdateError.unsupportedSystemVersion {
@@ -501,6 +521,9 @@ actor AppUpdateService: UpdateChecking {
         let giteeTimeout = mode == .manual ? 20 : UpdateEndpoint.giteeManifest.automaticTimeout
         let sourceFetcher = self.sourceFetcher
         let hedge = self.manifestHedge
+        let backupDeadline = mode == .manual
+            ? hedge.manualBackupDeadline
+            : hedge.automaticBackupDeadline
 
         return await withTaskGroup(of: ManifestHedgeEvent.self, returning: ManifestHedgeDecision.self) { group in
             defer { group.cancelAll() }
@@ -517,6 +540,14 @@ actor AppUpdateService: UpdateChecking {
                     return .startGitee
                 } catch {
                     return .githubDeadline
+                }
+            }
+            group.addTask {
+                do {
+                    try await Task.sleep(for: backupDeadline)
+                    return .backupDeadline
+                } catch {
+                    return .startGitee
                 }
             }
             group.addTask {
@@ -583,7 +614,7 @@ actor AppUpdateService: UpdateChecking {
 
                 case .gitee(let outcome):
                     giteeOutcome = outcome
-                    if githubAvailability != nil,
+                    if githubDeadlinePassed || githubAvailability != nil,
                        let decision = Self.decisionAfterGitHubAvailability(outcome) {
                         return decision
                     }
@@ -597,12 +628,26 @@ actor AppUpdateService: UpdateChecking {
                        let decision = Self.decisionAfterGitHubAvailability(giteeOutcome) {
                         return decision
                     }
-                    if githubAvailability != nil {
-                        // GitHub explicitly failed as a network source before
-                        // the deadline. Let the already-started Gitee request
-                        // finish instead of treating the two requests as a
-                        // serial timeout.
-                        continue
+                    if !giteeStarted {
+                        giteeStarted = true
+                        AutomaticUpdateLog.log("update.source.gitee.fallback.started")
+                        group.addTask {
+                            .gitee(await Self.fetchManifestOutcome(
+                                sourceFetcher: sourceFetcher,
+                                endpoint: .giteeManifest,
+                                timeout: giteeTimeout
+                            ))
+                        }
+                    }
+                    // GitHub is no longer allowed to hold the check open, but
+                    // the already-started Gitee request gets the remainder of
+                    // the backup window.
+                    continue
+
+                case .backupDeadline:
+                    if let giteeOutcome,
+                       let decision = Self.decisionAfterGitHubAvailability(giteeOutcome) {
+                        return decision
                     }
                     AutomaticUpdateLog.log("update.source.github.unavailable")
                     AutomaticUpdateLog.log("update.source.gitee.fallback.failed")
@@ -659,7 +704,7 @@ actor AppUpdateService: UpdateChecking {
         }
         return try await releaseNotes(
             for: release,
-            language: AppLocalizer.effectiveLanguage
+            language: languageProvider()
         )
     }
 
@@ -707,6 +752,20 @@ actor AppUpdateService: UpdateChecking {
             throw AppUpdateError.noCompatibleAsset
         }
 
+        // If the manifest was obtained from Gitee, this check already proved
+        // GitHub unavailable in the current network environment. Reuse that
+        // decision for the download instead of making a second 12-second
+        // GitHub connection attempt. A short cache also covers the API
+        // fallback path, while a later valid GitHub manifest clears it.
+        if let giteeAsset,
+           manifestProvider == .gitee || isGitHubUnavailableCached() {
+            return try await prepareGiteeAssetFirst(
+                giteeAsset,
+                githubAsset: githubAsset,
+                update: update
+            )
+        }
+
         if let githubAsset {
             AutomaticUpdateLog.log("update.download.github.started")
             do {
@@ -751,6 +810,56 @@ actor AppUpdateService: UpdateChecking {
         }
     }
 
+    private func prepareGiteeAssetFirst(
+        _ giteeAsset: UpdateAsset,
+        githubAsset: UpdateAsset?,
+        update: AvailableUpdate
+    ) async throws -> PreparedAppUpdate {
+        AutomaticUpdateLog.log("update.download.gitee.started")
+        do {
+            let prepared = try await prepare(asset: giteeAsset, for: update)
+            AutomaticUpdateLog.log("update.download.verified")
+            return prepared
+        } catch is UpdateSourceAvailabilityError {
+            AutomaticUpdateLog.log("update.download.gitee.unavailable")
+            guard let githubAsset else {
+                throw AppUpdateError.updateSourcesUnavailable
+            }
+            AutomaticUpdateLog.log("update.download.github.fallback.started")
+            do {
+                let prepared = try await prepare(asset: githubAsset, for: update)
+                AutomaticUpdateLog.log("update.download.verified")
+                return prepared
+            } catch is UpdateSourceAvailabilityError {
+                AutomaticUpdateLog.log("update.download.github.fallback.failed")
+                throw AppUpdateError.updateSourcesUnavailable
+            } catch {
+                logIntegrityOrConfigurationFailure(error, provider: .github)
+                throw error
+            }
+        } catch {
+            logIntegrityOrConfigurationFailure(error, provider: .gitee)
+            throw error
+        }
+    }
+
+    private func updateGitHubAvailabilityCache(for update: AvailableUpdate) {
+        if update.metadataSource.manifestProvider == .gitee {
+            githubUnavailableUntil = Date().addingTimeInterval(Self.githubUnavailableCacheDuration)
+        } else {
+            githubUnavailableUntil = nil
+        }
+    }
+
+    private func isGitHubUnavailableCached() -> Bool {
+        guard let githubUnavailableUntil else { return false }
+        guard githubUnavailableUntil > Date() else {
+            self.githubUnavailableUntil = nil
+            return false
+        }
+        return true
+    }
+
     func discard(_ update: PreparedAppUpdate) {
         try? detach(update.mountPoint)
         try? fileManager.removeItem(at: update.dmgURL.deletingLastPathComponent())
@@ -779,7 +888,7 @@ actor AppUpdateService: UpdateChecking {
         let dmgURL = updateDirectory.appendingPathComponent(fileName)
 
         do {
-            let response = try await streamDownload(request, to: dmgURL)
+            _ = try await streamDownload(request, to: dmgURL)
             try verifyDownloadedAsset(at: dmgURL, asset: asset)
             let mountPoint = try mount(dmgURL)
             do {
@@ -798,7 +907,9 @@ actor AppUpdateService: UpdateChecking {
         }
     }
 
-    private func streamDownload(_ request: URLRequest, to destination: URL) async throws -> URLResponse {
+    // Internal for deterministic URLProtocol coverage of first-response and
+    // streamed-body handling; callers still enter through prepare(_:).
+    func streamDownload(_ request: URLRequest, to destination: URL) async throws -> URLResponse {
         let session = self.session
         let (bytes, response) = try await withThrowingTaskGroup(
             of: (URLSession.AsyncBytes, URLResponse).self,

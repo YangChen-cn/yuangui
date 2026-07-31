@@ -367,7 +367,16 @@ jobs:
               line = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", "", line.strip())
               line = re.sub(r"[`*_#]", "", line)
               line = re.sub(r"\s+", " ", line).strip()
-              return line[:120].rstrip() if line else None
+              if not line:
+                  return None
+              if len(line) <= 120:
+                  return line
+              shortened = line[:119].rstrip()
+              if re.search(r"[A-Za-z]", shortened):
+                  word_boundary = shortened.rsplit(" ", 1)[0].rstrip()
+                  if len(word_boundary) >= 40:
+                      shortened = word_boundary
+              return shortened + "…"
 
           def bullets(text):
               values = []
