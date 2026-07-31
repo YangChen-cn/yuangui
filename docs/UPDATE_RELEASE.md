@@ -82,6 +82,11 @@ scripts. If its raw manifest is not available yet, the app falls back to the
 other source or the existing GitHub Releases API and keeps automatic failures
 silent.
 
+Manual checks also query both manifests and choose the highest valid version.
+When the selected version matches a GitHub Release, the About page then loads
+the complete localized release-notes asset instead of limiting the manual view
+to the two manifest highlights.
+
 ## Security boundary
 
 SHA-256 detects a damaged download or bytes that do not match the manifest. It

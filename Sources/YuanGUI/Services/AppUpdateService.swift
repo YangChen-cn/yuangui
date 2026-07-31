@@ -379,7 +379,7 @@ actor AppUpdateService: UpdateChecking {
             do {
                 candidate = try await sourceFetcher.fetchGitHubRelease(
                     timeout: mode == .manual ? 20 : 8,
-                    language: mode == .manual ? AppLocalizer.effectiveLanguage : .english
+                    language: AppLocalizer.effectiveLanguage
                 )
             } catch {
                 throw AppUpdateError.updateManifestUnavailable
@@ -389,10 +389,30 @@ actor AppUpdateService: UpdateChecking {
         guard SemanticVersion.isNewer(candidate.version, than: AppVersionInfo.version) else {
             return .upToDate(candidate)
         }
-        let notes = candidate.localizedHighlights.isEmpty
-            ? nil
-            : candidate.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
+        let notes: String?
+        if mode == .manual {
+            // The manifest carries concise automatic highlights. A manual
+            // check keeps the dual-source result, then enriches a matching
+            // GitHub release with the complete localized notes.
+            notes = (try? await fullReleaseNotes(for: candidate))
+                ?? candidate.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
+        } else {
+            notes = candidate.localizedHighlights.isEmpty
+                ? nil
+                : candidate.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
+        }
         return .available(candidate, notes: notes)
+    }
+
+    func fullReleaseNotes(for update: AvailableUpdate) async throws -> String? {
+        let release = try await latestRelease()
+        guard SemanticVersion.compare(release.version, update.version) == .orderedSame else {
+            return nil
+        }
+        return try await releaseNotes(
+            for: release,
+            language: AppLocalizer.effectiveLanguage
+        )
     }
 
     static func selectBest(_ updates: [AvailableUpdate]) -> AvailableUpdate? {
@@ -673,7 +693,8 @@ final class AppUpdateStore: ObservableObject {
                     state = .available
                 case .upToDate(let update):
                     latestUpdate = update
-                    latestUpdateNotes = update.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
+                    latestUpdateNotes = (try? await service.fullReleaseNotes(for: update))
+                        ?? update.localizedHighlights.map { "- \($0)" }.joined(separator: "\n")
                     state = .upToDate
                 }
             } catch {

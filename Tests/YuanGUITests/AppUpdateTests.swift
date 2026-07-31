@@ -232,6 +232,58 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertNotNil(release.releaseNotesAsset(for: .system))
     }
 
+    func testManualCheckReturnsCompleteLocalizedReleaseNotes() async throws {
+        let releaseURL = AppUpdateService.latestReleaseURL
+        let notesURL = URL(string: "https://github.com/YangChen-cn/yuangui/releases/download/v99.9.9/RELEASE_NOTES.zh-CN.md")!
+        let releaseData = Data("""
+        {
+          "tag_name": "v99.9.9",
+          "name": "YuanGUI 99.9.9",
+          "body": "English fallback",
+          "html_url": "https://github.com/YangChen-cn/yuangui/releases/tag/v99.9.9",
+          "assets": [
+            {
+              "name": "RELEASE_NOTES.zh-CN.md",
+              "browser_download_url": "\(notesURL.absoluteString)",
+              "size": 128
+            },
+            {
+              "name": "YuanGUI-99.9.9.dmg",
+              "browser_download_url": "https://github.com/YangChen-cn/yuangui/releases/download/v99.9.9/YuanGUI-99.9.9.dmg",
+              "size": 1024
+            }
+          ]
+        }
+        """.utf8)
+        let fullNotes = """
+        ## 更新说明
+        - 第一条完整中文说明
+        - 第二条完整中文说明
+        - 第三条完整中文说明
+        """.data(using: .utf8)!
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateReleaseURLProtocol.self]
+        UpdateReleaseURLProtocol.handler = { request in
+            if request.url == releaseURL {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!, releaseData)
+            }
+            if request.url == notesURL {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!, fullNotes)
+            }
+            throw URLError(.resourceUnavailable)
+        }
+        defer { UpdateReleaseURLProtocol.handler = nil }
+
+        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let result = try await service.checkForUpdate(mode: .manual)
+        guard case .available(_, let notes) = result else {
+            return XCTFail("Manual check should find the fixture update")
+        }
+        XCTAssertEqual(notes, String(data: fullNotes, encoding: .utf8))
+        XCTAssertTrue(try XCTUnwrap(notes).contains("第三条完整中文说明"))
+    }
+
     func testReleaseNotesKeepGitHubMarkdownStructure() {
         let rows = ReleaseNoteRow.parse("""
         ## 改进
@@ -275,4 +327,25 @@ final class AppUpdateTests: XCTestCase {
         let error = String(data: standardError.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         XCTAssertEqual(process.terminationStatus, 0, error)
     }
+}
+
+private final class UpdateReleaseURLProtocol: URLProtocol {
+    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            let handler = try XCTUnwrap(Self.handler)
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }
