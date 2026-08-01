@@ -5,10 +5,10 @@ import CryptoKit
 import Foundation
 
 enum AppVersionInfo {
-    // Keep the source fallback aligned with the temporary manual-verification
-    // build. Packaged builds still receive these values from Info.plist.
-    static let fallbackVersion = "2.7.0"
-    static let fallbackBuild = "16"
+    // Packaged builds receive these values from Info.plist; the fallback is
+    // only used when the running bundle is missing its version keys.
+    static let fallbackVersion = "2.7.2"
+    static let fallbackBuild = "18"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -563,6 +563,7 @@ actor AppUpdateService: UpdateChecking {
             var githubAvailability: UpdateSourceAvailabilityError?
             var giteeOutcome: ManifestFetchOutcome?
             var githubDeadlinePassed = false
+            var lateGithubUpdate: AvailableUpdate?
 
             while let event = await group.next() {
                 switch event {
@@ -581,22 +582,33 @@ actor AppUpdateService: UpdateChecking {
                 case .github(let outcome):
                     switch outcome {
                     case .succeeded(let update):
-                        // GitHub remains authoritative whenever it returns a
-                        // valid manifest before its short primary deadline.
                         if !githubDeadlinePassed {
+                            // GitHub remains authoritative whenever it returns
+                            // a valid manifest before its primary deadline.
                             return .update(update)
                         }
+                        // GitHub answered after its primary deadline. It is no
+                        // longer allowed to preempt Gitee, but a valid result
+                        // is kept as the backup-deadline fallback instead of
+                        // being discarded when the mirror then fails.
+                        lateGithubUpdate = update
+                        AutomaticUpdateLog.log("update.source.github.lateValid")
                     case .invalid(let error):
                         if !githubDeadlinePassed {
                             AutomaticUpdateLog.log("update.source.github.invalid")
                             AutomaticUpdateLog.log("update.source.gitee.fallback.notAllowed")
                             return .failure(error)
                         }
+                        // A late invalid GitHub response changes nothing; keep
+                        // waiting for Gitee or the backup deadline.
                     case .availability(let error):
                         githubAvailability = error
                         AutomaticUpdateLog.log("update.source.github.unavailable")
                         if let giteeOutcome,
-                           let decision = Self.decisionAfterGitHubAvailability(giteeOutcome) {
+                           let decision = Self.decisionAfterGitHubAvailability(
+                               giteeOutcome,
+                               lateGithubUpdate: lateGithubUpdate
+                           ) {
                             return decision
                         }
                         if !giteeStarted {
@@ -614,19 +626,53 @@ actor AppUpdateService: UpdateChecking {
 
                 case .gitee(let outcome):
                     giteeOutcome = outcome
-                    if githubDeadlinePassed || githubAvailability != nil,
-                       let decision = Self.decisionAfterGitHubAvailability(outcome) {
-                        return decision
+                    guard githubDeadlinePassed || githubAvailability != nil else { continue }
+                    if case .succeeded(let update) = outcome {
+                        return .update(update)
+                    }
+                    switch outcome {
+                    case .availability:
+                        // Both sources unreachable: fall back to the GitHub API
+                        // without waiting for a slow primary response.
+                        if let decision = Self.decisionAfterGitHubAvailability(
+                            outcome,
+                            lateGithubUpdate: lateGithubUpdate
+                        ) {
+                            return decision
+                        }
+                    case .invalid:
+                        // A Gitee validation error alone should not fail the
+                        // check while a valid late GitHub manifest may still
+                        // arrive before the backup deadline.
+                        if githubAvailability != nil,
+                           let decision = Self.decisionAfterGitHubAvailability(
+                               outcome,
+                               lateGithubUpdate: lateGithubUpdate
+                           ) {
+                            return decision
+                        }
+                    case .succeeded:
+                        break
                     }
 
                 case .githubDeadline:
                     githubDeadlinePassed = true
-                    // A late GitHub response is no longer allowed to hold up
-                    // the fallback. Only a Gitee result already available at
-                    // this deadline can be used for this check.
-                    if let giteeOutcome,
-                       let decision = Self.decisionAfterGitHubAvailability(giteeOutcome) {
-                        return decision
+                    if let giteeOutcome {
+                        switch giteeOutcome {
+                        case .succeeded(let update):
+                            return .update(update)
+                        case .availability:
+                            if let decision = Self.decisionAfterGitHubAvailability(
+                                giteeOutcome,
+                                lateGithubUpdate: lateGithubUpdate
+                            ) {
+                                return decision
+                            }
+                        case .invalid:
+                            // Wait for a valid late GitHub manifest or the
+                            // backup deadline instead of failing immediately.
+                            break
+                        }
                     }
                     if !giteeStarted {
                         giteeStarted = true
@@ -642,12 +688,18 @@ actor AppUpdateService: UpdateChecking {
                     // GitHub is no longer allowed to hold the check open, but
                     // the already-started Gitee request gets the remainder of
                     // the backup window.
-                    continue
 
                 case .backupDeadline:
                     if let giteeOutcome,
-                       let decision = Self.decisionAfterGitHubAvailability(giteeOutcome) {
+                       let decision = Self.decisionAfterGitHubAvailability(
+                           giteeOutcome,
+                           lateGithubUpdate: lateGithubUpdate
+                       ) {
                         return decision
+                    }
+                    if let lateGithubUpdate {
+                        AutomaticUpdateLog.log("update.source.github.lateValid")
+                        return .update(lateGithubUpdate)
                     }
                     AutomaticUpdateLog.log("update.source.github.unavailable")
                     AutomaticUpdateLog.log("update.source.gitee.fallback.failed")
@@ -683,14 +735,23 @@ actor AppUpdateService: UpdateChecking {
     }
 
     private static func decisionAfterGitHubAvailability(
-        _ outcome: ManifestFetchOutcome
+        _ outcome: ManifestFetchOutcome,
+        lateGithubUpdate: AvailableUpdate?
     ) -> ManifestHedgeDecision? {
         switch outcome {
         case .succeeded(let update): return .update(update)
         case .availability:
+            if let lateGithubUpdate {
+                AutomaticUpdateLog.log("update.source.github.lateValid")
+                return .update(lateGithubUpdate)
+            }
             AutomaticUpdateLog.log("update.source.gitee.fallback.failed")
             return .apiFallback
         case .invalid(let error):
+            if let lateGithubUpdate {
+                AutomaticUpdateLog.log("update.source.github.lateValid")
+                return .update(lateGithubUpdate)
+            }
             AutomaticUpdateLog.log("update.source.gitee.invalid")
             AutomaticUpdateLog.log("update.source.gitee.fallback.notAllowed")
             return .failure(error)

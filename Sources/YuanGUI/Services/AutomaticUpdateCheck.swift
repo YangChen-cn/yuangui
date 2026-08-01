@@ -63,7 +63,6 @@ protocol UpdatePromptPresenting: AnyObject {
 @MainActor
 final class AutomaticUpdateCheckCoordinator {
     static let lastSuccessfulAutomaticCheckDayKey = "updates.lastSuccessfulAutomaticCheckDay"
-    static let lastAutomaticCheckDayKey = lastSuccessfulAutomaticCheckDayKey
     static let lastAutomaticAttemptAtKey = "updates.lastAutomaticAttemptAt"
     static let automaticAttemptDayKey = "updates.automaticAttemptDay"
     static let automaticAttemptCountKey = "updates.automaticAttemptCount"

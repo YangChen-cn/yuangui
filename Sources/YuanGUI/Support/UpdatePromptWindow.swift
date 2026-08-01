@@ -278,7 +278,11 @@ final class UpdateAvailableWindowController: NSWindowController, NSWindowDelegat
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        finish()
+        // Treat closing via the red button like "Later": dismiss the prompt
+        // and record the choice so the coordinator's log stays complete.
+        if !hasFinishedCurrentPresentation {
+            model.onLater?()
+        }
         return false
     }
 

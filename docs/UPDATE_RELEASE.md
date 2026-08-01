@@ -17,11 +17,11 @@ gate before replacement.
 Build the DMG locally, then run:
 
 ```sh
-UPDATE_VERSION=2.7.1 \
-UPDATE_BUILD=17 \
-DMG_PATH="$PWD/dist/YuanGUI-2.7.1.dmg" \
-GITHUB_DMG_URL="https://github.com/YangChen-cn/yuangui/releases/download/v2.7.1/YuanGUI-2.7.1.dmg" \
-UPDATE_RELEASE_PAGE_URL="https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.1" \
+UPDATE_VERSION=2.7.2 \
+UPDATE_BUILD=18 \
+DMG_PATH="$PWD/dist/YuanGUI-2.7.2.dmg" \
+GITHUB_DMG_URL="https://github.com/YangChen-cn/yuangui/releases/download/v2.7.2/YuanGUI-2.7.2.dmg" \
+UPDATE_RELEASE_PAGE_URL="https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.2" \
 UPDATE_HIGHLIGHTS_ZH_JSON='["更新亮点一","更新亮点二"]' \
 UPDATE_HIGHLIGHTS_EN_JSON='["What is new","Another improvement"]' \
 ./script/generate_update_manifest.sh
@@ -35,7 +35,7 @@ To validate an existing manifest against a local DMG:
 
 ```sh
 UPDATE_MANIFEST_PATH="$PWD/updates/latest.json" \
-DMG_PATH="$PWD/dist/YuanGUI-2.7.1.dmg" \
+DMG_PATH="$PWD/dist/YuanGUI-2.7.2.dmg" \
 ./script/verify_update_manifest.sh
 ```
 

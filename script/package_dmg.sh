@@ -4,10 +4,10 @@ set -euo pipefail
 APP_NAME="YuanGUI"
 DISPLAY_NAME="YuanGUI"
 BUNDLE_ID="com.yang.yuangui"
-: "${VERSION:?VERSION is required, for example VERSION=2.7.1}"
-: "${BUILD:?BUILD is required, for example BUILD=17}"
+: "${VERSION:?VERSION is required, for example VERSION=2.7.2}"
+: "${BUILD:?BUILD is required, for example BUILD=18}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
-  echo "VERSION must be a stable numeric version such as 2.7.1: $VERSION" >&2
+  echo "VERSION must be a stable numeric version such as 2.7.2: $VERSION" >&2
   exit 1
 }
 [[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || {
