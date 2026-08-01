@@ -48,7 +48,11 @@ final class AppRuntime {
         musicFeature: music
     )
     lazy var externalAudioInterruption = ExternalAudioInterruptionController(music: music)
-    lazy var quickTools = QuickToolsController(aiSettings: aiSettings)
+    lazy var petTranslationCoordinator = PetTranslationCoordinator(pet: pet)
+    lazy var quickTools = QuickToolsController(
+        aiSettings: aiSettings,
+        petTranslationEvents: petTranslationCoordinator
+    )
     lazy var updateStore: AppUpdateStore = {
         let store = AppUpdateStore(service: updateService)
         store.setTerminationHandler { [weak self] in

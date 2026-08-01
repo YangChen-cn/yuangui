@@ -39,6 +39,24 @@ final class FakeDesktopIconManager: DesktopIconManaging {
 
 @MainActor
 final class PetStoreTests: XCTestCase {
+    func testEdgePeekRetiresOnlyForTheCurrentCompletedRestore() {
+        XCTAssertTrue(PetPanelController.shouldRetireEdgePeek(
+            expectedGeneration: 4,
+            currentGeneration: 4,
+            dockedEdge: nil
+        ))
+        XCTAssertFalse(PetPanelController.shouldRetireEdgePeek(
+            expectedGeneration: 4,
+            currentGeneration: 5,
+            dockedEdge: nil
+        ))
+        XCTAssertFalse(PetPanelController.shouldRetireEdgePeek(
+            expectedGeneration: 4,
+            currentGeneration: 4,
+            dockedEdge: .right
+        ))
+    }
+
     func testPetToastUsesIntrinsicWidthUntilTextNeedsWrapping() {
         let shortWidth = PetToastView.preferredWidth(for: "Hi!", maximumWidth: 380)
         let longerWidth = PetToastView.preferredWidth(for: "Welcome back!", maximumWidth: 380)

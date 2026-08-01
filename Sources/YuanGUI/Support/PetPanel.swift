@@ -101,6 +101,14 @@ final class PetPanelController {
         .fullScreenAuxiliary
     ]
 
+    nonisolated static func shouldRetireEdgePeek(
+        expectedGeneration: UInt,
+        currentGeneration: UInt,
+        dockedEdge: PetDockEdge?
+    ) -> Bool {
+        expectedGeneration == currentGeneration && dockedEdge == nil
+    }
+
     let panel: PetPanel
     private let store: PetStore
     private let chat: ChatStore
@@ -956,7 +964,10 @@ final class PetPanelController {
         let action = store.resolvedAction(isMusicPlaying: music.playback.isPlaying)
         let visiblePetFrame = PetLayout.visiblePetFrame(
             spriteFrame: spriteFrame,
-            normalizedVisibleBounds: SpriteLoader.normalizedVisibleBounds(mode: store.mode, action: action)
+            normalizedVisibleBounds: SpriteLoader.normalizedVisibleBounds(
+                mode: store.presentationMode,
+                action: action
+            )
         )
         let layout = PetLayout.auxiliaryBubbleLayout(
             petVisualFrame: visiblePetFrame,
@@ -1229,6 +1240,7 @@ final class PetPanelController {
             guard let self,
                   self.edgeTransitionGeneration == transitionGeneration,
                   self.dockedEdge == nil else { return }
+            self.retireEdgePeekAfterRestore(generation: transitionGeneration)
             let finalOrigin = PetLayout.constrainedOrigin(
                 target,
                 panelSize: self.panel.frame.size,
@@ -1281,9 +1293,23 @@ final class PetPanelController {
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 self.edgePeekPanel?.animator().alphaValue = 0
             } completionHandler: {
-                Task { @MainActor [weak self] in self?.edgePeekPanel?.orderOut(nil) }
+                Task { @MainActor [weak self] in
+                    self?.retireEdgePeekAfterRestore(generation: transitionGeneration)
+                }
             }
         }
+    }
+
+    private func retireEdgePeekAfterRestore(generation: UInt) {
+        guard Self.shouldRetireEdgePeek(
+            expectedGeneration: generation,
+            currentGeneration: edgeTransitionGeneration,
+            dockedEdge: dockedEdge
+        ) else { return }
+        edgePeekPanel?.contentView?.isHidden = true
+        edgePeekPanel?.orderOut(nil)
+        edgePeekPanel?.alphaValue = 1
+        scheduleEdgePeekPanelUnload()
     }
 
     private func beginEdgeTransition() -> UInt {
@@ -1502,7 +1528,7 @@ final class PetPanelController {
         let visiblePetFrame = PetLayout.visiblePetFrame(
             spriteFrame: spriteFrame,
             normalizedVisibleBounds: SpriteLoader.normalizedVisibleBounds(
-                mode: store.mode,
+                mode: store.presentationMode,
                 action: store.resolvedAction(isMusicPlaying: music.playback.isPlaying)
             )
         )
@@ -1553,7 +1579,7 @@ final class PetPanelController {
         return PetLayout.visiblePetFrame(
             spriteFrame: spriteFrame,
             normalizedVisibleBounds: SpriteLoader.normalizedVisibleBounds(
-                mode: store.mode,
+                mode: store.presentationMode,
                 action: store.resolvedAction(isMusicPlaying: music.playback.isPlaying)
             )
         )

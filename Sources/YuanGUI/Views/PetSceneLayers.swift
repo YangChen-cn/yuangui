@@ -141,7 +141,7 @@ struct PetSpriteLayer: View {
             }
 
             AnimatedPetSprite(
-                mode: store.mode,
+                mode: store.presentationMode,
                 action: displayedAction,
                 motionEnabled: store.isPetPresented,
                 sequencePlaybackEnabled: store.petMotionEnabled

@@ -140,6 +140,10 @@ final class QuickToolsTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(layout.contentSize.height, 350)
         XCTAssertLessThanOrEqual(layout.contentSize.height, 390)
+        XCTAssertGreaterThanOrEqual(
+            layout.contentSize.height - layout.sourceHeight - layout.resultHeight,
+            TranslationWindowLayout.fixedChromeHeight
+        )
     }
 
     @MainActor
@@ -344,6 +348,133 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertGreaterThan(speech.stopCount, stopsBeforeClear)
         XCTAssertTrue(store.editableSourceText.isEmpty)
         XCTAssertTrue(store.translatedText.isEmpty)
+    }
+
+    @MainActor
+    func testTranslationPublishesPetEventsForTranslationAndSpeech() async {
+        let speech = RecordingSpeechSynthesisService()
+        let events = RecordingPetTranslationEventHandler()
+        let store = TranslationEditorStore(
+            snapshot: translationSnapshot(text: "第一行"),
+            nonChineseTarget: .english,
+            chineseTarget: .english,
+            engine: .systemShortcut,
+            onlineConfiguration: nil,
+            shortcutService: StubShortcutTranslationService(),
+            speechService: speech,
+            petEventHandler: events,
+            onReplaced: {}
+        )
+
+        await store.performShortcutTranslation()
+        XCTAssertEqual(events.events.first, .translationStarted(source: "第一行", origin: .selection))
+        XCTAssertEqual(
+            events.events.last,
+            .translationFinished(source: "第一行", result: "First row", origin: .selection)
+        )
+
+        store.toggleSourceSpeech()
+        XCTAssertEqual(events.events.last, .speechStarted(target: .source, origin: .selection))
+        store.toggleTranslationSpeech()
+        XCTAssertEqual(Array(events.events.suffix(2)), [
+            .speechStopped(origin: .selection),
+            .speechStarted(target: .translation, origin: .selection)
+        ])
+        store.stopSpeaking()
+        XCTAssertEqual(events.events.last, .speechStopped(origin: .selection))
+    }
+
+    @MainActor
+    func testTranslationFailurePublishesPetFailureEvent() async {
+        let events = RecordingPetTranslationEventHandler()
+        let store = TranslationEditorStore(
+            snapshot: translationSnapshot(text: "Hello"),
+            nonChineseTarget: .simplifiedChinese,
+            chineseTarget: .english,
+            engine: .systemShortcut,
+            onlineConfiguration: nil,
+            shortcutService: FailingShortcutTranslationService(),
+            petEventHandler: events,
+            interactionSource: .screenshot,
+            onReplaced: {}
+        )
+
+        await store.performShortcutTranslation()
+
+        XCTAssertEqual(events.events.first, .translationStarted(source: "Hello", origin: .screenshot))
+        guard case let .translationFailed(message, origin) = events.events.last else {
+            return XCTFail("Expected a pet translation failure event")
+        }
+        XCTAssertEqual(message, "Test translation failed")
+        XCTAssertEqual(origin, .screenshot)
+    }
+
+    @MainActor
+    func testPetTranslationCoordinatorMapsSpeechToTheExpectedCharacter() {
+        let suiteName = "PetTranslationCoordinatorTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let pet = PetStore(
+            monitor: SystemMonitor(),
+            trashHandler: TrashService(),
+            defaults: defaults,
+            startServices: false
+        )
+        pet.setPetPresented(true)
+        let coordinator = PetTranslationCoordinator(pet: pet)
+
+        coordinator.handle(.translationStarted(source: "Hello", origin: .selection))
+        XCTAssertEqual(pet.translationActivity, .translating)
+        XCTAssertEqual(pet.presentationMode, .duo)
+
+        coordinator.handle(.interactionEnded(origin: .screenshot))
+        XCTAssertEqual(pet.translationActivity, .translating)
+
+        coordinator.handle(.speechStarted(target: .source, origin: .selection))
+        XCTAssertEqual(pet.translationActivity, .speaking(.source))
+        XCTAssertEqual(pet.presentationMode, .yuanGui)
+
+        coordinator.handle(.speechStarted(target: .translation, origin: .selection))
+        XCTAssertEqual(pet.translationActivity, .speaking(.translation))
+        XCTAssertEqual(pet.presentationMode, .vcc)
+
+        coordinator.handle(.speechStopped(origin: .selection))
+        XCTAssertNil(pet.translationActivity)
+        XCTAssertEqual(pet.presentationMode, pet.mode)
+    }
+
+    @MainActor
+    func testClosingScreenshotTranslationStopsSpeechAndEndsPetInteraction() throws {
+        let speech = RecordingSpeechSynthesisService()
+        let events = RecordingPetTranslationEventHandler()
+        let selection = ScreenshotSelection(
+            globalRect: CGRect(x: 100, y: 100, width: 300, height: 180),
+            displayID: 1,
+            displayFrame: CGRect(x: 0, y: 0, width: 1_200, height: 800),
+            scale: 2
+        )
+        let controller = ScreenshotTranslationOverlayWindowController(
+            selection: selection,
+            image: try makeImage(width: 300, height: 180),
+            snapshot: translationSnapshot(text: "Hello"),
+            nonChineseTarget: .simplifiedChinese,
+            chineseTarget: .english,
+            engine: .systemShortcut,
+            onlineConfiguration: nil,
+            speechService: speech,
+            petEventHandler: events,
+            onClose: {}
+        )
+
+        speech.speak("Hello", languageIdentifier: "en", target: .source)
+        controller.show()
+        controller.close()
+
+        XCTAssertNil(speech.activeTarget)
+        XCTAssertEqual(Array(events.events.suffix(2)), [
+            .speechStopped(origin: .screenshot),
+            .interactionEnded(origin: .screenshot)
+        ])
     }
 
     func testScreenshotTranslationToolbarChoosesAvailableOutsideEdge() {
@@ -1553,6 +1684,16 @@ private final class StubShortcutTranslationService: SystemShortcutTranslationSer
     }
 }
 
+private struct FailingShortcutTranslationService: SystemShortcutTranslationServicing {
+    func translate(_ text: String, target: QuickToolLanguage) async throws -> String {
+        throw FailingShortcutTranslationError()
+    }
+}
+
+private struct FailingShortcutTranslationError: LocalizedError {
+    var errorDescription: String? { "Test translation failed" }
+}
+
 @MainActor
 private final class RecordingSpeechSynthesisService: SpeechSynthesisServicing {
     struct Request: Equatable {
@@ -1584,6 +1725,15 @@ private final class RecordingSpeechSynthesisService: SpeechSynthesisServicing {
         stopCount += 1
         activeTarget = nil
         stateDidChange?(nil)
+    }
+}
+
+@MainActor
+private final class RecordingPetTranslationEventHandler: PetTranslationEventHandling {
+    private(set) var events: [PetTranslationEvent] = []
+
+    func handle(_ event: PetTranslationEvent) {
+        events.append(event)
     }
 }
 

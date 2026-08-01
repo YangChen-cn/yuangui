@@ -52,7 +52,7 @@ struct PetAmbientBubble: View {
     }
 
     private var icon: String {
-        switch store.mode {
+        switch store.presentationMode {
         case .yuanGui: return "heart.fill"
         case .vcc: return "pawprint.fill"
         case .duo: return "heart.circle.fill"

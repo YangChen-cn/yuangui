@@ -33,6 +33,8 @@ final class TranslationEditorStore: ObservableObject {
     private let onlineConfiguration: AITranslationConfiguration?
     private let pipeline: TranslationPipeline
     private let speechService: SpeechSynthesisServicing
+    private weak var petEventHandler: PetTranslationEventHandling?
+    private let interactionSource: TranslationInteractionSource
     private let onReplaced: () -> Void
     private let nonChineseTarget: QuickToolLanguage
     private let chineseTarget: QuickToolLanguage
@@ -50,6 +52,8 @@ final class TranslationEditorStore: ObservableObject {
         onlineService: OnlineTranslationServicing = OnlineTranslationService(),
         pipeline: TranslationPipeline = .shared,
         speechService: SpeechSynthesisServicing? = nil,
+        petEventHandler: PetTranslationEventHandling? = nil,
+        interactionSource: TranslationInteractionSource = .selection,
         onReplaced: @escaping () -> Void
     ) {
         targetSnapshot = snapshot
@@ -64,6 +68,8 @@ final class TranslationEditorStore: ObservableObject {
         self.onlineService = onlineService
         self.pipeline = pipeline
         self.speechService = speechService ?? SystemSpeechSynthesisService()
+        self.petEventHandler = petEventHandler
+        self.interactionSource = interactionSource
         self.onReplaced = onReplaced
         self.nonChineseTarget = nonChineseTarget
         self.chineseTarget = chineseTarget
@@ -72,7 +78,7 @@ final class TranslationEditorStore: ObservableObject {
         detectedSourceLanguage = dominant
         targetLanguage = dominant?.hasPrefix("zh") == true ? chineseTarget : nonChineseTarget
         self.speechService.stateDidChange = { [weak self] target in
-            self?.speakingTarget = target
+            self?.speechStateDidChange(target)
         }
     }
 
@@ -96,8 +102,8 @@ final class TranslationEditorStore: ObservableObject {
 
     var replacementHint: String {
         if sourceApplicationName.hasPrefix("手动输入") { return "手动输入模式" }
-        if sourceApplicationName.hasPrefix("截图 OCR") { return "截图识别文字，仅支持复制译文" }
-        return "原位置只读，仅支持复制译文"
+        if sourceApplicationName.hasPrefix("截图 OCR") { return "截图识别文字，可以先复制译文哦" }
+        return "原位置只读，可以先复制译文哦"
     }
 
     var engineTitle: String {
@@ -111,20 +117,24 @@ final class TranslationEditorStore: ObservableObject {
     func requestTargetLanguage(_ language: QuickToolLanguage) {
         userSelectedTarget = true
         guard language != targetLanguage else { return }
+        let shouldEndInteraction = state != .idle || !translatedText.isEmpty || speakingTarget != nil
         stopSpeaking()
         targetLanguage = language
         translatedText = ""
         translatedLines = []
         state = .idle
+        if shouldEndInteraction { publish(.interactionEnded(origin: interactionSource)) }
     }
 
     func updateEditableSourceText(_ text: String) {
         guard text != editableSourceText else { return }
+        let shouldEndInteraction = state != .idle || !translatedText.isEmpty || speakingTarget != nil
         stopSpeaking()
         editableSourceText = text
         translatedText = ""
         translatedLines = []
         state = .idle
+        if shouldEndInteraction { publish(.interactionEnded(origin: interactionSource)) }
         guard automaticallySwitchesTarget, !userSelectedTarget else { return }
         let dominant = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue
         detectedSourceLanguage = dominant
@@ -134,11 +144,11 @@ final class TranslationEditorStore: ObservableObject {
     func formatSourceLineBreaks() {
         let formatted = TranslationTextFormatter.addingSemanticLineBreaks(editableSourceText)
         guard formatted != editableSourceText else {
-            message = "当前文本不需要重新整理。"
+            message = "这段文字不需要重新整理啦"
             return
         }
         updateEditableSourceText(formatted)
-        message = "已按列表结构整理换行。"
+        message = "元圭已经帮你整理好换行啦"
     }
 
     func toggleSourceSpeech() {
@@ -197,13 +207,16 @@ final class TranslationEditorStore: ObservableObject {
             translatedText = formattedTranslation(result.translatedText, target: requestedTarget)
             translatedLines = [translatedText]
             state = .ready
+            publishTranslationFinished(source: requestedSource)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
+            publish(.interactionEnded(origin: interactionSource))
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             translatedLines = []
             state = .failed(error.localizedDescription)
+            publishTranslationFailed(error)
         }
     }
 
@@ -239,13 +252,16 @@ final class TranslationEditorStore: ObservableObject {
             translatedText = formattedTranslation(result.translatedText, target: requestedTarget)
             translatedLines = [translatedText]
             state = .ready
+            publishTranslationFinished(source: requestedSource)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
+            publish(.interactionEnded(origin: interactionSource))
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             translatedLines = []
             state = .failed(error.localizedDescription)
+            publishTranslationFailed(error)
         }
     }
 
@@ -273,13 +289,16 @@ final class TranslationEditorStore: ObservableObject {
             translatedText = formattedTranslation(result.translatedText, target: requestedTarget)
             translatedLines = [translatedText]
             state = .ready
+            publishTranslationFinished(source: requestedSource)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
+            publish(.interactionEnded(origin: interactionSource))
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             translatedLines = []
             state = .failed(error.localizedDescription)
+            publishTranslationFailed(error)
         }
     }
 
@@ -316,14 +335,17 @@ final class TranslationEditorStore: ObservableObject {
             guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
             detectedSourceLanguage = results.compactMap(\.detectedSourceLanguage).first
             applyLineTranslations(results.map(\.translatedText), target: requestedTarget)
+            publishTranslationFinished(source: requestedSource)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
+            publish(.interactionEnded(origin: interactionSource))
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             translatedText = ""
             translatedLines = []
             state = .failed(error.localizedDescription)
+            publishTranslationFailed(error)
         }
     }
 
@@ -353,14 +375,17 @@ final class TranslationEditorStore: ObservableObject {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
             applyLineTranslations(results.map(\.translatedText), target: requestedTarget)
+            publishTranslationFinished(source: requestedSource)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
+            publish(.interactionEnded(origin: interactionSource))
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             translatedText = ""
             translatedLines = []
             state = .failed(error.localizedDescription)
+            publishTranslationFailed(error)
         }
     }
 
@@ -393,14 +418,17 @@ final class TranslationEditorStore: ObservableObject {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             guard results.count == segments.count else { throw TranslationPipelineError.incompleteResult }
             applyLineTranslations(results.map(\.translatedText), target: requestedTarget)
+            publishTranslationFinished(source: requestedSource)
         } catch is CancellationError {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             state = .idle
+            publish(.interactionEnded(origin: interactionSource))
         } catch {
             guard targetLanguage == requestedTarget, editableSourceText == requestedSource else { return }
             translatedText = ""
             translatedLines = []
             state = .failed(error.localizedDescription)
+            publishTranslationFailed(error)
         }
     }
 
@@ -440,11 +468,13 @@ final class TranslationEditorStore: ObservableObject {
         translatedText = ""
         translatedLines = []
         message = nil
+        publish(.interactionEnded(origin: interactionSource))
     }
 
     private func beginTranslation() {
         resetTranslation(to: .translating)
-        message = nil
+        message = "translation.status.translating"
+        publish(.translationStarted(source: editableSourceText, origin: interactionSource))
     }
 
     private func resetTranslation(to state: State) {
@@ -493,6 +523,34 @@ final class TranslationEditorStore: ObservableObject {
             engine: engine,
             configurationVariant: variant
         )
+    }
+
+    private func speechStateDidChange(_ target: TranslationSpeechTarget?) {
+        let previousTarget = speakingTarget
+        speakingTarget = target
+        if let target {
+            publish(.speechStarted(target: target, origin: interactionSource))
+        } else if previousTarget != nil {
+            publish(.speechStopped(origin: interactionSource))
+        }
+    }
+
+    private func publishTranslationFinished(source: String) {
+        message = "translation.status.finished"
+        publish(.translationFinished(
+            source: source,
+            result: translatedText,
+            origin: interactionSource
+        ))
+    }
+
+    private func publishTranslationFailed(_ error: Error) {
+        message = "translation.status.failed"
+        publish(.translationFailed(message: error.localizedDescription, origin: interactionSource))
+    }
+
+    private func publish(_ event: PetTranslationEvent) {
+        petEventHandler?.handle(event)
     }
 
 }

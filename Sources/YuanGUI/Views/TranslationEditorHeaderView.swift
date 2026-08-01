@@ -7,19 +7,18 @@ struct TranslationEditorHeaderView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "translate")
-                .font(.title3)
-                .foregroundStyle(.blue)
-                .frame(width: 38, height: 38)
-                .background(.blue.opacity(0.11), in: .rect(cornerRadius: 10))
-                .accessibilityHidden(true)
+            TranslationMascotBadgeView(
+                mode: .duo,
+                accent: Color(red: 0.39, green: 0.55, blue: 0.91),
+                size: 42
+            )
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("划词翻译")
+                Text(AppLocalizer.string("translation.mascot.title"))
                     .font(.title3)
                     .bold()
                 HStack(spacing: 10) {
-                    Label(sourceApplicationName, systemImage: "app")
+                    Label(sourceApplicationName, systemImage: "app.dashed")
                     Label(AppLocalizer.string(engineTitle), systemImage: "gearshape.2")
                 }
                 .font(.caption)

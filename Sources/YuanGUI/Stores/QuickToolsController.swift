@@ -21,6 +21,7 @@ final class QuickToolsController: ObservableObject {
     private let ocrService: OCRTextRecognizing
     private let selectedTextProvider: SelectedTextProviding
     private weak var aiSettings: AISettingsStore?
+    private let petTranslationEvents: PetTranslationEventHandling?
     private var screenshotEditor: ScreenshotEditorWindowController?
     private var translationEditor: TranslationEditorWindowController?
     private var translationEditorPresentationID: UUID?
@@ -31,13 +32,15 @@ final class QuickToolsController: ObservableObject {
         captureService: ScreenCapturing = ScreenCaptureService(),
         ocrService: OCRTextRecognizing = VisionOCRService(),
         selectedTextProvider: SelectedTextProviding? = nil,
-        aiSettings: AISettingsStore? = nil
+        aiSettings: AISettingsStore? = nil,
+        petTranslationEvents: PetTranslationEventHandling? = nil
     ) {
         self.settings = settings ?? QuickToolsSettingsStore()
         self.captureService = captureService
         self.ocrService = ocrService
         self.selectedTextProvider = selectedTextProvider ?? AccessibilitySelectedTextProvider()
         self.aiSettings = aiSettings
+        self.petTranslationEvents = petTranslationEvents
     }
 
     func start() {
@@ -191,14 +194,19 @@ final class QuickToolsController: ObservableObject {
                         chineseTarget: settings.chineseTarget,
                         engine: settings.translationEngine,
                         onlineConfiguration: onlineTranslationConfiguration,
+                        petEventHandler: petTranslationEvents,
                         onClose: { [weak self] in self?.screenshotTranslationOverlay = nil }
                     )
                     screenshotTranslationOverlay = controller
                     controller.show()
                     presenter = controller
                 } else {
-                    presenter = showTranslationEditor(snapshot: manualSnapshot(text: "", source: AppLocalizer.string("截图 OCR")))
+                    presenter = showTranslationEditor(
+                        snapshot: manualSnapshot(text: "", source: AppLocalizer.string("截图 OCR")),
+                        interactionSource: .screenshot
+                    )
                 }
+                petTranslationEvents?.handle(.translationStarted(source: "", origin: .screenshot))
                 presenter.setMessage(AppLocalizer.string("正在识别截图文字…"))
                 do {
                     let recognition = try await ocrService.recognizeLayout(in: captured.image)
@@ -211,9 +219,19 @@ final class QuickToolsController: ObservableObject {
                         : nil
                     presenter.setMessage(status)
                     message = status
+                    if let status {
+                        petTranslationEvents?.handle(.translationFailed(
+                            message: status,
+                            origin: .screenshot
+                        ))
+                    }
                 } catch {
                     presenter.setMessage(error.localizedDescription)
                     message = error.localizedDescription
+                    petTranslationEvents?.handle(.translationFailed(
+                        message: error.localizedDescription,
+                        origin: .screenshot
+                    ))
                 }
             }
         } catch {
@@ -230,7 +248,10 @@ final class QuickToolsController: ObservableObject {
     }
 
     @discardableResult
-    func showTranslationEditor(snapshot: TranslationTargetSnapshot) -> TranslationEditorWindowController {
+    func showTranslationEditor(
+        snapshot: TranslationTargetSnapshot,
+        interactionSource: TranslationInteractionSource = .selection
+    ) -> TranslationEditorWindowController {
         translationEditor?.close()
         translationEditor = nil
         let presentationID = UUID()
@@ -241,6 +262,8 @@ final class QuickToolsController: ObservableObject {
             chineseTarget: settings.chineseTarget,
             engine: settings.translationEngine,
             onlineConfiguration: onlineTranslationConfiguration,
+            petEventHandler: petTranslationEvents,
+            interactionSource: interactionSource,
             onClose: { [weak self] in
                 guard self?.translationEditorPresentationID == presentationID else { return }
                 self?.translationEditor = nil

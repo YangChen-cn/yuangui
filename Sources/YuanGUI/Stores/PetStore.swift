@@ -49,6 +49,7 @@ final class PetStore: ObservableObject {
     @Published private(set) var isPetPresented = false
     @Published private(set) var isFocusActive = false
     @Published private(set) var isFocusCelebrating = false
+    @Published private(set) var translationActivity: PetTranslationActivity?
 
     let monitor: SystemMonitor
     let weather: WeatherService
@@ -67,6 +68,8 @@ final class PetStore: ObservableObject {
     private var focusCelebrationTask: Task<Void, Never>?
     private var urgentReminderTask: Task<Void, Never>?
     private var batteryWarningReminderTask: Task<Void, Never>?
+    private var translationActivityResetTask: Task<Void, Never>?
+    private var translationActivityMessage: String?
     private var cancellables = Set<AnyCancellable>()
     private var toastToken = UUID()
     private var recentChatterIDs: [String: [String]] = [:]
@@ -76,8 +79,29 @@ final class PetStore: ObservableObject {
         resolvedAction(isMusicPlaying: false)
     }
 
+    var presentationMode: PetMode {
+        guard canPresentTranslationActivity, let translationActivity else { return mode }
+        switch translationActivity {
+        case .speaking(.source): return .yuanGui
+        case .speaking(.translation): return .vcc
+        case .translating, .finished, .failed: return .duo
+        }
+    }
+
     func resolvedAction(isMusicPlaying: Bool) -> PetAction {
-        PetActionResolver.resolve(PetActionContext(
+        if canPresentTranslationActivity, let translationActivity {
+            switch translationActivity {
+            case .translating:
+                return PetAction(file: "05-read", label: "translation.pet.translating")
+            case .finished:
+                return PetAction(file: "04-wave", label: "translation.pet.finished")
+            case .failed:
+                return PetAction(file: "07-alert", label: "translation.pet.failed")
+            case .speaking:
+                return presentationMode.chatAction
+            }
+        }
+        return PetActionResolver.resolve(PetActionContext(
             mode: mode,
             taskState: taskState,
             actionIndex: actionIndex,
@@ -93,6 +117,10 @@ final class PetStore: ObservableObject {
             isSmartStateUrgent: isUrgentSmartState(smartState),
             transientSmartState: transientSmartActionState
         ))
+    }
+
+    private var canPresentTranslationActivity: Bool {
+        taskState == .idle && !isChatting && !isFocusActive && !urgentReminderVisible
     }
 
     var shouldShowPetBubble: Bool {
@@ -416,6 +444,35 @@ final class PetStore: ObservableObject {
     func setChatting(_ chatting: Bool) {
         isChatting = chatting
         if chatting { dismissAmbientMessage() }
+    }
+
+    func presentTranslationActivity(
+        _ activity: PetTranslationActivity,
+        message: String,
+        duration: TimeInterval? = nil
+    ) {
+        translationActivityResetTask?.cancel()
+        translationActivityResetTask = nil
+        translationActivity = activity
+        translationActivityMessage = message
+        showAmbientMessage(message, duration: duration ?? 60)
+        guard let duration else { return }
+        translationActivityResetTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(max(duration, 0))) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            self?.endTranslationActivity()
+        }
+    }
+
+    func endTranslationActivity() {
+        guard translationActivity != nil else { return }
+        translationActivityResetTask?.cancel()
+        translationActivityResetTask = nil
+        translationActivity = nil
+        let shouldDismissMessage = ambientMessage == translationActivityMessage
+        translationActivityMessage = nil
+        if shouldDismissMessage { dismissAmbientMessage() }
     }
 
     func beginFocus() {

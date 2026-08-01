@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TranslationEditorSectionCard<Header: View, Content: View>: View {
+    let role: TranslationMascotRole
     @ViewBuilder let header: Header
     @ViewBuilder let content: Content
 
@@ -9,12 +10,12 @@ struct TranslationEditorSectionCard<Header: View, Content: View>: View {
             header
             content
         }
-        .padding(10)
+        .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.035), in: .rect(cornerRadius: 12))
+        .background(role.accent.opacity(0.075), in: .rect(cornerRadius: 14))
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.separator.opacity(0.38), lineWidth: 0.7)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(role.accent.opacity(0.16), lineWidth: 0.8)
         }
     }
 }

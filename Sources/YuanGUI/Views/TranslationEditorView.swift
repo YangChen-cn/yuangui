@@ -54,7 +54,12 @@ struct TranslationEditorView: View {
             maxHeight: .infinity,
             alignment: .top
         )
-        .background(.regularMaterial)
+        .background {
+            ZStack {
+                Color(nsColor: .windowBackgroundColor)
+                Color(red: 0.98, green: 0.94, blue: 0.86).opacity(0.12)
+            }
+        }
         .transaction { transaction in transaction.animation = nil }
         .task(id: translationRequestID) {
             try? await Task.sleep(for: .milliseconds(350))

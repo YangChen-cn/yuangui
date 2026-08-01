@@ -16,6 +16,8 @@ extension ScreenshotTranslationPresenting {
 }
 
 struct TranslationWindowLayout: Equatable {
+    static let fixedChromeHeight: CGFloat = 258
+
     let contentSize: CGSize
     let sourceHeight: CGFloat
     let resultHeight: CGFloat
@@ -28,12 +30,12 @@ struct TranslationWindowLayout: Equatable {
         preferredWidth: CGFloat = 440
     ) -> TranslationWindowLayout {
         let width = min(max(400, preferredWidth), max(400, availableFrame.width - 32))
-        let textWidth = max(240, width - 48)
+        let textWidth = max(240, width - 50)
         let maximumHeight = max(300, availableFrame.height - 32)
         // Header, two section headers/card insets, footer, outer padding, and
         // stack spacing. Text editor and result viewport heights are budgeted
         // separately below so the speech controls do not create blank space.
-        let fixedHeight: CGFloat = 236
+        let fixedHeight = fixedChromeHeight
         let variableBudget = max(132, maximumHeight - fixedHeight)
 
         let measuredSource = measuredHeight(
@@ -121,6 +123,8 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
         engine: TranslationEngine,
         onlineConfiguration: AITranslationConfiguration?,
         speechService: SpeechSynthesisServicing? = nil,
+        petEventHandler: PetTranslationEventHandling? = nil,
+        interactionSource: TranslationInteractionSource = .selection,
         onClose: @escaping () -> Void
     ) {
         self.onClose = onClose
@@ -149,6 +153,8 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
             engine: engine,
             onlineConfiguration: onlineConfiguration,
             speechService: speechService,
+            petEventHandler: petEventHandler,
+            interactionSource: interactionSource,
             onReplaced: { closeAfterReplacement?() }
         )
         super.init()

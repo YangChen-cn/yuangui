@@ -12,9 +12,10 @@ struct TranslationSourceSection: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        TranslationEditorSectionCard {
+        TranslationEditorSectionCard(role: .source) {
             HStack(spacing: 8) {
-                Text("原文")
+                TranslationMascotBadgeView(mode: .yuanGui, accent: TranslationMascotRole.source.accent)
+                Text(TranslationMascotRole.source.title)
                     .font(.headline)
                 if let detectedLanguage {
                     Text(languageTitle(detectedLanguage))
@@ -29,6 +30,7 @@ struct TranslationSourceSection: View {
                     .help("将被网页压成一行的列表符号恢复为分行显示")
                 TranslationSpeechButton(
                     target: .source,
+                    role: .source,
                     isSpeaking: isSpeaking,
                     isEnabled: canSpeak,
                     action: toggleSpeech
@@ -50,14 +52,10 @@ struct TranslationSourceSection: View {
                 }
             }
             .frame(height: height)
-            .background(.background.opacity(0.72), in: .rect(cornerRadius: 9))
-            .overlay {
-                RoundedRectangle(cornerRadius: 9)
-                    .stroke(.separator.opacity(0.42), lineWidth: 0.7)
-            }
         }
-        .onAppear {
-            DispatchQueue.main.async { isFocused = true }
+        .task {
+            await Task.yield()
+            isFocused = true
         }
     }
 

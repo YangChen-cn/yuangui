@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TranslationSpeechButton: View {
     let target: TranslationSpeechTarget
+    let role: TranslationMascotRole
     let isSpeaking: Bool
     let isEnabled: Bool
     let action: () -> Void
@@ -10,11 +11,12 @@ struct TranslationSpeechButton: View {
         Button(action: action) {
             Label(label, systemImage: isSpeaking ? "stop.fill" : "speaker.wave.2")
                 .labelStyle(.iconOnly)
-                .frame(width: 24, height: 22)
+                .frame(width: 27, height: 25)
+                .background(role.accent.opacity(isSpeaking ? 0.2 : 0.09), in: Circle())
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)
-        .foregroundStyle(isSpeaking ? Color.accentColor : Color.secondary)
+        .foregroundStyle(isSpeaking ? role.accent : Color.secondary)
         .disabled(!isEnabled)
         .help(label)
         .accessibilityLabel(label)

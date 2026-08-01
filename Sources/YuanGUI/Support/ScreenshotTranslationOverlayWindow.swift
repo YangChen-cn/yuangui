@@ -73,6 +73,8 @@ final class ScreenshotTranslationOverlayModel: ObservableObject {
 
 @MainActor
 final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDelegate, ScreenshotTranslationPresenting {
+    static let toolbarSize = CGSize(width: 252, height: 40)
+
     private let window: ScreenshotTranslationOverlayPanel
     private let toolbarWindow: ScreenshotTranslationOverlayPanel
     private let store: TranslationEditorStore
@@ -93,6 +95,8 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         chineseTarget: QuickToolLanguage,
         engine: TranslationEngine,
         onlineConfiguration: AITranslationConfiguration?,
+        speechService: SpeechSynthesisServicing? = nil,
+        petEventHandler: PetTranslationEventHandling? = nil,
         onClose: @escaping () -> Void
     ) {
         self.onClose = onClose
@@ -105,7 +109,7 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             defer: false
         )
         toolbarWindow = ScreenshotTranslationOverlayPanel(
-            contentRect: CGRect(origin: .zero, size: CGSize(width: 224, height: 40)),
+            contentRect: CGRect(origin: .zero, size: Self.toolbarSize),
             styleMask: Self.auxiliaryOverlayStyleMask,
             backing: .buffered,
             defer: false
@@ -116,6 +120,9 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
             chineseTarget: chineseTarget,
             engine: engine,
             onlineConfiguration: onlineConfiguration,
+            speechService: speechService,
+            petEventHandler: petEventHandler,
+            interactionSource: .screenshot,
             onReplaced: {}
         )
         super.init()
@@ -944,30 +951,79 @@ private struct ScreenshotTranslationToolbarView: View {
                     .onEnded { _ in dragToPointer(true) }
                     .updating($isDragging) { _, state, _ in state = true })
             Button(action: zoomOut) {
-                Image(systemName: "minus.magnifyingglass")
+                Label("缩小译图内容", systemImage: "minus.magnifyingglass")
+                    .labelStyle(.iconOnly)
             }
             .buttonStyle(.plain)
             .help("缩小译图内容")
             Button(action: zoomIn) {
-                Image(systemName: "plus.magnifyingglass")
+                Label("放大译图内容", systemImage: "plus.magnifyingglass")
+                    .labelStyle(.iconOnly)
             }
             .buttonStyle(.plain)
             .help("放大译图内容")
             Button {
                 store.copyTranslation()
             } label: {
-                Image(systemName: store.message == "已复制译文" ? "checkmark" : "doc.on.doc")
+                Label(
+                    "复制译文",
+                    systemImage: store.message == "已复制译文" ? "checkmark" : "doc.on.doc"
+                )
+                .labelStyle(.iconOnly)
             }
             .buttonStyle(.plain)
             .disabled(store.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .help("复制译文")
             Button(action: toggleComparison) {
-                Image(systemName: model.comparisonEnabled ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
+                Label(
+                    model.comparisonEnabled ? "关闭中英对照" : "同时显示原文与译文",
+                    systemImage: model.comparisonEnabled ? "rectangle.split.2x1.fill" : "rectangle.split.2x1"
+                )
+                .labelStyle(.iconOnly)
             }
             .buttonStyle(.plain)
             .help(model.comparisonEnabled ? "关闭中英对照" : "同时显示原文与译文")
+
+            if store.speakingTarget != nil {
+                Button(
+                    AppLocalizer.string("停止角色朗读"),
+                    systemImage: "stop.fill",
+                    action: store.stopSpeaking
+                )
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .help(AppLocalizer.string("停止角色朗读"))
+            } else {
+                Menu {
+                    Button(
+                        AppLocalizer.string("元圭朗读原文"),
+                        systemImage: "person.crop.circle",
+                        action: store.toggleSourceSpeech
+                    )
+                        .disabled(!store.canSpeakSource)
+                    Button(
+                        AppLocalizer.string("VCC朗读译文"),
+                        systemImage: "pawprint",
+                        action: store.toggleTranslationSpeech
+                    )
+                        .disabled(!store.canSpeakTranslation)
+                } label: {
+                    Label(
+                        AppLocalizer.string("角色语音"),
+                        systemImage: "speaker.wave.2.circle"
+                    )
+                        .labelStyle(.iconOnly)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(AppLocalizer.string("角色语音"))
+            }
+
             Button(action: close) {
-                Image(systemName: "xmark.circle.fill")
+                Label("关闭截图翻译（Esc）", systemImage: "xmark.circle.fill")
+                    .labelStyle(.iconOnly)
             }
             .buttonStyle(.plain)
             .help("关闭截图翻译（Esc）")
@@ -975,7 +1031,7 @@ private struct ScreenshotTranslationToolbarView: View {
         .font(.system(size: 14, weight: .semibold))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
-        .frame(width: 224, height: 40)
+        .frame(width: ScreenshotTranslationOverlayWindowController.toolbarSize.width, height: 40)
         .background(.ultraThickMaterial, in: Capsule())
     }
 }

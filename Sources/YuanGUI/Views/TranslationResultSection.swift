@@ -12,9 +12,10 @@ struct TranslationResultSection: View {
     let retry: () -> Void
 
     var body: some View {
-        TranslationEditorSectionCard {
+        TranslationEditorSectionCard(role: .translation) {
             HStack(spacing: 8) {
-                Text("译文")
+                TranslationMascotBadgeView(mode: .vcc, accent: TranslationMascotRole.translation.accent)
+                Text(TranslationMascotRole.translation.title)
                     .font(.headline)
                 if state == .translating {
                     ProgressView()
@@ -26,6 +27,7 @@ struct TranslationResultSection: View {
                 Spacer(minLength: 8)
                 TranslationSpeechButton(
                     target: .translation,
+                    role: .translation,
                     isSpeaking: isSpeaking,
                     isEnabled: canSpeak,
                     action: toggleSpeech
@@ -41,7 +43,6 @@ struct TranslationResultSection: View {
                     .padding(10)
             }
             .frame(height: height)
-            .background(.background.opacity(0.56), in: .rect(cornerRadius: 9))
 
             if case let .failed(message) = state {
                 HStack(spacing: 8) {
