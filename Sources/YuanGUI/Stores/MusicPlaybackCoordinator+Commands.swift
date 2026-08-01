@@ -110,7 +110,7 @@ extension MusicPlaybackCoordinator {
                   activePlaybackSource == .appleMusic else {
                 return
             }
-            if appleMusicRunning { startAppleSyncTask() }
+            startAppleSyncTask()
             if autoplay, appleMusicRunning, !playbackState.isPlaying {
                 lastAppleClockTime = Date.timeIntervalSinceReferenceDate
                 setPlaybackState(.playing)

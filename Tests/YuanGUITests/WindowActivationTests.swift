@@ -56,18 +56,12 @@ final class WindowActivationTests: XCTestCase {
         ))
     }
 
-    func testActivationCoordinatesOnlyWhenAnotherApplicationIsFrontmost() {
-        XCTAssertTrue(ApplicationWindowActivator.shouldCoordinateActivation(
-            currentProcessID: 42,
-            frontmostProcessID: 7
-        ))
-        XCTAssertFalse(ApplicationWindowActivator.shouldCoordinateActivation(
-            currentProcessID: 42,
-            frontmostProcessID: 42
-        ))
-        XCTAssertFalse(ApplicationWindowActivator.shouldCoordinateActivation(
-            currentProcessID: 42,
-            frontmostProcessID: nil
-        ))
+    func testMiniPlayerOpensFullPlayerOnlyForRequestedDismissal() {
+        var intent = MiniPlayerPresentationIntent()
+
+        XCTAssertFalse(intent.consumeFullPlayerRequest())
+        intent.requestFullPlayerAfterDismiss()
+        XCTAssertTrue(intent.consumeFullPlayerRequest())
+        XCTAssertFalse(intent.consumeFullPlayerRequest())
     }
 }

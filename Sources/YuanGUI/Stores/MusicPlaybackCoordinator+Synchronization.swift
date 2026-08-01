@@ -11,7 +11,6 @@ extension MusicPlaybackCoordinator {
         guard !Task.isCancelled, !isShuttingDown else { return }
         if appleMusicRunning != running { appleMusicRunning = running }
         guard appleMusicRunning else {
-            stopAppleSyncTask()
             if activePlaybackSource == .appleMusic { setPlaybackState(.stopped) }
             return
         }
@@ -51,7 +50,6 @@ extension MusicPlaybackCoordinator {
     func startAppleSyncTask() {
         guard !isShuttingDown,
               activePlaybackSource == .appleMusic,
-              appleMusicRunning,
               appleSyncTask == nil else { return }
         appleSyncGeneration &+= 1
         let generation = appleSyncGeneration
@@ -74,9 +72,12 @@ extension MusicPlaybackCoordinator {
     func runAppleSyncLoop(generation: UInt) async {
         defer { finishAppleSyncTask(generation: generation) }
         while !Task.isCancelled {
-            guard activePlaybackSource == .appleMusic, appleMusicRunning else { return }
+            guard activePlaybackSource == .appleMusic else { return }
             await refreshAppleMusic()
-            do { try await Task.sleep(for: .milliseconds(2_500)) } catch { return }
+            let interval = appleMusicRunning
+                ? appleSyncInterval
+                : appleUnavailableSyncInterval
+            do { try await Task.sleep(for: interval) } catch { return }
         }
     }
 

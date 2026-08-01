@@ -1,11 +1,26 @@
 import SwiftUI
 
+struct MiniPlayerPresentationIntent {
+    private var opensFullPlayerAfterDismiss = false
+
+    mutating func requestFullPlayerAfterDismiss() {
+        opensFullPlayerAfterDismiss = true
+    }
+
+    mutating func consumeFullPlayerRequest() -> Bool {
+        guard opensFullPlayerAfterDismiss else { return false }
+        opensFullPlayerAfterDismiss = false
+        return true
+    }
+}
+
 struct MiniMusicPlayerView: View {
     let music: MusicFeature
     @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @Environment(\.appActions) private var appActions
     @Environment(\.dismiss) private var dismiss
+    @State private var presentationIntent = MiniPlayerPresentationIntent()
 
     init(music: MusicFeature) {
         self.music = music
@@ -53,8 +68,8 @@ struct MiniMusicPlayerView: View {
                 MusicTransportControls(music: music, compact: true, usesGlassButtons: true)
                 Spacer()
                 Button {
+                    presentationIntent.requestFullPlayerAfterDismiss()
                     dismiss()
-                    appActions.open(.music)
                 } label: { Image(systemName: "list.bullet") }
                     .yuanSystemGlassButton()
                     .controlSize(.small)
@@ -67,6 +82,10 @@ struct MiniMusicPlayerView: View {
         .yuanLiquidGlassSurface(.regular, cornerRadius: 22)
         .padding(6)
         .presentationBackground(.clear)
+        .onDisappear {
+            guard presentationIntent.consumeFullPlayerRequest() else { return }
+            appActions.open(.music)
+        }
     }
 }
 

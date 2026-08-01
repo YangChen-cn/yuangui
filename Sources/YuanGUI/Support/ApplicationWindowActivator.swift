@@ -34,14 +34,6 @@ final class ApplicationWindowActivator: ApplicationWindowActivating {
         !isApplicationActive && isWindowVisible && !isNonactivatingPanel
     }
 
-    nonisolated static func shouldCoordinateActivation(
-        currentProcessID: pid_t,
-        frontmostProcessID: pid_t?
-    ) -> Bool {
-        guard let frontmostProcessID else { return false }
-        return frontmostProcessID != currentProcessID
-    }
-
     private weak var requestedWindow: NSWindow?
     private var shouldMakeMain = false
     private var requestGeneration: UInt = 0
@@ -93,7 +85,7 @@ final class ApplicationWindowActivator: ApplicationWindowActivating {
             window.deminiaturize(nil)
         }
         window.makeKeyAndOrderFront(nil)
-        requestApplicationActivation(coordinatingFromFrontmostApplication: true)
+        requestApplicationActivation()
         finishPendingActivation()
         scheduleExpiration(for: window, generation: generation)
     }
@@ -110,7 +102,7 @@ final class ApplicationWindowActivator: ApplicationWindowActivating {
         let generation = requestGeneration
         requestedWindow = window
         shouldMakeMain = window.canBecomeMain
-        requestApplicationActivation(coordinatingFromFrontmostApplication: true)
+        requestApplicationActivation()
         finishPendingActivation()
         scheduleExpiration(for: window, generation: generation)
     }
@@ -124,7 +116,7 @@ final class ApplicationWindowActivator: ApplicationWindowActivating {
                   requestGeneration == generation,
                   requestedWindow === window else { return }
             if !NSApp.isActive {
-                requestApplicationActivation(coordinatingFromFrontmostApplication: false)
+                requestApplicationActivation()
             }
             finishPendingActivation()
 
@@ -159,18 +151,7 @@ final class ApplicationWindowActivator: ApplicationWindowActivating {
         }
     }
 
-    private func requestApplicationActivation(coordinatingFromFrontmostApplication: Bool) {
-        if coordinatingFromFrontmostApplication {
-            let currentApplication = NSRunningApplication.current
-            let frontmostApplication = NSWorkspace.shared.frontmostApplication
-            if Self.shouldCoordinateActivation(
-                currentProcessID: currentApplication.processIdentifier,
-                frontmostProcessID: frontmostApplication?.processIdentifier
-            ), let frontmostApplication,
-               currentApplication.activate(from: frontmostApplication, options: []) {
-                return
-            }
-        }
+    private func requestApplicationActivation() {
         NSApp.activate()
     }
 

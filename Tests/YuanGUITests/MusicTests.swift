@@ -431,6 +431,7 @@ final class MusicTests: XCTestCase {
         try await runLyricsServiceReportsTimeout()
         try await runLyricsServiceAcceptsCandidatesWithMissingDuration()
         try await runLyricsServiceAcceptsSwappedTrackAndArtistFields()
+        try await runLyricsServiceFallsBackToTitleOnlyForAppleMusicAndLocalTracks()
         try await runLyricsServiceDoesNotRunSlowBroadFallbackAfterExactMiss()
     }
 
@@ -545,6 +546,54 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queries[0].artist, "讨厌红楼梦")
         XCTAssertEqual(queries[1].title, "讨厌红楼梦")
         XCTAssertEqual(queries[1].artist, "陶喆")
+    }
+
+    private func runLyricsServiceFallsBackToTitleOnlyForAppleMusicAndLocalTracks() async throws {
+        for source in [MusicSource.appleMusic, .local] {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [LyricsURLProtocol.self]
+            let session = URLSession(configuration: configuration)
+            var queries: [(title: String?, artist: String?)] = []
+            LyricsURLProtocol.handler = { request in
+                let response = HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil
+                )!
+                let items = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems
+                let title = items?.first(where: { $0.name == "track_name" })?.value
+                let artist = items?.first(where: { $0.name == "artist_name" })?.value
+                queries.append((title, artist))
+                guard artist == nil else { return (response, Data("[]".utf8)) }
+                let data = Data(#"[{"trackName":"目标歌曲","artistName":"","duration":null,"syncedLyrics":"[00:01.00]纯歌名也能找到"}]"#.utf8)
+                return (response, data)
+            }
+            defer {
+                LyricsURLProtocol.handler = nil
+                session.invalidateAndCancel()
+            }
+
+            let service = LyricsService(session: session)
+            let track = MusicTrack(
+                id: "\(source.rawValue)-title-only",
+                source: source,
+                title: "目标歌曲",
+                artist: "播放器歌手",
+                album: nil,
+                coverURL: nil,
+                duration: 200,
+                bilibili: nil,
+                subtitleURL: nil
+            )
+            let document = await service.lyrics(for: track)
+
+            XCTAssertEqual(document?.lines.first?.text, "纯歌名也能找到")
+            XCTAssertEqual(queries.count, 3)
+            XCTAssertEqual(queries[0].title, "目标歌曲")
+            XCTAssertEqual(queries[0].artist, "播放器歌手")
+            XCTAssertEqual(queries[1].title, "播放器歌手")
+            XCTAssertEqual(queries[1].artist, "目标歌曲")
+            XCTAssertEqual(queries[2].title, "目标歌曲")
+            XCTAssertNil(queries[2].artist)
+        }
     }
 
     private func runLyricsServiceDoesNotRunSlowBroadFallbackAfterExactMiss() async throws {
@@ -1416,6 +1465,41 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testAppleMusicSyncRecoversAfterTransientNotRunningResult() async {
+        let suiteName = "AppleMusicSyncRecoveryTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let appleMusic = RecoveringAppleMusicProvider()
+        let playback = MusicPlaybackStore(source: .appleMusic, volume: 1)
+        playback.activePlaybackSource = .appleMusic
+        playback.appleMusicRunning = true
+        let coordinator = MusicPlaybackCoordinator(
+            playback: playback,
+            defaults: defaults,
+            appleMusic: appleMusic,
+            bilibili: StubBilibiliMusicProvider(),
+            localMusicImporter: StubLocalMusicImporter(),
+            urlPlayer: nil,
+            urlPlayerFactory: { RecordingURLMusicPlayer() },
+            urlPlayerReleaseDelay: .seconds(60),
+            appleSyncInterval: .milliseconds(10),
+            appleUnavailableSyncInterval: .milliseconds(10)
+        )
+
+        coordinator.startAppleSyncTask()
+        for _ in 0..<50 where playback.currentTrack?.title != "东风破" {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(playback.currentTrack?.title, "东风破")
+        XCTAssertTrue(playback.appleMusicRunning)
+        let runningCheckCount = await appleMusic.runningCheckCount()
+        XCTAssertGreaterThanOrEqual(runningCheckCount, 2)
+        await coordinator.shutdown()
+    }
+
+    @MainActor
     func testMusicSourceSwitchScenarios() async {
         await runSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay()
         await runSwitchingFromLocalToBilibiliRebuildsStatusQueueForTheNewSource()
@@ -1626,6 +1710,41 @@ private struct StubAppleMusicProvider: AppleMusicProviding {
 
     func requestSnapshot() async throws -> AppleMusicSnapshot {
         AppleMusicSnapshot(isRunning: true, track: nil, state: .stopped, position: 0, volume: 1)
+    }
+
+    func artworkURL(for trackID: String) async -> URL? { nil }
+    func play() async {}
+    func playPause() async {}
+    func pause() async {}
+    func previous() async {}
+    func next() async {}
+    func seek(to position: TimeInterval) async {}
+    func setVolume(_ volume: Double) async {}
+}
+
+private actor RecoveringAppleMusicProvider: AppleMusicProviding {
+    private var runningChecks = 0
+
+    func isRunning() async -> Bool {
+        runningChecks += 1
+        return runningChecks > 1
+    }
+
+    func runningCheckCount() -> Int { runningChecks }
+
+    func requestSnapshot() async throws -> AppleMusicSnapshot {
+        AppleMusicSnapshot(
+            isRunning: true,
+            track: MusicTrack.appleMusic(
+                title: "东风破",
+                artist: "周杰伦",
+                album: "叶惠美",
+                duration: 317
+            ),
+            state: .playing,
+            position: 35,
+            volume: 0.41
+        )
     }
 
     func artworkURL(for trackID: String) async -> URL? { nil }

@@ -28,6 +28,8 @@ final class MusicPlaybackCoordinator {
     let localMusicImporter: any LocalMusicImporting
     let makeURLMusicPlayer: URLMusicPlayerFactory
     let urlPlayerReleaseDelay: Duration
+    let appleSyncInterval: Duration
+    let appleUnavailableSyncInterval: Duration
     let tasks = MusicTaskRegistry()
 
     var urlPlayer: (any URLMusicPlaying)?
@@ -64,7 +66,9 @@ final class MusicPlaybackCoordinator {
         localMusicImporter: any LocalMusicImporting,
         urlPlayer: (any URLMusicPlaying)?,
         urlPlayerFactory: @escaping URLMusicPlayerFactory,
-        urlPlayerReleaseDelay: Duration
+        urlPlayerReleaseDelay: Duration,
+        appleSyncInterval: Duration = .milliseconds(2_500),
+        appleUnavailableSyncInterval: Duration = .seconds(5)
     ) {
         self.playback = playback
         self.defaults = defaults
@@ -74,6 +78,8 @@ final class MusicPlaybackCoordinator {
         self.urlPlayer = urlPlayer
         makeURLMusicPlayer = urlPlayerFactory
         self.urlPlayerReleaseDelay = urlPlayerReleaseDelay
+        self.appleSyncInterval = appleSyncInterval
+        self.appleUnavailableSyncInterval = appleUnavailableSyncInterval
         bilibiliVolume = defaults.object(forKey: "bilibiliMusicVolume") as? Double ?? 0.8
         localVolume = defaults.object(forKey: "localMusicVolume") as? Double ?? 0.8
     }

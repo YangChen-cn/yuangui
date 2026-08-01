@@ -114,7 +114,19 @@ actor LyricsService: LyricsProviding {
             URLQueryItem(name: "track_name", value: artist),
             URLQueryItem(name: "artist_name", value: title)
         ])
-        return bestDocument(in: swappedCandidates, for: track)
+        if let swapped = bestDocument(in: swappedCandidates, for: track) {
+            return swapped
+        }
+
+        // Apple Music and local files often have useful lyrics records whose
+        // artist field is empty or differs from the player's metadata. After
+        // the metadata-qualified searches miss, retry once with only the
+        // normalized title instead of discarding those records.
+        guard track.source == .appleMusic || track.source == .local else { return nil }
+        let titleOnlyCandidates = try await fetchCandidates(queryItems: [
+            URLQueryItem(name: "track_name", value: title)
+        ])
+        return bestDocument(in: titleOnlyCandidates, for: track, ignoringArtist: true)
     }
 
     private func fetchCandidates(queryItems: [URLQueryItem]) async throws -> [LRCLIBResult] {
@@ -136,20 +148,24 @@ actor LyricsService: LyricsProviding {
         }
     }
 
-    private func bestDocument(in candidates: [LRCLIBResult], for track: MusicTrack) -> LyricsDocument? {
+    private func bestDocument(
+        in candidates: [LRCLIBResult],
+        for track: MusicTrack,
+        ignoringArtist: Bool = false
+    ) -> LyricsDocument? {
         guard let best = candidates
             .filter({ $0.syncedLyrics?.isEmpty == false })
-            .map({ ($0, score($0, track)) })
+            .map({ ($0, score($0, track, ignoringArtist: ignoringArtist)) })
             .filter({ $0.1 >= 0.70 })
             .max(by: { $0.1 < $1.1 })?.0,
               let lrc = best.syncedLyrics else { return nil }
         return LyricsParser.parseLRC(lrc, source: "LRCLIB")
     }
 
-    private func score(_ result: LRCLIBResult, _ track: MusicTrack) -> Double {
+    private func score(_ result: LRCLIBResult, _ track: MusicTrack, ignoringArtist: Bool = false) -> Double {
         let expectedTitle = normalize(normalizedTitle(track.title))
         let candidateTitle = normalize(result.trackName)
-        let expectedArtist = normalize(track.artist)
+        let expectedArtist = ignoringArtist ? "" : normalize(track.artist)
         let candidateArtist = normalize(result.artistName)
         let hasArtist = !expectedArtist.isEmpty
         let directScore = metadataScore(
