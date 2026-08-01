@@ -3,19 +3,25 @@
   "version": "2.7.2",
   "build": 18,
   "minimumSystemVersion": "15.0",
-  "publishedAt": "2026-08-01T07:01:59Z",
+  "publishedAt": "2026-08-01T08:15:55Z",
   "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.2",
   "highlights": {
     "zh-Hans": [
-      "GitHub 主源与 Gitee 网络备用源的自动更新流程更加稳定",
-      "更新提示、下载文件和 DMG 安装增加完整校验"
+      "Added a quiet automatic update flow with a real startup delay, daily retry limits, pending prompts, and no background…",
+      "Replaced the unstable update alert with a centered SwiftUI update window that supports Later, View Details, and…"
     ],
     "en": [
-      "More reliable automatic updates with GitHub as the primary source and Gitee as a network fallback",
-      "Stronger validation for update prompts, downloads, and DMG installation"
+      "Added a quiet automatic update flow with a real startup delay, daily retry limits, pending prompts, and no background…",
+      "Replaced the unstable update alert with a centered SwiftUI update window that supports Later, View Details, and…"
     ]
   },
   "assets": [
+    {
+      "provider": "gitee",
+      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.7.2/YuanGUI-2.7.2.dmg",
+      "sha256": "4ddad4f8bd3b16749cb5a0b1c993b042fbda968e340366f0ef931901ce881d5b",
+      "size": 28765267
+    },
     {
       "provider": "github",
       "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.7.2/YuanGUI-2.7.2.dmg",
