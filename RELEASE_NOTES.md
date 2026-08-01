@@ -15,3 +15,9 @@
 - Fixed the Dashboard toolbar update popover closing the entire status panel by deferring the check until presentation is committed and ignoring auxiliary popup windows in the outside-click monitor.
 - Made DMG packaging require an explicit stable `VERSION` and positive `BUILD`, preventing stale development defaults from producing an incorrectly versioned installer.
 - Reduced CI cost without dropping core coverage by consolidating repetitive update and lifecycle cases into scenario-driven tests and moving translation and diary benchmarks into a separate test target.
+
+## Earlier releases
+
+- Added local music, safer cleanup workflows, improved lyrics and focus tools, and a more complete bilingual interface. (2.7.0)
+- Improved music performance and SwiftUI lifecycle isolation, companion focus actions, mini-player state feedback, lyric-bubble sizing, and Liquid Glass presentation. (2.7.1)
+- Earlier releases also added diary backup and recovery, edge docking, compact monitoring, and the macOS 26 Liquid Glass design with Material fallback. (2.6.0–2.6.1)
