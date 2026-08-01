@@ -164,11 +164,13 @@ jobs:
 
           for notes_name in RELEASE_NOTES.md RELEASE_NOTES.zh-CN.md; do
             notes_url="$(jq -r --arg name "$notes_name" '.assets[] | select(.name == $name) | .browser_download_url' github-release.json | head -n 1)"
-            if [[ -n "$notes_url" && "$notes_url" != "null" ]]; then
-              curl --silent --show-error --fail --location --retry 2 \
-                --connect-timeout 15 --max-time 120 \
-                "$notes_url" --output "dist/$notes_name" || true
-            fi
+            [[ -n "$notes_url" && "$notes_url" != "null" ]] || {
+              echo "GitHub Release $TAG must include $notes_name" >&2
+              exit 1
+            }
+            curl --silent --show-error --fail --location --retry 2 \
+              --connect-timeout 15 --max-time 120 \
+              "$notes_url" --output "dist/$notes_name"
           done
 
           SHA256="$(sha256sum "$DMG" | awk '{print $1}')"

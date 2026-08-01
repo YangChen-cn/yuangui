@@ -1,8 +1,9 @@
 # Update release checklist
 
 YuanGUI reads update metadata from the checked-in `updates/latest.json` file.
-The same manifest can be served by the Gitee mirror and by the GitHub raw URL;
-the app does not infer a preferred source from the user's region or language.
+GitHub is the authoritative source. Gitee serves the same manifest and DMG only
+as a delayed availability fallback; the app does not infer a source from the
+user's region, language, or IP address.
 
 This workflow deliberately does not use a detached manifest signature. The
 manifest is fetched over HTTPS, its schema and URLs are validated, and every
@@ -45,12 +46,32 @@ The repository contains `.github/workflows/mirror-release-to-gitee.yml`. It is
 the one-click release path for the verified Gitee repository
 `yangchen716/yuangui`:
 
-1. Publish a stable GitHub Release with exactly one `YuanGUI-*.dmg` asset.
-   Prerelease tags and prerelease Releases are rejected from `latest.json`.
-2. Configure the repository secret `GITEE_TOKEN` with permission to create a
+1. Prepare both complete release-note files for the new version:
+   `RELEASE_NOTES.md` in English and `RELEASE_NOTES.zh-CN.md` in Simplified
+   Chinese. Every release must publish both files; neither language may be
+   replaced by the GitHub Release body or by the two-line manifest summary.
+2. Publish a stable GitHub Release with exactly one `YuanGUI-*.dmg` plus both
+   release-note files as assets. Prerelease tags and prerelease Releases are
+   rejected from `latest.json`.
+3. Configure the repository secret `GITEE_TOKEN` with permission to create a
    Gitee release and update the mirrored repository.
 
-The release job runs on `ubuntu-latest`. It downloads the exact GitHub DMG,
+For a CLI release, the required asset upload is equivalent to:
+
+```sh
+gh release upload "v$VERSION" \
+  "dist/YuanGUI-$VERSION.dmg" \
+  RELEASE_NOTES.md \
+  RELEASE_NOTES.zh-CN.md
+```
+
+The workflow deliberately fails when either release-note asset is absent. It
+downloads the two files and derives each language's manifest highlights from
+the matching document, so a missing Chinese file cannot silently publish
+English text under `zh-Hans`.
+
+The release job runs on `ubuntu-latest`. It downloads the exact GitHub DMG and
+both mandatory localized release-note assets,
 computes its SHA-256 and size with Linux tools, uploads that same file and its
 `.sha256` sidecar to Gitee, downloads the Gitee DMG again, and requires the
 size and SHA-256 to match before generating `updates/latest.json`. It does not
@@ -81,7 +102,8 @@ https://gitee.com/yangchen716/yuangui/raw/main/updates/latest.json
 The workflow does not create a detached signature and does not put a private
 key or token in the repository.
 
-1. Upload the one verified DMG to the GitHub Release.
+1. Upload the one verified DMG and both localized Release Notes to the GitHub
+   Release.
 2. If a Gitee DMG asset is available, upload the same bytes and regenerate the
    manifest with `GITEE_DMG_URL` set.
 3. Commit and publish `updates/latest.json` to the GitHub `main` branch.
@@ -98,10 +120,13 @@ scripts. If its raw manifest is not available yet, the app falls back to the
 other source or the existing GitHub Releases API and keeps automatic failures
 silent.
 
-Manual checks also query both manifests and choose the highest valid version.
-When the selected version matches a GitHub Release, the About page then loads
-the complete localized release-notes asset instead of limiting the manual view
-to the two manifest highlights.
+Manual and automatic checks use the same authority rule: GitHub starts first,
+Gitee starts later as a hedge, and a valid GitHub manifest always wins within
+the primary-source deadline. Gitee can only be adopted for typed network
+availability failures or a missed primary deadline; malformed or unsafe GitHub
+metadata must fail instead of switching sources. When the selected version
+matches a GitHub Release, the manual About page loads the complete localized
+release-note asset instead of limiting the view to the two manifest highlights.
 
 ## Security boundary
 
