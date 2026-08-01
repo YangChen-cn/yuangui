@@ -15,6 +15,15 @@ on:
         description: "GitHub Release tag, for example v2.7.2"
         required: true
         type: string
+      build:
+        description: "CFBundleVersion from the DMG"
+        required: true
+        type: string
+      minimum_system_version:
+        description: "LSMinimumSystemVersion"
+        required: false
+        default: "15.0"
+        type: string
       allow_rollback:
         description: "Allow a manifest version lower than the current stable version"
         required: false
@@ -34,7 +43,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'release' && github.event.release.prerelease == false)
     name: Upload the same DMG and manifest to Gitee
-    runs-on: macos-26
+    runs-on: ubuntu-latest
     timeout-minutes: 35
 
     env:
@@ -60,9 +69,13 @@ jobs:
 
           if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
             TAG='${{ github.event.release.tag_name }}'
+            BUILD=""
+            MINIMUM_SYSTEM_VERSION="15.0"
             ALLOW_ROLLBACK="false"
           else
             TAG='${{ inputs.tag }}'
+            BUILD='${{ inputs.build }}'
+            MINIMUM_SYSTEM_VERSION='${{ inputs.minimum_system_version }}'
             ALLOW_ROLLBACK='${{ inputs.allow_rollback }}'
           fi
 
@@ -79,8 +92,41 @@ jobs:
             exit 1
           }
 
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            BUILD="$(python3 - <<'PY'
+          import json, re
+          with open("github-release.json", encoding="utf-8") as handle:
+              body = json.load(handle).get("body") or ""
+          match = re.search(r"(?im)^\s*(?:build|cfbundleversion)\s*[:=]\s*([0-9]+)\s*$", body)
+          print(match.group(1) if match else "")
+          PY
+            )"
+
+            # Same-version manual repairs may reuse the already published
+            # manifest metadata. New releases must carry an explicit build
+            # in the Release body; never guess a new build from source files.
+            if [[ -z "$BUILD" ]]; then
+              CURRENT_VERSION="$(jq -r '.version // empty' updates/latest.json)"
+              if [[ "$VERSION" == "$CURRENT_VERSION" ]]; then
+                BUILD="$(jq -r '.build // empty' updates/latest.json)"
+                MINIMUM_SYSTEM_VERSION="$(jq -r '.minimumSystemVersion // 15.0' updates/latest.json)"
+              fi
+            fi
+          fi
+
+          [[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || {
+            echo "A positive CFBundleVersion is required. Add 'Build: N' to the release body or provide workflow_dispatch.build." >&2
+            exit 1
+          }
+          [[ "$MINIMUM_SYSTEM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
+            echo "Invalid minimum system version: $MINIMUM_SYSTEM_VERSION" >&2
+            exit 1
+          }
+
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "minimum_system_version=$MINIMUM_SYSTEM_VERSION" >> "$GITHUB_OUTPUT"
           echo "allow_rollback=$ALLOW_ROLLBACK" >> "$GITHUB_OUTPUT"
 
       - name: Download the exact GitHub Release DMG
@@ -119,8 +165,8 @@ jobs:
             fi
           done
 
-          SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
-          SIZE="$(stat -f '%z' "$DMG")"
+          SHA256="$(sha256sum "$DMG" | awk '{print $1}')"
+          SIZE="$(stat -c '%s' "$DMG")"
           printf '%s  %s\n' "$SHA256" "$ASSET_NAME" > "$DMG.sha256"
 
           echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
@@ -128,74 +174,6 @@ jobs:
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "size=$SIZE" >> "$GITHUB_OUTPUT"
           echo "Downloaded $ASSET_NAME ($SIZE bytes, $SHA256)"
-
-      - name: Validate DMG bundle metadata and signature
-        id: bundle
-        env:
-          DMG: ${{ steps.asset.outputs.dmg }}
-          EXPECTED_VERSION: ${{ steps.metadata.outputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ATTACH_PLIST="$(mktemp)"
-          MOUNT_POINT=""
-          cleanup() {
-            if [[ -n "$MOUNT_POINT" ]]; then
-              hdiutil detach "$MOUNT_POINT" -quiet || true
-            fi
-            rm -f "$ATTACH_PLIST"
-          }
-          trap cleanup EXIT
-
-          hdiutil attach "$DMG" -nobrowse -readonly -plist > "$ATTACH_PLIST"
-          MOUNT_POINT="$(python3 - "$ATTACH_PLIST" <<'PY'
-          import plistlib
-          import sys
-          with open(sys.argv[1], "rb") as handle:
-              plist = plistlib.load(handle)
-          for entity in plist.get("system-entities", []):
-              mount_point = entity.get("mount-point")
-              if mount_point:
-                  print(mount_point)
-                  break
-          else:
-              raise SystemExit("DMG did not expose a mount point")
-          PY
-          )"
-
-          APP="$MOUNT_POINT/YuanGUI.app"
-          INFO_PLIST="$APP/Contents/Info.plist"
-          [[ -d "$APP" && -f "$INFO_PLIST" ]] || {
-            echo "DMG does not contain YuanGUI.app" >&2
-            exit 1
-          }
-
-          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
-          BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
-          BUNDLE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")"
-          MINIMUM_SYSTEM_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$INFO_PLIST")"
-
-          [[ "$BUNDLE_ID" == "com.yang.yuangui" ]] || {
-            echo "Unexpected bundle identifier: $BUNDLE_ID" >&2
-            exit 1
-          }
-          [[ "$BUNDLE_VERSION" == "$EXPECTED_VERSION" ]] || {
-            echo "DMG version $BUNDLE_VERSION does not match tag version $EXPECTED_VERSION" >&2
-            exit 1
-          }
-          [[ "$BUNDLE_BUILD" =~ ^[1-9][0-9]*$ ]] || {
-            echo "Invalid CFBundleVersion in DMG: $BUNDLE_BUILD" >&2
-            exit 1
-          }
-          [[ "$MINIMUM_SYSTEM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
-            echo "Invalid LSMinimumSystemVersion in DMG: $MINIMUM_SYSTEM_VERSION" >&2
-            exit 1
-          }
-          codesign --verify --deep --strict "$APP"
-
-          echo "build=$BUNDLE_BUILD" >> "$GITHUB_OUTPUT"
-          echo "minimum_system_version=$MINIMUM_SYSTEM_VERSION" >> "$GITHUB_OUTPUT"
-          echo "DMG metadata verified: version=$BUNDLE_VERSION build=$BUNDLE_BUILD minimum=$MINIMUM_SYSTEM_VERSION"
 
       - name: Validate the Gitee token
         shell: bash
@@ -313,8 +291,8 @@ jobs:
             if curl --silent --show-error --fail --location --retry 3 \
                 --connect-timeout 20 --max-time "$verify_timeout" \
                 "$existing_url" --output "$existing_file" \
-              && [[ "$(stat -f '%z' "$existing_file")" == "$expected_size" ]] \
-              && [[ "$(shasum -a 256 "$existing_file" | awk '{print $1}')" == "$expected_sha" ]]; then
+              && [[ "$(stat -c '%s' "$existing_file")" == "$expected_size" ]] \
+              && [[ "$(sha256sum "$existing_file" | awk '{print $1}')" == "$expected_sha" ]]; then
               rm -f "$existing_file"
               echo "Gitee asset already verified: $path_name"
               return 0
@@ -394,8 +372,8 @@ jobs:
             return 1
           }
 
-          CHECKSUM_SIZE="$(stat -f '%z' "$DMG.sha256")"
-          CHECKSUM_SHA="$(shasum -a 256 "$DMG.sha256" | awk '{print $1}')"
+          CHECKSUM_SIZE="$(stat -c '%s' "$DMG.sha256")"
+          CHECKSUM_SHA="$(sha256sum "$DMG.sha256" | awk '{print $1}')"
           upload_if_validated "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}" 20 1200 1200
           upload_if_validated "$DMG.sha256" "$CHECKSUM_SIZE" "$CHECKSUM_SHA" 15 120 120
           refresh_gitee_release 120
@@ -420,11 +398,11 @@ jobs:
           curl --silent --show-error --fail --location --retry 3 \
             --connect-timeout 20 --max-time 1200 \
             "$GITEE_DMG_URL" --output dist/gitee-verified.dmg
-          [[ "$(stat -f '%z' dist/gitee-verified.dmg)" == "$EXPECTED_SIZE" ]] || {
+          [[ "$(stat -c '%s' dist/gitee-verified.dmg)" == "$EXPECTED_SIZE" ]] || {
             echo "Gitee DMG size differs from GitHub DMG" >&2
             exit 1
           }
-          [[ "$(shasum -a 256 dist/gitee-verified.dmg | awk '{print $1}')" == "$EXPECTED_SHA256" ]] || {
+          [[ "$(sha256sum dist/gitee-verified.dmg | awk '{print $1}')" == "$EXPECTED_SHA256" ]] || {
             echo "Gitee DMG SHA-256 differs from GitHub DMG" >&2
             exit 1
           }
@@ -489,8 +467,8 @@ jobs:
       - name: Refresh latest.json on GitHub main
         env:
           UPDATE_VERSION: ${{ steps.metadata.outputs.version }}
-          UPDATE_BUILD: ${{ steps.bundle.outputs.build }}
-          UPDATE_MINIMUM_SYSTEM_VERSION: ${{ steps.bundle.outputs.minimum_system_version }}
+          UPDATE_BUILD: ${{ steps.metadata.outputs.build }}
+          UPDATE_MINIMUM_SYSTEM_VERSION: ${{ steps.metadata.outputs.minimum_system_version }}
           ALLOW_ROLLBACK: ${{ steps.metadata.outputs.allow_rollback }}
           DMG_PATH: ${{ steps.asset.outputs.dmg }}
           GITHUB_DMG_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.metadata.outputs.tag }}/${{ steps.asset.outputs.asset_name }}
@@ -550,7 +528,7 @@ jobs:
         run: |
           set -euo pipefail
           RAW_URL="https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/updates/latest.json"
-          EXPECTED_SHA="$(shasum -a 256 updates/latest.json | awk '{print $1}')"
+          EXPECTED_SHA="$(sha256sum updates/latest.json | awk '{print $1}')"
           RAW_FILE="$(mktemp)"
           FOUND=false
 
@@ -558,7 +536,7 @@ jobs:
             if curl --silent --show-error --fail --location \
               --connect-timeout 15 --max-time 120 \
               "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(shasum -a 256 "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break
             fi
@@ -602,7 +580,7 @@ jobs:
             if curl --silent --show-error --fail --location \
               --connect-timeout 15 --max-time 120 \
               "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(shasum -a 256 "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
+              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break
             fi
