@@ -39,6 +39,31 @@ final class FakeDesktopIconManager: DesktopIconManaging {
 
 @MainActor
 final class PetStoreTests: XCTestCase {
+    func testTranslationActivityCannotDisplaceAnUrgentReminder() {
+        let suite = "PetStoreTranslationUrgencyTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+        store.setPetPresented(true)
+
+        XCTAssertTrue(store.presentTranslationActivity(.translating, message: "翻译中"))
+        XCTAssertEqual(store.translationActivity, .translating)
+        XCTAssertEqual(store.ambientMessage, "翻译中")
+
+        store.applySmartStates([.memoryPressure])
+
+        XCTAssertTrue(store.urgentReminderVisible)
+        XCTAssertNil(store.translationActivity)
+        XCTAssertNotEqual(store.ambientMessage, "翻译中")
+        XCTAssertFalse(store.presentTranslationActivity(.finished, message: "翻译完成"))
+        XCTAssertNil(store.translationActivity)
+    }
+
     func testEdgePeekRetiresOnlyForTheCurrentCompletedRestore() {
         XCTAssertTrue(PetPanelController.shouldRetireEdgePeek(
             expectedGeneration: 4,

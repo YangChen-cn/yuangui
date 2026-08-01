@@ -450,19 +450,21 @@ final class PetStore: ObservableObject {
         _ activity: PetTranslationActivity,
         message: String,
         duration: TimeInterval? = nil
-    ) {
+    ) -> Bool {
+        guard canPresentTranslationActivity else { return false }
         translationActivityResetTask?.cancel()
         translationActivityResetTask = nil
         translationActivity = activity
         translationActivityMessage = message
         showAmbientMessage(message, duration: duration ?? 60)
-        guard let duration else { return }
+        guard let duration else { return true }
         translationActivityResetTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(max(duration, 0))) }
             catch { return }
             guard !Task.isCancelled else { return }
             self?.endTranslationActivity()
         }
+        return true
     }
 
     func endTranslationActivity() {
@@ -709,6 +711,9 @@ final class PetStore: ObservableObject {
         updateSmartRotationTimer()
         updateUrgentReminderSchedule(restart: presentationStateChanged)
         updateBatteryWarningReminderSchedule(restart: presentationStateChanged)
+        if urgentReminderVisible {
+            endTranslationActivity()
+        }
         guard presentationStateChanged, smartState != .normal else { return }
         showSmartMessage(smartState)
     }

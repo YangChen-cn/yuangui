@@ -402,6 +402,13 @@ private struct PetSideControlsLayer: View {
             showsFocusPopover = false
             isHovering = false
         }
+        .background {
+            MiniPlayerOutsideClickMonitor(
+                isPresented: $isMiniPlayerPresented,
+                onDismiss: { isMiniPlayerPresented = false }
+            )
+            .frame(width: 0, height: 0)
+        }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: chatPresentation.keepsExpandedLayout)
         .animation(.easeOut(duration: 0.14), value: hoveredSideTool)
     }
