@@ -2,13 +2,13 @@ import SwiftUI
 
 struct MiniMusicPlayerView: View {
     let music: MusicFeature
+    let openFullPlayer: () -> Void
     @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject private var lyricsPresentation: LyricsPresentationStore
-    @Environment(\.appActions) private var appActions
-    @Environment(\.dismiss) private var dismiss
 
-    init(music: MusicFeature) {
+    init(music: MusicFeature, openFullPlayer: @escaping () -> Void) {
         self.music = music
+        self.openFullPlayer = openFullPlayer
         _playback = ObservedObject(wrappedValue: music.playback)
         _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
     }
@@ -53,8 +53,7 @@ struct MiniMusicPlayerView: View {
                 MusicTransportControls(music: music, compact: true, usesGlassButtons: true)
                 Spacer()
                 Button {
-                    dismiss()
-                    appActions.open(.music)
+                    openFullPlayer()
                 } label: { Image(systemName: "list.bullet") }
                     .yuanSystemGlassButton()
                     .controlSize(.small)

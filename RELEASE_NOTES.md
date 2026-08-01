@@ -2,22 +2,19 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
-## 2.7.2 — Automatic updates, Gitee mirror, and release reliability
+## 2.8.0 — Native translation speech and more reliable music windows
 
-- Added a quiet automatic update flow with a real startup delay, daily retry limits, pending prompts, and no background focus stealing. Checks remain silent when the network is unavailable or a modal presentation is active.
-- Replaced the unstable update alert with a centered SwiftUI update window that supports Later, View Details, and Update Now while sharing the existing update store and installation pipeline.
-- Added Gitee as a domestic metadata and download mirror with GitHub remaining the authoritative source. GitHub is requested first; Gitee starts only as a delayed hedge when the primary source is still unavailable, and a valid GitHub manifest always wins. Only typed network-availability failures permit the fallback; malformed or unsafe manifests never silently switch sources.
-- Aligned downloads with the same source policy: a verified GitHub DMG is used first, while Gitee is tried only when GitHub cannot establish or maintain a network connection. Checksum, size, bundle, version, mount, or code-signature failures stop immediately instead of masking an integrity problem as a mirror outage.
-- Fixed the delayed-fallback deadline so an already-started Gitee request can finish after GitHub's primary deadline, and the selected Gitee metadata can be reused for installation without waiting on GitHub a second time.
-- Strengthened update validation with HTTPS and strict manifest checks, streamed SHA-256 verification, file-size checks, DMG mounting, Bundle ID/version/build/minimum-system validation, and code-signature verification before installation.
-- Restored complete manual update details and localized release-note selection, so manual checks no longer inherit the automatic prompt's two-highlight summary.
-- Added release automation that mirrors the same DMG and manifest to Gitee, rejects prereleases from the stable channel, reads version metadata from the DMG itself, serializes manifest publishing, and refuses accidental version downgrades.
-- Fixed the Dashboard toolbar update popover closing the entire status panel by deferring the check until presentation is committed and ignoring auxiliary popup windows in the outside-click monitor.
-- Made DMG packaging require an explicit stable `VERSION` and positive `BUILD`, preventing stale development defaults from producing an incorrectly versioned installer.
-- Reduced CI cost without dropping core coverage by consolidating repetitive update and lifecycle cases into scenario-driven tests and moving translation and diary benchmarks into a separate test target.
+- Redesigned the selection translation window with a lighter, more compact macOS interface that matches the rest of YuanGUI. Source text, translated text, status, language selection, and replacement actions now have clearer visual hierarchy and more reliable dynamic sizing.
+- Added native macOS speech synthesis for both source and translated text, with independent controls and automatic language-aware voice selection. Only one side speaks at a time, and stale speech stops immediately when the text, target language, translation result, or window lifecycle changes.
+- Improved translation and companion feedback while preventing translation activity from displacing urgent battery or memory reminders.
+- Improved the Dashboard Apple Music presentation and strengthened playback synchronization. Polling now recovers after unexpected interruption, track changes no longer remain stuck at the previous song's end, and returning the companion from edge docking triggers an immediate refresh.
+- Made LRCLIB matching more tolerant of missing duration metadata. When title-and-artist matching fails, YuanGUI now retries by title so lyrics entries without artist metadata can still be found.
+- Restored the compact SwiftUI mini-player popover presentation and rebuilt the full-player handoff around the real AppKit popover lifecycle. YuanGUI now closes the parent-owned popover first, waits for it to finish, activates the application, and only then makes the full player key and main.
+- Added focused lifecycle and synchronization tests for speech invalidation, translation window sizing, urgent reminder priority, Apple Music recovery, LRCLIB fallback, and mini-player window handoff.
 
 ## Earlier releases
 
 - Added local music, safer cleanup workflows, improved lyrics and focus tools, and a more complete bilingual interface. (2.7.0)
 - Improved music performance and SwiftUI lifecycle isolation, companion focus actions, mini-player state feedback, lyric-bubble sizing, and Liquid Glass presentation. (2.7.1)
+- Added quiet automatic updates, a Gitee availability mirror with GitHub remaining authoritative, stricter update validation, safer packaging, and release automation. (2.7.2)
 - Earlier releases also added diary backup and recovery, edge docking, compact monitoring, and the macOS 26 Liquid Glass design with Material fallback. (2.6.0–2.6.1)

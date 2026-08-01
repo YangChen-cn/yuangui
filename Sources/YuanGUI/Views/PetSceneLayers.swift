@@ -277,10 +277,12 @@ private struct PetSideControlsLayer: View {
     @Binding var sideControlsOnRight: Bool
 
     @ObservedObject private var playback: MusicPlaybackStore
+    @Environment(\.appActions) private var appActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredSideTool: SideTool?
     @State private var showsFocusPopover = false
     @State private var isMiniPlayerPresented = false
+    @StateObject private var miniPlayerHandoff = MiniPlayerPopoverHandoff()
 
     init(
         window: PetPanel,
@@ -377,7 +379,8 @@ private struct PetSideControlsLayer: View {
                         store: store,
                         chat: chat,
                         music: music,
-                        isMiniPlayerPresented: $isMiniPlayerPresented
+                        isMiniPlayerPresented: $isMiniPlayerPresented,
+                        miniPlayerHandoff: miniPlayerHandoff
                     )
                     .frame(
                         maxWidth: .infinity,
@@ -478,7 +481,8 @@ private struct PetSideControlsLayer: View {
                 .help(AppLocalizer.string("打开迷你播放器"))
                 .accessibilityLabel(AppLocalizer.string("打开迷你播放器"))
                 .popover(isPresented: $isMiniPlayerPresented, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
-                    MiniMusicPlayerView(music: music)
+                    MiniMusicPlayerView(music: music, openFullPlayer: openFullPlayer)
+                        .background(MiniPlayerPopoverProbe(handoff: miniPlayerHandoff))
                 }
                 Button { store.toggleInteractionLock() } label: {
                     sideToolIcon("lock.open.fill", tint: .orange, selected: false, size: 30)
@@ -507,6 +511,13 @@ private struct PetSideControlsLayer: View {
         .popover(isPresented: $showsFocusPopover, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
             FocusTimerControlView(timer: focusTimer) { }
         }
+    }
+
+    private func openFullPlayer() {
+        miniPlayerHandoff.requestFullPlayer(
+            closePopover: { isMiniPlayerPresented = false },
+            openFullPlayer: { appActions.open(.music) }
+        )
     }
 
     private var maintenanceSideControls: some View {

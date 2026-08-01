@@ -6,6 +6,7 @@ struct PetBottomControlsView: View {
     let music: MusicFeature
     @ObservedObject private var playback: MusicPlaybackStore
     @Binding var isMiniPlayerPresented: Bool
+    let miniPlayerHandoff: MiniPlayerPopoverHandoff
     @Environment(\.appActions) private var appActions
     @State private var hoveredTip: String?
 
@@ -13,11 +14,13 @@ struct PetBottomControlsView: View {
         store: PetStore,
         chat: ChatStore,
         music: MusicFeature,
-        isMiniPlayerPresented: Binding<Bool>
+        isMiniPlayerPresented: Binding<Bool>,
+        miniPlayerHandoff: MiniPlayerPopoverHandoff
     ) {
         self.store = store
         self.chat = chat
         self.music = music
+        self.miniPlayerHandoff = miniPlayerHandoff
         _playback = ObservedObject(wrappedValue: music.playback)
         _isMiniPlayerPresented = isMiniPlayerPresented
     }
@@ -81,7 +84,8 @@ struct PetBottomControlsView: View {
             .help(AppLocalizer.string("YuanGUI 音乐播放器"))
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "正在播放音乐" : "打开迷你播放器"))
             .popover(isPresented: $isMiniPlayerPresented, arrowEdge: .bottom) {
-                MiniMusicPlayerView(music: music)
+                MiniMusicPlayerView(music: music, openFullPlayer: openFullPlayer)
+                    .background(MiniPlayerPopoverProbe(handoff: miniPlayerHandoff))
             }
 
             Button {
@@ -116,6 +120,13 @@ struct PetBottomControlsView: View {
 
     private func setTip(_ text: String?) {
         hoveredTip = text
+    }
+
+    private func openFullPlayer() {
+        miniPlayerHandoff.requestFullPlayer(
+            closePopover: { isMiniPlayerPresented = false },
+            openFullPlayer: { appActions.open(.music) }
+        )
     }
 
     private func toolIcon(_ systemName: String, tint: Color = .secondary, selected: Bool = false) -> some View {

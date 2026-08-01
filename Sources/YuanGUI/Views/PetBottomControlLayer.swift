@@ -5,13 +5,15 @@ struct PetBottomControlLayer: View {
     @ObservedObject var chat: ChatStore
     let music: MusicFeature
     @Binding var isMiniPlayerPresented: Bool
+    let miniPlayerHandoff: MiniPlayerPopoverHandoff
 
     var body: some View {
         PetBottomControlsView(
             store: store,
             chat: chat,
             music: music,
-            isMiniPlayerPresented: $isMiniPlayerPresented
+            isMiniPlayerPresented: $isMiniPlayerPresented,
+            miniPlayerHandoff: miniPlayerHandoff
         )
     }
 }
