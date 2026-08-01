@@ -62,6 +62,9 @@ final class AppRuntime {
         store: updateStore,
         showDetails: { [weak self] in
             self?.showUpdateDetails()
+        },
+        willPresentPrompt: { [weak self] in
+            self?.hideTransientPanelsForUpdatePrompt()
         }
     )
     private lazy var windows = WindowCoordinator(
@@ -141,6 +144,10 @@ final class AppRuntime {
 
     private func showUpdateDetails() {
         windows.open(.settings(.about))
+    }
+
+    private func hideTransientPanelsForUpdatePrompt() {
+        windows.hideTransientPanelsForUpdatePrompt()
     }
 }
 
@@ -248,6 +255,13 @@ final class WindowCoordinator: NSObject {
         quickTools.stop()
         music.lyricsPresentation.onVisibilityChanged = nil
         music.lyricsPresentation.onLockChanged = nil
+    }
+
+    /// The Dashboard uses the status-bar window level, which is above the
+    /// floating update prompt. Hide that transient panel before the prompt is
+    /// ordered front; persistent windows and desktop lyrics stay untouched.
+    func hideTransientPanelsForUpdatePrompt() {
+        dashboardController?.hide()
     }
 
     func open(_ route: AppRoute) {

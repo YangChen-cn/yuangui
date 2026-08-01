@@ -85,6 +85,7 @@ final class AutomaticUpdateCheckCoordinator {
     private let now: () -> Date
     private let installAction: () -> Void
     private let showDetailsAction: () -> Void
+    private let willPresentPrompt: () -> Void
     private let startupDelay: Duration
     private let log: (String) -> Void
 
@@ -112,6 +113,7 @@ final class AutomaticUpdateCheckCoordinator {
         startupDelay: Duration = .seconds(2.5),
         install: (() -> Void)? = nil,
         showDetails: @escaping () -> Void = {},
+        willPresentPrompt: @escaping () -> Void = {},
         log: @escaping (String) -> Void = AutomaticUpdateLog.log
     ) {
         self.checker = checker
@@ -125,6 +127,7 @@ final class AutomaticUpdateCheckCoordinator {
         self.startupDelay = startupDelay
         self.installAction = install ?? { [weak store] in store?.installLatest() }
         self.showDetailsAction = showDetails
+        self.willPresentPrompt = willPresentPrompt
         self.log = log
     }
 
@@ -327,6 +330,7 @@ final class AutomaticUpdateCheckCoordinator {
 
     private func presentPrompt(for update: AvailableUpdate, notes: String?) {
         guard !isStopped, !presenter.isPresenting else { return }
+        willPresentPrompt()
         installTriggered = false
         log("update.auto.prompt.presented")
         presenter.presentUpdate(

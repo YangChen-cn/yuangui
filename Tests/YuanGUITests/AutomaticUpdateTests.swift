@@ -123,7 +123,8 @@ private struct Fixture {
         store: AppUpdateStore? = nil,
         now: Date = Date(),
         calendar: Calendar = .autoupdatingCurrent,
-        startupDelay: Duration = .zero
+        startupDelay: Duration = .zero,
+        willPresentPrompt: @escaping () -> Void = {}
     ) -> Fixture {
         let suite = "AutomaticUpdateTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -149,6 +150,7 @@ private struct Fixture {
             startupDelay: startupDelay,
             install: { installCount.count += 1 },
             showDetails: { detailsCount.count += 1 },
+            willPresentPrompt: willPresentPrompt,
             log: { logs.append($0) }
         )
         return Fixture(
@@ -771,9 +773,11 @@ final class AutomaticUpdateTests: XCTestCase {
     }
 
     func testExplicitInteractionPresentsPendingUpdateImmediately() async {
+        let transientPanelHideCount = Counter()
         let fixture = Fixture.make(
             result: .success(.available(makeRelease("99.9.9"), notes: "- Faster launch")),
-            startupDelay: .zero
+            startupDelay: .zero,
+            willPresentPrompt: { transientPanelHideCount.count += 1 }
         )
         defer { fixture.cleanup() }
 
@@ -786,6 +790,7 @@ final class AutomaticUpdateTests: XCTestCase {
         fixture.coordinator.handleExplicitUserInteraction()
 
         XCTAssertEqual(fixture.presenter.presentCount, 1)
+        XCTAssertEqual(transientPanelHideCount.count, 1)
     }
 
     func testExplicitInteractionStartsAutomaticCheckWhenApplicationIsActive() async {
