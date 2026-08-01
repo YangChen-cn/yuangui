@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       allow_rollback:
-        description: "Allow a manifest version lower than or equal to the current stable version"
+        description: "Allow a manifest version lower than the current stable version"
         required: false
         default: false
         type: boolean
@@ -35,7 +35,7 @@ jobs:
       (github.event_name == 'release' && github.event.release.prerelease == false)
     name: Upload the same DMG and manifest to Gitee
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     env:
       GH_TOKEN: ${{ github.token }}
@@ -92,24 +92,33 @@ jobs:
           set -euo pipefail
           rm -rf dist
           mkdir -p dist
-          gh release download "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern 'YuanGUI-*.dmg' \
-            --dir dist
-          gh release download "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern 'RELEASE_NOTES*.md' \
-            --dir dist || true
-
-          DMG_COUNT="$(find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print | wc -l | tr -d ' ')"
+          DMG_COUNT="$(jq '[.assets[] | select(.name | test("^YuanGUI-.*\\.dmg$"; "i"))] | length' github-release.json)"
           if [[ "$DMG_COUNT" != "1" ]]; then
             echo "Expected exactly one YuanGUI-*.dmg, found $DMG_COUNT" >&2
-            find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print >&2
+            jq -r '.assets[]?.name' github-release.json >&2
             exit 1
           fi
 
-          DMG="$(find dist -maxdepth 1 -type f -name 'YuanGUI-*.dmg' -print -quit)"
-          ASSET_NAME="$(basename "$DMG")"
+          ASSET_NAME="$(jq -r '[.assets[] | select(.name | test("^YuanGUI-.*\\.dmg$"; "i"))][0].name' github-release.json)"
+          DMG_URL="$(jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .browser_download_url' github-release.json)"
+          [[ "$DMG_URL" == https://github.com/* ]] || {
+            echo "GitHub DMG asset does not use the expected HTTPS URL" >&2
+            exit 1
+          }
+          DMG="dist/$ASSET_NAME"
+          curl --silent --show-error --fail --location --retry 3 \
+            --connect-timeout 20 --max-time 1200 \
+            "$DMG_URL" --output "$DMG"
+
+          for notes_name in RELEASE_NOTES.md RELEASE_NOTES.zh-CN.md; do
+            notes_url="$(jq -r --arg name "$notes_name" '.assets[] | select(.name == $name) | .browser_download_url' github-release.json | head -n 1)"
+            if [[ -n "$notes_url" && "$notes_url" != "null" ]]; then
+              curl --silent --show-error --fail --location --retry 2 \
+                --connect-timeout 15 --max-time 120 \
+                "$notes_url" --output "dist/$notes_name" || true
+            fi
+          done
+
           SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
           SIZE="$(stat -f '%z' "$DMG")"
           printf '%s  %s\n' "$SHA256" "$ASSET_NAME" > "$DMG.sha256"
@@ -203,6 +212,7 @@ jobs:
           set -euo pipefail
           API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
           curl --silent --show-error --fail-with-body \
+            --connect-timeout 15 --max-time 120 \
             --request POST \
             --data-urlencode "access_token=$GITEE_TOKEN" \
             "$API/remote_mirror/pull" >/dev/null || true
@@ -217,6 +227,7 @@ jobs:
           for attempt in $(seq 1 8); do
             TAGS_FILE="$(mktemp)"
             if curl --silent --show-error --fail \
+              --connect-timeout 15 --max-time 60 \
               "$API/tags?per_page=100" > "$TAGS_FILE" \
               && jq -e --arg tag "$TAG" '.[] | select(.name == $tag)' "$TAGS_FILE" >/dev/null 2>&1; then
               echo "Gitee tag $TAG is available"
@@ -239,6 +250,7 @@ jobs:
           API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
           RELEASES_FILE="$(mktemp)"
           curl --silent --show-error --fail-with-body \
+            --connect-timeout 15 --max-time 120 \
             "$API/releases?per_page=100" > "$RELEASES_FILE"
           RELEASE_ID="$(jq -r --arg tag "$TAG" '.[] | select(.tag_name == $tag) | .id' "$RELEASES_FILE" | head -n 1)"
 
@@ -247,6 +259,7 @@ jobs:
             RELEASE_BODY="$(jq -r '.body // ""' github-release.json)"
             PRERELEASE="$(jq -r '.prerelease // false' github-release.json)"
             curl --silent --show-error --fail-with-body \
+              --connect-timeout 15 --max-time 120 \
               --request POST \
               --data-urlencode "access_token=$GITEE_TOKEN" \
               --data-urlencode "tag_name=$TAG" \
@@ -274,58 +287,118 @@ jobs:
         run: |
           set -euo pipefail
 
+          refresh_gitee_release() {
+            local api_timeout="$1"
+            curl --silent --show-error --fail-with-body \
+              --connect-timeout 15 --max-time "$api_timeout" \
+              "$API/releases/$RELEASE_ID" > gitee-release.json
+          }
+
+          remote_asset_exists_and_matches() {
+            local path_name="$1"
+            local expected_size="$2"
+            local expected_sha="$3"
+            local verify_timeout="$4"
+            local existing existing_url existing_file
+
+            refresh_gitee_release 120 || return 1
+            existing="$(jq -c --arg name "$path_name" \
+              '(.assets // []) | map(select(.name == $name)) | first // empty' \
+              gitee-release.json)"
+            [[ -n "$existing" ]] || return 1
+
+            existing_url="$(jq -r '(.browser_download_url // .url // empty)' <<< "$existing")"
+            [[ -n "$existing_url" ]] || return 1
+            existing_file="$(mktemp)"
+            if curl --silent --show-error --fail --location --retry 3 \
+                --connect-timeout 20 --max-time "$verify_timeout" \
+                "$existing_url" --output "$existing_file" \
+              && [[ "$(stat -f '%z' "$existing_file")" == "$expected_size" ]] \
+              && [[ "$(shasum -a 256 "$existing_file" | awk '{print $1}')" == "$expected_sha" ]]; then
+              rm -f "$existing_file"
+              echo "Gitee asset already verified: $path_name"
+              return 0
+            fi
+            rm -f "$existing_file"
+            return 1
+          }
+
+          remove_existing_asset() {
+            local path_name="$1"
+            local existing existing_id
+
+            refresh_gitee_release 120 || return 1
+            existing="$(jq -c --arg name "$path_name" \
+              '(.assets // []) | map(select(.name == $name)) | first // empty' \
+              gitee-release.json)"
+            [[ -n "$existing" ]] || return 0
+
+            existing_id="$(jq -r '.id // empty' <<< "$existing")"
+            [[ -n "$existing_id" ]] || {
+              echo "Gitee asset $path_name exists but has no deletable id" >&2
+              return 1
+            }
+            echo "Removing stale Gitee asset $path_name"
+            curl --silent --show-error --fail-with-body \
+              --connect-timeout 15 --max-time 120 \
+              --request DELETE \
+              --data-urlencode "access_token=$GITEE_TOKEN" \
+              "$API/releases/$RELEASE_ID/attach_files/$existing_id" >/dev/null
+          }
+
           upload_if_validated() {
             local path="$1"
             local expected_size="$2"
             local expected_sha="$3"
-            local name
+            local upload_connect_timeout="$4"
+            local upload_timeout="$5"
+            local verify_timeout="$6"
+            local name upload_status
             name="$(basename "$path")"
 
-            local existing
-            existing="$(jq -c --arg name "$name" '(.assets // []) | map(select(.name == $name)) | first // empty' gitee-release.json)"
-            if [[ -n "$existing" ]]; then
-              local existing_id
-              local existing_url
-              existing_id="$(jq -r '.id // empty' <<< "$existing")"
-              existing_url="$(jq -r '(.browser_download_url // .url // empty)' <<< "$existing")"
-              local existing_file
-              existing_file="$(mktemp)"
-              if [[ -n "$existing_url" ]] \
-                && curl --silent --show-error --fail --location --retry 3 \
-                  --connect-timeout 15 --max-time 300 "$existing_url" --output "$existing_file" \
-                && [[ "$(stat -f '%z' "$existing_file")" == "$expected_size" ]] \
-                && [[ "$(shasum -a 256 "$existing_file" | awk '{print $1}')" == "$expected_sha" ]]; then
-                rm -f "$existing_file"
-                echo "Reusing verified Gitee asset $name"
-                return
+            for attempt in 1 2 3; do
+              # An upload may have reached Gitee even when the response was
+              # lost. Always query and verify before sending another copy.
+              if remote_asset_exists_and_matches "$name" "$expected_size" "$expected_sha" "$verify_timeout"; then
+                return 0
               fi
-              rm -f "$existing_file"
 
-              [[ -n "$existing_id" ]] || {
-                echo "Gitee asset $name exists but has no deletable id" >&2
-                exit 1
-              }
-              echo "Replacing stale Gitee asset $name"
+              remove_existing_asset "$name" || true
+
+              echo "Uploading $name (attempt $attempt/3)"
+              set +e
               curl --silent --show-error --fail-with-body \
-                --connect-timeout 15 --max-time 300 \
-                --request DELETE \
-                --data-urlencode "access_token=$GITEE_TOKEN" \
-                "$API/releases/$RELEASE_ID/attach_files/$existing_id" >/dev/null
-            fi
-            curl --silent --show-error --fail-with-body \
-              --connect-timeout 15 --max-time 300 \
-              --request POST \
-              --form "access_token=$GITEE_TOKEN" \
-              --form "file=@$path" \
-              "$API/releases/$RELEASE_ID/attach_files" >/dev/null
+                --connect-timeout "$upload_connect_timeout" --max-time "$upload_timeout" \
+                --request POST \
+                --form "access_token=$GITEE_TOKEN" \
+                --form "file=@$path" \
+                "$API/releases/$RELEASE_ID/attach_files" >/dev/null
+              upload_status=$?
+              set -e
+              if [[ "$upload_status" -ne 0 ]]; then
+                echo "Gitee upload returned $upload_status; checking for a completed remote asset"
+              fi
+
+              # Treat a timeout/5xx as an unknown result, not an immediate
+              # failure. The server may have stored the complete asset.
+              if remote_asset_exists_and_matches "$name" "$expected_size" "$expected_sha" "$verify_timeout"; then
+                return 0
+              fi
+
+              if [[ "$attempt" -lt 3 ]]; then
+                sleep $((attempt * 20))
+              fi
+            done
+
+            echo "Unable to upload and verify Gitee asset $name after 3 attempts" >&2
+            return 1
           }
 
           CHECKSUM_SIZE="$(stat -f '%z' "$DMG.sha256")"
           CHECKSUM_SHA="$(shasum -a 256 "$DMG.sha256" | awk '{print $1}')"
-          upload_if_validated "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}"
-          upload_if_validated "$DMG.sha256" "$CHECKSUM_SIZE" "$CHECKSUM_SHA"
-          curl --silent --show-error --fail-with-body \
-            "$API/releases/$RELEASE_ID" > gitee-release.json
+          upload_if_validated "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}" 20 1200 1200
+          upload_if_validated "$DMG.sha256" "$CHECKSUM_SIZE" "$CHECKSUM_SHA" 15 120 120
+          refresh_gitee_release 120
 
           GITEE_DMG_URL="$(jq -r --arg name "$ASSET_NAME" \
             '(.assets // [])[] | select(.name == $name) | (.browser_download_url // .url // empty)' \
@@ -345,7 +418,7 @@ jobs:
         run: |
           set -euo pipefail
           curl --silent --show-error --fail --location --retry 3 \
-            --connect-timeout 15 --max-time 300 \
+            --connect-timeout 20 --max-time 1200 \
             "$GITEE_DMG_URL" --output dist/gitee-verified.dmg
           [[ "$(stat -f '%z' dist/gitee-verified.dmg)" == "$EXPECTED_SIZE" ]] || {
             echo "Gitee DMG size differs from GitHub DMG" >&2
@@ -442,9 +515,9 @@ jobs:
 
           current = json.loads(Path("updates/latest.json").read_text(encoding="utf-8"))["version"]
           candidate = os.environ["UPDATE_VERSION"]
-          if os.environ.get("ALLOW_ROLLBACK", "false").lower() != "true" and version_key(candidate) <= version_key(current):
+          if os.environ.get("ALLOW_ROLLBACK", "false").lower() != "true" and version_key(candidate) < version_key(current):
               raise SystemExit(
-                  f"Refusing to publish non-increasing stable version {candidate}; current manifest is {current}. "
+                  f"Refusing to publish lower stable version {candidate}; current manifest is {current}. "
                   "Use allow_rollback only for an intentional rollback."
               )
           PY
@@ -467,6 +540,7 @@ jobs:
           set -euo pipefail
           API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
           curl --silent --show-error --fail-with-body \
+            --connect-timeout 15 --max-time 120 \
             --request POST \
             --data-urlencode "access_token=$GITEE_TOKEN" \
             "$API/remote_mirror/pull" >/dev/null || true
@@ -481,7 +555,9 @@ jobs:
           FOUND=false
 
           for attempt in $(seq 1 10); do
-            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+            if curl --silent --show-error --fail --location \
+              --connect-timeout 15 --max-time 120 \
+              "$RAW_URL" --output "$RAW_FILE" \
               && [[ "$(shasum -a 256 "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break
@@ -495,11 +571,13 @@ jobs:
           if [[ "$FOUND" != true ]]; then
             API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
             FILE_INFO="$(mktemp)"
-            curl --silent --show-error "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
+            curl --silent --show-error --connect-timeout 15 --max-time 120 \
+              "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
             FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO")"
             CONTENT="$(base64 < updates/latest.json | tr -d '\n')"
             if [[ -n "$FILE_SHA" ]]; then
               curl --silent --show-error --fail-with-body \
+                --connect-timeout 15 --max-time 120 \
                 --request PUT \
                 --data-urlencode "access_token=$GITEE_TOKEN" \
                 --data-urlencode "content=$CONTENT" \
@@ -509,6 +587,7 @@ jobs:
                 "$API/contents/updates/latest.json" >/dev/null
             else
               curl --silent --show-error --fail-with-body \
+                --connect-timeout 15 --max-time 120 \
                 --request POST \
                 --data-urlencode "access_token=$GITEE_TOKEN" \
                 --data-urlencode "content=$CONTENT" \
@@ -520,7 +599,9 @@ jobs:
           fi
 
           for attempt in $(seq 1 10); do
-            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+            if curl --silent --show-error --fail --location \
+              --connect-timeout 15 --max-time 120 \
+              "$RAW_URL" --output "$RAW_FILE" \
               && [[ "$(shasum -a 256 "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break
@@ -538,7 +619,7 @@ jobs:
     if: github.event_name == 'push'
     name: Sync latest.json to Gitee
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
 
     env:
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -572,12 +653,15 @@ jobs:
           FOUND=false
 
           curl --silent --show-error --fail-with-body \
+            --connect-timeout 15 --max-time 120 \
             --request POST \
             --data-urlencode "access_token=$GITEE_TOKEN" \
             "$API/remote_mirror/pull" >/dev/null || true
 
           for attempt in $(seq 1 8); do
-            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+            if curl --silent --show-error --fail --location \
+              --connect-timeout 15 --max-time 60 \
+              "$RAW_URL" --output "$RAW_FILE" \
               && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break
@@ -587,11 +671,13 @@ jobs:
 
           if [[ "$FOUND" != true ]]; then
             FILE_INFO="$(mktemp)"
-            curl --silent --show-error "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
+            curl --silent --show-error --connect-timeout 15 --max-time 120 \
+              "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
             FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO" 2>/dev/null || true)"
             CONTENT="$(base64 < updates/latest.json | tr -d '\n')"
             if [[ -n "$FILE_SHA" ]]; then
               curl --silent --show-error --fail-with-body \
+                --connect-timeout 15 --max-time 120 \
                 --request PUT \
                 --data-urlencode "access_token=$GITEE_TOKEN" \
                 --data-urlencode "content=$CONTENT" \
@@ -601,6 +687,7 @@ jobs:
                 "$API/contents/updates/latest.json" >/dev/null
             else
               curl --silent --show-error --fail-with-body \
+                --connect-timeout 15 --max-time 120 \
                 --request POST \
                 --data-urlencode "access_token=$GITEE_TOKEN" \
                 --data-urlencode "content=$CONTENT" \
@@ -611,7 +698,9 @@ jobs:
           fi
 
           for attempt in $(seq 1 8); do
-            if curl --silent --show-error --fail --location "$RAW_URL" --output "$RAW_FILE" \
+            if curl --silent --show-error --fail --location \
+              --connect-timeout 15 --max-time 60 \
+              "$RAW_URL" --output "$RAW_FILE" \
               && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
               FOUND=true
               break

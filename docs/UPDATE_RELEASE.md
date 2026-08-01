@@ -60,9 +60,12 @@ the workflow reuses it only after downloading and matching its size and
 SHA-256; stale content is deleted and uploaded again. If the repository mirror
 is not configured, it uses the Gitee contents API to create or update that one
 manifest file. It then compares the Gitee raw response with the GitHub file.
-All release and manual runs share one non-canceling concurrency group, and the
-workflow refuses to publish a version that is not greater than the current
-stable manifest unless `allow_rollback` is explicitly enabled for a manual run.
+All release and manual runs share one non-canceling concurrency group. A
+candidate lower than the current stable manifest is refused unless
+`allow_rollback` is explicitly enabled for a manual run; an equal version is
+allowed so interrupted uploads and manifest repairs can be retried idempotently.
+For an uncertain Gitee upload response, the workflow re-reads the release and
+verifies any same-named asset before retrying, for up to three upload rounds.
 The production manifest URL is therefore:
 
 ```text
