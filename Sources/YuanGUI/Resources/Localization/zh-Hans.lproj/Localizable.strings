@@ -28,6 +28,14 @@
 "about.legal" = "许可证与声明";
 "about.license" = "YuanGUI 源代码采用 GPL-3.0-only；原创视觉素材采用 CC BY-SA 4.0。";
 "about.notice" = "本程序按“现状”提供，不附带任何担保。详见随应用提供的许可证和第三方声明。";
+"release.2.7.2.updateFlow" = "自动更新现在具有真实的启动延迟、每日补查限制和待展示状态；后台检查不会抢走其他应用的焦点。";
+"release.2.7.2.prompt" = "使用严格居中的 SwiftUI 更新窗口替换旧的系统提示，支持稍后、查看更新内容和立即更新。";
+"release.2.7.2.sourceFallback" = "GitHub 作为权威主源，Gitee 作为延迟启动的网络备用源；只有明确的网络错误才允许切换来源。";
+"release.2.7.2.validation" = "更新下载增加 HTTPS、文件大小、SHA-256、DMG 挂载、Bundle ID、版本、Build、最低系统版本和代码签名校验。";
+"release.2.7.2.manualDetails" = "手动检查恢复完整的版本详情和本地化更新说明，不再被自动提示的两条摘要覆盖。";
+"release.2.7.2.releaseAutomation" = "发布流程会从 DMG 读取真实版本信息，串行更新清单，并将同一个安装包镜像到 Gitee，避免预发布和版本降级误发布。";
+"release.2.7.2.dashboard" = "修复 Dashboard 工具栏检查更新后状态栏页面意外关闭，以及临时面板遮挡更新窗口的问题。";
+"release.2.7.2.ci" = "精简 CI 测试组织：重复场景改为表驱动测试，翻译和日记 benchmark 移到独立测试目标，同时保留关键行为覆盖。";
 "release.2.7.1.musicArchitecture" = "音乐播放、歌词、资料库、账号和导入现在使用相互隔离的 Store，并具备可取消、不会提交过期结果的异步生命周期。";
 "release.2.7.1.refreshBoundaries" = "Dashboard、桌宠、设置、日记和音乐界面采用更窄的 SwiftUI 刷新边界，播放和监控高频更新不会带动无关界面重算。";
 "release.2.7.1.focusCompanion" = "为三种角色新增专注动作图；开始专注后自动收起侧边控制，锁定时只保留只读的圆形倒计时。";

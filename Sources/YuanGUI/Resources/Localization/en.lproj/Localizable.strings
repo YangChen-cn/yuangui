@@ -28,6 +28,14 @@
 "about.legal" = "Licenses and Notices";
 "about.license" = "YuanGUI source code is licensed under GPL-3.0-only. Original visual assets are licensed under CC BY-SA 4.0.";
 "about.notice" = "This program is provided without warranty. See the bundled license and third-party notices for details.";
+"release.2.7.2.updateFlow" = "Automatic updates now have a real startup delay, daily retry limits, and pending state; background checks never take focus from another app.";
+"release.2.7.2.prompt" = "Replaced the old system alert with a strictly centered SwiftUI update window offering Later, View Details, and Update Now.";
+"release.2.7.2.sourceFallback" = "GitHub remains the authoritative source, with Gitee as a delayed network fallback; only explicit network errors permit switching sources.";
+"release.2.7.2.validation" = "Update downloads now verify HTTPS, file size, SHA-256, DMG mounting, Bundle ID, version, build, minimum macOS version, and code signature.";
+"release.2.7.2.manualDetails" = "Manual checks now restore complete version details and localized release notes instead of inheriting the automatic prompt's two-highlight summary.";
+"release.2.7.2.releaseAutomation" = "The release flow reads version metadata from the DMG, serializes manifest updates, and mirrors the same installer to Gitee while rejecting prereleases and accidental downgrades.";
+"release.2.7.2.dashboard" = "Fixed the Dashboard toolbar update check closing the status panel and temporary high-level panels covering the update prompt.";
+"release.2.7.2.ci" = "Streamlined CI test organization with scenario-driven cases and separate translation and diary benchmark targets while retaining key behavior coverage.";
 "release.2.7.1.musicArchitecture" = "Music playback, lyrics, library, account, and import now use isolated stores with cancellation-safe async lifecycles.";
 "release.2.7.1.refreshBoundaries" = "Dashboard, companion, Settings, Journal, and music views use narrower SwiftUI refresh boundaries, reducing redraws during playback and monitoring.";
 "release.2.7.1.focusCompanion" = "Added focus artwork for all three companion modes; starting Focus closes its side controls, while interaction lock keeps only a read-only countdown badge.";

@@ -20,13 +20,14 @@ enum AppVersionInfo {
 
     static var currentReleaseHighlights: [String] {
         [
-            "release.2.7.1.musicArchitecture",
-            "release.2.7.1.refreshBoundaries",
-            "release.2.7.1.focusCompanion",
-            "release.2.7.1.playerControls",
-            "release.2.7.1.lyricBubble",
-            "release.2.7.1.liquidGlass",
-            "release.2.7.1.stability"
+            "release.2.7.2.updateFlow",
+            "release.2.7.2.prompt",
+            "release.2.7.2.sourceFallback",
+            "release.2.7.2.validation",
+            "release.2.7.2.manualDetails",
+            "release.2.7.2.releaseAutomation",
+            "release.2.7.2.dashboard",
+            "release.2.7.2.ci"
         ].map { AppLocalizer.string($0) }
     }
 }
