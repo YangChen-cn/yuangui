@@ -291,7 +291,8 @@ jobs:
               local existing_file
               existing_file="$(mktemp)"
               if [[ -n "$existing_url" ]] \
-                && curl --silent --show-error --fail --location --retry 3 "$existing_url" --output "$existing_file" \
+                && curl --silent --show-error --fail --location --retry 3 \
+                  --connect-timeout 15 --max-time 300 "$existing_url" --output "$existing_file" \
                 && [[ "$(stat -f '%z' "$existing_file")" == "$expected_size" ]] \
                 && [[ "$(shasum -a 256 "$existing_file" | awk '{print $1}')" == "$expected_sha" ]]; then
                 rm -f "$existing_file"
@@ -306,11 +307,13 @@ jobs:
               }
               echo "Replacing stale Gitee asset $name"
               curl --silent --show-error --fail-with-body \
+                --connect-timeout 15 --max-time 300 \
                 --request DELETE \
                 --data-urlencode "access_token=$GITEE_TOKEN" \
                 "$API/releases/$RELEASE_ID/attach_files/$existing_id" >/dev/null
             fi
             curl --silent --show-error --fail-with-body \
+              --connect-timeout 15 --max-time 300 \
               --request POST \
               --form "access_token=$GITEE_TOKEN" \
               --form "file=@$path" \
@@ -342,6 +345,7 @@ jobs:
         run: |
           set -euo pipefail
           curl --silent --show-error --fail --location --retry 3 \
+            --connect-timeout 15 --max-time 300 \
             "$GITEE_DMG_URL" --output dist/gitee-verified.dmg
           [[ "$(stat -f '%z' dist/gitee-verified.dmg)" == "$EXPECTED_SIZE" ]] || {
             echo "Gitee DMG size differs from GitHub DMG" >&2
