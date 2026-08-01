@@ -278,27 +278,55 @@ jobs:
             local expected_sha="$3"
             local verify_timeout="$4"
             local existing existing_url existing_file
+            local verify_started verify_elapsed verify_status actual_size actual_sha
 
             refresh_gitee_release 120 || return 1
             existing="$(jq -c --arg name "$path_name" \
               '(.assets // []) | map(select(.name == $name)) | first // empty' \
               gitee-release.json)"
-            [[ -n "$existing" ]] || return 1
+            if [[ -z "$existing" ]]; then
+              echo "Gitee asset is not visible yet: $path_name"
+              return 1
+            fi
 
             existing_url="$(jq -r '(.browser_download_url // .url // empty)' <<< "$existing")"
-            [[ -n "$existing_url" ]] || return 1
-            existing_file="$(mktemp)"
-            if curl --silent --show-error --fail --location --retry 3 \
-                --connect-timeout 20 --max-time "$verify_timeout" \
-                "$existing_url" --output "$existing_file" \
-              && [[ "$(stat -c '%s' "$existing_file")" == "$expected_size" ]] \
-              && [[ "$(sha256sum "$existing_file" | awk '{print $1}')" == "$expected_sha" ]]; then
-              rm -f "$existing_file"
-              echo "Gitee asset already verified: $path_name"
-              return 0
+            if [[ -z "$existing_url" ]]; then
+              echo "Gitee asset has no download URL yet: $path_name"
+              return 1
             fi
+            existing_file="$(mktemp)"
+            verify_started="$(date +%s)"
+            set +e
+            curl --silent --show-error --fail --location --retry 3 \
+              --connect-timeout 20 --max-time "$verify_timeout" \
+              "$existing_url" --output "$existing_file"
+            verify_status=$?
+            set -e
+            verify_elapsed=$(( $(date +%s) - verify_started ))
+
+            if [[ "$verify_status" -ne 0 ]]; then
+              echo "Gitee asset download failed: asset=$path_name curl_exit=$verify_status elapsed=${verify_elapsed}s"
+              rm -f "$existing_file"
+              return 1
+            fi
+
+            actual_size="$(stat -c '%s' "$existing_file")"
+            if [[ "$actual_size" != "$expected_size" ]]; then
+              echo "Gitee asset size mismatch: asset=$path_name expected=$expected_size actual=$actual_size elapsed=${verify_elapsed}s"
+              rm -f "$existing_file"
+              return 1
+            fi
+
+            actual_sha="$(sha256sum "$existing_file" | awk '{print $1}')"
+            if [[ "$actual_sha" != "$expected_sha" ]]; then
+              echo "Gitee asset SHA-256 mismatch: asset=$path_name expected=$expected_sha actual=$actual_sha elapsed=${verify_elapsed}s"
+              rm -f "$existing_file"
+              return 1
+            fi
+
             rm -f "$existing_file"
-            return 1
+            echo "Gitee asset verified: asset=$path_name bytes=$actual_size elapsed=${verify_elapsed}s"
+            return 0
           }
 
           remove_existing_asset() {
@@ -331,7 +359,10 @@ jobs:
             local upload_connect_timeout="$4"
             local upload_timeout="$5"
             local verify_timeout="$6"
-            local name upload_status
+            local name upload_status upload_response upload_metrics
+            local upload_started upload_elapsed
+            local http_code time_dns time_connect time_tls time_first_byte
+            local time_total size_upload speed_upload
             name="$(basename "$path")"
 
             for attempt in 1 2 3; do
@@ -344,15 +375,25 @@ jobs:
               remove_existing_asset "$name" || true
 
               echo "Uploading $name (attempt $attempt/3)"
+              upload_response="$(mktemp)"
+              upload_started="$(date +%s)"
               set +e
-              curl --silent --show-error --fail-with-body \
-                --connect-timeout "$upload_connect_timeout" --max-time "$upload_timeout" \
-                --request POST \
-                --form "access_token=$GITEE_TOKEN" \
-                --form "file=@$path" \
-                "$API/releases/$RELEASE_ID/attach_files" >/dev/null
+              upload_metrics="$(
+                curl --silent --show-error --fail-with-body \
+                  --connect-timeout "$upload_connect_timeout" --max-time "$upload_timeout" \
+                  --request POST \
+                  --form "access_token=$GITEE_TOKEN" \
+                  --form "file=@$path" \
+                  --output "$upload_response" \
+                  --write-out '%{http_code}|%{time_namelookup}|%{time_connect}|%{time_appconnect}|%{time_starttransfer}|%{time_total}|%{size_upload}|%{speed_upload}' \
+                  "$API/releases/$RELEASE_ID/attach_files"
+              )"
               upload_status=$?
               set -e
+              upload_elapsed=$(( $(date +%s) - upload_started ))
+              IFS='|' read -r http_code time_dns time_connect time_tls time_first_byte time_total size_upload speed_upload <<< "$upload_metrics"
+              echo "Gitee upload diagnostics: asset=$name attempt=$attempt curl_exit=$upload_status http=${http_code:-000} dns=${time_dns:-0}s connect=${time_connect:-0}s tls=${time_tls:-0}s first_byte=${time_first_byte:-0}s total=${time_total:-0}s uploaded=${size_upload:-0}B speed=${speed_upload:-0}B/s wall=${upload_elapsed}s"
+              rm -f "$upload_response"
               if [[ "$upload_status" -ne 0 ]]; then
                 echo "Gitee upload returned $upload_status; checking for a completed remote asset"
               fi
@@ -513,79 +554,172 @@ jobs:
           fi
 
       - name: Request Gitee mirror refresh
+        id: mirror_refresh
         shell: bash
         run: |
           set -euo pipefail
           API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
-          curl --silent --show-error --fail-with-body \
-            --connect-timeout 15 --max-time 120 \
-            --request POST \
-            --data-urlencode "access_token=$GITEE_TOKEN" \
-            "$API/remote_mirror/pull" >/dev/null || true
+          RESPONSE_FILE="$(mktemp)"
+          set +e
+          MIRROR_METRICS="$(
+            curl --silent --show-error --fail-with-body \
+              --connect-timeout 15 --max-time 120 \
+              --request POST \
+              --data-urlencode "access_token=$GITEE_TOKEN" \
+              --output "$RESPONSE_FILE" \
+              --write-out '%{http_code}|%{time_total}' \
+              "$API/remote_mirror/pull"
+          )"
+          MIRROR_STATUS=$?
+          set -e
+          IFS='|' read -r MIRROR_HTTP MIRROR_TIME <<< "$MIRROR_METRICS"
+          rm -f "$RESPONSE_FILE"
+
+          if [[ "$MIRROR_STATUS" -eq 0 && "$MIRROR_HTTP" =~ ^2[0-9][0-9]$ ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Gitee mirror refresh accepted: http=$MIRROR_HTTP total=${MIRROR_TIME:-0}s"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Gitee mirror refresh is unavailable (curl_exit=$MIRROR_STATUS http=${MIRROR_HTTP:-000} total=${MIRROR_TIME:-0}s); the manifest will use the contents API immediately."
+          fi
 
       - name: Ensure latest.json is available from Gitee raw
+        env:
+          MIRROR_REFRESH_AVAILABLE: ${{ steps.mirror_refresh.outputs.available }}
         shell: bash
         run: |
           set -euo pipefail
+          API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
           RAW_URL="https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/updates/latest.json"
           EXPECTED_SHA="$(sha256sum updates/latest.json | awk '{print $1}')"
           RAW_FILE="$(mktemp)"
           FOUND=false
 
-          for attempt in $(seq 1 10); do
-            if curl --silent --show-error --fail --location \
-              --connect-timeout 15 --max-time 120 \
-              "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
-              FOUND=true
-              break
+          raw_matches() {
+            local phase="$1"
+            local attempt="$2"
+            local curl_status http_code actual_sha
+
+            set +e
+            http_code="$(
+              curl --silent --show-error --location \
+                --header 'Cache-Control: no-cache' \
+                --connect-timeout 15 --max-time 60 \
+                --output "$RAW_FILE" \
+                --write-out '%{http_code}' \
+                "$RAW_URL"
+            )"
+            curl_status=$?
+            set -e
+
+            actual_sha=""
+            if [[ "$curl_status" -eq 0 && "$http_code" =~ ^2[0-9][0-9]$ && -s "$RAW_FILE" ]]; then
+              actual_sha="$(sha256sum "$RAW_FILE" | awk '{print $1}')"
             fi
-            sleep 15
-          done
+            if [[ "$actual_sha" == "$EXPECTED_SHA" ]]; then
+              echo "Gitee raw manifest verified: phase=$phase attempt=$attempt http=$http_code sha256=$actual_sha"
+              return 0
+            fi
+
+            echo "Gitee raw manifest pending: phase=$phase attempt=$attempt curl_exit=$curl_status http=${http_code:-000} expected_sha=$EXPECTED_SHA actual_sha=${actual_sha:-unavailable}"
+            return 1
+          }
+
+          poll_raw() {
+            local phase="$1"
+            local attempts="$2"
+            local delay="$3"
+            local attempt
+
+            for attempt in $(seq 1 "$attempts"); do
+              if raw_matches "$phase" "$attempt"; then
+                return 0
+              fi
+              if [[ "$attempt" -lt "$attempts" ]]; then
+                sleep "$delay"
+              fi
+            done
+            return 1
+          }
+
+          if raw_matches initial 1; then
+            FOUND=true
+          elif [[ "$MIRROR_REFRESH_AVAILABLE" == "true" ]]; then
+            echo "Waiting briefly for the configured Gitee mirror"
+            if poll_raw mirror 4 10; then
+              FOUND=true
+            fi
+          else
+            echo "Skipping the initial mirror wait because remote_mirror/pull is unavailable"
+          fi
 
           # A Gitee repository without a configured remote mirror can still be
           # updated safely through its contents API. This only writes the
           # generated manifest and never uploads a guessed asset.
           if [[ "$FOUND" != true ]]; then
-            API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
             FILE_INFO="$(mktemp)"
-            curl --silent --show-error --connect-timeout 15 --max-time 120 \
-              "$API/contents/updates/latest.json?ref=main" > "$FILE_INFO" || true
-            FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO")"
-            CONTENT="$(base64 < updates/latest.json | tr -d '\n')"
-            if [[ -n "$FILE_SHA" ]]; then
-              curl --silent --show-error --fail-with-body \
+            WRITE_RESPONSE="$(mktemp)"
+            set +e
+            FILE_HTTP="$(
+              curl --silent --show-error \
                 --connect-timeout 15 --max-time 120 \
-                --request PUT \
-                --data-urlencode "access_token=$GITEE_TOKEN" \
-                --data-urlencode "content=$CONTENT" \
-                --data-urlencode "message=Publish update manifest for ${{ steps.metadata.outputs.version }}" \
-                --data-urlencode "branch=main" \
-                --data-urlencode "sha=$FILE_SHA" \
-                "$API/contents/updates/latest.json" >/dev/null
-            else
-              curl --silent --show-error --fail-with-body \
-                --connect-timeout 15 --max-time 120 \
-                --request POST \
-                --data-urlencode "access_token=$GITEE_TOKEN" \
-                --data-urlencode "content=$CONTENT" \
-                --data-urlencode "message=Publish update manifest for ${{ steps.metadata.outputs.version }}" \
-                --data-urlencode "branch=main" \
-                "$API/contents/updates/latest.json" >/dev/null
+                --output "$FILE_INFO" \
+                --write-out '%{http_code}' \
+                "$API/contents/updates/latest.json?ref=main"
+            )"
+            FILE_STATUS=$?
+            set -e
+            FILE_SHA=""
+            if [[ "$FILE_STATUS" -eq 0 && "$FILE_HTTP" =~ ^2[0-9][0-9]$ ]]; then
+              FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO")"
             fi
-            rm -f "$FILE_INFO"
+            CONTENT="$(base64 < updates/latest.json | tr -d '\n')"
+
+            set +e
+            if [[ -n "$FILE_SHA" ]]; then
+              WRITE_METHOD="PUT"
+              WRITE_METRICS="$(
+                curl --silent --show-error --fail-with-body \
+                  --connect-timeout 15 --max-time 120 \
+                  --request PUT \
+                  --data-urlencode "access_token=$GITEE_TOKEN" \
+                  --data-urlencode "content=$CONTENT" \
+                  --data-urlencode "message=Publish update manifest for ${{ steps.metadata.outputs.version }}" \
+                  --data-urlencode "branch=main" \
+                  --data-urlencode "sha=$FILE_SHA" \
+                  --output "$WRITE_RESPONSE" \
+                  --write-out '%{http_code}|%{time_total}' \
+                  "$API/contents/updates/latest.json"
+              )"
+            else
+              WRITE_METHOD="POST"
+              WRITE_METRICS="$(
+                curl --silent --show-error --fail-with-body \
+                  --connect-timeout 15 --max-time 120 \
+                  --request POST \
+                  --data-urlencode "access_token=$GITEE_TOKEN" \
+                  --data-urlencode "content=$CONTENT" \
+                  --data-urlencode "message=Publish update manifest for ${{ steps.metadata.outputs.version }}" \
+                  --data-urlencode "branch=main" \
+                  --output "$WRITE_RESPONSE" \
+                  --write-out '%{http_code}|%{time_total}' \
+                  "$API/contents/updates/latest.json"
+              )"
+            fi
+            WRITE_STATUS=$?
+            set -e
+            IFS='|' read -r WRITE_HTTP WRITE_TIME <<< "$WRITE_METRICS"
+            rm -f "$FILE_INFO" "$WRITE_RESPONSE"
+            echo "Gitee contents API result: method=$WRITE_METHOD curl_exit=$WRITE_STATUS http=${WRITE_HTTP:-000} total=${WRITE_TIME:-0}s"
+            if [[ "$WRITE_STATUS" -ne 0 || ! "$WRITE_HTTP" =~ ^2[0-9][0-9]$ ]]; then
+              echo "Unable to publish updates/latest.json through the Gitee contents API" >&2
+              exit 1
+            fi
           fi
 
-          for attempt in $(seq 1 10); do
-            if curl --silent --show-error --fail --location \
-              --connect-timeout 15 --max-time 120 \
-              "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
-              FOUND=true
-              break
-            fi
-            sleep 15
-          done
+          if [[ "$FOUND" != true ]] && poll_raw contents 12 10; then
+            FOUND=true
+          fi
           rm -f "$RAW_FILE"
           [[ "$FOUND" == true ]] || {
             echo "Gitee raw manifest was not available or did not match GitHub" >&2
@@ -630,22 +764,83 @@ jobs:
           RAW_FILE="$(mktemp)"
           FOUND=false
 
-          curl --silent --show-error --fail-with-body \
-            --connect-timeout 15 --max-time 120 \
-            --request POST \
-            --data-urlencode "access_token=$GITEE_TOKEN" \
-            "$API/remote_mirror/pull" >/dev/null || true
+          raw_matches() {
+            local phase="$1"
+            local attempt="$2"
+            local curl_status http_code actual_sha
 
-          for attempt in $(seq 1 8); do
-            if curl --silent --show-error --fail --location \
-              --connect-timeout 15 --max-time 60 \
-              "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
-              FOUND=true
-              break
+            set +e
+            http_code="$(
+              curl --silent --show-error --location \
+                --header 'Cache-Control: no-cache' \
+                --connect-timeout 15 --max-time 60 \
+                --output "$RAW_FILE" \
+                --write-out '%{http_code}' \
+                "$RAW_URL"
+            )"
+            curl_status=$?
+            set -e
+            actual_sha=""
+            if [[ "$curl_status" -eq 0 && "$http_code" =~ ^2[0-9][0-9]$ && -s "$RAW_FILE" ]]; then
+              actual_sha="$(sha256sum "$RAW_FILE" | awk '{print $1}')"
             fi
-            sleep 15
-          done
+            if [[ "$actual_sha" == "$EXPECTED_SHA" ]]; then
+              echo "Gitee raw manifest verified: phase=$phase attempt=$attempt http=$http_code sha256=$actual_sha"
+              return 0
+            fi
+            echo "Gitee raw manifest pending: phase=$phase attempt=$attempt curl_exit=$curl_status http=${http_code:-000} expected_sha=$EXPECTED_SHA actual_sha=${actual_sha:-unavailable}"
+            return 1
+          }
+
+          poll_raw() {
+            local phase="$1"
+            local attempts="$2"
+            local delay="$3"
+            local attempt
+
+            for attempt in $(seq 1 "$attempts"); do
+              if raw_matches "$phase" "$attempt"; then
+                return 0
+              fi
+              if [[ "$attempt" -lt "$attempts" ]]; then
+                sleep "$delay"
+              fi
+            done
+            return 1
+          }
+
+          MIRROR_RESPONSE="$(mktemp)"
+          set +e
+          MIRROR_METRICS="$(
+            curl --silent --show-error --fail-with-body \
+              --connect-timeout 15 --max-time 120 \
+              --request POST \
+              --data-urlencode "access_token=$GITEE_TOKEN" \
+              --output "$MIRROR_RESPONSE" \
+              --write-out '%{http_code}|%{time_total}' \
+              "$API/remote_mirror/pull"
+          )"
+          MIRROR_STATUS=$?
+          set -e
+          IFS='|' read -r MIRROR_HTTP MIRROR_TIME <<< "$MIRROR_METRICS"
+          rm -f "$MIRROR_RESPONSE"
+          if [[ "$MIRROR_STATUS" -eq 0 && "$MIRROR_HTTP" =~ ^2[0-9][0-9]$ ]]; then
+            MIRROR_AVAILABLE=true
+            echo "Gitee mirror refresh accepted: http=$MIRROR_HTTP total=${MIRROR_TIME:-0}s"
+          else
+            MIRROR_AVAILABLE=false
+            echo "::notice::Gitee mirror refresh is unavailable (curl_exit=$MIRROR_STATUS http=${MIRROR_HTTP:-000} total=${MIRROR_TIME:-0}s); using the contents API immediately."
+          fi
+
+          if raw_matches initial 1; then
+            FOUND=true
+          elif [[ "$MIRROR_AVAILABLE" == true ]]; then
+            if poll_raw mirror 4 10; then
+              FOUND=true
+            fi
+          else
+            echo "Skipping the initial mirror wait because remote_mirror/pull is unavailable"
+          fi
 
           if [[ "$FOUND" != true ]]; then
             FILE_INFO="$(mktemp)"
@@ -654,6 +849,7 @@ jobs:
             FILE_SHA="$(jq -r '.sha // empty' "$FILE_INFO" 2>/dev/null || true)"
             CONTENT="$(base64 < updates/latest.json | tr -d '\n')"
             if [[ -n "$FILE_SHA" ]]; then
+              echo "Publishing Gitee manifest through contents API: method=PUT"
               curl --silent --show-error --fail-with-body \
                 --connect-timeout 15 --max-time 120 \
                 --request PUT \
@@ -664,6 +860,7 @@ jobs:
                 --data-urlencode "sha=$FILE_SHA" \
                 "$API/contents/updates/latest.json" >/dev/null
             else
+              echo "Publishing Gitee manifest through contents API: method=POST"
               curl --silent --show-error --fail-with-body \
                 --connect-timeout 15 --max-time 120 \
                 --request POST \
@@ -673,18 +870,12 @@ jobs:
                 --data-urlencode "branch=main" \
                 "$API/contents/updates/latest.json" >/dev/null
             fi
+            echo "Gitee contents API accepted the manifest update"
           fi
 
-          for attempt in $(seq 1 8); do
-            if curl --silent --show-error --fail --location \
-              --connect-timeout 15 --max-time 60 \
-              "$RAW_URL" --output "$RAW_FILE" \
-              && [[ "$(sha256sum "$RAW_FILE" | awk '{print $1}')" == "$EXPECTED_SHA" ]]; then
-              FOUND=true
-              break
-            fi
-            sleep 15
-          done
+          if [[ "$FOUND" != true ]] && poll_raw contents 12 10; then
+            FOUND=true
+          fi
           rm -f "$RAW_FILE"
           [[ "$FOUND" == true ]] || {
             echo "Gitee raw manifest was not created or does not match GitHub" >&2
