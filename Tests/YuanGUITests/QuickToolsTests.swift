@@ -126,6 +126,20 @@ final class QuickToolsTests: XCTestCase {
     func testTranslationWindowLayoutScenarios() {
         runTranslationWindowKeepsChosenWidthAndGrowsOnlyVertically()
         runTranslationWindowDoesNotReserveBlankHeightFromMismatchedResultFont()
+        runTranslationWindowKeepsShortContentCompactAfterCardRefactor()
+    }
+
+    @MainActor
+    private func runTranslationWindowKeepsShortContentCompactAfterCardRefactor() {
+        let layout = TranslationWindowLayout.calculate(
+            source: "Hello",
+            translation: "你好",
+            availableFrame: CGRect(x: 0, y: 0, width: 1_200, height: 800),
+            preferredWidth: 440
+        )
+
+        XCTAssertGreaterThanOrEqual(layout.contentSize.height, 350)
+        XCTAssertLessThanOrEqual(layout.contentSize.height, 390)
     }
 
     @MainActor
@@ -196,6 +210,140 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertFalse(first.isVisible)
         XCTAssertTrue(second.isVisible)
         second.close()
+    }
+
+    @MainActor
+    func testClosingTranslationWindowStopsSpeech() {
+        let speech = RecordingSpeechSynthesisService()
+        let controller = TranslationEditorWindowController(
+            snapshot: translationSnapshot(text: "Hello"),
+            nonChineseTarget: .simplifiedChinese,
+            chineseTarget: .english,
+            engine: .systemShortcut,
+            onlineConfiguration: nil,
+            speechService: speech,
+            onClose: {}
+        )
+
+        speech.speak("Hello", languageIdentifier: "en", target: .source)
+        controller.show()
+        controller.close()
+
+        XCTAssertNil(speech.activeTarget)
+        XCTAssertGreaterThanOrEqual(speech.stopCount, 1)
+    }
+
+    @MainActor
+    func testTranslationSpeechLanguageResolution() {
+        let expected: [(QuickToolLanguage, String)] = [
+            (.simplifiedChinese, "zh-CN"),
+            (.english, "en-US"),
+            (.japanese, "ja-JP"),
+            (.korean, "ko-KR"),
+            (.french, "fr-FR"),
+            (.german, "de-DE"),
+            (.spanish, "es-ES")
+        ]
+        for (language, identifier) in expected {
+            XCTAssertEqual(SystemSpeechVoiceResolver.preferredLanguageIdentifier(for: language), identifier)
+        }
+        XCTAssertEqual(
+            SystemSpeechVoiceResolver.bestAvailableLanguageIdentifier(
+                for: "en-US",
+                availableIdentifiers: ["ja-JP", "en-GB"]
+            ),
+            "en-GB"
+        )
+        XCTAssertNil(
+            SystemSpeechVoiceResolver.bestAvailableLanguageIdentifier(
+                for: "xx-ZZ",
+                availableIdentifiers: ["en-US", "ja-JP"]
+            )
+        )
+        XCTAssertNil(
+            SystemSpeechVoiceResolver.bestAvailableLanguageIdentifier(
+                for: nil,
+                availableIdentifiers: ["en-US"]
+            )
+        )
+    }
+
+    @MainActor
+    func testTranslationSpeechBehaviorAndInvalidation() async {
+        let speech = RecordingSpeechSynthesisService()
+        let shortcut = StubShortcutTranslationService()
+        let emptyStore = TranslationEditorStore(
+            snapshot: translationSnapshot(text: ""),
+            nonChineseTarget: .simplifiedChinese,
+            chineseTarget: .english,
+            engine: .systemShortcut,
+            onlineConfiguration: nil,
+            shortcutService: shortcut,
+            speechService: speech,
+            onReplaced: {}
+        )
+
+        emptyStore.toggleSourceSpeech()
+        emptyStore.toggleTranslationSpeech()
+        XCTAssertTrue(speech.requests.isEmpty)
+        XCTAssertFalse(emptyStore.canSpeakSource)
+        XCTAssertFalse(emptyStore.canSpeakTranslation)
+
+        let store = TranslationEditorStore(
+            snapshot: translationSnapshot(text: "Hello world"),
+            nonChineseTarget: .simplifiedChinese,
+            chineseTarget: .english,
+            engine: .systemShortcut,
+            onlineConfiguration: nil,
+            shortcutService: shortcut,
+            speechService: speech,
+            onReplaced: {}
+        )
+        await store.performShortcutTranslation()
+        XCTAssertTrue(store.canSpeakTranslation)
+
+        store.toggleSourceSpeech()
+        XCTAssertEqual(store.speakingTarget, .source)
+        XCTAssertEqual(speech.requests.last?.target, .source)
+
+        let stopCountBeforeSwitch = speech.stopCount
+        store.toggleTranslationSpeech()
+        XCTAssertEqual(store.speakingTarget, .translation)
+        XCTAssertEqual(speech.requests.last?.target, .translation)
+        XCTAssertEqual(speech.requests.last?.languageIdentifier, "zh-CN")
+        XCTAssertGreaterThan(speech.stopCount, stopCountBeforeSwitch)
+
+        store.toggleTranslationSpeech()
+        XCTAssertNil(store.speakingTarget)
+        XCTAssertNil(speech.activeTarget)
+
+        store.toggleSourceSpeech()
+        let stopsBeforeEdit = speech.stopCount
+        store.updateEditableSourceText("Edited source")
+        XCTAssertNil(store.speakingTarget)
+        XCTAssertGreaterThan(speech.stopCount, stopsBeforeEdit)
+        XCTAssertFalse(store.canSpeakTranslation)
+
+        store.toggleSourceSpeech()
+        let stopsBeforeLanguageChange = speech.stopCount
+        store.requestTargetLanguage(.japanese)
+        XCTAssertNil(store.speakingTarget)
+        XCTAssertGreaterThan(speech.stopCount, stopsBeforeLanguageChange)
+
+        await store.performShortcutTranslation()
+        store.toggleTranslationSpeech()
+        let stopsBeforeRetranslation = speech.stopCount
+        await store.performShortcutTranslation()
+        XCTAssertNil(store.speakingTarget)
+        XCTAssertGreaterThan(speech.stopCount, stopsBeforeRetranslation)
+
+        store.toggleSourceSpeech()
+        let stopsBeforeClear = speech.stopCount
+        store.clearSensitiveState()
+        XCTAssertNil(store.speakingTarget)
+        XCTAssertGreaterThan(speech.stopCount, stopsBeforeClear)
+        XCTAssertTrue(store.editableSourceText.isEmpty)
+        XCTAssertTrue(store.translatedText.isEmpty)
     }
 
     func testScreenshotTranslationToolbarChoosesAvailableOutsideEdge() {
@@ -1359,6 +1507,20 @@ final class QuickToolsTests: XCTestCase {
         guard let image = context.makeImage() else { throw ScreenshotOutputError.imageCreationFailed }
         return image
     }
+
+    @MainActor
+    private func translationSnapshot(text: String) -> TranslationTargetSnapshot {
+        TranslationTargetSnapshot(
+            processID: ProcessInfo.processInfo.processIdentifier,
+            applicationName: "手动输入",
+            element: AXUIElementCreateSystemWide(),
+            originalText: text,
+            fullValue: nil,
+            selectedRange: nil,
+            role: nil,
+            canReplace: false
+        )
+    }
 }
 
 private struct DeterministicRandom {
@@ -1388,6 +1550,40 @@ private final class StubShortcutTranslationService: SystemShortcutTranslationSer
         return text
             .replacingOccurrences(of: "第一行", with: "First row")
             .replacingOccurrences(of: "第二行", with: "Second row")
+    }
+}
+
+@MainActor
+private final class RecordingSpeechSynthesisService: SpeechSynthesisServicing {
+    struct Request: Equatable {
+        let text: String
+        let languageIdentifier: String?
+        let target: TranslationSpeechTarget
+    }
+
+    private(set) var activeTarget: TranslationSpeechTarget?
+    var stateDidChange: ((TranslationSpeechTarget?) -> Void)?
+    private(set) var requests: [Request] = []
+    private(set) var stopCount = 0
+
+    @discardableResult
+    func speak(
+        _ text: String,
+        languageIdentifier: String?,
+        target: TranslationSpeechTarget
+    ) -> Bool {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        if activeTarget != nil { stop() }
+        requests.append(Request(text: text, languageIdentifier: languageIdentifier, target: target))
+        activeTarget = target
+        stateDidChange?(target)
+        return true
+    }
+
+    func stop() {
+        stopCount += 1
+        activeTarget = nil
+        stateDidChange?(nil)
     }
 }
 

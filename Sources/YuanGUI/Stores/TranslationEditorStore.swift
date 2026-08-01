@@ -23,6 +23,7 @@ final class TranslationEditorStore: ObservableObject {
     @Published private(set) var detectedSourceLanguage: String?
     @Published private(set) var targetLanguage: QuickToolLanguage
     @Published private(set) var state: State = .idle
+    @Published private(set) var speakingTarget: TranslationSpeechTarget?
     @Published var message: String?
 
     let engine: TranslationEngine
@@ -31,6 +32,7 @@ final class TranslationEditorStore: ObservableObject {
     private let onlineService: OnlineTranslationServicing
     private let onlineConfiguration: AITranslationConfiguration?
     private let pipeline: TranslationPipeline
+    private let speechService: SpeechSynthesisServicing
     private let onReplaced: () -> Void
     private let nonChineseTarget: QuickToolLanguage
     private let chineseTarget: QuickToolLanguage
@@ -47,6 +49,7 @@ final class TranslationEditorStore: ObservableObject {
         shortcutService: SystemShortcutTranslationServicing = SystemShortcutTranslationService(),
         onlineService: OnlineTranslationServicing = OnlineTranslationService(),
         pipeline: TranslationPipeline = .shared,
+        speechService: SpeechSynthesisServicing? = nil,
         onReplaced: @escaping () -> Void
     ) {
         targetSnapshot = snapshot
@@ -60,6 +63,7 @@ final class TranslationEditorStore: ObservableObject {
         self.onlineConfiguration = onlineConfiguration
         self.onlineService = onlineService
         self.pipeline = pipeline
+        self.speechService = speechService ?? SystemSpeechSynthesisService()
         self.onReplaced = onReplaced
         self.nonChineseTarget = nonChineseTarget
         self.chineseTarget = chineseTarget
@@ -67,6 +71,9 @@ final class TranslationEditorStore: ObservableObject {
         let dominant = NLLanguageRecognizer.dominantLanguage(for: formattedSource)?.rawValue
         detectedSourceLanguage = dominant
         targetLanguage = dominant?.hasPrefix("zh") == true ? chineseTarget : nonChineseTarget
+        self.speechService.stateDidChange = { [weak self] target in
+            self?.speakingTarget = target
+        }
     }
 
     var canReplace: Bool {
@@ -81,6 +88,11 @@ final class TranslationEditorStore: ObservableObject {
 
     var usesShortcutTranslation: Bool { engine == .systemShortcut }
     var canInstallShortcut: Bool { usesShortcutTranslation && SystemShortcutTranslationService.installURL != nil }
+    var canSpeakSource: Bool { !editableSourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var canSpeakTranslation: Bool {
+        !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && state != .translating
+    }
 
     var replacementHint: String {
         if sourceApplicationName.hasPrefix("手动输入") { return "手动输入模式" }
@@ -99,6 +111,7 @@ final class TranslationEditorStore: ObservableObject {
     func requestTargetLanguage(_ language: QuickToolLanguage) {
         userSelectedTarget = true
         guard language != targetLanguage else { return }
+        stopSpeaking()
         targetLanguage = language
         translatedText = ""
         translatedLines = []
@@ -106,6 +119,8 @@ final class TranslationEditorStore: ObservableObject {
     }
 
     func updateEditableSourceText(_ text: String) {
+        guard text != editableSourceText else { return }
+        stopSpeaking()
         editableSourceText = text
         translatedText = ""
         translatedLines = []
@@ -126,17 +141,44 @@ final class TranslationEditorStore: ObservableObject {
         message = "已按列表结构整理换行。"
     }
 
+    func toggleSourceSpeech() {
+        if speakingTarget == .source {
+            stopSpeaking()
+            return
+        }
+        let text = editableSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let language = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue
+        speechService.speak(text, languageIdentifier: language, target: .source)
+    }
+
+    func toggleTranslationSpeech() {
+        if speakingTarget == .translation {
+            stopSpeaking()
+            return
+        }
+        let text = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, state != .translating else { return }
+        speechService.speak(
+            text,
+            languageIdentifier: SystemSpeechVoiceResolver.preferredLanguageIdentifier(for: targetLanguage),
+            target: .translation
+        )
+    }
+
+    func stopSpeaking() {
+        speechService.stop()
+        speakingTarget = nil
+    }
+
     func performTranslation(using session: TranslationSession) async {
         let requestedTarget = targetLanguage
         let requestedSource = editableSourceText
         guard !requestedSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            translatedText = ""
-            translatedLines = []
-            state = .idle
+            resetTranslation(to: .idle)
             return
         }
-        state = .translating
-        message = nil
+        beginTranslation()
         do {
             let segment = TranslationSegment(id: "0", sourceText: requestedSource)
             let request = translationRequest(segments: [segment], target: requestedTarget)
@@ -169,19 +211,14 @@ final class TranslationEditorStore: ObservableObject {
         let requestedTarget = targetLanguage
         let requestedSource = editableSourceText
         guard !requestedSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            translatedText = ""
-            translatedLines = []
-            state = .idle
+            resetTranslation(to: .idle)
             return
         }
         guard let onlineConfiguration else {
-            translatedText = ""
-            translatedLines = []
-            state = .failed(OnlineTranslationError.notConfigured.localizedDescription)
+            resetTranslation(to: .failed(OnlineTranslationError.notConfigured.localizedDescription))
             return
         }
-        state = .translating
-        message = nil
+        beginTranslation()
         do {
             let segment = TranslationSegment(id: "0", sourceText: requestedSource)
             let request = translationRequest(segments: [segment], target: requestedTarget)
@@ -216,13 +253,10 @@ final class TranslationEditorStore: ObservableObject {
         let requestedTarget = targetLanguage
         let requestedSource = editableSourceText
         guard !requestedSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            translatedText = ""
-            translatedLines = []
-            state = .idle
+            resetTranslation(to: .idle)
             return
         }
-        state = .translating
-        message = nil
+        beginTranslation()
         do {
             let segment = TranslationSegment(id: "0", sourceText: requestedSource)
             let request = translationRequest(segments: [segment], target: requestedTarget)
@@ -254,13 +288,10 @@ final class TranslationEditorStore: ObservableObject {
         let requestedSource = editableSourceText
         let lines = Self.normalizedSourceLines(sourceLines)
         guard !lines.isEmpty else {
-            translatedText = ""
-            translatedLines = []
-            state = .idle
+            resetTranslation(to: .idle)
             return
         }
-        state = .translating
-        message = nil
+        beginTranslation()
         do {
             let segments = Self.translationSegments(for: lines)
             let request = translationRequest(segments: segments, target: requestedTarget)
@@ -301,19 +332,14 @@ final class TranslationEditorStore: ObservableObject {
         let requestedSource = editableSourceText
         let lines = Self.normalizedSourceLines(sourceLines)
         guard !lines.isEmpty else {
-            translatedText = ""
-            translatedLines = []
-            state = .idle
+            resetTranslation(to: .idle)
             return
         }
         guard let onlineConfiguration else {
-            translatedText = ""
-            translatedLines = []
-            state = .failed(OnlineTranslationError.notConfigured.localizedDescription)
+            resetTranslation(to: .failed(OnlineTranslationError.notConfigured.localizedDescription))
             return
         }
-        state = .translating
-        message = nil
+        beginTranslation()
         do {
             let segments = Self.translationSegments(for: lines)
             let request = translationRequest(segments: segments, target: requestedTarget)
@@ -343,13 +369,10 @@ final class TranslationEditorStore: ObservableObject {
         let requestedSource = editableSourceText
         let lines = Self.normalizedSourceLines(sourceLines)
         guard !lines.isEmpty else {
-            translatedText = ""
-            translatedLines = []
-            state = .idle
+            resetTranslation(to: .idle)
             return
         }
-        state = .translating
-        message = nil
+        beginTranslation()
         do {
             let segments = Self.translationSegments(for: lines)
             let request = translationRequest(segments: segments, target: requestedTarget)
@@ -412,10 +435,23 @@ final class TranslationEditorStore: ObservableObject {
     }
 
     func clearSensitiveState() {
+        stopSpeaking()
         editableSourceText = ""
         translatedText = ""
         translatedLines = []
         message = nil
+    }
+
+    private func beginTranslation() {
+        resetTranslation(to: .translating)
+        message = nil
+    }
+
+    private func resetTranslation(to state: State) {
+        stopSpeaking()
+        translatedText = ""
+        translatedLines = []
+        self.state = state
     }
 
     private func applyLineTranslations(_ lines: [String], target: QuickToolLanguage) {
