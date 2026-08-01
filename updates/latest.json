@@ -7,8 +7,8 @@
   "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.2",
   "highlights": {
     "zh-Hans": [
-      "Added a quiet automatic update flow with a real startup delay, daily retry limits, pending prompts, and no background…",
-      "Replaced the unstable update alert with a centered SwiftUI update window that supports Later, View Details, and…"
+      "新增安静的自动更新流程：启动延迟、每日补查次数限制、待展示更新状态和后台不抢焦点均已明确处理。无网络或存在系统模态界面时保持静默。",
+      "用严格居中的 SwiftUI 更新窗口替换不稳定的更新提示，支持“稍后”“查看更新内容”和“立即更新”，并继续复用现有更新 Store 与安装流程。"
     ],
     "en": [
       "Added a quiet automatic update flow with a real startup delay, daily retry limits, pending prompts, and no background…",
