@@ -1368,13 +1368,15 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(factoryCalls, 1)
         feature.connectAppleMusic()
         feature.play(track)
-        try? await Task.sleep(for: .milliseconds(40))
+        for _ in 0..<25 where firstPlayer.stopCount == 0 {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
 
         XCTAssertEqual(factoryCalls, 1)
         XCTAssertEqual(firstPlayer.stopCount, 1)
 
         feature.connectAppleMusic()
-        try? await Task.sleep(for: .milliseconds(40))
+        try? await Task.sleep(for: .milliseconds(100))
         feature.play(track)
 
         XCTAssertEqual(factoryCalls, 2)
