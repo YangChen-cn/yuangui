@@ -91,6 +91,11 @@ jobs:
             echo "Stable update channel refuses prerelease GitHub Releases: $TAG" >&2
             exit 1
           }
+          PUBLISHED_AT="$(jq -r '.published_at // empty' github-release.json)"
+          [[ -n "$PUBLISHED_AT" ]] || {
+            echo "GitHub Release $TAG does not contain a publication timestamp" >&2
+            exit 1
+          }
 
           if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
             BUILD="$(python3 - <<'PY'
@@ -127,6 +132,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
           echo "minimum_system_version=$MINIMUM_SYSTEM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "published_at=$PUBLISHED_AT" >> "$GITHUB_OUTPUT"
           echo "allow_rollback=$ALLOW_ROLLBACK" >> "$GITHUB_OUTPUT"
 
       - name: Download the exact GitHub Release DMG
@@ -510,6 +516,7 @@ jobs:
           UPDATE_VERSION: ${{ steps.metadata.outputs.version }}
           UPDATE_BUILD: ${{ steps.metadata.outputs.build }}
           UPDATE_MINIMUM_SYSTEM_VERSION: ${{ steps.metadata.outputs.minimum_system_version }}
+          UPDATE_PUBLISHED_AT: ${{ steps.metadata.outputs.published_at }}
           ALLOW_ROLLBACK: ${{ steps.metadata.outputs.allow_rollback }}
           DMG_PATH: ${{ steps.asset.outputs.dmg }}
           GITHUB_DMG_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.metadata.outputs.tag }}/${{ steps.asset.outputs.asset_name }}
