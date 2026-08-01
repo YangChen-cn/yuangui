@@ -3,6 +3,7 @@
 dist/
 .swiftpm/
 .codex/
+AGENTS.md
 DerivedData/
 *.xcuserstate
 .env
