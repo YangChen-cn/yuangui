@@ -429,8 +429,40 @@ final class MusicTests: XCTestCase {
     func testLyricsServiceScenarios() async throws {
         try await runLyricsServiceMatchesByTitleWhenArtistIsEmptyAndSetsTimeout()
         try await runLyricsServiceReportsTimeout()
+        try await runLyricsServiceAcceptsCandidatesWithMissingDuration()
         try await runLyricsServiceAcceptsSwappedTrackAndArtistFields()
         try await runLyricsServiceDoesNotRunSlowBroadFallbackAfterExactMiss()
+    }
+
+    private func runLyricsServiceAcceptsCandidatesWithMissingDuration() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LyricsURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        LyricsURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let data = Data(#"""
+            [
+                {"trackName":"We Belong Together","artistName":"Mariah Carey","duration":null,"syncedLyrics":"[00:01.00]Null duration remains usable"},
+                {"trackName":"We Belong Together","artistName":"Mariah Carey","duration":201,"syncedLyrics":"[00:01.00]Exact duration wins"}
+            ]
+            """#.utf8)
+            return (response, data)
+        }
+        defer {
+            LyricsURLProtocol.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let service = LyricsService(session: session)
+        let document = try await service.search(
+            title: "We Belong Together",
+            artist: "Mariah Carey",
+            duration: 201
+        )
+
+        XCTAssertEqual(document?.lines.first?.text, "Exact duration wins")
     }
 
     private func runLyricsServiceMatchesByTitleWhenArtistIsEmptyAndSetsTimeout() async throws {

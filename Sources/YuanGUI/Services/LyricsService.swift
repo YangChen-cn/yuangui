@@ -167,7 +167,9 @@ actor LyricsService: LyricsProviding {
             hasArtist: true
         ) : 0
         let durationScore: Double
-        if track.duration > 0, abs(result.duration - track.duration) <= 6 {
+        if track.duration > 0,
+           let candidateDuration = result.duration,
+           abs(candidateDuration - track.duration) <= 6 {
             durationScore = hasArtist ? 0.13 : 0.22
         } else {
             durationScore = 0
@@ -223,5 +225,5 @@ enum LyricsServiceError: LocalizedError, Equatable {
 private struct BilibiliSubtitle: Decodable { let body: [BilibiliSubtitleItem] }
 private struct BilibiliSubtitleItem: Decodable { let from: Double; let content: String }
 private struct LRCLIBResult: Decodable {
-    let trackName: String; let artistName: String; let duration: Double; let syncedLyrics: String?
+    let trackName: String; let artistName: String; let duration: Double?; let syncedLyrics: String?
 }
