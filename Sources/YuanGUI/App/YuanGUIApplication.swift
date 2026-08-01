@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 @MainActor
 final class AppRuntime {
+    private let windowActivator = ApplicationWindowActivator()
     let language = AppLanguageSettings()
     let pet = PetStore()
     let aiSettings = AISettingsStore()
@@ -51,7 +52,8 @@ final class AppRuntime {
     lazy var petTranslationCoordinator = PetTranslationCoordinator(pet: pet)
     lazy var quickTools = QuickToolsController(
         aiSettings: aiSettings,
-        petTranslationEvents: petTranslationCoordinator
+        petTranslationEvents: petTranslationCoordinator,
+        windowActivator: windowActivator
     )
     lazy var updateStore: AppUpdateStore = {
         let store = AppUpdateStore(service: updateService)
@@ -84,6 +86,7 @@ final class AppRuntime {
         externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
         updater: updateStore,
+        windowActivator: windowActivator,
         onSafeUserInteraction: { [weak self] in
             self?.updateCoordinator.handleExplicitUserInteraction()
         },
@@ -169,6 +172,7 @@ final class WindowCoordinator: NSObject {
     private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
     private let updater: AppUpdateStore
+    private let windowActivator: ApplicationWindowActivating
     private let onSafeUserInteraction: () -> Void
     private let terminateForUpdate: () async -> Bool
     private var panelController: PetPanelController?
@@ -204,6 +208,7 @@ final class WindowCoordinator: NSObject {
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
         updater: AppUpdateStore,
+        windowActivator: ApplicationWindowActivating,
         onSafeUserInteraction: @escaping () -> Void,
         terminateForUpdate: @escaping () async -> Bool
     ) {
@@ -219,6 +224,7 @@ final class WindowCoordinator: NSObject {
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
         self.updater = updater
+        self.windowActivator = windowActivator
         self.onSafeUserInteraction = onSafeUserInteraction
         self.terminateForUpdate = terminateForUpdate
     }
@@ -232,7 +238,8 @@ final class WindowCoordinator: NSObject {
             maintenance: maintenance,
             focusTimer: focusTimer,
             music: music,
-            appActions: actions
+            appActions: actions,
+            windowActivator: windowActivator
         )
         panelController?.show()
         installMenuBarItem()
@@ -396,7 +403,8 @@ final class WindowCoordinator: NSObject {
                 quickTools: quickTools,
                 updater: updater,
                 showPet: { [weak self] in self?.panelController?.show() },
-                appActions: actions
+                appActions: actions,
+                windowActivator: windowActivator
             )
         }
         settingsController?.show(tab: tab)
@@ -404,14 +412,20 @@ final class WindowCoordinator: NSObject {
 
     private func showChatHistory() {
         if chatHistoryController == nil {
-            chatHistoryController = ChatHistoryWindowController(chat: chat)
+            chatHistoryController = ChatHistoryWindowController(
+                chat: chat,
+                windowActivator: windowActivator
+            )
         }
         chatHistoryController?.show()
     }
 
     private func showMaintenance() {
         if maintenanceController == nil {
-            maintenanceController = MaintenanceWindowController(store: maintenance) { [weak self] in
+            maintenanceController = MaintenanceWindowController(
+                store: maintenance,
+                windowActivator: windowActivator
+            ) { [weak self] in
                 self?.maintenanceController = nil
             }
         }
@@ -423,6 +437,7 @@ final class WindowCoordinator: NSObject {
             musicController = MusicWindowController(
                 music: music,
                 appActions: actions,
+                windowActivator: windowActivator,
                 onClose: { [weak self] in self?.musicController = nil }
             )
         }
@@ -431,7 +446,10 @@ final class WindowCoordinator: NSObject {
 
     private func showDiary() {
         if diaryController == nil {
-            diaryController = DiaryWindowController(store: diary) { [weak self] in
+            diaryController = DiaryWindowController(
+                store: diary,
+                windowActivator: windowActivator
+            ) { [weak self] in
                 self?.diaryController = nil
             }
         }
@@ -440,7 +458,10 @@ final class WindowCoordinator: NSObject {
 
     private func showQuickDiary() {
         if diaryController == nil {
-            diaryController = DiaryWindowController(store: diary) { [weak self] in
+            diaryController = DiaryWindowController(
+                store: diary,
+                windowActivator: windowActivator
+            ) { [weak self] in
                 self?.diaryController = nil
             }
         }

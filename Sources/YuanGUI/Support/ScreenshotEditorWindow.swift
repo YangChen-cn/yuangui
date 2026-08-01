@@ -8,10 +8,17 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
     private let outputService = ScreenshotOutputService()
     private let directoryPath: () -> String
     private let onClose: () -> Void
+    private let windowActivator: ApplicationWindowActivating
 
-    init(image: CGImage, directoryPath: @escaping () -> String, onClose: @escaping () -> Void) {
+    init(
+        image: CGImage,
+        directoryPath: @escaping () -> String,
+        windowActivator: ApplicationWindowActivating? = nil,
+        onClose: @escaping () -> Void
+    ) {
         store = ScreenshotEditorStore(image: image)
         self.directoryPath = directoryPath
+        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         self.onClose = onClose
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
@@ -35,8 +42,7 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        windowActivator.present(window, makeMain: true)
     }
 
     func windowWillClose(_ notification: Notification) {

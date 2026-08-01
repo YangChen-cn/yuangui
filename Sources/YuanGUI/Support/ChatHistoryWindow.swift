@@ -4,8 +4,13 @@ import SwiftUI
 @MainActor
 final class ChatHistoryWindowController {
     private let window: NSWindow
+    private let windowActivator: ApplicationWindowActivating
 
-    init(chat: ChatStore) {
+    init(
+        chat: ChatStore,
+        windowActivator: ApplicationWindowActivating? = nil
+    ) {
+        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -20,7 +25,6 @@ final class ChatHistoryWindowController {
     }
 
     func show() {
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        windowActivator.present(window, makeMain: true)
     }
 }

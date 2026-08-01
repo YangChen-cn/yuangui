@@ -116,6 +116,7 @@ final class PetPanelController {
     private let focusTimer: FocusTimerStore
     private let music: MusicFeature
     private let appActions: AppActions
+    private let windowActivator: ApplicationWindowActivating
     private let chatPresentation = ChatPresentationCoordinator()
     private var lockedToolbarPanel: PetLockedToolbarPanel?
     private var auxiliaryBubblePanel: PetAuxiliaryBubblePanel?
@@ -154,7 +155,8 @@ final class PetPanelController {
         maintenance: MaintenanceStore,
         focusTimer: FocusTimerStore,
         music: MusicFeature,
-        appActions: AppActions = .disabled
+        appActions: AppActions = .disabled,
+        windowActivator: ApplicationWindowActivating? = nil
     ) {
         self.store = store
         self.chat = chat
@@ -162,6 +164,7 @@ final class PetPanelController {
         self.focusTimer = focusTimer
         self.music = music
         self.appActions = appActions
+        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         lastLayoutScale = store.petScale
         lastLayoutShowsChat = false
         let size = PetLayout.panelSize(
@@ -621,8 +624,7 @@ final class PetPanelController {
             restoreFromEdge(animated: false)
         }
         show()
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        windowActivator.present(panel)
     }
 
     private func prepareAndExpandChatLayout() {
