@@ -40,9 +40,5 @@ struct StatusDashboardRootView: View {
             }
         }
         .environment(\.appActions, appActions)
-        // This is an intentionally nonactivating menu-bar panel. Keep its
-        // controls visually interactive without stealing focus from the app
-        // whose selection may be used by Quick Tools.
-        .environment(\.controlActiveState, .active)
     }
 }

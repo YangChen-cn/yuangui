@@ -5,15 +5,9 @@ import SwiftUI
 final class MaintenanceWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
     private let onClose: () -> Void
-    private let windowActivator: ApplicationWindowActivating
 
-    init(
-        store: MaintenanceStore,
-        windowActivator: ApplicationWindowActivating? = nil,
-        onClose: @escaping () -> Void = {}
-    ) {
+    init(store: MaintenanceStore, onClose: @escaping () -> Void = {}) {
         self.onClose = onClose
-        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 580),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -30,7 +24,8 @@ final class MaintenanceWindowController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        windowActivator.present(window, makeMain: true)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {

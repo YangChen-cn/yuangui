@@ -80,7 +80,6 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
     private let store: TranslationEditorStore
     private let model: ScreenshotTranslationOverlayModel
     private let onClose: () -> Void
-    private let windowActivator: ApplicationWindowActivating
     private var comparisonWindow: ScreenshotTranslationOverlayPanel?
     private var standardFrame: CGRect
     private var escapeMonitor: Any?
@@ -98,11 +97,9 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
         onlineConfiguration: AITranslationConfiguration?,
         speechService: SpeechSynthesisServicing? = nil,
         petEventHandler: PetTranslationEventHandling? = nil,
-        windowActivator: ApplicationWindowActivating? = nil,
         onClose: @escaping () -> Void
     ) {
         self.onClose = onClose
-        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         standardFrame = Self.overlayFrame(for: selection)
         model = ScreenshotTranslationOverlayModel(image: image)
         window = ScreenshotTranslationOverlayPanel(
@@ -162,7 +159,8 @@ final class ScreenshotTranslationOverlayWindowController: NSObject, NSWindowDele
 
     func show() {
         TranslationPerformance.measureSync(.presentation) {
-            windowActivator.present(window)
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
             toolbarWindow.orderFrontRegardless()
         }
         installInputMonitors()

@@ -139,6 +139,7 @@ final class MusicFeature {
 
     func setSource(_ source: MusicSource) { playbackCommands.setSource(source) }
     func connectAppleMusic(autoplay: Bool = false) { playbackCommands.connectAppleMusic(autoplay: autoplay) }
+    func resumeAppleMusicSynchronization() { playbackCommands.resumeAppleMusicSynchronization() }
     func openAppleMusic() { playbackCommands.openAppleMusic() }
     func openAutomationSettings() { playbackCommands.openAutomationSettings() }
     func playPause() { playbackCommands.playPause() }

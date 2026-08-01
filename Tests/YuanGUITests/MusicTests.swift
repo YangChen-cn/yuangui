@@ -1500,6 +1500,84 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testAppleMusicSynchronizationRestartsAfterPresentationResume() async {
+        let suiteName = "AppleMusicPresentationResumeTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let playback = MusicPlaybackStore(source: .appleMusic, volume: 1)
+        playback.activePlaybackSource = .appleMusic
+        playback.appleMusicRunning = true
+        playback.currentTrack = MusicTrack.appleMusic(
+            title: "旧歌曲",
+            artist: "测试歌手",
+            album: nil,
+            duration: 180
+        )
+        let coordinator = MusicPlaybackCoordinator(
+            playback: playback,
+            defaults: defaults,
+            appleMusic: CurrentTrackAppleMusicProvider(title: "新歌曲"),
+            bilibili: StubBilibiliMusicProvider(),
+            localMusicImporter: StubLocalMusicImporter(),
+            urlPlayer: nil,
+            urlPlayerFactory: { RecordingURLMusicPlayer() },
+            urlPlayerReleaseDelay: .seconds(60),
+            appleSyncInterval: .seconds(60),
+            appleUnavailableSyncInterval: .seconds(60)
+        )
+
+        coordinator.stopAppleSyncTask()
+        coordinator.resumeAppleMusicSynchronization()
+        for _ in 0..<50 where playback.currentTrack?.title != "新歌曲" {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(playback.currentTrack?.title, "新歌曲")
+        XCTAssertNotNil(coordinator.appleSyncTask)
+        await coordinator.shutdown()
+    }
+
+    @MainActor
+    func testAppleMusicSynchronizationSelfHealsAfterUnexpectedCancellation() async {
+        let suiteName = "AppleMusicSyncSelfHealingTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let appleMusic = AdvancingAppleMusicProvider()
+        let playback = MusicPlaybackStore(source: .appleMusic, volume: 1)
+        playback.activePlaybackSource = .appleMusic
+        playback.appleMusicRunning = true
+        let coordinator = MusicPlaybackCoordinator(
+            playback: playback,
+            defaults: defaults,
+            appleMusic: appleMusic,
+            bilibili: StubBilibiliMusicProvider(),
+            localMusicImporter: StubLocalMusicImporter(),
+            urlPlayer: nil,
+            urlPlayerFactory: { RecordingURLMusicPlayer() },
+            urlPlayerReleaseDelay: .seconds(60),
+            appleSyncInterval: .seconds(60),
+            appleUnavailableSyncInterval: .seconds(60)
+        )
+
+        coordinator.startAppleSyncTask()
+        for _ in 0..<50 where await appleMusic.snapshotCount() < 1 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        coordinator.appleSyncTask?.cancel()
+        for _ in 0..<50 where playback.currentTrack?.title != "下一首" {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(playback.currentTrack?.title, "下一首")
+        XCTAssertNotNil(coordinator.appleSyncTask)
+        let snapshotCount = await appleMusic.snapshotCount()
+        XCTAssertGreaterThanOrEqual(snapshotCount, 2)
+        await coordinator.shutdown()
+    }
+
+    @MainActor
     func testMusicSourceSwitchScenarios() async {
         await runSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay()
         await runSwitchingFromLocalToBilibiliRebuildsStatusQueueForTheNewSource()
@@ -1744,6 +1822,70 @@ private actor RecoveringAppleMusicProvider: AppleMusicProviding {
             state: .playing,
             position: 35,
             volume: 0.41
+        )
+    }
+
+    func artworkURL(for trackID: String) async -> URL? { nil }
+    func play() async {}
+    func playPause() async {}
+    func pause() async {}
+    func previous() async {}
+    func next() async {}
+    func seek(to position: TimeInterval) async {}
+    func setVolume(_ volume: Double) async {}
+}
+
+private struct CurrentTrackAppleMusicProvider: AppleMusicProviding {
+    let title: String
+
+    func isRunning() async -> Bool { true }
+
+    func requestSnapshot() async throws -> AppleMusicSnapshot {
+        AppleMusicSnapshot(
+            isRunning: true,
+            track: MusicTrack.appleMusic(
+                title: title,
+                artist: "测试歌手",
+                album: nil,
+                duration: 200
+            ),
+            state: .playing,
+            position: 12,
+            volume: 0.5
+        )
+    }
+
+    func artworkURL(for trackID: String) async -> URL? { nil }
+    func play() async {}
+    func playPause() async {}
+    func pause() async {}
+    func previous() async {}
+    func next() async {}
+    func seek(to position: TimeInterval) async {}
+    func setVolume(_ volume: Double) async {}
+}
+
+private actor AdvancingAppleMusicProvider: AppleMusicProviding {
+    private var snapshots = 0
+
+    func isRunning() async -> Bool { true }
+
+    func snapshotCount() -> Int { snapshots }
+
+    func requestSnapshot() async throws -> AppleMusicSnapshot {
+        snapshots += 1
+        let isNextTrack = snapshots >= 2
+        return AppleMusicSnapshot(
+            isRunning: true,
+            track: MusicTrack.appleMusic(
+                title: isNextTrack ? "下一首" : "上一首",
+                artist: "测试歌手",
+                album: nil,
+                duration: 200
+            ),
+            state: .playing,
+            position: isNextTrack ? 1 : 199,
+            volume: 0.5
         )
     }
 

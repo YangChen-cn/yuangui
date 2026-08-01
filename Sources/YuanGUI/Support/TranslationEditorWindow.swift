@@ -103,7 +103,6 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
     private let window: NSPanel
     private let store: TranslationEditorStore
     private let layoutModel: TranslationWindowLayoutModel
-    private let windowActivator: ApplicationWindowActivating
     private let onClose: () -> Void
     private let targetScreen: NSScreen?
     private var cancellables = Set<AnyCancellable>()
@@ -126,11 +125,9 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
         speechService: SpeechSynthesisServicing? = nil,
         petEventHandler: PetTranslationEventHandling? = nil,
         interactionSource: TranslationInteractionSource = .selection,
-        windowActivator: ApplicationWindowActivating? = nil,
         onClose: @escaping () -> Void
     ) {
         self.onClose = onClose
-        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         targetScreen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main
         let availableFrame = targetScreen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let savedWidth = Self.savedWidth(in: availableFrame)
@@ -186,7 +183,8 @@ final class TranslationEditorWindowController: NSObject, NSWindowDelegate, Scree
     }
 
     func show() {
-        windowActivator.present(window, makeMain: true)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     func close() {

@@ -22,7 +22,6 @@ final class QuickToolsController: ObservableObject {
     private let selectedTextProvider: SelectedTextProviding
     private weak var aiSettings: AISettingsStore?
     private let petTranslationEvents: PetTranslationEventHandling?
-    private let windowActivator: ApplicationWindowActivating
     private var screenshotEditor: ScreenshotEditorWindowController?
     private var translationEditor: TranslationEditorWindowController?
     private var translationEditorPresentationID: UUID?
@@ -34,8 +33,7 @@ final class QuickToolsController: ObservableObject {
         ocrService: OCRTextRecognizing = VisionOCRService(),
         selectedTextProvider: SelectedTextProviding? = nil,
         aiSettings: AISettingsStore? = nil,
-        petTranslationEvents: PetTranslationEventHandling? = nil,
-        windowActivator: ApplicationWindowActivating? = nil
+        petTranslationEvents: PetTranslationEventHandling? = nil
     ) {
         self.settings = settings ?? QuickToolsSettingsStore()
         self.captureService = captureService
@@ -43,7 +41,6 @@ final class QuickToolsController: ObservableObject {
         self.selectedTextProvider = selectedTextProvider ?? AccessibilitySelectedTextProvider()
         self.aiSettings = aiSettings
         self.petTranslationEvents = petTranslationEvents
-        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
     }
 
     func start() {
@@ -182,7 +179,6 @@ final class QuickToolsController: ObservableObject {
                 let controller = ScreenshotEditorWindowController(
                     image: captured.image,
                     directoryPath: { [weak self] in self?.settings.screenshotDirectoryPath ?? "" },
-                    windowActivator: windowActivator,
                     onClose: { [weak self] in self?.screenshotEditor = nil }
                 )
                 screenshotEditor = controller
@@ -199,7 +195,6 @@ final class QuickToolsController: ObservableObject {
                         engine: settings.translationEngine,
                         onlineConfiguration: onlineTranslationConfiguration,
                         petEventHandler: petTranslationEvents,
-                        windowActivator: windowActivator,
                         onClose: { [weak self] in self?.screenshotTranslationOverlay = nil }
                     )
                     screenshotTranslationOverlay = controller
@@ -269,7 +264,6 @@ final class QuickToolsController: ObservableObject {
             onlineConfiguration: onlineTranslationConfiguration,
             petEventHandler: petTranslationEvents,
             interactionSource: interactionSource,
-            windowActivator: windowActivator,
             onClose: { [weak self] in
                 guard self?.translationEditorPresentationID == presentationID else { return }
                 self?.translationEditor = nil

@@ -67,6 +67,8 @@ extension MusicPlaybackCoordinator {
     func finishAppleSyncTask(generation: UInt) {
         guard appleSyncGeneration == generation else { return }
         appleSyncTask = nil
+        guard !isShuttingDown, activePlaybackSource == .appleMusic else { return }
+        startAppleSyncTask()
     }
 
     func runAppleSyncLoop(generation: UInt) async {
@@ -136,6 +138,9 @@ extension MusicPlaybackCoordinator {
         defer { finishAppleClockTask(generation: generation) }
         while !Task.isCancelled {
             guard activePlaybackSource == .appleMusic, playbackState.isPlaying else { return }
+            // The progress clock remains alive at a track boundary even if a
+            // separately owned polling task was cancelled unexpectedly.
+            startAppleSyncTask()
             let now = Date.timeIntervalSinceReferenceDate
             if let lastAppleClockTime {
                 let elapsed = min(max(now - lastAppleClockTime, 0), 1)
@@ -164,11 +169,17 @@ extension MusicPlaybackCoordinator {
         }
     }
 
-    func scheduleAppleRefresh() {
+    func resumeAppleMusicSynchronization() {
+        guard !isShuttingDown, activePlaybackSource == .appleMusic else { return }
+        startAppleSyncTask()
+        scheduleAppleRefresh(after: .zero)
+    }
+
+    func scheduleAppleRefresh(after delay: Duration = .milliseconds(250)) {
         guard !isShuttingDown else { return }
         appleRefreshTask?.cancel()
         appleRefreshTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            do { try await Task.sleep(for: delay) } catch { return }
             await self?.refreshAppleMusic()
         }
     }

@@ -10,16 +10,13 @@ private final class MusicPlayerWindow: NSWindow {
 final class MusicWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
     private let onClose: () -> Void
-    private let windowActivator: ApplicationWindowActivating
 
     init(
         music: MusicFeature,
         appActions: AppActions = .disabled,
-        windowActivator: ApplicationWindowActivating? = nil,
         onClose: @escaping () -> Void = {}
     ) {
         self.onClose = onClose
-        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         window = MusicPlayerWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -45,7 +42,17 @@ final class MusicWindowController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        windowActivator.present(window, makeMain: true)
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        // Activation of an accessory app and dismissal of its source panel can
+        // finish one run-loop turn later. Reassert key/main status only if needed.
+        DispatchQueue.main.async { [weak window] in
+            guard let window, window.isVisible, !window.isKeyWindow else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.makeMain()
+        }
     }
 }
 

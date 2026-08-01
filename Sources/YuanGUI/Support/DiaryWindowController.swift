@@ -10,27 +10,23 @@ private final class DiaryWindow: NSWindow {
 final class DiaryWindowController: NSObject, NSWindowDelegate {
     private let store: DiaryFeature
     private let onClose: () -> Void
-    private let windowActivator: ApplicationWindowActivating
     private var window: NSWindow?
     private var quickEntryWindow: NSWindow?
     private var allowClose = false
     private var closeTask: Task<Void, Never>?
     private var didNotifyIdle = false
 
-    init(
-        store: DiaryFeature,
-        windowActivator: ApplicationWindowActivating? = nil,
-        onClose: @escaping () -> Void = {}
-    ) {
+    init(store: DiaryFeature, onClose: @escaping () -> Void = {}) {
         self.store = store
-        self.windowActivator = windowActivator ?? ApplicationWindowActivator()
         self.onClose = onClose
         super.init()
     }
 
     func show() {
         if let window {
-            windowActivator.present(window, makeMain: true)
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
 
@@ -48,13 +44,19 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.contentView = NSHostingView(rootView: DiaryMainView(store: store))
         didNotifyIdle = false
-        windowActivator.present(window, makeMain: true)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            window.makeKey()
+            window.makeMain()
+        }
         self.window = window
     }
 
     func showQuickEntry() {
         if let quickEntryWindow {
-            windowActivator.present(quickEntryWindow, makeMain: true)
+            quickEntryWindow.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
 
@@ -85,7 +87,8 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         )
         didNotifyIdle = false
         quickEntryWindow = window
-        windowActivator.present(window, makeMain: true)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
