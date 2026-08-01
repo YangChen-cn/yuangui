@@ -55,4 +55,19 @@ final class WindowActivationTests: XCTestCase {
             isNonactivatingPanel: false
         ))
     }
+
+    func testActivationCoordinatesOnlyWhenAnotherApplicationIsFrontmost() {
+        XCTAssertTrue(ApplicationWindowActivator.shouldCoordinateActivation(
+            currentProcessID: 42,
+            frontmostProcessID: 7
+        ))
+        XCTAssertFalse(ApplicationWindowActivator.shouldCoordinateActivation(
+            currentProcessID: 42,
+            frontmostProcessID: 42
+        ))
+        XCTAssertFalse(ApplicationWindowActivator.shouldCoordinateActivation(
+            currentProcessID: 42,
+            frontmostProcessID: nil
+        ))
+    }
 }

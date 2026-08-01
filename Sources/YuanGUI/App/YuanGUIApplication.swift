@@ -293,7 +293,10 @@ final class WindowCoordinator: NSObject {
             showMaintenance()
         case .music:
             dashboardController?.hide()
-            DispatchQueue.main.async { [weak self] in self?.showMusic() }
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                self?.showMusic()
+            }
         case .diary:
             dashboardController?.hide()
             showDiary()

@@ -106,6 +106,9 @@ final class StatusDashboardPanelController {
 
     func hide() {
         hostModel.isPresented = false
+        if panel.isKeyWindow {
+            panel.resignKey()
+        }
         panel.orderOut(nil)
         removeClickMonitors()
         store.monitor.setDashboardVisible(false)
