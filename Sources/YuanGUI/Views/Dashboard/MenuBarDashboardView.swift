@@ -93,9 +93,17 @@ private struct DashboardLayoutContainer: View {
     }
 
     var body: some View {
+        let height = min(
+            DashboardPanelLayout.height(
+                for: panelState.selectedSection,
+                musicSource: playback.source,
+                maximumHeight: maximumHeight
+            ),
+            maximumHeight
+        )
+
         DashboardContentRoot(
             width: width,
-            maximumHeight: maximumHeight,
             store: store,
             focusTimer: focusTimer,
             music: music,
@@ -111,15 +119,10 @@ private struct DashboardLayoutContainer: View {
         )
         .frame(
             width: width,
-            height: min(
-                DashboardPanelLayout.height(
-                    for: panelState.selectedSection,
-                    musicSource: playback.source,
-                    maximumHeight: maximumHeight
-                ),
-                maximumHeight
-            )
+            height: height,
+            alignment: .top
         )
+        .background { DashboardAtmosphereContainer(store: store) }
         .onChange(of: panelState.selectedSection) { _, section in
             layoutDidChange(section, playback.source)
         }
@@ -140,7 +143,6 @@ private struct DashboardLayoutContainer: View {
 
 private struct DashboardContentRoot: View {
     let width: CGFloat
-    let maximumHeight: CGFloat
     let store: PetStore
     let focusTimer: FocusTimerStore
     let music: MusicFeature
@@ -183,7 +185,6 @@ private struct DashboardContentRoot: View {
         }
         .padding(DashboardDesign.outerPadding)
         .frame(width: width, alignment: .top)
-        .background { DashboardAtmosphereContainer(store: store) }
         .onExitCommand(perform: dismiss)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("元圭与 VCC 快速控制中心")

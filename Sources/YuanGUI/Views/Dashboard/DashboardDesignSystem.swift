@@ -3,7 +3,7 @@ import SwiftUI
 enum DashboardDesign {
     static let preferredWidth: CGFloat = 420
     static let preferredHeight: CGFloat = 448
-    static let appleMusicHeight: CGFloat = 460
+    static let appleMusicHeight: CGFloat = 400
     static let expandedHeight: CGFloat = 520
     static let minimumWidth: CGFloat = 390
     static let minimumHeight: CGFloat = 420

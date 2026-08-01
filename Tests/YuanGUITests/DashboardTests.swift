@@ -8,7 +8,7 @@ final class DashboardTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(DashboardDesign.preferredWidth, 400)
         XCTAssertLessThanOrEqual(DashboardDesign.preferredWidth, 430)
         XCTAssertEqual(DashboardDesign.preferredHeight, 448, accuracy: 8)
-        XCTAssertEqual(DashboardDesign.appleMusicHeight, 460, accuracy: 8)
+        XCTAssertEqual(DashboardDesign.appleMusicHeight, 400, accuracy: 8)
         XCTAssertEqual(DashboardDesign.expandedHeight, 520, accuracy: 8)
         XCTAssertEqual(DashboardDesign.navigationHeight, 34, accuracy: 0.001)
         XCTAssertLessThanOrEqual(DashboardDesign.navigationHeight, 36)
@@ -56,7 +56,7 @@ final class DashboardTests: XCTestCase {
         XCTAssertEqual(DashboardDesign.preferredHeight(for: .music), 520)
         XCTAssertEqual(
             DashboardDesign.preferredHeight(for: .music, musicSource: .appleMusic),
-            460
+            400
         )
         XCTAssertEqual(
             DashboardDesign.preferredHeight(for: .music, musicSource: .bilibili),
@@ -73,7 +73,7 @@ final class DashboardTests: XCTestCase {
                 section: .music,
                 musicSource: .appleMusic
             ).height,
-            460
+            400
         )
         XCTAssertEqual(DashboardPanelLayout.size(in: visible, section: .tools).height, 520)
     }
