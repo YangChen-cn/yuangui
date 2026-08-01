@@ -190,7 +190,14 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertFalse(UpdateSourceAvailabilityError.isFallbackHTTPStatus(401))
     }
 
-    func testManifestDecodesAndValidatesStrictAssetMetadata() throws {
+    func testManifestValidationScenarios() throws {
+        try runManifestDecodesAndValidatesStrictAssetMetadata()
+        try runManifestRejectsInsecureOrMalformedAsset()
+        try runManifestRejectsPrereleaseVersionOnStableChannel()
+        try runSHA256StreamsLargeFixtureAndReturnsLowercaseHex()
+    }
+
+    private func runManifestDecodesAndValidatesStrictAssetMetadata() throws {
         let json = Data("""
         {
           "schemaVersion": 1,
@@ -214,7 +221,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(manifest.assets.first?.size, 1024)
     }
 
-    func testManifestRejectsInsecureOrMalformedAsset() throws {
+    private func runManifestRejectsInsecureOrMalformedAsset() throws {
         let base = """
         {
           "schemaVersion": 1,
@@ -244,7 +251,7 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
-    func testManifestRejectsPrereleaseVersionOnStableChannel() throws {
+    private func runManifestRejectsPrereleaseVersionOnStableChannel() throws {
         let json = Data("""
         {
           "schemaVersion": 1,
@@ -265,7 +272,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertThrowsError(try UpdateManifestCodec.decodeAndValidate(jsonData: json))
     }
 
-    func testSHA256StreamsLargeFixtureAndReturnsLowercaseHex() throws {
+    private func runSHA256StreamsLargeFixtureAndReturnsLowercaseHex() throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("yuangui-sha256-(UUID().uuidString).fixture")
         let data = Data(repeating: 0x5A, count: 2 * 1024 * 1024 + 17)
@@ -277,7 +284,19 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(try sha256(of: fileURL), try sha256(of: fileURL).lowercased())
     }
 
-    func testDualSourceKeepsValidGiteeManifestWhenGitHubIsUnavailable() async throws {
+    func testManifestSourceSelectionScenarios() async throws {
+        try await runDualSourceKeepsValidGiteeManifestWhenGitHubIsUnavailable()
+        await runUnsupportedGitHubManifestDoesNotRequestGiteeOrReleaseAPI()
+        try await runGitHubManifestWinsAndDoesNotRequestGiteeWhenGiteeIsNewer()
+        try await runHedgedGiteeCannotOverrideGitHubBeforePrimaryDeadline()
+        try await runHedgedGiteeIsUsedWhenGitHubMissesPrimaryDeadline()
+        try await runLateValidGitHubManifestSurvivesGiteeValidationFailure()
+        await runInvalidGitHubManifestDoesNotRequestGitee()
+        try await runGitHubAPIIsUsedOnlyWhenBothManifestsFail()
+        try await runManualManifestResultDoesNotRequireGitHubReleaseNotes()
+    }
+
+    private func runDualSourceKeepsValidGiteeManifestWhenGitHubIsUnavailable() async throws {
         let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
         let fetcher = FakeUpdateSourceFetcher(gitee: .update(gitee), github: .timedOut)
         let service = AppUpdateService(sourceFetcher: fetcher)
@@ -294,7 +313,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(giteeCalls, 1)
     }
 
-    func testUnsupportedGitHubManifestDoesNotRequestGiteeOrReleaseAPI() async {
+    private func runUnsupportedGitHubManifestDoesNotRequestGiteeOrReleaseAPI() async {
         let fetcher = FakeUpdateSourceFetcher(
             github: .unsupportedSystemVersion,
             api: .update(makeAvailableUpdate("99.9.9"))
@@ -314,7 +333,7 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
-    func testGitHubManifestWinsAndDoesNotRequestGiteeWhenGiteeIsNewer() async throws {
+    private func runGitHubManifestWinsAndDoesNotRequestGiteeWhenGiteeIsNewer() async throws {
         let github = makeAvailableUpdate("99.9.8", provider: .github)
         let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
         let fetcher = FakeUpdateSourceFetcher(
@@ -333,7 +352,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(giteeCalls, 0)
     }
 
-    func testHedgedGiteeCannotOverrideGitHubBeforePrimaryDeadline() async throws {
+    private func runHedgedGiteeCannotOverrideGitHubBeforePrimaryDeadline() async throws {
         let github = makeAvailableUpdate("99.9.8", provider: .github)
         let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
         let fetcher = FakeUpdateSourceFetcher(
@@ -361,7 +380,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(giteeCalls, 1)
     }
 
-    func testHedgedGiteeIsUsedWhenGitHubMissesPrimaryDeadline() async throws {
+    private func runHedgedGiteeIsUsedWhenGitHubMissesPrimaryDeadline() async throws {
         let github = makeAvailableUpdate("99.9.8", provider: .github)
         let gitee = makeAvailableUpdate("99.9.9", provider: .gitee)
         let fetcher = FakeUpdateSourceFetcher(
@@ -390,7 +409,32 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(giteeCalls, 1)
     }
 
-    func testInvalidGitHubManifestDoesNotRequestGitee() async {
+    private func runLateValidGitHubManifestSurvivesGiteeValidationFailure() async throws {
+        let github = makeAvailableUpdate("99.9.8", provider: .github)
+        let fetcher = FakeUpdateSourceFetcher(
+            gitee: .invalidManifest,
+            github: .update(github),
+            manifestDelays: [
+                .github: .milliseconds(500)
+            ]
+        )
+        let service = AppUpdateService(
+            sourceFetcher: fetcher,
+            manifestHedge: UpdateManifestHedgeConfiguration(
+                giteeStartDelay: .milliseconds(100),
+                githubPrimaryDeadline: .milliseconds(250),
+                automaticBackupDeadline: .seconds(1)
+            )
+        )
+
+        let result = try await service.checkForUpdate()
+        guard case .available(let update, _) = result else {
+            return XCTFail("A valid late GitHub manifest should survive a Gitee validation failure")
+        }
+        XCTAssertEqual(update.version, "99.9.8")
+    }
+
+    private func runInvalidGitHubManifestDoesNotRequestGitee() async {
         let fetcher = FakeUpdateSourceFetcher(
             gitee: .update(makeAvailableUpdate("99.9.9", provider: .gitee)),
             github: .invalidManifest
@@ -408,7 +452,7 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
-    func testGitHubAPIIsUsedOnlyWhenBothManifestsFail() async throws {
+    private func runGitHubAPIIsUsedOnlyWhenBothManifestsFail() async throws {
         let apiBase = makeAvailableUpdate("99.9.9", provider: .github)
         let apiUpdate = AvailableUpdate(
             version: apiBase.version,
@@ -432,7 +476,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(apiCalls, 1)
     }
 
-    func testManualManifestResultDoesNotRequireGitHubReleaseNotes() async throws {
+    private func runManualManifestResultDoesNotRequireGitHubReleaseNotes() async throws {
         let manifestUpdate = makeAvailableUpdate(
             "99.9.9",
             provider: .gitee,
@@ -453,7 +497,15 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(apiCalls, 0)
     }
 
-    func testGitHubDMGSuccessDoesNotTryGitee() async throws {
+    func testDownloadSourceSelectionScenarios() async throws {
+        try await runGitHubDMGSuccessDoesNotTryGitee()
+        try await runGiteeManifestDownloadsGiteeBeforeGitHub()
+        try await runGitHubDMGNetworkFailureFallsBackToGitee()
+        await runGitHubDMGIntegrityFailureDoesNotTryGitee()
+        await runGitHubAndGiteeDownloadNetworkFailuresReturnStableError()
+    }
+
+    private func runGitHubDMGSuccessDoesNotTryGitee() async throws {
         let preparer = FakeAssetPreparer(results: [.github: .success, .gitee: .availability(.timedOut)])
         let service = AppUpdateService(assetPreparer: { asset, update in
             try await preparer.prepare(asset: asset, update: update)
@@ -464,7 +516,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(attempts, [.github])
     }
 
-    func testGiteeManifestDownloadsGiteeBeforeGitHub() async throws {
+    private func runGiteeManifestDownloadsGiteeBeforeGitHub() async throws {
         let preparer = FakeAssetPreparer(results: [
             .gitee: .success,
             .github: .availability(.timedOut)
@@ -480,7 +532,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(attempts, [.gitee])
     }
 
-    func testGitHubDMGNetworkFailureFallsBackToGitee() async throws {
+    private func runGitHubDMGNetworkFailureFallsBackToGitee() async throws {
         let preparer = FakeAssetPreparer(results: [
             .github: .availability(.cannotConnectToHost),
             .gitee: .success
@@ -495,7 +547,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(attempts, [.github, .gitee])
     }
 
-    func testGitHubDMGIntegrityFailureDoesNotTryGitee() async {
+    private func runGitHubDMGIntegrityFailureDoesNotTryGitee() async {
         let failures: [FakeAssetPreparer.ResultValue] = [
             .checksumMismatch,
             .checksumUnavailable,
@@ -524,7 +576,7 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
-    func testGitHubAndGiteeDownloadNetworkFailuresReturnStableError() async {
+    private func runGitHubAndGiteeDownloadNetworkFailuresReturnStableError() async {
         let preparer = FakeAssetPreparer(results: [
             .github: .availability(.timedOut),
             .gitee: .availability(.httpStatus(503))
@@ -621,7 +673,14 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
-    func testGitHubReleaseDecodesNotesAndFindsDMG() throws {
+    func testReleaseNotesAndGitHubDecodeScenarios() async throws {
+        try runGitHubReleaseDecodesNotesAndFindsDMG()
+        try runGitHubReleaseSelectsLocalizedReleaseNotesAsset()
+        try await runManualCheckReturnsCompleteLocalizedReleaseNotes()
+        runReleaseNotesKeepGitHubMarkdownStructure()
+    }
+
+    private func runGitHubReleaseDecodesNotesAndFindsDMG() throws {
         let data = Data(#"{"tag_name":"v1.0.2","name":"元圭与 VCC 1.0.2","body":"更新日志","html_url":"https://github.com/YangChen-cn/yuangui/releases/tag/v1.0.2","assets":[{"name":"YuanGUI-1.0.2.dmg","browser_download_url":"https://github.com/YangChen-cn/yuangui/releases/download/v1.0.2/YuanGUI-1.0.2.dmg","size":1234}]}"#.utf8)
         let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
 
@@ -630,7 +689,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(release.dmgAsset?.name, "YuanGUI-1.0.2.dmg")
     }
 
-    func testGitHubReleaseSelectsLocalizedReleaseNotesAsset() throws {
+    private func runGitHubReleaseSelectsLocalizedReleaseNotesAsset() throws {
         let data = Data(#"{"tag_name":"v2.7.0","name":"YuanGUI 2.7.0","body":"English fallback","html_url":"https://github.com/YangChen-cn/yuangui/releases/tag/v2.7.0","assets":[{"name":"RELEASE_NOTES.md","browser_download_url":"https://github.com/YangChen-cn/yuangui/releases/download/v2.7.0/RELEASE_NOTES.md","size":10},{"name":"RELEASE_NOTES.zh-CN.md","browser_download_url":"https://github.com/YangChen-cn/yuangui/releases/download/v2.7.0/RELEASE_NOTES.zh-CN.md","size":12}]}"#.utf8)
         let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
 
@@ -639,7 +698,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertNotNil(release.releaseNotesAsset(for: .system))
     }
 
-    func testManualCheckReturnsCompleteLocalizedReleaseNotes() async throws {
+    private func runManualCheckReturnsCompleteLocalizedReleaseNotes() async throws {
         let releaseURL = AppUpdateService.latestReleaseURL
         let notesURL = URL(string: "https://github.com/YangChen-cn/yuangui/releases/download/v99.9.9/RELEASE_NOTES.zh-CN.md")!
         let releaseData = Data("""
@@ -694,7 +753,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(notes).contains("第三条完整中文说明"))
     }
 
-    func testReleaseNotesKeepGitHubMarkdownStructure() {
+    private func runReleaseNotesKeepGitHubMarkdownStructure() {
         let rows = ReleaseNoteRow.parse("""
         ## 改进
         - 修复播放器布局

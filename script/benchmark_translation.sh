@@ -12,7 +12,7 @@ env \
   CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/yuangui-clang-module-cache" \
   SWIFTPM_MODULECACHE_OVERRIDE="${TMPDIR:-/tmp}/yuangui-swiftpm-module-cache" \
   YUANGUI_TRANSLATION_BENCHMARK=1 \
-  swift test --filter TranslationBenchmarkTests/testOfflineTranslationBenchmarkEmitsJSON \
+  swift test --filter YuanGUIBenchmarks.TranslationBenchmarkTests/testOfflineTranslationBenchmarkEmitsJSON \
   2>&1 | tee "$result_log" >&2
 
 report="$(sed -n 's/^YUANGUI_BENCHMARK_JSON=//p' "$result_log" | tail -n 1)"

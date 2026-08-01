@@ -79,7 +79,14 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(clampedWidth, PetLayout.maximumMusicLyricBubbleWidth)
     }
 
-    func testChatterPeriodBoundariesUseExpectedTimeBuckets() throws {
+    func testChatterAndCompanionMessageScenarios() throws {
+        try runChatterPeriodBoundariesUseExpectedTimeBuckets()
+        runChatterSelectorAvoidsFiveRecentIDsAndReleasesOldestWhenNeeded()
+        try runAmbientChatterIncludesCurrentPeriodForEveryCompanionMode()
+        runDiarySavedMessagesAreDistinctForEveryPetMode()
+    }
+
+    private func runChatterPeriodBoundariesUseExpectedTimeBuckets() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
         func date(hour: Int, minute: Int = 0) throws -> Date {
@@ -100,7 +107,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(PetChatterPeriod.resolve(at: try date(hour: 4, minute: 59), calendar: calendar), .lateNight)
     }
 
-    func testChatterSelectorAvoidsFiveRecentIDsAndReleasesOldestWhenNeeded() {
+    private func runChatterSelectorAvoidsFiveRecentIDsAndReleasesOldestWhenNeeded() {
         let candidates = (0..<6).map {
             PetChatterCandidate(id: "line-\($0)", text: "Line \($0)")
         }
@@ -126,7 +133,7 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testAmbientChatterIncludesCurrentPeriodForEveryCompanionMode() throws {
+    private func runAmbientChatterIncludesCurrentPeriodForEveryCompanionMode() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
         let morning = try XCTUnwrap(calendar.date(from: DateComponents(
@@ -148,7 +155,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testDiarySavedMessagesAreDistinctForEveryPetMode() {
+    private func runDiarySavedMessagesAreDistinctForEveryPetMode() {
         let yuanGuiMessages = Set(PetStore.diarySavedMessages(for: .yuanGui))
         let vccMessages = Set(PetStore.diarySavedMessages(for: .vcc))
         let duoMessages = Set(PetStore.diarySavedMessages(for: .duo))
@@ -161,7 +168,15 @@ final class PetStoreTests: XCTestCase {
         XCTAssertTrue(vccMessages.isDisjoint(with: duoMessages))
     }
 
-    func testFreshStoreDefaultsToDuo() {
+    func testStoreLifecycleScenarios() {
+        runFreshStoreDefaultsToDuo()
+        runDynamicIdleStaysOnBreathingSequenceWhileStaticModeRotatesArtwork()
+        runFocusModeSuppressesNonUrgentBubblesButKeepsUrgentWarnings()
+        runAutomaticChatterUsesChatActionWhileAIChatKeepsItsStaticChatPose()
+        runMotionToggleSelectsAnimatedIdleWithoutChangingPetScale()
+    }
+
+    private func runFreshStoreDefaultsToDuo() {
         let fake = FakeTrashHandler()
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -182,7 +197,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertTrue(store.weatherAnnouncementsEnabled)
     }
 
-    func testDynamicIdleStaysOnBreathingSequenceWhileStaticModeRotatesArtwork() {
+    private func runDynamicIdleStaysOnBreathingSequenceWhileStaticModeRotatesArtwork() {
         let suite = "PetStoreDynamicIdleTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -205,7 +220,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.actionIndex, 1)
     }
 
-    func testFocusModeSuppressesNonUrgentBubblesButKeepsUrgentWarnings() {
+    private func runFocusModeSuppressesNonUrgentBubblesButKeepsUrgentWarnings() {
         let suite = "PetStoreFocusTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -234,7 +249,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.currentAction.file, "19-maintenance-success")
     }
 
-    func testAutomaticChatterUsesChatActionWhileAIChatKeepsItsStaticChatPose() {
+    private func runAutomaticChatterUsesChatActionWhileAIChatKeepsItsStaticChatPose() {
         let suite = "PetStoreSpeakingActionTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -266,7 +281,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertNil(store.ambientMessage)
     }
 
-    func testMotionToggleSelectsAnimatedIdleWithoutChangingPetScale() {
+    private func runMotionToggleSelectsAnimatedIdleWithoutChangingPetScale() {
         let suite = "PetStoreMotionToggleTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -312,7 +327,14 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.toast, AppLocalizer.string("已显示桌面图标"))
     }
 
-    func testAmbientChatterPreferencesClampAndPersist() {
+    func testPetPreferencesAndThemePersistenceScenarios() {
+        runAmbientChatterPreferencesClampAndPersist()
+        runModeAndStatusPersist()
+        runFreshStoreDefaultsToLiquidGlassDashboardStyle()
+        runUpgradeForcesLiquidGlassOnceThenPreservesLaterThemeChoice()
+    }
+
+    private func runAmbientChatterPreferencesClampAndPersist() {
         let suite = "PetStoreChatterTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -364,7 +386,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.toast, "已将 2 个项目移入废纸篓")
     }
 
-    func testModeAndStatusPersist() {
+    private func runModeAndStatusPersist() {
         let fake = FakeTrashHandler()
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -389,7 +411,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(defaults.bool(forKey: "petMotionEnabled"))
     }
 
-    func testFreshStoreDefaultsToLiquidGlassDashboardStyle() {
+    private func runFreshStoreDefaultsToLiquidGlassDashboardStyle() {
         let suite = "PetStoreDashboardStyleTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -405,7 +427,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: PetStore.liquidGlassThemeMigrationKey))
     }
 
-    func testUpgradeForcesLiquidGlassOnceThenPreservesLaterThemeChoice() {
+    private func runUpgradeForcesLiquidGlassOnceThenPreservesLaterThemeChoice() {
         let suite = "PetStoreDashboardStyleMigrationTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -435,7 +457,13 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.dashboardStyle, .mint)
     }
 
-    func testHiddenPetSuppressesAmbientMessagesAndClearsVisibleMessage() {
+    func testPetPresentationAndInteractionLockScenarios() {
+        runHiddenPetSuppressesAmbientMessagesAndClearsVisibleMessage()
+        runInteractionKeepsSystemStatusVisible()
+        runInteractionLockPersistsAndPreventsActionChange()
+    }
+
+    private func runHiddenPetSuppressesAmbientMessagesAndClearsVisibleMessage() {
         let suite = "PetStorePresentationTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -457,7 +485,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertNil(store.ambientMessage)
     }
 
-    func testInteractionKeepsSystemStatusVisible() {
+    private func runInteractionKeepsSystemStatusVisible() {
         let fake = FakeTrashHandler()
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -475,7 +503,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertTrue(store.showsSystemStatus)
     }
 
-    func testInteractionLockPersistsAndPreventsActionChange() {
+    private func runInteractionLockPersistsAndPreventsActionChange() {
         let fake = FakeTrashHandler()
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -554,7 +582,18 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(store.activeSmartStates.contains(.bedtime))
     }
 
-    func testPetScaleClampsAndPersists() {
+    func testPetScaleAndControlGeometryScenarios() {
+        runPetScaleClampsAndPersists()
+        runMiniPetScalesItsStatusBubbleAndPanel()
+        runAuxiliaryBubbleFollowsPetAcrossSpaces()
+        runCompactPetCanUseTransparentTopInsetButBubblesStayVisible()
+        runBottomToolbarPanelSizeMatchesItsFiveButtons()
+        runDefaultAndCompactControlScales()
+        runCompactSideControlsDoNotOverlapBottomToolbar()
+        runMaintenanceBubbleUsesCompactQuickSurface()
+    }
+
+    private func runPetScaleClampsAndPersists() {
         let fake = FakeTrashHandler()
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -573,7 +612,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.petScale, 0.5)
     }
 
-    func testMiniPetScalesItsStatusBubbleAndPanel() {
+    private func runMiniPetScalesItsStatusBubbleAndPanel() {
         XCTAssertEqual(PetLayout.compactBubbleScale(scale: 0.50), 0.82, accuracy: 0.001)
         XCTAssertEqual(PetLayout.compactBubbleScale(scale: 0.60), 0.91, accuracy: 0.001)
         XCTAssertEqual(PetLayout.compactBubbleScale(scale: 0.70), 1.00, accuracy: 0.001)
@@ -587,14 +626,14 @@ final class PetStoreTests: XCTestCase {
         XCTAssertLessThan(mini.height, small.height)
     }
 
-    func testAuxiliaryBubbleFollowsPetAcrossSpaces() {
+    private func runAuxiliaryBubbleFollowsPetAcrossSpaces() {
         let behavior = PetPanelController.auxiliaryBubbleCollectionBehavior
         XCTAssertTrue(behavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(behavior.contains(.fullScreenAuxiliary))
         XCTAssertFalse(behavior.contains(.moveToActiveSpace))
     }
 
-    func testCompactPetCanUseTransparentTopInsetButBubblesStayVisible() {
+    private func runCompactPetCanUseTransparentTopInsetButBubblesStayVisible() {
         XCTAssertEqual(
             PetLayout.allowedTopOverflow(scale: 1, showsBubble: false, showsChat: false, showsMaintenance: false),
             PetLayout.compactTopTransparentInset
@@ -609,14 +648,27 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testBottomToolbarPanelSizeMatchesItsFiveButtons() {
+    private func runBottomToolbarPanelSizeMatchesItsFiveButtons() {
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 160)
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 70)
         XCTAssertEqual(PetLayout.lockedControlPanelSize.width, 48)
         XCTAssertEqual(PetLayout.lockedControlPanelSize.height, 48)
     }
 
-    func testPanelResizePreservesPetVisualAnchor() {
+    func testPetWindowGeometryScenarios() {
+        runPanelResizePreservesPetVisualAnchor()
+        runChatResizeClampsWholePanelWhenPetIsParkedAtDisplayEdge()
+        runClosingChatRestoresOriginalPetAnchorAtDisplayEdges()
+        runChatClosePullsPetBackOnlyWhenCharacterWouldBeInvisible()
+        runCompactPanelConstraintKeepsTransparentMarginsOutsideScreen()
+        runChatUsableFrameKeepsComposerAwayFromScreenEdges()
+        runAuxiliaryBubbleFlipsBelowPetNearTopEdge()
+        runAuxiliaryBubbleUsesSmallTopOverlap()
+        runVisiblePetFrameUsesCurrentSpritesOpaqueBounds()
+        runChatComposerReservesCharacterClearance()
+    }
+
+    private func runPanelResizePreservesPetVisualAnchor() {
         let oldPanel = CGRect(x: 320, y: 180, width: 405, height: 292.5)
         let oldVisual = PetLayout.petVisualFrame(
             panelFrame: oldPanel,
@@ -644,7 +696,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(resizedVisual.minY, oldVisual.minY, accuracy: 0.001)
     }
 
-    func testChatResizeClampsWholePanelWhenPetIsParkedAtDisplayEdge() {
+    private func runChatResizeClampsWholePanelWhenPetIsParkedAtDisplayEdge() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let usable = PetLayout.usablePanelFrame(in: visible, showsChat: true)
         let targetSize = PetLayout.panelSize(scale: 0.75, showsBubble: false, showsChat: true)
@@ -664,7 +716,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testClosingChatRestoresOriginalPetAnchorAtDisplayEdges() {
+    private func runClosingChatRestoresOriginalPetAnchorAtDisplayEdges() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let compactSize = PetLayout.panelSize(
             scale: 0.75,
@@ -690,7 +742,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testChatClosePullsPetBackOnlyWhenCharacterWouldBeInvisible() {
+    private func runChatClosePullsPetBackOnlyWhenCharacterWouldBeInvisible() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let compactSize = PetLayout.panelSize(
             scale: 0.75,
@@ -708,7 +760,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(restored.y, visible.minY)
     }
 
-    func testCompactPanelConstraintKeepsTransparentMarginsOutsideScreen() {
+    private func runCompactPanelConstraintKeepsTransparentMarginsOutsideScreen() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let scale = 0.75
         let compactSize = PetLayout.panelSize(
@@ -746,7 +798,7 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testChatUsableFrameKeepsComposerAwayFromScreenEdges() {
+    private func runChatUsableFrameKeepsComposerAwayFromScreenEdges() {
         let visible = CGRect(x: -600, y: 24, width: 600, height: 900)
         let usable = PetLayout.usablePanelFrame(in: visible, showsChat: true)
         XCTAssertEqual(usable.minX, visible.minX + PetLayout.chatScreenEdgeInset)
@@ -756,7 +808,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(PetLayout.usablePanelFrame(in: visible, showsChat: false), visible)
     }
 
-    func testAuxiliaryBubbleFlipsBelowPetNearTopEdge() {
+    private func runAuxiliaryBubbleFlipsBelowPetNearTopEdge() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let pet = CGRect(x: 700, y: 500, width: 240, height: 280)
         let bubble = CGSize(width: 350, height: 120)
@@ -776,7 +828,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(layout.origin.x + bubble.width, visible.maxX)
     }
 
-    func testAuxiliaryBubbleUsesSmallTopOverlap() {
+    private func runAuxiliaryBubbleUsesSmallTopOverlap() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 900)
         let pet = CGRect(x: 460, y: 160, width: 245, height: 245)
         let bubble = CGSize(width: 350, height: 120)
@@ -796,7 +848,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertGreaterThan(layout.origin.y + bubble.height, pet.maxY)
     }
 
-    func testVisiblePetFrameUsesCurrentSpritesOpaqueBounds() {
+    private func runVisiblePetFrameUsesCurrentSpritesOpaqueBounds() {
         let sprite = CGRect(x: 100, y: 200, width: 326, height: 326)
         let normalized = CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.55)
         let visible = PetLayout.visiblePetFrame(
@@ -809,14 +861,14 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(visible.height, 179.3, accuracy: 0.001)
     }
 
-    func testChatComposerReservesCharacterClearance() {
+    private func runChatComposerReservesCharacterClearance() {
         XCTAssertGreaterThanOrEqual(PetLayout.chatPetBottomInset, 100)
         let panel = CGRect(x: 20, y: 30, width: 450, height: 506.5)
         let visual = PetLayout.petVisualFrame(panelFrame: panel, scale: 0.75, showsChat: true)
         XCTAssertEqual(visual.minY - panel.minY, PetLayout.chatPetBottomInset, accuracy: 0.001)
     }
 
-    func testDefaultAndCompactControlScales() {
+    private func runDefaultAndCompactControlScales() {
         XCTAssertEqual(PetLayout.defaultScale, 0.75)
         XCTAssertTrue(PetLayout.usesCompactControls(scale: 0.50))
         XCTAssertTrue(PetLayout.usesCompactControls(scale: 0.60))
@@ -824,7 +876,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(PetLayout.usesCompactControls(scale: PetLayout.defaultScale))
     }
 
-    func testCompactSideControlsDoNotOverlapBottomToolbar() {
+    private func runCompactSideControlsDoNotOverlapBottomToolbar() {
         for scale in [0.50, 0.60] {
             let panel = PetLayout.panelSize(scale: scale, showsBubble: true)
             XCTAssertGreaterThanOrEqual(
@@ -835,7 +887,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testMaintenanceBubbleUsesCompactQuickSurface() {
+    private func runMaintenanceBubbleUsesCompactQuickSurface() {
         let normal = PetLayout.panelSize(scale: PetLayout.defaultScale, showsBubble: false)
         let maintenance = PetLayout.panelSize(
             scale: PetLayout.defaultScale,
@@ -870,7 +922,20 @@ final class PetStoreTests: XCTestCase {
         XCTAssertLessThan(completionBubble.height, quickBubble.height)
     }
 
-    func testMaintenanceResizeClampsAndRestoresCompactOriginAtDisplayEdges() {
+    func testDockingAndRestoreGeometryScenarios() {
+        runMaintenanceResizeClampsAndRestoresCompactOriginAtDisplayEdges()
+        runEdgeDockingDetectsEveryScreenSideAndIgnoresCenter()
+        runDockingCandidateUsesTwoThresholds()
+        runDefaultDockEdgesOnlyIncludeLeftAndRight()
+        runPetVisualFrameMatchesRenderedImageArea()
+        runEdgePeekAndExpandedOriginsStayVisible()
+        runTuckedPetStartsWithOnlyItsEdgeStripVisible()
+        runEdgePeekUsesCompactPointerFootprint()
+        runRestoredPetArtworkIsMovedFullyInsideVisibleScreen()
+        runRestoredExpandedPanelUsesOnlyBoundedHorizontalOverflow()
+    }
+
+    private func runMaintenanceResizeClampsAndRestoresCompactOriginAtDisplayEdges() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let scale = PetLayout.defaultScale
         let compactSize = PetLayout.panelSize(scale: scale, showsBubble: false)
@@ -915,7 +980,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testEdgeDockingDetectsEveryScreenSideAndIgnoresCenter() {
+    private func runEdgeDockingDetectsEveryScreenSideAndIgnoresCenter() {
         let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
         let size = CGSize(width: 326, height: 326)
 
@@ -941,7 +1006,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(PetLayout.dockingEdge(for: CGRect(origin: CGPoint(x: -150, y: 250), size: size), in: visible), .left)
     }
 
-    func testDockingCandidateUsesTwoThresholds() {
+    private func runDockingCandidateUsesTwoThresholds() {
         let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
         let nearPreview = CGRect(x: 48, y: 260, width: 240, height: 240)
         let preview = PetLayout.dockingCandidate(for: nearPreview, in: visible)
@@ -959,7 +1024,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertNil(PetLayout.dockingCandidate(for: awayFromEdge, in: visible))
     }
 
-    func testDefaultDockEdgesOnlyIncludeLeftAndRight() {
+    private func runDefaultDockEdgesOnlyIncludeLeftAndRight() {
         XCTAssertEqual(PetLayout.defaultDockEdges, [.left, .right])
         let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
         let nearTop = CGRect(x: 500, y: 606, width: 240, height: 240)
@@ -974,7 +1039,7 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testPetVisualFrameMatchesRenderedImageArea() {
+    private func runPetVisualFrameMatchesRenderedImageArea() {
         let panel = CGRect(x: 100, y: 200, width: 540, height: 390)
         let pet = PetLayout.petVisualFrame(panelFrame: panel, scale: 1, showsChat: false)
         XCTAssertEqual(pet.size, CGSize(width: 326, height: 326))
@@ -982,7 +1047,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(pet.minY, panel.minY)
     }
 
-    func testEdgePeekAndExpandedOriginsStayVisible() {
+    private func runEdgePeekAndExpandedOriginsStayVisible() {
         let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
         let panelSize = CGSize(width: 540, height: 390)
         let anchor = CGRect(origin: CGPoint(x: -20, y: 700), size: panelSize)
@@ -1019,7 +1084,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testTuckedPetStartsWithOnlyItsEdgeStripVisible() {
+    private func runTuckedPetStartsWithOnlyItsEdgeStripVisible() {
         let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
         let panelOrigin = CGPoint(x: 300, y: 260)
         let petFrame = CGRect(x: 420, y: 280, width: 240, height: 220)
@@ -1043,7 +1108,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testEdgePeekUsesCompactPointerFootprint() {
+    private func runEdgePeekUsesCompactPointerFootprint() {
         XCTAssertLessThanOrEqual(PetLayout.edgePeekSize.width, 72)
         XCTAssertLessThanOrEqual(PetLayout.edgePeekSize.height, 84)
         XCTAssertEqual(PetLayout.edgePeekExposedWidth, 38)
@@ -1051,7 +1116,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(PetLayout.edgeStatusSize.width, 70)
     }
 
-    func testRestoredPetArtworkIsMovedFullyInsideVisibleScreen() {
+    private func runRestoredPetArtworkIsMovedFullyInsideVisibleScreen() {
         let visible = CGRect(x: 0, y: 0, width: 1_440, height: 900)
         let panelOrigin = CGPoint(x: 1_020, y: 200)
         let petFrame = CGRect(x: 1_330, y: 240, width: 180, height: 260)
@@ -1072,7 +1137,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(movedPet.maxY, visible.maxY - PetLayout.restoredPetScreenInset)
     }
 
-    func testRestoredExpandedPanelUsesOnlyBoundedHorizontalOverflow() {
+    private func runRestoredExpandedPanelUsesOnlyBoundedHorizontalOverflow() {
         let visible = CGRect(x: 0, y: 76, width: 1_470, height: 847)
         let panelSize = CGSize(width: 270, height: 195)
         let staleCompactOrigin = CGPoint(x: 1_254, y: 756)
@@ -1094,7 +1159,17 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testUrgentEdgeMessagesUseDistinctCharacterVoices() {
+    func testSmartStateResolutionScenarios() {
+        runUrgentEdgeMessagesUseDistinctCharacterVoices()
+        runSmartStatePrioritizesPressureAndLowBattery()
+        runBatteryAlertLevelsUseWarningAtTwentyAndCriticalAtTenPercent()
+        runBatteryWarningIsTransientAndCriticalBatteryIsUrgent()
+        runNewChargingStateImmediatelyInterruptsIdleAction()
+        runNewSmartStateCancelsManualActionSuppression()
+        runMemoryAlertStartsAtNinetyPercentOrCriticalPressure()
+    }
+
+    private func runUrgentEdgeMessagesUseDistinctCharacterVoices() {
         for state in [SmartPetState.lowBattery, .memoryPressure] {
             let messages = PetMode.allCases.map {
                 PetEdgeMessageResolver.alert(
@@ -1108,7 +1183,7 @@ final class PetStoreTests: XCTestCase {
         }
     }
 
-    func testSmartStatePrioritizesPressureAndLowBattery() {
+    private func runSmartStatePrioritizesPressureAndLowBattery() {
         var snapshot = SystemSnapshot.empty
         snapshot.battery = BatteryMetrics(
             isPresent: true,
@@ -1144,7 +1219,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(SmartPetState.resolve(from: snapshot), .memoryPressure)
     }
 
-    func testBatteryAlertLevelsUseWarningAtTwentyAndCriticalAtTenPercent() {
+    private func runBatteryAlertLevelsUseWarningAtTwentyAndCriticalAtTenPercent() {
         func battery(_ fraction: Double, charging: Bool = false) -> BatteryMetrics {
             BatteryMetrics(
                 isPresent: true,
@@ -1163,7 +1238,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(BatteryAlertLevel.resolve(from: battery(0.05, charging: true)), .normal)
     }
 
-    func testBatteryWarningIsTransientAndCriticalBatteryIsUrgent() {
+    private func runBatteryWarningIsTransientAndCriticalBatteryIsUrgent() {
         let suite = "PetStoreBatteryReminderTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -1190,7 +1265,7 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testNewChargingStateImmediatelyInterruptsIdleAction() {
+    private func runNewChargingStateImmediatelyInterruptsIdleAction() {
         let suite = "PetStoreChargingTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -1210,7 +1285,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.currentAction.file, "11-charging")
     }
 
-    func testNewSmartStateCancelsManualActionSuppression() {
+    private func runNewSmartStateCancelsManualActionSuppression() {
         let suite = "PetStoreSmartTransitionTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -1231,7 +1306,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(store.currentAction.file, "11-charging")
     }
 
-    func testMemoryAlertStartsAtNinetyPercentOrCriticalPressure() {
+    private func runMemoryAlertStartsAtNinetyPercentOrCriticalPressure() {
         var snapshot = SystemSnapshot.empty
         snapshot.memory = MemoryMetrics(
             total: 100,
@@ -1290,7 +1365,13 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(cpuMessage.isEmpty)
     }
 
-    func testListeningOutranksPersistentNonUrgentStateAfterTransientPresentation() {
+    func testSmartActionAndMusicPresentationScenarios() {
+        runListeningOutranksPersistentNonUrgentStateAfterTransientPresentation()
+        runStandaloneMusicNoteHidesWhileLyricBubbleIsVisible()
+        runUrgentStateAlwaysOutranksListening()
+    }
+
+    private func runListeningOutranksPersistentNonUrgentStateAfterTransientPresentation() {
         let mode = PetMode.duo
         let listening = PetActionResolver.resolve(PetActionContext(
             mode: mode,
@@ -1329,7 +1410,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(transientRain, mode.smartAction(for: .rainy))
     }
 
-    func testStandaloneMusicNoteHidesWhileLyricBubbleIsVisible() {
+    private func runStandaloneMusicNoteHidesWhileLyricBubbleIsVisible() {
         let showsLyricBubble = PetMusicPresentationPolicy.showsLyricBubble(
             isPlaying: true,
             lightSingAlongEnabled: true,
@@ -1354,7 +1435,7 @@ final class PetStoreTests: XCTestCase {
         )
     }
 
-    func testUrgentStateAlwaysOutranksListening() {
+    private func runUrgentStateAlwaysOutranksListening() {
         let mode = PetMode.duo
         let action = PetActionResolver.resolve(PetActionContext(
             mode: mode,
@@ -1376,7 +1457,15 @@ final class PetStoreTests: XCTestCase {
         XCTAssertEqual(action, mode.smartAction(for: .memoryPressure))
     }
 
-    func testAmbientChatterUsesWeatherAndChargingEstimate() {
+    func testAmbientMessageAndAlertPreferenceScenarios() {
+        runAmbientChatterUsesWeatherAndChargingEstimate()
+        runAmbientChatterUsesCityAndBatteryRuntimeForEveryVoice()
+        runWeatherAnnouncementsCoverRainHeatColdAndVoice()
+        runAmbientMessageReservesBubbleSpaceWithoutChangingMonitorPreference()
+        runUrgentAlertKindsAndReminderModePersistIndependently()
+    }
+
+    private func runAmbientChatterUsesWeatherAndChargingEstimate() {
         var snapshot = SystemSnapshot.empty
         snapshot.battery = BatteryMetrics(
             isPresent: true,
@@ -1401,7 +1490,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(messages.isEmpty)
     }
 
-    func testAmbientChatterUsesCityAndBatteryRuntimeForEveryVoice() {
+    private func runAmbientChatterUsesCityAndBatteryRuntimeForEveryVoice() {
         var snapshot = SystemSnapshot.empty
         snapshot.battery = BatteryMetrics(
             isPresent: true,
@@ -1429,7 +1518,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(vcc.isEmpty)
     }
 
-    func testWeatherAnnouncementsCoverRainHeatColdAndVoice() {
+    private func runWeatherAnnouncementsCoverRainHeatColdAndVoice() {
         func weather(temperature: Double, apparent: Double, code: Int) -> WeatherSnapshot {
             WeatherSnapshot(
                 temperature: temperature,
@@ -1463,7 +1552,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(cold.isEmpty)
     }
 
-    func testAmbientMessageReservesBubbleSpaceWithoutChangingMonitorPreference() {
+    private func runAmbientMessageReservesBubbleSpaceWithoutChangingMonitorPreference() {
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -1488,7 +1577,7 @@ final class PetStoreTests: XCTestCase {
         XCTAssertFalse(store.shouldReservePetBubbleSpace)
     }
 
-    func testUrgentAlertKindsAndReminderModePersistIndependently() {
+    private func runUrgentAlertKindsAndReminderModePersistIndependently() {
         let suite = "PetStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

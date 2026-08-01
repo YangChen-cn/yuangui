@@ -26,14 +26,11 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testSettingsSelectionCanOpenDirectlyOnAIConfiguration() {
+    func testSettingsSelectionAndTabs() {
         let selection = SettingsSelectionModel()
         XCTAssertEqual(selection.selectedTab, .pet)
         selection.selectedTab = .ai
         XCTAssertEqual(selection.selectedTab, .ai)
-    }
-
-    func testSettingsTabsIncludeDiaryBackupManagement() {
         XCTAssertEqual(
             SettingsTab.allCases,
             [.general, .pet, .quickTools, .ai, .focus, .music, .diary, .about]
@@ -53,7 +50,12 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(HotKeyBinding.self, from: data), .translationDefault)
     }
 
-    func testScreenshotSelectionConvertsGlobalCoordinatesToDisplayCoordinates() {
+    func testScreenshotSelectionAndOverlayFrames() {
+        runScreenshotSelectionConvertsGlobalCoordinatesToDisplayCoordinates()
+        runScreenshotTranslationOverlayKeepsExactSelectionFrame()
+    }
+
+    private func runScreenshotSelectionConvertsGlobalCoordinatesToDisplayCoordinates() {
         let selection = ScreenshotSelection(
             globalRect: CGRect(x: -1200, y: 180, width: 300, height: 220),
             displayID: 7,
@@ -63,7 +65,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(selection.displayLocalSourceRect, CGRect(x: 240, y: 500, width: 300, height: 220))
     }
 
-    func testScreenshotTranslationOverlayKeepsExactSelectionFrame() {
+    private func runScreenshotTranslationOverlayKeepsExactSelectionFrame() {
         let display = CGRect(x: -1440, y: 0, width: 1440, height: 900)
         let smallSelection = ScreenshotSelection(
             globalRect: CGRect(x: -1435, y: 5, width: 80, height: 30),
@@ -121,7 +123,13 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testTranslationWindowKeepsChosenWidthAndGrowsOnlyVertically() {
+    func testTranslationWindowLayoutScenarios() {
+        runTranslationWindowKeepsChosenWidthAndGrowsOnlyVertically()
+        runTranslationWindowDoesNotReserveBlankHeightFromMismatchedResultFont()
+    }
+
+    @MainActor
+    private func runTranslationWindowKeepsChosenWidthAndGrowsOnlyVertically() {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let short = TranslationWindowLayout.calculate(
             source: "你好",
@@ -146,7 +154,7 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testTranslationWindowDoesNotReserveBlankHeightFromMismatchedResultFont() {
+    private func runTranslationWindowDoesNotReserveBlankHeightFromMismatchedResultFont() {
         let translation = Array(repeating: "• The translated sentence should fit its measured body text height.", count: 10)
             .joined(separator: "\n")
         let layout = TranslationWindowLayout.calculate(
@@ -236,7 +244,17 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testScreenshotTranslationDisplayBlocksKeepHorizontalAnchorsAndUseSevenPointFloor() {
+    func testScreenshotTranslationLayoutScenarios() {
+        runScreenshotTranslationDisplayBlocksKeepHorizontalAnchorsAndUseSevenPointFloor()
+        runScreenshotTranslationUsesSafeNearbyWhitespaceForLargerText()
+        runScreenshotTranslationSeparatesOverlappingRowsWithoutHorizontalDrift()
+        runScreenshotLayoutExpandsShortHeadingsIntoSameRowWhitespace()
+        runScreenshotLayoutKeepsExpandedSourceCoverageAtOriginalAnchor()
+        runScreenshotLayoutKeepsImpossibleDensityTranslationInPlace()
+    }
+
+    @MainActor
+    private func runScreenshotTranslationDisplayBlocksKeepHorizontalAnchorsAndUseSevenPointFloor() {
         let blocks = [
             ScreenshotTranslationBlock(
                 id: 0,
@@ -275,7 +293,7 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testScreenshotTranslationUsesSafeNearbyWhitespaceForLargerText() {
+    private func runScreenshotTranslationUsesSafeNearbyWhitespaceForLargerText() {
         let target = ScreenshotTranslationBlock(
             id: 1,
             normalizedRect: CGRect(x: 0.1, y: 0.48, width: 0.6, height: 0.04),
@@ -331,7 +349,7 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testScreenshotTranslationSeparatesOverlappingRowsWithoutHorizontalDrift() {
+    private func runScreenshotTranslationSeparatesOverlappingRowsWithoutHorizontalDrift() {
         let blocks = [
             ScreenshotTranslationBlock(
                 id: 0,
@@ -398,7 +416,12 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(store.translatedText, "First row\nSecond row")
     }
 
-    func testScreenshotTranslationAlignerFallsBackToPunctuationWhenMarkersAreLost() {
+    func testScreenshotTranslationAlignerScenarios() {
+        runScreenshotTranslationAlignerFallsBackToPunctuationWhenMarkersAreLost()
+        runScreenshotTranslationAlignerUsesStableInternalIndexesWithoutLeakingThem()
+    }
+
+    private func runScreenshotTranslationAlignerFallsBackToPunctuationWhenMarkersAreLost() {
         let source = ["第一条内容比较短。", "第二条内容明显更长一些。", "第三条。"]
         let aligned = ScreenshotTranslationLineAligner.align(
             "The first item is short. The second item contains noticeably more detail. The third item is brief.",
@@ -411,7 +434,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertTrue(aligned[1].hasSuffix("."))
     }
 
-    func testScreenshotTranslationAlignerUsesStableInternalIndexesWithoutLeakingThem() {
+    private func runScreenshotTranslationAlignerUsesStableInternalIndexesWithoutLeakingThem() {
         let source = ["First source sentence", "Second source sentence", "Star"]
         let combined = ScreenshotTranslationLineAligner.combinedText(for: source)
         XCTAssertTrue(combined.contains("[[0000]]"))
@@ -446,7 +469,12 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertLessThan(descriptionBlock.normalizedRect.maxX, 0.84)
     }
 
-    func testScreenshotTranslationWindowScalingKeepsAspectRatioAndVisibleBounds() {
+    func testScreenshotTranslationWindowScalingScenarios() {
+        runScreenshotTranslationWindowScalingKeepsAspectRatioAndVisibleBounds()
+        runScreenshotTranslationWindowScalingKeepsPointerAnchorStable()
+    }
+
+    private func runScreenshotTranslationWindowScalingKeepsAspectRatioAndVisibleBounds() {
         let visible = CGRect(x: 0, y: 0, width: 1_200, height: 800)
         let original = CGRect(x: 300, y: 240, width: 500, height: 250)
         let enlarged = ScreenshotTranslationOverlayWindowController.scaledFrame(
@@ -460,7 +488,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertTrue(visible.contains(enlarged))
     }
 
-    func testScreenshotTranslationWindowScalingKeepsPointerAnchorStable() {
+    private func runScreenshotTranslationWindowScalingKeepsPointerAnchorStable() {
         let visible = CGRect(x: 0, y: 0, width: 1_600, height: 1_000)
         let original = CGRect(x: 300, y: 240, width: 500, height: 250)
         let focal = CGPoint(x: 425, y: 290)
@@ -484,7 +512,7 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testScreenshotLayoutExpandsShortHeadingsIntoSameRowWhitespace() {
+    private func runScreenshotLayoutExpandsShortHeadingsIntoSameRowWhitespace() {
         let blocks = [
             ScreenshotTranslationBlock(
                 id: 0,
@@ -521,7 +549,7 @@ final class QuickToolsTests: XCTestCase {
     }
 
     @MainActor
-    func testScreenshotLayoutKeepsExpandedSourceCoverageAtOriginalAnchor() {
+    private func runScreenshotLayoutKeepsExpandedSourceCoverageAtOriginalAnchor() {
         let blocks = [
             ScreenshotTranslationBlock(
                 id: 0,
@@ -558,7 +586,14 @@ final class QuickToolsTests: XCTestCase {
         )
     }
 
-    func testOCRLayoutAnalyzerDeduplicatesAndAssignsStableReadingOrder() {
+    func testOCRLayoutAnalyzerScenarios() {
+        runOCRLayoutAnalyzerDeduplicatesAndAssignsStableReadingOrder()
+        runOCRLayoutAnalyzerRecognizesColumnsTitlesListsAndBaselines()
+        runOCRLayoutAnalyzerSeparatesDistantControlsOnTheSameVisualRow()
+        runOCRLayoutAnalyzerDoesNotTreatRepeatedTrailingControlsAsASecondColumn()
+    }
+
+    private func runOCRLayoutAnalyzerDeduplicatesAndAssignsStableReadingOrder() {
         let regions = [
             OCRTextRegion(
                 text: "Second line",
@@ -589,7 +624,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertLessThan(recognition.regions[0].paragraphIndex, recognition.regions[2].paragraphIndex)
     }
 
-    func testOCRLayoutAnalyzerRecognizesColumnsTitlesListsAndBaselines() {
+    private func runOCRLayoutAnalyzerRecognizesColumnsTitlesListsAndBaselines() {
         let regions = [
             OCRTextRegion(text: "Document title", normalizedRect: CGRect(x: 0.08, y: 0.9, width: 0.84, height: 0.07), estimatedFontScale: 0.07),
             OCRTextRegion(text: "Left one", normalizedRect: CGRect(x: 0.08, y: 0.72, width: 0.28, height: 0.03)),
@@ -611,7 +646,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(result.first { $0.text == "Left one" }?.baseline ?? -1, 0.72, accuracy: 0.0001)
     }
 
-    func testOCRLayoutAnalyzerSeparatesDistantControlsOnTheSameVisualRow() {
+    private func runOCRLayoutAnalyzerSeparatesDistantControlsOnTheSameVisualRow() {
         let result = OCRLayoutAnalyzer.organize([
             OCRTextRegion(
                 text: "ruvnet/RuView",
@@ -634,7 +669,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertNotEqual(control?.paragraphIndex, description?.paragraphIndex)
     }
 
-    func testOCRLayoutAnalyzerDoesNotTreatRepeatedTrailingControlsAsASecondColumn() {
+    private func runOCRLayoutAnalyzerDoesNotTreatRepeatedTrailingControlsAsASecondColumn() {
         let result = OCRLayoutAnalyzer.organize([
             OCRTextRegion(text: "koala73/worldmonitor", normalizedRect: CGRect(x: 0.06, y: 0.82, width: 0.25, height: 0.04)),
             OCRTextRegion(text: "Star", normalizedRect: CGRect(x: 0.84, y: 0.82, width: 0.08, height: 0.04)),
@@ -651,7 +686,14 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(firstDescription?.columnIndex, 0)
     }
 
-    func testScreenshotTranslationBatchesSemanticSentencesAndProtectsURLs() {
+    func testScreenshotTranslationSemanticGroupingScenarios() {
+        runScreenshotTranslationBatchesSemanticSentencesAndProtectsURLs()
+        runWrappedVisualLinesBecomeOneSemanticSentenceAnchor()
+        runScreenshotTranslationKeepsVisualLineBreaksWhileBatchingAndSkipsProtectedRows()
+        runMixedURLRowsTranslateWhileStandaloneURLsRemainProtected()
+    }
+
+    private func runScreenshotTranslationBatchesSemanticSentencesAndProtectsURLs() {
         let regions = [
             OCRTextRegion(text: "First visual line", normalizedRect: CGRect(x: 0.1, y: 0.75, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 0),
             OCRTextRegion(text: "continues here", normalizedRect: CGRect(x: 0.1, y: 0.68, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 1),
@@ -677,7 +719,7 @@ final class QuickToolsTests: XCTestCase {
         ])
     }
 
-    func testWrappedVisualLinesBecomeOneSemanticSentenceAnchor() {
+    private func runWrappedVisualLinesBecomeOneSemanticSentenceAnchor() {
         let regions = [
             OCRTextRegion(
                 text: "我会先执行",
@@ -706,7 +748,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(blocks[0].normalizedRect, regions[0].normalizedRect.union(regions[1].normalizedRect))
     }
 
-    func testScreenshotTranslationKeepsVisualLineBreaksWhileBatchingAndSkipsProtectedRows() {
+    private func runScreenshotTranslationKeepsVisualLineBreaksWhileBatchingAndSkipsProtectedRows() {
         let regions = [
             OCRTextRegion(text: "Main changes:", normalizedRect: CGRect(x: 0.05, y: 0.82, width: 0.5, height: 0.05), paragraphIndex: 0, readingOrder: 0),
             OCRTextRegion(text: "• First item", normalizedRect: CGRect(x: 0.08, y: 0.72, width: 0.6, height: 0.05), paragraphIndex: 0, readingOrder: 1, role: .listItem),
@@ -728,7 +770,7 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertFalse(blocks.contains { $0.text.contains("example.com") })
     }
 
-    func testMixedURLRowsTranslateWhileStandaloneURLsRemainProtected() {
+    private func runMixedURLRowsTranslateWhileStandaloneURLsRemainProtected() {
         let mixed = OCRTextRegion(
             text: "For more information, visit https://example.com/help",
             normalizedRect: CGRect(x: 0.1, y: 0.7, width: 0.8, height: 0.05),
@@ -755,7 +797,8 @@ final class QuickToolsTests: XCTestCase {
         XCTAssertEqual(blocks.first?.normalizedRect, mixed.normalizedRect)
     }
 
-    func testScreenshotLayoutKeepsImpossibleDensityTranslationInPlace() {
+    @MainActor
+    private func runScreenshotLayoutKeepsImpossibleDensityTranslationInPlace() {
         let block = ScreenshotTranslationBlock(
             id: 0,
             normalizedRect: CGRect(x: 0.05, y: 0.45, width: 0.25, height: 0.05),

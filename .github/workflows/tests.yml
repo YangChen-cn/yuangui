@@ -40,4 +40,6 @@ jobs:
             swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.swift.outputs.version }}-
 
       - name: Run tests
-        run: swift test
+        # Performance suites run explicitly from script/benchmark_*.sh;
+        # keep the normal CI signal focused on deterministic product behavior.
+        run: swift test --skip 'YuanGUIBenchmarks'

@@ -279,7 +279,14 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(document.nextLine(after: 4)?.text, "第二句")
     }
 
-    func testLyricsDocumentBinarySearchHandlesBoundariesAndDuplicateTimestamps() {
+    func testLyricsDocumentNavigationScenarios() {
+        runLyricsDocumentBinarySearchHandlesBoundariesAndDuplicateTimestamps()
+        runLyricsDocumentBuildsStableSevenSlotWindows()
+        runLyricsDocumentBinarySearchHandlesLongDocuments()
+        runLyricSeekPositionAppliesOffsetAndClampsToTrackBounds()
+    }
+
+    private func runLyricsDocumentBinarySearchHandlesBoundariesAndDuplicateTimestamps() {
         let document = LyricsDocument(
             title: nil,
             artist: nil,
@@ -301,7 +308,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(document.nextLine(after: 2)?.text, "最后一句")
     }
 
-    func testLyricsDocumentBuildsStableSevenSlotWindows() {
+    private func runLyricsDocumentBuildsStableSevenSlotWindows() {
         let document = LyricsDocument(
             title: nil,
             artist: nil,
@@ -315,7 +322,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(document.lineIndices(around: nil), [nil, nil, nil, 0, 1, 2, 3])
     }
 
-    func testLyricsDocumentBinarySearchHandlesLongDocuments() {
+    private func runLyricsDocumentBinarySearchHandlesLongDocuments() {
         let document = LyricsDocument(
             title: nil,
             artist: nil,
@@ -329,7 +336,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(document.lineIndex(at: 2_499.75), 9_999)
     }
 
-    func testLyricSeekPositionAppliesOffsetAndClampsToTrackBounds() {
+    private func runLyricSeekPositionAppliesOffsetAndClampsToTrackBounds() {
         let line = TimedLyricLine(time: 10, text: "目标歌词")
         XCTAssertEqual(MusicFeature.lyricSeekPosition(for: line, offset: 1.5, duration: 30), 11.5)
         XCTAssertEqual(MusicFeature.lyricSeekPosition(for: line, offset: -12, duration: 30), 0)
@@ -419,7 +426,14 @@ final class MusicTests: XCTestCase {
         XCTAssertTrue(durationOnlyRefresh.matchesLegacyLyricsCacheKey(first.id))
     }
 
-    func testLyricsServiceMatchesByTitleWhenArtistIsEmptyAndSetsTimeout() async throws {
+    func testLyricsServiceScenarios() async throws {
+        try await runLyricsServiceMatchesByTitleWhenArtistIsEmptyAndSetsTimeout()
+        try await runLyricsServiceReportsTimeout()
+        try await runLyricsServiceAcceptsSwappedTrackAndArtistFields()
+        try await runLyricsServiceDoesNotRunSlowBroadFallbackAfterExactMiss()
+    }
+
+    private func runLyricsServiceMatchesByTitleWhenArtistIsEmptyAndSetsTimeout() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -447,7 +461,7 @@ final class MusicTests: XCTestCase {
         XCTAssertNil(items?.first(where: { $0.name == "artist_name" }))
     }
 
-    func testLyricsServiceReportsTimeout() async throws {
+    private func runLyricsServiceReportsTimeout() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -466,7 +480,7 @@ final class MusicTests: XCTestCase {
         }
     }
 
-    func testLyricsServiceAcceptsSwappedTrackAndArtistFields() async throws {
+    private func runLyricsServiceAcceptsSwappedTrackAndArtistFields() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -501,7 +515,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queries[1].artist, "陶喆")
     }
 
-    func testLyricsServiceDoesNotRunSlowBroadFallbackAfterExactMiss() async throws {
+    private func runLyricsServiceDoesNotRunSlowBroadFallbackAfterExactMiss() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -540,7 +554,15 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(try store.load().lastPosition, 42)
     }
 
-    func testBilibiliClientFallsBackToPlayerSubtitleURL() async throws {
+    func testBilibiliSubtitleIdentityScenarios() async throws {
+        try await runBilibiliClientFallsBackToPlayerSubtitleURL()
+        try await runBilibiliClientUsesEachPagesExactCIDInsteadOfViewSubtitle()
+        try await runBilibiliClientRejectsSubtitleResponseForAnotherCID()
+        try await runBilibiliClientRejectsRandomAISubtitleUntilURLMatchesCID()
+        try await runBilibiliClientRequiresRepeatedIdentityForHumanSubtitle()
+    }
+
+    private func runBilibiliClientFallsBackToPlayerSubtitleURL() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -575,7 +597,7 @@ final class MusicTests: XCTestCase {
         )
     }
 
-    func testBilibiliClientUsesEachPagesExactCIDInsteadOfViewSubtitle() async throws {
+    private func runBilibiliClientUsesEachPagesExactCIDInsteadOfViewSubtitle() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -618,7 +640,7 @@ final class MusicTests: XCTestCase {
         )
     }
 
-    func testBilibiliClientRejectsSubtitleResponseForAnotherCID() async throws {
+    private func runBilibiliClientRejectsSubtitleResponseForAnotherCID() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -649,7 +671,7 @@ final class MusicTests: XCTestCase {
         XCTAssertNil(subtitleURL)
     }
 
-    func testBilibiliClientRejectsRandomAISubtitleUntilURLMatchesCID() async throws {
+    private func runBilibiliClientRejectsRandomAISubtitleUntilURLMatchesCID() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -686,7 +708,7 @@ final class MusicTests: XCTestCase {
         XCTAssertTrue(subtitleURL?.path.contains("266999608-correct") == true)
     }
 
-    func testBilibiliClientRequiresRepeatedIdentityForHumanSubtitle() async throws {
+    private func runBilibiliClientRequiresRepeatedIdentityForHumanSubtitle() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LyricsURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -861,7 +883,17 @@ final class MusicTests: XCTestCase {
         await feature.shutdown()
     }
 
-    func testSequentialPlaybackQueueOnlyContainsTracksAfterCurrent() throws {
+    func testPlaybackQueueModesAndHistory() throws {
+        try runSequentialPlaybackQueueOnlyContainsTracksAfterCurrent()
+        runRepeatOneQueueOnlyContainsCurrentTrack()
+        runRepeatAllQueueWrapsAndShrinksAsTracksPlay()
+        try runRepeatAllQueuePreparesTheNextCycleBeforeCurrentCycleEnds()
+        try runShuffleQueueIsStableAndDrivesActualNextTrack()
+        try runPlaybackQueuePreviousRestoresConsumedTrack()
+        runPlaybackQueueNeverMixesLocalAndBilibiliTracks()
+    }
+
+    private func runSequentialPlaybackQueueOnlyContainsTracksAfterCurrent() throws {
         let tracks = makeQueueTracks(count: 4)
         var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[1].id, mode: .sequential)
@@ -871,7 +903,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[3].id])
     }
 
-    func testRepeatOneQueueOnlyContainsCurrentTrack() {
+    private func runRepeatOneQueueOnlyContainsCurrentTrack() {
         let tracks = makeQueueTracks(count: 3)
         var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[1].id, mode: .repeatOne)
@@ -881,7 +913,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id])
     }
 
-    func testRepeatAllQueueWrapsAndShrinksAsTracksPlay() {
+    private func runRepeatAllQueueWrapsAndShrinksAsTracksPlay() {
         let tracks = makeQueueTracks(count: 4)
         var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[2].id, mode: .repeatAll)
@@ -891,7 +923,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[0].id, tracks[1].id])
     }
 
-    func testRepeatAllQueuePreparesTheNextCycleBeforeCurrentCycleEnds() throws {
+    private func runRepeatAllQueuePreparesTheNextCycleBeforeCurrentCycleEnds() throws {
         let tracks = makeQueueTracks(count: 3)
         var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[0].id, mode: .repeatAll)
@@ -908,7 +940,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[0].id, tracks[1].id])
     }
 
-    func testShuffleQueueIsStableAndDrivesActualNextTrack() throws {
+    private func runShuffleQueueIsStableAndDrivesActualNextTrack() throws {
         let tracks = makeQueueTracks(count: 6)
         var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[2].id, mode: .shuffle)
@@ -923,7 +955,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, Array(scheduled.dropFirst()))
     }
 
-    func testPlaybackQueuePreviousRestoresConsumedTrack() throws {
+    private func runPlaybackQueuePreviousRestoresConsumedTrack() throws {
         let tracks = makeQueueTracks(count: 3)
         var queue = MusicPlaybackQueue()
         queue.rebuild(playlist: tracks, currentTrackID: tracks[0].id, mode: .sequential)
@@ -939,7 +971,7 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(queue.upcomingTrackIDs, [tracks[1].id, tracks[2].id])
     }
 
-    func testPlaybackQueueNeverMixesLocalAndBilibiliTracks() {
+    private func runPlaybackQueueNeverMixesLocalAndBilibiliTracks() {
         let local = makeLocalTrack(id: "local:one", filename: "one.mp3")
         let localTwo = makeLocalTrack(id: "local:two", filename: "two.mp3")
         let bilibili = makeQueueTracks(count: 2)
@@ -955,7 +987,13 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testDuplicateLocalImportAddsOnlyOneTrack() async {
+    func testLocalImportDuplicateScenarios() async {
+        await runDuplicateLocalImportAddsOnlyOneTrack()
+        await runDuplicateImportRetainsFailureDetailsAndCleansRejectedArtwork()
+    }
+
+    @MainActor
+    private func runDuplicateLocalImportAddsOnlyOneTrack() async {
         let defaults = UserDefaults(suiteName: "LocalDuplicate-\(UUID().uuidString)")!
         let track = makeLocalTrack(id: "local:first", filename: "same.mp3")
         let duplicate = makeLocalTrack(id: "local:second", filename: "same.mp3")
@@ -978,7 +1016,7 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testDuplicateImportRetainsFailureDetailsAndCleansRejectedArtwork() async {
+    private func runDuplicateImportRetainsFailureDetailsAndCleansRejectedArtwork() async {
         let first = makeLocalTrack(id: "local:first", filename: "same.mp3", artworkKey: "first.artwork")
         let duplicate = makeLocalTrack(id: "local:second", filename: "same.mp3", artworkKey: "duplicate.artwork")
         let artwork = RecordingLocalArtworkRepository()
@@ -1003,7 +1041,14 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testRemovingLocalTracksCleansArtworkAndRestorePrunesOrphans() async {
+    func testLocalArtworkLifecycleScenarios() async {
+        await runRemovingLocalTracksCleansArtworkAndRestorePrunesOrphans()
+        await runRemovingTrackKeepsArtworkStillReferencedByAnotherTrack()
+        await runReplacingAndRemovingArtworkUpdatesTheTrackAndCleansOldFiles()
+    }
+
+    @MainActor
+    private func runRemovingLocalTracksCleansArtworkAndRestorePrunesOrphans() async {
         let first = makeLocalTrack(id: "local:first", filename: "first.mp3", artworkKey: "first.artwork")
         let second = makeLocalTrack(id: "local:second", filename: "second.mp3", artworkKey: "second.artwork")
         let artwork = RecordingLocalArtworkRepository()
@@ -1027,7 +1072,7 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testRemovingTrackKeepsArtworkStillReferencedByAnotherTrack() async {
+    private func runRemovingTrackKeepsArtworkStillReferencedByAnotherTrack() async {
         let first = makeLocalTrack(id: "local:first", filename: "first.mp3", artworkKey: "shared.artwork")
         let second = makeLocalTrack(id: "local:second", filename: "second.mp3", artworkKey: "shared.artwork")
         let artwork = RecordingLocalArtworkRepository()
@@ -1052,7 +1097,7 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testReplacingAndRemovingArtworkUpdatesTheTrackAndCleansOldFiles() async {
+    private func runReplacingAndRemovingArtworkUpdatesTheTrackAndCleansOldFiles() async {
         let track = makeLocalTrack(
             id: "local:custom-artwork",
             filename: "song.mp3",
@@ -1084,7 +1129,15 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testRevealInFinderUsesResolvedLocalURL() async {
+    func testLocalFileResolutionAndRelocationScenarios() async {
+        await runRevealInFinderUsesResolvedLocalURL()
+        await runRevealInFinderRequestsRelocationWhenBookmarkIsStale()
+        await runMissingLocalFileProducesRelocationStateInsteadOfCrashing()
+        await runStaleBookmarkAlsoRequestsRelocation()
+    }
+
+    @MainActor
+    private func runRevealInFinderUsesResolvedLocalURL() async {
         let track = makeLocalTrack(id: "local:finder", filename: "finder.mp3")
         let revealer = RecordingLocalMusicFileRevealer()
         let feature = MusicFeature(
@@ -1102,7 +1155,7 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testRevealInFinderRequestsRelocationWhenBookmarkIsStale() async {
+    private func runRevealInFinderRequestsRelocationWhenBookmarkIsStale() async {
         let track = makeLocalTrack(id: "local:stale-finder", filename: "missing.mp3")
         let feature = MusicFeature(
             defaults: UserDefaults(suiteName: "StaleFinder-\(UUID().uuidString)")!,
@@ -1120,7 +1173,7 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testMissingLocalFileProducesRelocationStateInsteadOfCrashing() async {
+    private func runMissingLocalFileProducesRelocationStateInsteadOfCrashing() async {
         let defaults = UserDefaults(suiteName: "LocalMissing-\(UUID().uuidString)")!
         let track = makeLocalTrack(id: "local:missing", filename: "missing.mp3")
         let importer = StubLocalMusicImporter(resolveError: .missingFile)
@@ -1141,7 +1194,7 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testStaleBookmarkAlsoRequestsRelocation() async {
+    private func runStaleBookmarkAlsoRequestsRelocation() async {
         let track = makeLocalTrack(id: "local:stale", filename: "stale.m4a")
         let feature = MusicFeature(
             defaults: UserDefaults(suiteName: "LocalStale-\(UUID().uuidString)")!,
@@ -1329,7 +1382,13 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay() async {
+    func testMusicSourceSwitchScenarios() async {
+        await runSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay()
+        await runSwitchingFromLocalToBilibiliRebuildsStatusQueueForTheNewSource()
+    }
+
+    @MainActor
+    private func runSwitchingToBilibiliRestoresItsLastSelectedTrackForStatusDisplay() async {
         let suiteName = "MusicSourceSwitchTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -1353,7 +1412,7 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
-    func testSwitchingFromLocalToBilibiliRebuildsStatusQueueForTheNewSource() async {
+    private func runSwitchingFromLocalToBilibiliRebuildsStatusQueueForTheNewSource() async {
         let suiteName = "MusicSourceQueueSwitchTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }

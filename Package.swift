@@ -25,6 +25,11 @@ let package = Package(
             dependencies: ["YuanGUI"],
             path: "Tests/YuanGUITests",
             resources: [.process("Fixtures")]
+        ),
+        .testTarget(
+            name: "YuanGUIBenchmarks",
+            dependencies: ["YuanGUI"],
+            path: "Tests/YuanGUIBenchmarks"
         )
     ],
     swiftLanguageModes: [.v5]

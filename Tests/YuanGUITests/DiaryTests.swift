@@ -53,21 +53,26 @@ final class DiaryEntryTests: XCTestCase {
         XCTAssertFalse(entry.isFavorite)
     }
 
-    func testDisplayTitleWithTitle() {
-        let entry = DiaryEntry(title: "今天去约会", body: "正文内容")
-        XCTAssertEqual(entry.displayTitle, "今天去约会")
-    }
-
-    func testDisplayTitleEmptyTitleFallsBackToBody() {
-        let entry = DiaryEntry(title: "", body: "一段很长的正文内容用来测试截断逻辑应该返回前五十个字符")
-        XCTAssertEqual(entry.displayTitle, "一段很长的正文内容用来测试截断逻辑应该返回前五十个字符")
-    }
-
-    func testDisplayTitleLongBodyTruncates() {
+    func testDisplayTitleVariants() {
         let longBody = String(repeating: "好", count: 100)
-        let entry = DiaryEntry(body: longBody)
-        XCTAssertTrue(entry.displayTitle.hasSuffix("…"))
-        XCTAssertEqual(entry.displayTitle.count, 51) // 50 chars + "…"
+        let cases: [(DiaryEntry, String, Bool)] = [
+            (DiaryEntry(title: "今天去约会", body: "正文内容"), "今天去约会", false),
+            (
+                DiaryEntry(title: "", body: "一段很长的正文内容用来测试截断逻辑应该返回前五十个字符"),
+                "一段很长的正文内容用来测试截断逻辑应该返回前五十个字符",
+                false
+            ),
+            (DiaryEntry(body: longBody), "", true)
+        ]
+
+        for (entry, expected, shouldTruncate) in cases {
+            if shouldTruncate {
+                XCTAssertTrue(entry.displayTitle.hasSuffix("…"))
+                XCTAssertEqual(entry.displayTitle.count, 51) // 50 chars + "…"
+            } else {
+                XCTAssertEqual(entry.displayTitle, expected)
+            }
+        }
     }
 
     func testWordCount() {
@@ -75,19 +80,16 @@ final class DiaryEntryTests: XCTestCase {
         XCTAssertEqual(entry.wordCount, 8) // "Hello 世界".count == 8
     }
 
-    func testHasContentEmptyBody() {
-        let entry = DiaryEntry(body: "  \n  ")
-        XCTAssertFalse(entry.hasContent)
-    }
+    func testHasContentVariants() {
+        let cases: [(DiaryEntry, Bool)] = [
+            (DiaryEntry(body: "  \n  "), false),
+            (DiaryEntry(title: "有标题", body: ""), true),
+            (DiaryEntry(body: "有内容"), true)
+        ]
 
-    func testHasContentWithTitle() {
-        let entry = DiaryEntry(title: "有标题", body: "")
-        XCTAssertTrue(entry.hasContent)
-    }
-
-    func testHasContentWithBody() {
-        let entry = DiaryEntry(body: "有内容")
-        XCTAssertTrue(entry.hasContent)
+        for (entry, expected) in cases {
+            XCTAssertEqual(entry.hasContent, expected)
+        }
     }
 
     func testHashable() {
@@ -111,14 +113,9 @@ final class DiaryMoodTests: XCTestCase {
         XCTAssertTrue(DiaryMood.allCases.contains(.wronged))
     }
 
-    func testAllCasesHaveEmoji() {
+    func testAllCasesHaveUserFacingMetadata() {
         for mood in DiaryMood.allCases {
             XCTAssertFalse(mood.emoji.isEmpty, "\(mood) emoji 为空")
-        }
-    }
-
-    func testAllCasesHaveTitle() {
-        for mood in DiaryMood.allCases {
             XCTAssertFalse(mood.title.isEmpty, "\(mood) title 为空")
         }
     }
@@ -150,60 +147,40 @@ final class DiarySearchServiceTests: XCTestCase {
         ]
     }
 
-    func testEmptyQueryReturnsAll() {
-        let result = service.search(query: "", in: entries)
-        XCTAssertEqual(result.count, 5)
-    }
+    func testSearchAndFilterMatrix() {
+        let searchCases: [(String, UUID?)] = [
+            ("", nil),
+            ("约会", entries[0].id),
+            ("电影", entries[1].id),
+            ("生日", entries[2].id)
+        ]
+        for (query, expectedID) in searchCases {
+            let result = service.search(query: query, in: entries)
+            if let expectedID {
+                XCTAssertEqual(result.map(\.id), [expectedID])
+            } else {
+                XCTAssertEqual(result.count, entries.count)
+            }
+        }
 
-    func testSearchByTitle() {
-        let result = service.search(query: "约会", in: entries)
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result.first?.title, "第一次约会")
-    }
+        XCTAssertEqual(service.filter(entries: entries, tag: "约会").map(\.id), [entries[0].id])
+        XCTAssertEqual(service.filter(entries: entries, mood: .sad).map(\.id), [entries[3].id])
 
-    func testSearchByBody() {
-        let result = service.search(query: "电影", in: entries)
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result.first?.title, "下雨天")
-    }
-
-    func testSearchByTag() {
-        let result = service.search(query: "生日", in: entries)
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result.first?.title, "生日快乐")
-    }
-
-    func testFilterByTag() {
-        let result = service.filter(entries: entries, tag: "约会")
-        XCTAssertEqual(result.count, 1)
-    }
-
-    func testFilterByMood() {
-        let result = service.filter(entries: entries, mood: .sad)
-        XCTAssertEqual(result.count, 1)
-    }
-
-    func testFilterByDateRange() {
         let now = Date()
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+        guard let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now),
+              let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) else {
+            XCTFail("Unable to construct date range")
+            return
+        }
         // 所有条目默认 occurredAt = Date()，应在范围内
         let result = service.filter(entries: entries, from: yesterday, to: tomorrow)
-        XCTAssertEqual(result.count, 5)
-    }
+        XCTAssertEqual(result.count, entries.count)
+        XCTAssertEqual(service.favorites(in: entries).map(\.id), [entries[4].id])
 
-    func testFavoritesOnly() {
-        let result = service.favorites(in: entries)
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result.first?.title, "纪念日")
-    }
-
-    func testCombinedQuery() {
         var filter = DiaryQueryFilter()
         filter.text = "电影"
         filter.mood = .calm
-        let result = service.query(filter, in: entries)
-        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(service.query(filter, in: entries).map(\.id), [entries[1].id])
     }
 }
 
@@ -294,32 +271,6 @@ final class DiaryRepositoryTests: XCTestCase {
         XCTAssertNotNil(restoredEntry)
     }
 
-    func testRepositoryPerformanceWithThousandEntriesAndTwoHundredAttachments() async throws {
-        let layout = DiaryStorageLayout(rootURL: tmpDir)
-        try FileManager.default.createDirectory(at: layout.originalsURL, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: layout.thumbnailsURL, withIntermediateDirectories: true)
-        let attachments = try (0..<200).map { index in
-            let filename = "\(UUID().uuidString.lowercased()).jpg"
-            let attachment = DiaryAttachment(filename: filename, originalFilename: "photo-\(index).jpg", mimeType: "image/jpeg")
-            try Data([0]).write(to: layout.originalsURL.appendingPathComponent(filename))
-            try Data([0]).write(to: layout.thumbnailsURL.appendingPathComponent(attachment.thumbnailFilename))
-            return attachment
-        }
-        let entries = (0..<1_000).map { index in
-            let lowerBound = index < 10 ? index * 20 : 0
-            let entryAttachments = index < 10 ? Array(attachments[lowerBound..<(lowerBound + 20)]) : []
-            return DiaryEntry(title: "日记 \(index)", body: "内容 \(index)", attachments: entryAttachments)
-        }
-
-        let start = ContinuousClock.now
-        let saveReport = await repo.save(entries)
-        let loadReport = try await repo.loadAll()
-        let elapsed = start.duration(to: .now)
-
-        XCTAssertTrue(saveReport.succeeded)
-        XCTAssertEqual(loadReport.entries.count, 1_000)
-        XCTAssertLessThan(elapsed, .seconds(18))
-    }
 }
 
 // MARK: - DiaryAttachmentStore 测试

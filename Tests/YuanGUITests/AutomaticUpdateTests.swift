@@ -238,7 +238,16 @@ final class AutomaticUpdateTests: XCTestCase {
 
     // MARK: - Daily limit
 
-    func testFirstAutomaticTriggerChecksAndPromptsForAvailable() async {
+    func testAutomaticDailyPolicyScenarios() async {
+        await runFirstAutomaticTriggerChecksAndPromptsForAvailable()
+        await runSecondAutomaticTriggerSameDayIsSkipped()
+        await runRecreatedCoordinatorSameDayDoesNotCheckAgain()
+        await runNextNaturalDayChecksAgain()
+        await runTimeZoneDayBoundaryIsHandledByCalendar()
+        await runConcurrentTriggersProduceOnlyOneRequest()
+    }
+
+    private func runFirstAutomaticTriggerChecksAndPromptsForAvailable() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: "notes")))
         defer { fixture.cleanup() }
 
@@ -255,7 +264,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.prompt.presented"))
     }
 
-    func testSecondAutomaticTriggerSameDayIsSkipped() async {
+    private func runSecondAutomaticTriggerSameDayIsSkipped() async {
         let fixture = Fixture.make(result: .success(.upToDate(makeRelease("2.7.1"))))
         defer { fixture.cleanup() }
 
@@ -268,7 +277,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.skipped.alreadyChecked"))
     }
 
-    func testRecreatedCoordinatorSameDayDoesNotCheckAgain() async {
+    private func runRecreatedCoordinatorSameDayDoesNotCheckAgain() async {
         let fixture = Fixture.make(result: .success(.upToDate(makeRelease("2.7.1"))))
         defer { fixture.cleanup() }
 
@@ -296,7 +305,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(secondPresenter.presentCount, 0)
     }
 
-    func testNextNaturalDayChecksAgain() async {
+    private func runNextNaturalDayChecksAgain() async {
         let calendar = Calendar(identifier: .gregorian)
         var utc = calendar
         utc.timeZone = TimeZone(identifier: "UTC")!
@@ -318,7 +327,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(calls, 2)
     }
 
-    func testTimeZoneDayBoundaryIsHandledByCalendar() async {
+    private func runTimeZoneDayBoundaryIsHandledByCalendar() async {
         let calendar = Calendar(identifier: .gregorian)
         var utc = calendar
         utc.timeZone = TimeZone(identifier: "UTC")!
@@ -352,7 +361,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(calls, 1)
     }
 
-    func testConcurrentTriggersProduceOnlyOneRequest() async {
+    private func runConcurrentTriggersProduceOnlyOneRequest() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -433,7 +442,15 @@ final class AutomaticUpdateTests: XCTestCase {
 
     // MARK: - Prompt behavior
 
-    func testNoPromptWhenUpToDate() async {
+    func testAutomaticPromptEligibilityScenarios() async {
+        await runNoPromptWhenUpToDate()
+        await runNoPromptWhenLatestIsOlderThanCurrent()
+        await runAvailableUpdatePromptsExactlyOnce()
+        await runNoSecondPromptWhileOneIsPresented()
+        await runPromptPresenterIgnoresSecondPresentation()
+    }
+
+    private func runNoPromptWhenUpToDate() async {
         let fixture = Fixture.make(result: .success(.upToDate(makeRelease("2.7.1"))))
         defer { fixture.cleanup() }
 
@@ -444,7 +461,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(fixture.store.state, .idle)
     }
 
-    func testNoPromptWhenLatestIsOlderThanCurrent() async {
+    private func runNoPromptWhenLatestIsOlderThanCurrent() async {
         let fixture = Fixture.make(result: .success(.upToDate(makeRelease("1.0.0"))))
         defer { fixture.cleanup() }
 
@@ -455,7 +472,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.check.upToDate"))
     }
 
-    func testAvailableUpdatePromptsExactlyOnce() async {
+    private func runAvailableUpdatePromptsExactlyOnce() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -468,7 +485,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(fixture.store.state, .available)
     }
 
-    func testNoSecondPromptWhileOneIsPresented() async {
+    private func runNoSecondPromptWhileOneIsPresented() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -487,7 +504,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.skipped.promptPresented"))
     }
 
-    func testPromptPresenterIgnoresSecondPresentation() async {
+    private func runPromptPresenterIgnoresSecondPresentation() async {
         let presenter = FakeUpdatePromptPresenter()
         presenter.presentUpdate(
             currentVersion: "2.7.1",
@@ -509,7 +526,15 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(presenter.isPresenting)
     }
 
-    func testLaterDoesNotStartInstall() async {
+    func testAutomaticPromptActions() async {
+        await runLaterDoesNotStartInstall()
+        await runInstallActionRunsExactlyOnce()
+        await runLaterSuppressesSameDayAutomaticPrompt()
+        await runSameAvailableVersionRemindsAgainNextDay()
+        await runDetailsActionKeepsAvailableStoreStateAndRunsOnce()
+    }
+
+    private func runLaterDoesNotStartInstall() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -524,7 +549,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertFalse(fixture.logs.messages.contains("update.auto.prompt.install"))
     }
 
-    func testInstallActionRunsExactlyOnce() async {
+    private func runInstallActionRunsExactlyOnce() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -539,7 +564,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.prompt.install"))
     }
 
-    func testLaterSuppressesSameDayAutomaticPrompt() async {
+    private func runLaterSuppressesSameDayAutomaticPrompt() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -555,7 +580,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(fixture.presenter.presentCount, 1)
     }
 
-    func testSameAvailableVersionRemindsAgainNextDay() async {
+    private func runSameAvailableVersionRemindsAgainNextDay() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -574,7 +599,14 @@ final class AutomaticUpdateTests: XCTestCase {
 
     // MARK: - Failure and lifecycle
 
-    func testAutomaticNetworkFailureStaysQuiet() async {
+    func testAutomaticFailureAndRetryPolicyScenarios() async {
+        await runAutomaticNetworkFailureStaysQuiet()
+        await runClearlyOfflineDoesNotStartOrConsumeAnAutomaticAttempt()
+        await runAutomaticFailureWaitsFourHoursBeforeRetrying()
+        await runAutomaticFailureStopsAtTwoAttemptsAndResetsNextDay()
+    }
+
+    private func runAutomaticNetworkFailureStaysQuiet() async {
         let fixture = Fixture.make(result: .failure(TestError(message: "offline")))
         defer { fixture.cleanup() }
 
@@ -586,7 +618,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.check.failed"))
     }
 
-    func testClearlyOfflineDoesNotStartOrConsumeAnAutomaticAttempt() async {
+    private func runClearlyOfflineDoesNotStartOrConsumeAnAutomaticAttempt() async {
         let fixture = Fixture.make(result: .failure(TestError(message: "offline")))
         defer { fixture.cleanup() }
         fixture.network.offline = true
@@ -600,7 +632,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertNil(fixture.defaults.object(forKey: AutomaticUpdateCheckCoordinator.lastSuccessfulAutomaticCheckDayKey))
     }
 
-    func testAutomaticFailureWaitsFourHoursBeforeRetrying() async {
+    private func runAutomaticFailureWaitsFourHoursBeforeRetrying() async {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let fixture = Fixture.make(
@@ -629,7 +661,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(calls, 2)
     }
 
-    func testAutomaticFailureStopsAtTwoAttemptsAndResetsNextDay() async {
+    private func runAutomaticFailureStopsAtTwoAttemptsAndResetsNextDay() async {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let fixture = Fixture.make(
@@ -697,7 +729,13 @@ final class AutomaticUpdateTests: XCTestCase {
         _ = await waitUntil { store.state == .installing }
     }
 
-    func testStopPreventsFurtherChecksAndRemovesObserver() async {
+    func testStopLifecycleScenarios() async {
+        await runStopPreventsFurtherChecksAndRemovesObserver()
+        await runRunAfterStopIsANoOp()
+        await runStopDiscardsPendingUpdate()
+    }
+
+    private func runStopPreventsFurtherChecksAndRemovesObserver() async {
         let fixture = Fixture.make(result: .success(.upToDate(makeRelease("2.7.1"))))
         defer { fixture.cleanup() }
 
@@ -708,7 +746,7 @@ final class AutomaticUpdateTests: XCTestCase {
         fixture.coordinator.stop()
         // Reset the daily marker so only the observer removal / stopped flag
         // can explain why nothing else fires.
-        fixture.defaults.removeObject(forKey: AutomaticUpdateCheckCoordinator.lastAutomaticCheckDayKey)
+        fixture.defaults.removeObject(forKey: AutomaticUpdateCheckCoordinator.lastSuccessfulAutomaticCheckDayKey)
         NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
         await Task.yield()
 
@@ -716,7 +754,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(calls, 1)
     }
 
-    func testRunAfterStopIsANoOp() async {
+    private func runRunAfterStopIsANoOp() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: nil)))
         defer { fixture.cleanup() }
 
@@ -837,7 +875,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(fixture.presenter.presentCount, 1)
     }
 
-    func testStopDiscardsPendingUpdate() async {
+    private func runStopDiscardsPendingUpdate() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: "- Deferred")))
         defer { fixture.cleanup() }
 
@@ -869,7 +907,7 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(fixture.presenter.presentCount, 0)
     }
 
-    func testDetailsActionKeepsAvailableStoreStateAndRunsOnce() async {
+    private func runDetailsActionKeepsAvailableStoreStateAndRunsOnce() async {
         let fixture = Fixture.make(result: .success(.available(makeRelease("99.9.9"), notes: "- Details")))
         defer { fixture.cleanup() }
 
