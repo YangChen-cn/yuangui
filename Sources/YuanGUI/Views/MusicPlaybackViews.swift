@@ -68,14 +68,19 @@ struct MusicTransportControls: View {
                 .help("上一首")
                 .accessibilityLabel("上一首")
             Button(action: commands.playPause) {
-                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: compact ? 15 : 20, weight: .bold))
-                    .frame(width: compact ? 27 : 38, height: compact ? 27 : 38)
-                    .background(
-                        usesGlassButtons ? Color.clear : Color.primary.opacity(0.10),
-                        in: Circle()
-                    )
+                ZStack {
+                    Circle()
+                        .fill(usesGlassButtons ? Color.clear : Color.primary.opacity(0.10))
+                    Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: compact ? 15 : 20, weight: .bold))
+                }
+                .frame(
+                    width: compact && usesGlassButtons ? 35 : (compact ? 27 : 38),
+                    height: compact && usesGlassButtons ? 35 : (compact ? 27 : 38)
+                )
+                .contentShape(Circle())
             }
+            .contentShape(Circle())
             .modifier(MusicTransportButtonModifier(
                 usesGlass: usesGlassButtons,
                 isProminent: compact && usesGlassButtons && commands.canControl
@@ -102,7 +107,6 @@ private struct MusicTransportButtonModifier: ViewModifier {
                 content
                     .buttonStyle(.plain)
                     .foregroundStyle(.white)
-                    .padding(4)
                     .background(.blue, in: Circle())
             } else {
                 content.yuanSystemGlassButton()

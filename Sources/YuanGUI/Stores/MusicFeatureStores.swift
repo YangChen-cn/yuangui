@@ -88,8 +88,10 @@ final class LyricsPresentationStore: ObservableObject {
     @Published var shadowEnabled: Bool
     @Published var backgroundVisible: Bool
     @Published var backgroundOpacity: Double
+    @Published var chineseConversionMode: LyricsChineseConversionMode
     var onVisibilityChanged: (() -> Void)?
     var onLockChanged: (() -> Void)?
+    private var chineseDisplayConverter = LyricsChineseDisplayConverter()
 
     init(defaults: UserDefaults) {
         isVisible = defaults.bool(forKey: "musicLyricsVisible")
@@ -109,6 +111,17 @@ final class LyricsPresentationStore: ObservableObject {
             max(defaults.object(forKey: "musicLyricsBackgroundOpacity") as? Double ?? 0.24, 0.12),
             0.60
         )
+        chineseConversionMode = LyricsChineseConversionMode(
+            rawValue: defaults.string(forKey: "musicLyricsChineseConversion") ?? ""
+        ) ?? .automatic
+    }
+
+    func prepareChineseConversion(for document: LyricsDocument?) {
+        chineseDisplayConverter.prepare(document: document)
+    }
+
+    func displayedText(_ text: String) -> String {
+        chineseDisplayConverter.displayedText(text, mode: chineseConversionMode)
     }
 }
 

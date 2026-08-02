@@ -337,6 +337,15 @@ final class PetPanelController {
         )
             .sink { [weak self] _, _, _ in Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() } }
             .store(in: &cancellables)
+        music.lyricsPresentation.$chineseConversionMode
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await Task.yield()
+                    self?.updateAuxiliaryBubble()
+                }
+            }
+            .store(in: &cancellables)
         focusTimer.$state
             .sink { [weak self] _ in Task { @MainActor [weak self] in self?.updateAuxiliaryBubble() } }
             .store(in: &cancellables)
@@ -908,12 +917,17 @@ final class PetPanelController {
             focusTimer: focusTimer,
             music: music
         )
+        let displayedMusicLyric = showsMusicLyric
+            ? music.lyricsStore.currentLine.map {
+                music.lyricsPresentation.displayedText($0.text)
+            }
+            : nil
         let size = PetLayout.auxiliaryBubblePanelSize(
             scale: store.petScale,
             showsMaintenance: maintenance.quickMode != nil,
             maintenanceIsBusy: maintenance.isScanning || maintenance.isWorking,
             maintenanceIsCompleted: maintenance.quickCompleted,
-            musicLyricText: showsMusicLyric ? music.lyricsStore.currentLine?.text : nil,
+            musicLyricText: displayedMusicLyric,
             musicAlertText: showsMusicLyric ? musicAlertText : nil
         )
         if bubblePanel.frame.size != size {

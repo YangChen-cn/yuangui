@@ -100,6 +100,14 @@ struct SettingsMusicPage: View {
                             Text(style.title).tag(style)
                         }
                     }
+                    Picker("歌词中文转换", selection: Binding(
+                        get: { lyricsPresentation.chineseConversionMode },
+                        set: music.setLyricsChineseConversionMode
+                    )) {
+                        ForEach(LyricsChineseConversionMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
                     ColorPicker(
                         "桌面歌词颜色",
                         selection: Binding(

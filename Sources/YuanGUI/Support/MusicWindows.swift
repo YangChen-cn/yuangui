@@ -115,7 +115,7 @@ private struct DesktopLyricsView: View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 2) {
                 Text(
-                    lyrics.currentLine?.text
+                    lyrics.currentLine.map { lyricsPresentation.displayedText($0.text) }
                         ?? playback.currentTrack?.title
                         ?? AppLocalizer.string("YuanGUI 桌面歌词")
                 )
@@ -130,7 +130,7 @@ private struct DesktopLyricsView: View {
                         y: 1
                     )
                     .lineLimit(1).minimumScaleFactor(0.6)
-                if let next = lyrics.nextLine?.text {
+                if let next = lyrics.nextLine.map({ lyricsPresentation.displayedText($0.text) }) {
                     Text(next).font(lyricsPresentation.fontStyle.font(
                         size: max(11, lyricsPresentation.fontSize * 0.52),
                         weight: .medium
@@ -269,6 +269,14 @@ private struct DesktopLyricsSettingsView: View {
                     ),
                     supportsOpacity: true
                 )
+            }
+            Picker("歌词中文转换", selection: Binding(
+                get: { lyricsPresentation.chineseConversionMode },
+                set: music.setLyricsChineseConversionMode
+            )) {
+                ForEach(LyricsChineseConversionMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
             }
             Toggle("显示文字阴影", isOn: Binding(
                 get: { lyricsPresentation.shadowEnabled },

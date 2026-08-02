@@ -114,6 +114,11 @@
 "截图翻译" = "Screenshot Translation";
 "翻译所选文字" = "Translate Selected Text";
 "简体中文" = "Simplified Chinese";
+"歌词中文转换" = "Chinese lyrics conversion";
+"自动" = "Automatic";
+"简体" = "Simplified";
+"繁体" = "Traditional";
+"不转换" = "Do not convert";
 "英语" = "English";
 "日语" = "Japanese";
 "韩语" = "Korean";

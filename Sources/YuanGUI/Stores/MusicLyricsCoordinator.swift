@@ -83,7 +83,10 @@ final class MusicLyricsCoordinator {
     var duration: TimeInterval { delegate?.lyricsPlaybackDuration ?? 0 }
     var document: LyricsDocument? {
         get { store.document }
-        set { store.document = newValue }
+        set {
+            store.document = newValue
+            presentation.prepareChineseConversion(for: newValue)
+        }
     }
     var currentLine: TimedLyricLine? {
         get { store.currentLine }
@@ -168,6 +171,10 @@ final class MusicLyricsCoordinator {
     var lyricsFontStyle: LyricsFontStyle {
         get { presentation.fontStyle }
         set { presentation.fontStyle = newValue }
+    }
+    var lyricsChineseConversionMode: LyricsChineseConversionMode {
+        get { presentation.chineseConversionMode }
+        set { presentation.chineseConversionMode = newValue }
     }
     var lyricsColor: NSColor {
         get { presentation.color }

@@ -192,6 +192,27 @@ final class MusicTests: XCTestCase {
     }
 
     @MainActor
+    func testLyricsChineseConversionModeDefaultsAndRestores() {
+        let suite = "LyricsChineseConversionTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(
+            LyricsPresentationStore(defaults: defaults).chineseConversionMode,
+            .automatic
+        )
+
+        defaults.set(
+            LyricsChineseConversionMode.traditional.rawValue,
+            forKey: "musicLyricsChineseConversion"
+        )
+        XCTAssertEqual(
+            LyricsPresentationStore(defaults: defaults).chineseConversionMode,
+            .traditional
+        )
+    }
+
+    @MainActor
     func testLiveBilibiliPublicAudioStartsWhenEnabled() async throws {
         guard ProcessInfo.processInfo.environment["YUANGUI_LIVE_BILI"] == "1" else {
             throw XCTSkip("Set YUANGUI_LIVE_BILI=1 to run the network integration test")
@@ -277,6 +298,77 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(document.lines[1].time, 3.75, accuracy: 0.001)
         XCTAssertEqual(document.line(at: 4)?.text, "第一句")
         XCTAssertEqual(document.nextLine(after: 4)?.text, "第二句")
+    }
+
+    func testLyricsDetectionSampleContainsOnlyLyricText() {
+        let sample = LyricsParser.detectionSample(fromLRC: """
+        [ti:測試歌曲]
+        [ar:測試歌手]
+        [00:10.00]我願意為你
+        [00:15.20][00:16.00]忘記我姓名
+        """)
+
+        XCTAssertEqual(sample, "我願意為你\n忘記我姓名")
+        XCTAssertFalse(sample.contains("00:10"))
+        XCTAssertFalse(sample.contains("測試歌手"))
+    }
+
+    func testLyricsChineseDisplayConversionModes() {
+        let traditionalDocument = LyricsParser.parseLRC("""
+        [00:01.00]我願意為你忘記姓名
+        [00:02.00]這是一首繁體中文歌曲
+        [00:03.00]讓我們繼續聽音樂
+        """)
+        var converter = LyricsChineseDisplayConverter()
+        converter.prepare(document: traditionalDocument)
+
+        XCTAssertEqual(
+            converter.displayedText(
+                "我願意為你",
+                mode: .automatic,
+                preferredLanguages: ["zh-Hans-CN"]
+            ),
+            "我愿意为你"
+        )
+        XCTAssertEqual(
+            converter.displayedText("我願意為你", mode: .unchanged),
+            "我願意為你"
+        )
+
+        let simplifiedDocument = LyricsParser.parseLRC("""
+        [00:01.00]我愿意为你忘记姓名
+        [00:02.00]这是一首简体中文歌曲
+        [00:03.00]让我们继续听音乐
+        """)
+        converter.prepare(document: simplifiedDocument)
+        XCTAssertEqual(
+            converter.displayedText("我愿意为你", mode: .traditional),
+            "我願意為你"
+        )
+    }
+
+    func testLyricsAutomaticChineseTargetUsesSystemLanguageScript() {
+        XCTAssertEqual(
+            LyricsChineseDisplayConverter.targetScript(
+                for: .automatic,
+                preferredLanguages: ["zh-Hans-CN"]
+            ),
+            .simplified
+        )
+        XCTAssertEqual(
+            LyricsChineseDisplayConverter.targetScript(
+                for: .automatic,
+                preferredLanguages: ["zh-Hant-TW"]
+            ),
+            .traditional
+        )
+        XCTAssertEqual(
+            LyricsChineseDisplayConverter.targetScript(
+                for: .automatic,
+                preferredLanguages: ["en-US"]
+            ),
+            .unchanged
+        )
     }
 
     func testLyricsDocumentNavigationScenarios() {

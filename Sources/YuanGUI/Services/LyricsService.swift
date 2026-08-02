@@ -6,8 +6,11 @@ protocol LyricsProviding: Sendable {
 }
 
 enum LyricsParser {
+    private static let timestamp = try! NSRegularExpression(
+        pattern: #"\[(\d{1,3}):(\d{2})(?:[\.:](\d{1,3}))?\]"#
+    )
+
     static func parseLRC(_ text: String, source: String = "本地 LRC") -> LyricsDocument {
-        let timestamp = try! NSRegularExpression(pattern: #"\[(\d{1,3}):(\d{2})(?:[\.:](\d{1,3}))?\]"#)
         var offset: TimeInterval = 0
         var title: String?
         var artist: String?
@@ -34,6 +37,30 @@ enum LyricsParser {
             }
         }
         return LyricsDocument(title: title, artist: artist, lines: lines.sorted { $0.time < $1.time }, source: source)
+    }
+
+    /// Produces language-recognition input from actual lyric rows, excluding
+    /// timestamps and metadata so LRC syntax cannot skew script detection.
+    static func detectionSample(from document: LyricsDocument, characterLimit: Int = 1_200) -> String {
+        limitedSample(document.lines.map(\.text), characterLimit: characterLimit)
+    }
+
+    static func detectionSample(fromLRC text: String, characterLimit: Int = 1_200) -> String {
+        let lyricRows = text.components(separatedBy: .newlines).compactMap { rawLine -> String? in
+            let range = NSRange(rawLine.startIndex..., in: rawLine)
+            let matches = timestamp.matches(in: rawLine, range: range)
+            guard let last = matches.last,
+                  let matchRange = Range(last.range, in: rawLine) else { return nil }
+            let lyric = rawLine[matchRange.upperBound...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return lyric.isEmpty ? nil : lyric
+        }
+        return limitedSample(lyricRows, characterLimit: characterLimit)
+    }
+
+    private static func limitedSample(_ rows: [String], characterLimit: Int) -> String {
+        guard characterLimit > 0 else { return "" }
+        return String(rows.joined(separator: "\n").prefix(characterLimit))
     }
 
     private static func metadata(_ line: String) -> String? {

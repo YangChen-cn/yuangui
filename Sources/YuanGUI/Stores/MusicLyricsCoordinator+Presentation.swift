@@ -29,6 +29,11 @@ extension MusicLyricsCoordinator {
         defaults.set(style.rawValue, forKey: "musicLyricsFontStyle")
     }
 
+    func setChineseConversionMode(_ mode: LyricsChineseConversionMode) {
+        lyricsChineseConversionMode = mode
+        defaults.set(mode.rawValue, forKey: "musicLyricsChineseConversion")
+    }
+
     func setColor(_ color: NSColor) {
         guard let color = color.usingColorSpace(.sRGB) else { return }
         lyricsColor = color

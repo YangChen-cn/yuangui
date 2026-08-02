@@ -179,6 +179,9 @@ final class MusicFeature {
     func setLyricsPanelLocked(_ locked: Bool) { lyricsCommands.setPanelLocked(locked) }
     func setLyricsFontSize(_ size: Double) { lyricsCommands.setFontSize(size) }
     func setLyricsFontStyle(_ style: LyricsFontStyle) { lyricsCommands.setFontStyle(style) }
+    func setLyricsChineseConversionMode(_ mode: LyricsChineseConversionMode) {
+        lyricsCommands.setChineseConversionMode(mode)
+    }
     func setLyricsColor(_ color: NSColor) { lyricsCommands.setColor(color) }
     func setLyricsShadowEnabled(_ enabled: Bool) { lyricsCommands.setShadowEnabled(enabled) }
     func setLyricsBackgroundVisible(_ visible: Bool) { lyricsCommands.setBackgroundVisible(visible) }

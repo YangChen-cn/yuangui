@@ -45,7 +45,7 @@ struct PetAuxiliaryBubbleView: View {
                 )
             } else if showsMusicLyric, let lyric = lyrics.currentLine?.text {
                 PetMusicLyricBubble(
-                    text: lyric,
+                    text: lyricsPresentation.displayedText(lyric),
                     alertText: musicAlertText,
                     placement: presentation.placement
                 )

@@ -197,6 +197,24 @@ enum LyricsFontStyle: String, CaseIterable, Identifiable {
     }
 }
 
+enum LyricsChineseConversionMode: String, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case simplified
+    case traditional
+    case unchanged
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic: AppLocalizer.string("自动")
+        case .simplified: AppLocalizer.string("简体")
+        case .traditional: AppLocalizer.string("繁体")
+        case .unchanged: AppLocalizer.string("不转换")
+        }
+    }
+}
+
 struct BilibiliTrackReference: Codable, Hashable, Sendable {
     let bvid: String
     let aid: Int

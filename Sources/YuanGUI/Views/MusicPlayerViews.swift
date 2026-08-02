@@ -7,6 +7,7 @@ private struct FullPlayerLyricsView: View {
     let music: MusicFeature
     @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject private var lyrics: LyricsStore
+    @ObservedObject private var lyricsPresentation: LyricsPresentationStore
     @State private var previewLyricPosition: Double?
     @State private var isScrollFocused = false
     @State private var resumeFollowingTask: Task<Void, Never>?
@@ -15,6 +16,7 @@ private struct FullPlayerLyricsView: View {
         self.music = music
         _playback = ObservedObject(wrappedValue: music.playback)
         _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
+        _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
     }
 
     var body: some View {
@@ -96,12 +98,13 @@ private struct FullPlayerLyricsView: View {
     }
 
     private func lyricButton(_ line: TimedLyricLine, isCurrent: Bool, distance: Int) -> some View {
-        Button {
+        let displayedText = lyricsPresentation.displayedText(line.text)
+        return Button {
             resumeFollowingTask?.cancel()
             withAnimation(.easeOut(duration: 0.16)) { previewLyricPosition = nil }
             music.seek(toLyric: line)
         } label: {
-            Text(line.text)
+            Text(displayedText)
                 .font(.system(
                     size: isCurrent ? 16 : 13,
                     weight: isCurrent ? .semibold : .regular,
@@ -122,7 +125,7 @@ private struct FullPlayerLyricsView: View {
         .accessibilityLabel(AppLocalizer.format(
             "music.lyrics.lineAccessibility",
             formatTime(line.time + music.currentLyricOffset),
-            line.text
+            displayedText
         ))
         .accessibilityHint("跳转到这句歌词")
     }
@@ -665,6 +668,15 @@ private struct MusicPlayerContentRoot: View {
                         supportsOpacity: true
                     )
                     .fixedSize()
+                }
+
+                Picker(AppLocalizer.string("歌词中文转换"), selection: Binding(
+                    get: { music.lyricsPresentation.chineseConversionMode },
+                    set: music.setLyricsChineseConversionMode
+                )) {
+                    ForEach(LyricsChineseConversionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
 
                 Toggle(AppLocalizer.string("锁定并点击穿透"), isOn: Binding(
