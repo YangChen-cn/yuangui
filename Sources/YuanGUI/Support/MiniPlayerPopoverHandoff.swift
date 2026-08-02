@@ -1,45 +1,38 @@
 import AppKit
 import SwiftUI
 
-struct MiniPlayerPopoverTransition {
-    private(set) var isFullPlayerPending = false
-    private(set) var observedWillClose = false
-
-    mutating func requestFullPlayer() -> Bool {
-        guard !isFullPlayerPending else { return false }
-        isFullPlayerPending = true
-        return true
-    }
-
-    mutating func popoverWillClose() {
-        observedWillClose = true
-    }
-
-    mutating func popoverDidClose() -> Bool {
-        defer {
-            isFullPlayerPending = false
-            observedWillClose = false
-        }
-        return isFullPlayerPending && observedWillClose
-    }
-}
-
 @MainActor
 final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
     private let notificationCenter: NotificationCenter
+    private let outsideClickMonitor: MiniPlayerOutsideClickMonitoring
     private var observers: [NSObjectProtocol] = []
     private weak var probeView: NSView?
     private var popover: NSPopover?
     private weak var popoverWindow: NSWindow?
-    private var transition = MiniPlayerPopoverTransition()
+    private var pendingPopover: NSPopover?
     private var pendingAction: (() -> Void)?
+    private var outsideDismissAction: (() -> Void)?
 
     override convenience init() {
-        self.init(notificationCenter: .default)
+        self.init(
+            notificationCenter: .default,
+            outsideClickMonitor: MiniPlayerOutsideClickEventMonitor()
+        )
     }
 
-    init(notificationCenter: NotificationCenter) {
+    convenience init(notificationCenter: NotificationCenter) {
+        self.init(
+            notificationCenter: notificationCenter,
+            outsideClickMonitor: MiniPlayerOutsideClickEventMonitor()
+        )
+    }
+
+    init(
+        notificationCenter: NotificationCenter,
+        outsideClickMonitor: MiniPlayerOutsideClickMonitoring
+    ) {
         self.notificationCenter = notificationCenter
+        self.outsideClickMonitor = outsideClickMonitor
         super.init()
         observePopoverLifecycle()
     }
@@ -50,18 +43,18 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
         }
     }
 
-    func register(probeView: NSView) {
+    func register(probeView: NSView, onOutsideClick: @escaping () -> Void) {
         self.probeView = probeView
-        if let popover, containsProbe(popover) {
-            popoverWindow = probeView.window ?? popover.contentViewController?.view.window
-        }
+        outsideDismissAction = onOutsideClick
+        capturePopoverWindowIfAvailable()
     }
 
     func requestFullPlayer(
         closePopover: () -> Void,
         openFullPlayer: @escaping () -> Void
     ) {
-        guard transition.requestFullPlayer() else { return }
+        guard pendingPopover == nil, let popover else { return }
+        pendingPopover = popover
         pendingAction = openFullPlayer
         closePopover()
     }
@@ -78,25 +71,7 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
                           let shownPopover = notification.object as? NSPopover,
                           self.containsProbe(shownPopover) else { return }
                     self.popover = shownPopover
-                    self.popoverWindow = self.probeView?.window
-                        ?? shownPopover.contentViewController?.view.window
-                }
-            },
-            notificationCenter.addObserver(
-                forName: NSPopover.willCloseNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                MainActor.assumeIsolated {
-                    guard let self,
-                          let closingPopover = notification.object as? NSPopover else { return }
-                    if self.popover == nil, self.containsProbe(closingPopover) {
-                        self.popover = closingPopover
-                        self.popoverWindow = self.probeView?.window
-                            ?? closingPopover.contentViewController?.view.window
-                    }
-                    guard closingPopover === self.popover else { return }
-                    self.transition.popoverWillClose()
+                    self.capturePopoverWindowIfAvailable()
                 }
             },
             notificationCenter.addObserver(
@@ -106,9 +81,8 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
             ) { [weak self] notification in
                 MainActor.assumeIsolated {
                     guard let self,
-                          let closedPopover = notification.object as? NSPopover,
-                          closedPopover === self.popover else { return }
-                    self.finishPopoverClose()
+                          let closedPopover = notification.object as? NSPopover else { return }
+                    self.finishPopoverClose(closedPopover)
                 }
             }
         ]
@@ -120,26 +94,44 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
         return probeView === contentView || probeView.isDescendant(of: contentView)
     }
 
-    private func finishPopoverClose() {
-        let shouldOpenFullPlayer = transition.popoverDidClose()
-        let action = shouldOpenFullPlayer ? pendingAction : nil
+    private func capturePopoverWindowIfAvailable() {
+        guard let popover,
+              containsProbe(popover),
+              let window = probeView?.window
+                ?? popover.contentViewController?.view.window else { return }
+        guard popoverWindow !== window else { return }
+        popoverWindow = window
+        outsideClickMonitor.start(popoverWindow: window) { [weak self] in
+            self?.outsideDismissAction?()
+        }
+    }
+
+    private func finishPopoverClose(_ closedPopover: NSPopover) {
+        if closedPopover === popover {
+            outsideClickMonitor.stop()
+            popover = nil
+            popoverWindow = nil
+        }
+
+        guard closedPopover === pendingPopover else { return }
+        let action = pendingAction
+        pendingPopover = nil
         pendingAction = nil
-        popover = nil
-        popoverWindow = nil
         action?()
     }
 }
 
 struct MiniPlayerPopoverProbe: NSViewRepresentable {
     let handoff: MiniPlayerPopoverHandoff
+    let onOutsideClick: () -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        handoff.register(probeView: view)
+        handoff.register(probeView: view, onOutsideClick: onOutsideClick)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        handoff.register(probeView: nsView)
+        handoff.register(probeView: nsView, onOutsideClick: onOutsideClick)
     }
 }

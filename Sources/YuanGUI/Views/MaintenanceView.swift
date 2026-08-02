@@ -8,8 +8,7 @@ struct MaintenanceView: View {
 
     var body: some View {
         VStack(spacing: MaintenanceDesign.sectionSpacing) {
-            MaintenanceHeroView(store: store)
-            MaintenanceTabBar(selection: $store.selectedTab)
+            MaintenanceHeroView(store: store, selection: $store.selectedTab)
 
             Group {
                 if store.selectedTab == 0 { cleanupPage }

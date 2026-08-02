@@ -482,7 +482,10 @@ private struct PetSideControlsLayer: View {
                 .accessibilityLabel(AppLocalizer.string("打开迷你播放器"))
                 .popover(isPresented: $isMiniPlayerPresented, arrowEdge: sideControlsOnRight ? .trailing : .leading) {
                     MiniMusicPlayerView(music: music, openFullPlayer: openFullPlayer)
-                        .background(MiniPlayerPopoverProbe(handoff: miniPlayerHandoff))
+                        .background(MiniPlayerPopoverProbe(
+                            handoff: miniPlayerHandoff,
+                            onOutsideClick: { isMiniPlayerPresented = false }
+                        ))
                 }
                 Button { store.toggleInteractionLock() } label: {
                     sideToolIcon("lock.open.fill", tint: .orange, selected: false, size: 30)

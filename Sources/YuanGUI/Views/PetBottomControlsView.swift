@@ -85,7 +85,10 @@ struct PetBottomControlsView: View {
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "正在播放音乐" : "打开迷你播放器"))
             .popover(isPresented: $isMiniPlayerPresented, arrowEdge: .bottom) {
                 MiniMusicPlayerView(music: music, openFullPlayer: openFullPlayer)
-                    .background(MiniPlayerPopoverProbe(handoff: miniPlayerHandoff))
+                    .background(MiniPlayerPopoverProbe(
+                        handoff: miniPlayerHandoff,
+                        onOutsideClick: { isMiniPlayerPresented = false }
+                    ))
             }
 
             Button {

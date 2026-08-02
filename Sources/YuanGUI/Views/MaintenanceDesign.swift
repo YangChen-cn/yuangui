@@ -12,6 +12,7 @@ enum MaintenanceDesign {
 
 struct MaintenanceHeroView: View {
     @ObservedObject var store: MaintenanceStore
+    @Binding var selection: Int
 
     var body: some View {
         HStack(spacing: 14) {
@@ -34,7 +35,11 @@ struct MaintenanceHeroView: View {
             }
             .layoutPriority(1)
 
-            Spacer(minLength: 10)
+            Spacer(minLength: 14)
+
+            MaintenanceTabBar(selection: $selection)
+                .frame(maxWidth: 500)
+                .layoutPriority(1)
 
             if store.isScanning || store.isWorking {
                 ProgressView()
