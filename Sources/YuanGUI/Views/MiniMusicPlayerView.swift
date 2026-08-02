@@ -16,13 +16,10 @@ struct MiniMusicPlayerView: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                Button(action: openFullPlayer) {
-                    MusicArtworkView(track: playback.currentTrack, size: 52)
-                        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .help("打开完整播放器")
-                .accessibilityLabel("打开完整播放器")
+                MiniPlayerArtworkButton(
+                    track: playback.currentTrack,
+                    action: openFullPlayer
+                )
                 VStack(alignment: .leading, spacing: 3) {
                     Text(playback.currentTrack?.title ?? AppLocalizer.string("暂无播放内容"))
                         .font(.headline)

@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import SwiftUI
 
 private final class MusicPlayerWindow: NSWindow {
@@ -8,6 +9,12 @@ private final class MusicPlayerWindow: NSWindow {
 
 @MainActor
 final class MusicWindowController: NSObject, NSWindowDelegate {
+    static let windowCollectionBehavior: NSWindow.CollectionBehavior = [.moveToActiveSpace]
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.yang.yuangui",
+        category: "MusicWindow"
+    )
+
     private let window: NSWindow
     private let windowActivator: ApplicationWindowActivating
     private let onClose: () -> Void
@@ -30,21 +37,31 @@ final class MusicWindowController: NSObject, NSWindowDelegate {
         window.title = AppLocalizer.string("音乐播放器")
         window.isReleasedWhenClosed = false
         window.delegate = self
+        window.collectionBehavior.formUnion(Self.windowCollectionBehavior)
         window.minSize = NSSize(width: 760, height: 520)
         window.contentView = NSHostingView(rootView:
             MusicPlayerView(music: music)
                 .environment(\.appActions, appActions)
         )
         window.center()
+        Self.logger.info("Created music window with move-to-active-Space behavior")
     }
 
     func windowWillClose(_ notification: Notification) {
+        Self.logger.info("Music window will close; releasing controller content")
         window.contentView = nil
         window.delegate = nil
         onClose()
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        Self.logger.info("Music window became key")
+    }
+
     func show() {
+        Self.logger.info(
+            "Showing music window; visible=\(self.window.isVisible, privacy: .public), miniaturized=\(self.window.isMiniaturized, privacy: .public)"
+        )
         windowActivator.present(window, makeMain: true)
     }
 }

@@ -3,9 +3,42 @@ import XCTest
 @testable import YuanGUI
 
 final class WindowActivationTests: XCTestCase {
+    @MainActor
+    func testMusicPlayerMovesToTheActiveSpaceWhenReused() {
+        let behavior = MusicWindowController.windowCollectionBehavior
+
+        XCTAssertTrue(behavior.contains(.moveToActiveSpace))
+        XCTAssertFalse(behavior.contains(.canJoinAllSpaces))
+    }
+
     func testWindowPresentationWaitsForApplicationActivation() {
         XCTAssertFalse(ApplicationWindowActivator.canPresentWindow(isApplicationActive: false))
         XCTAssertTrue(ApplicationWindowActivator.canPresentWindow(isApplicationActive: true))
+    }
+
+    @MainActor
+    func testWindowPresentationOrdersFrontAndRetriesBeforeMakingKey() async throws {
+        let notificationCenter = NotificationCenter()
+        var isActive = false
+        var activationAttempts = 0
+        let activator = ApplicationWindowActivator(
+            notificationCenter: notificationCenter,
+            retryDelays: [.milliseconds(1)],
+            isApplicationActive: { isActive },
+            activateApplication: {
+                activationAttempts += 1
+                if activationAttempts == 2 { isActive = true }
+            }
+        )
+        let window = NSWindow()
+
+        activator.present(window, makeMain: false)
+        XCTAssertTrue(window.isVisible)
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(activationAttempts, 2)
+        XCTAssertTrue(window.isVisible)
+        window.orderOut(nil)
     }
 
     @MainActor
@@ -121,6 +154,36 @@ final class WindowActivationTests: XCTestCase {
         notificationCenter.post(name: NSPopover.didCloseNotification, object: popover)
 
         XCTAssertEqual(events, ["close", "open"])
+    }
+
+    @MainActor
+    func testPopoverHandoffCompletesRepeatedOpenCloseCycles() {
+        let notificationCenter = NotificationCenter()
+        let handoff = MiniPlayerPopoverHandoff(
+            notificationCenter: notificationCenter,
+            outsideClickMonitor: RecordingMiniPlayerOutsideClickMonitor()
+        )
+        var events: [String] = []
+
+        for cycle in 1...2 {
+            let popover = NSPopover()
+            let contentView = NSView(frame: .zero)
+            let probeView = NSView(frame: .zero)
+            contentView.addSubview(probeView)
+            popover.contentViewController = NSViewController()
+            popover.contentViewController?.view = contentView
+            _ = NSWindow(contentViewController: popover.contentViewController!)
+
+            notificationCenter.post(name: NSPopover.didShowNotification, object: popover)
+            handoff.register(probeView: probeView, onOutsideClick: {})
+            handoff.requestFullPlayer(
+                closePopover: { events.append("close-\(cycle)") },
+                openFullPlayer: { events.append("open-\(cycle)") }
+            )
+            notificationCenter.post(name: NSPopover.didCloseNotification, object: popover)
+        }
+
+        XCTAssertEqual(events, ["close-1", "open-1", "close-2", "open-2"])
     }
 
     @MainActor

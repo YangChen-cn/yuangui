@@ -1,8 +1,14 @@
 import AppKit
+import OSLog
 import SwiftUI
 
 @MainActor
 final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.yang.yuangui",
+        category: "MiniPlayerHandoff"
+    )
+
     private let notificationCenter: NotificationCenter
     private let outsideClickMonitor: MiniPlayerOutsideClickMonitoring
     private var observers: [NSObjectProtocol] = []
@@ -55,10 +61,16 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
         closePopover: () -> Void,
         openFullPlayer: @escaping () -> Void
     ) {
-        guard pendingAction == nil else { return }
+        guard pendingAction == nil else {
+            Self.logger.info("Ignored duplicate full-player handoff request")
+            return
+        }
         pendingAction = openFullPlayer
         resolvePopoverFromVisibleCandidates()
         pendingPopover = popover
+        Self.logger.info(
+            "Full-player handoff requested; popoverKnown=\(self.pendingPopover != nil, privacy: .public)"
+        )
         closePopover()
     }
 
@@ -120,6 +132,7 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
     private func adoptPopoverIfMatching(_ candidate: NSPopover) {
         guard containsProbe(candidate) else { return }
         popover = candidate
+        Self.logger.info("Matched mini-player popover identity")
         capturePendingPopoverIfMatching(candidate)
         capturePopoverWindowIfAvailable()
     }
@@ -153,10 +166,16 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
             popoverWindow = nil
         }
 
-        guard closedPopover === pendingPopover else { return }
+        guard closedPopover === pendingPopover else {
+            if pendingAction != nil {
+                Self.logger.info("Observed unrelated popover close while handoff is pending")
+            }
+            return
+        }
         let action = pendingAction
         pendingPopover = nil
         pendingAction = nil
+        Self.logger.info("Matching mini-player popover closed; opening full player")
         action?()
     }
 }
