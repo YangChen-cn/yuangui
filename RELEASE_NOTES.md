@@ -10,8 +10,9 @@
 - Improved the Dashboard Apple Music presentation and strengthened playback synchronization. Polling now recovers after unexpected interruption, track changes no longer remain stuck at the previous song's end, and returning the companion from edge docking triggers an immediate refresh.
 - Made LRCLIB matching more tolerant of missing duration metadata. When title-and-artist matching fails, YuanGUI now retries by title so lyrics entries without artist metadata can still be found.
 - Added Chinese lyric display conversion with automatic system-language selection, explicit Simplified or Traditional modes, and an unchanged mode. Conversion is presentation-only and does not alter raw LRC data, search, or timeline matching.
-- Restored the compact SwiftUI mini-player popover presentation and rebuilt the full-player handoff around the real AppKit popover lifecycle. YuanGUI now closes the parent-owned popover first, waits for it to finish, activates the application, and only then makes the full player key and main.
+- Restored the compact SwiftUI mini-player popover presentation and rebuilt the full-player handoff around the real AppKit popover lifecycle. 
 - The mini player now opens the full player when its artwork is clicked and uses the entire circular play/pause control as the hit target.
+- Fixed lifecycle race condition when opening the mini player for the first time
 - Added focused lifecycle and synchronization tests for speech invalidation, translation window sizing, urgent reminder priority, Apple Music recovery, LRCLIB fallback, and mini-player window handoff.
 
 ## Earlier releases

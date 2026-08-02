@@ -8,6 +8,7 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private weak var probeView: NSView?
     private var popover: NSPopover?
+    private var visiblePopovers: [NSPopover] = []
     private weak var popoverWindow: NSWindow?
     private var pendingPopover: NSPopover?
     private var pendingAction: (() -> Void)?
@@ -46,6 +47,7 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
     func register(probeView: NSView, onOutsideClick: @escaping () -> Void) {
         self.probeView = probeView
         outsideDismissAction = onOutsideClick
+        resolvePopoverFromVisibleCandidates()
         capturePopoverWindowIfAvailable()
     }
 
@@ -53,9 +55,10 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
         closePopover: () -> Void,
         openFullPlayer: @escaping () -> Void
     ) {
-        guard pendingPopover == nil, let popover else { return }
-        pendingPopover = popover
+        guard pendingAction == nil else { return }
         pendingAction = openFullPlayer
+        resolvePopoverFromVisibleCandidates()
+        pendingPopover = popover
         closePopover()
     }
 
@@ -68,10 +71,22 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
             ) { [weak self] notification in
                 MainActor.assumeIsolated {
                     guard let self,
-                          let shownPopover = notification.object as? NSPopover,
-                          self.containsProbe(shownPopover) else { return }
-                    self.popover = shownPopover
-                    self.capturePopoverWindowIfAvailable()
+                          let shownPopover = notification.object as? NSPopover else { return }
+                    if !self.visiblePopovers.contains(where: { $0 === shownPopover }) {
+                        self.visiblePopovers.append(shownPopover)
+                    }
+                    self.adoptPopoverIfMatching(shownPopover)
+                }
+            },
+            notificationCenter.addObserver(
+                forName: NSPopover.willCloseNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                MainActor.assumeIsolated {
+                    guard let self,
+                          let closingPopover = notification.object as? NSPopover else { return }
+                    self.capturePendingPopoverIfMatching(closingPopover)
                 }
             },
             notificationCenter.addObserver(
@@ -91,7 +106,29 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
     private func containsProbe(_ candidate: NSPopover) -> Bool {
         guard let probeView,
               let contentView = candidate.contentViewController?.view else { return false }
-        return probeView === contentView || probeView.isDescendant(of: contentView)
+        return probeView === contentView
+            || probeView.isDescendant(of: contentView)
+            || (probeView.window != nil && probeView.window === contentView.window)
+    }
+
+    private func resolvePopoverFromVisibleCandidates() {
+        guard popover == nil,
+              let matchingPopover = visiblePopovers.last(where: containsProbe) else { return }
+        adoptPopoverIfMatching(matchingPopover)
+    }
+
+    private func adoptPopoverIfMatching(_ candidate: NSPopover) {
+        guard containsProbe(candidate) else { return }
+        popover = candidate
+        capturePendingPopoverIfMatching(candidate)
+        capturePopoverWindowIfAvailable()
+    }
+
+    private func capturePendingPopoverIfMatching(_ candidate: NSPopover) {
+        guard pendingAction != nil,
+              pendingPopover == nil,
+              (candidate === popover || containsProbe(candidate)) else { return }
+        pendingPopover = candidate
     }
 
     private func capturePopoverWindowIfAvailable() {
@@ -107,6 +144,9 @@ final class MiniPlayerPopoverHandoff: NSObject, ObservableObject {
     }
 
     private func finishPopoverClose(_ closedPopover: NSPopover) {
+        capturePendingPopoverIfMatching(closedPopover)
+        visiblePopovers.removeAll { $0 === closedPopover }
+
         if closedPopover === popover {
             outsideClickMonitor.stop()
             popover = nil

@@ -64,6 +64,66 @@ final class WindowActivationTests: XCTestCase {
     }
 
     @MainActor
+    func testPopoverHandoffMatchesDidShowThatPrecedesProbeRegistration() {
+        let notificationCenter = NotificationCenter()
+        let outsideClickMonitor = RecordingMiniPlayerOutsideClickMonitor()
+        let handoff = MiniPlayerPopoverHandoff(
+            notificationCenter: notificationCenter,
+            outsideClickMonitor: outsideClickMonitor
+        )
+        let popover = NSPopover()
+        let contentView = NSView(frame: .zero)
+        let probeView = NSView(frame: .zero)
+        contentView.addSubview(probeView)
+        popover.contentViewController = NSViewController()
+        popover.contentViewController?.view = contentView
+        let popoverWindow = NSWindow(contentViewController: popover.contentViewController!)
+
+        notificationCenter.post(name: NSPopover.didShowNotification, object: popover)
+        handoff.register(probeView: probeView, onOutsideClick: {})
+
+        XCTAssertTrue(outsideClickMonitor.popoverWindow === popoverWindow)
+        var events: [String] = []
+        handoff.requestFullPlayer(
+            closePopover: { events.append("close") },
+            openFullPlayer: { events.append("open") }
+        )
+        notificationCenter.post(name: NSPopover.didCloseNotification, object: popover)
+
+        XCTAssertEqual(events, ["close", "open"])
+    }
+
+    @MainActor
+    func testPopoverHandoffKeepsIntentUntilLateProbeRegistration() {
+        let notificationCenter = NotificationCenter()
+        let handoff = MiniPlayerPopoverHandoff(
+            notificationCenter: notificationCenter,
+            outsideClickMonitor: RecordingMiniPlayerOutsideClickMonitor()
+        )
+        let popover = NSPopover()
+        let contentView = NSView(frame: .zero)
+        let probeView = NSView(frame: .zero)
+        popover.contentViewController = NSViewController()
+        popover.contentViewController?.view = contentView
+        _ = NSWindow(contentViewController: popover.contentViewController!)
+        notificationCenter.post(name: NSPopover.didShowNotification, object: popover)
+
+        var events: [String] = []
+        handoff.requestFullPlayer(
+            closePopover: { events.append("close") },
+            openFullPlayer: { events.append("open") }
+        )
+        XCTAssertEqual(events, ["close"])
+
+        contentView.addSubview(probeView)
+        handoff.register(probeView: probeView, onOutsideClick: {})
+        notificationCenter.post(name: NSPopover.willCloseNotification, object: popover)
+        notificationCenter.post(name: NSPopover.didCloseNotification, object: popover)
+
+        XCTAssertEqual(events, ["close", "open"])
+    }
+
+    @MainActor
     func testOutsideClickDismissesOnlyTheMiniPlayer() {
         let notificationCenter = NotificationCenter()
         let outsideClickMonitor = RecordingMiniPlayerOutsideClickMonitor()
