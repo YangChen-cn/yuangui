@@ -9,6 +9,7 @@ struct PetRootView: View {
     let maintenance: MaintenanceStore
     let focusTimer: FocusTimerStore
     let music: MusicFeature
+    let guide: PetGuideCoordinator
     let auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
 
     var body: some View {
@@ -20,6 +21,7 @@ struct PetRootView: View {
             maintenance: maintenance,
             focusTimer: focusTimer,
             music: music,
+            guide: guide,
             auxiliaryBubblePresentation: auxiliaryBubblePresentation
         )
     }
@@ -33,6 +35,7 @@ private struct PetSceneRoot: View {
     let maintenance: MaintenanceStore
     let focusTimer: FocusTimerStore
     let music: MusicFeature
+    let guide: PetGuideCoordinator
     let auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
 
     @Environment(\.appActions) private var appActions
@@ -51,17 +54,14 @@ private struct PetSceneRoot: View {
         .contextMenu { contextMenu }
     }
 
+    /// The pet is the entry point to the whole app: the top section runs
+    /// existing tools directly, followed by the pet's own behaviors.
     @ViewBuilder
     private var contextMenu: some View {
-        Button(chat.isPresented ? "收起 AI 对话" : "和元圭、VCC 聊天…") { appActions.open(.chat) }
-        Button("打开完整监控") { appActions.open(.statusDashboard) }
-        Button("打开清理屋…") { appActions.open(.maintenance(tab: 0)) }
-        Button(store.shouldShowPetBubble ? "隐藏系统状态" : "显示系统状态") {
-            store.toggleSystemStatus()
-        }
-        Button(store.desktopIconsVisible ? "隐藏桌面图标" : "显示桌面图标") {
-            store.toggleDesktopIcons()
-        }
+        Button(AppLocalizer.string("pet.menu.screenshot")) { appActions.runQuickTool(.regionScreenshot) }
+        Button(AppLocalizer.string("pet.menu.screenshotTranslation")) { appActions.runQuickTool(.screenshotTranslation) }
+        Button(AppLocalizer.string("pet.menu.translateSelection")) { appActions.runQuickTool(.translateSelection) }
+        Divider()
         Menu("番茄钟") {
             switch focusTimer.state {
             case .idle, .completed:
@@ -89,6 +89,21 @@ private struct PetSceneRoot: View {
                 music.toggleLyricsVisible()
             }
         }
+        Button(AppLocalizer.string("pet.menu.diary")) { appActions.open(.diary) }
+        Button(AppLocalizer.string("pet.menu.finderExtension")) { appActions.open(.finderExtension) }
+        Divider()
+        Button(AppLocalizer.string("pet.menu.guide")) { guide.restartOnboarding() }
+        Button(AppLocalizer.string("pet.menu.settings")) { appActions.open(.settings(.pet)) }
+        Divider()
+        Button(chat.isPresented ? "收起 AI 对话" : "和元圭、VCC 聊天…") { appActions.open(.chat) }
+        Button("打开完整监控") { appActions.open(.statusDashboard) }
+        Button("打开清理屋…") { appActions.open(.maintenance(tab: 0)) }
+        Button(store.shouldShowPetBubble ? "隐藏系统状态" : "显示系统状态") {
+            store.toggleSystemStatus()
+        }
+        Button(store.desktopIconsVisible ? "隐藏桌面图标" : "显示桌面图标") {
+            store.toggleDesktopIcons()
+        }
         Menu("切换角色") {
             ForEach(PetMode.allCases) { mode in
                 Button(mode.title) { store.setMode(mode) }
@@ -109,7 +124,6 @@ private struct PetSceneRoot: View {
         Button(store.interactionLocked ? "解锁桌宠点击" : "锁定并允许点击穿透") {
             store.toggleInteractionLock()
         }
-        Button("设置…") { appActions.open(.settings(.pet)) }
         Divider()
         Button("打开废纸篓") { store.openTrash() }
         Button("清空废纸篓…") { store.confirmAndEmptyTrash() }

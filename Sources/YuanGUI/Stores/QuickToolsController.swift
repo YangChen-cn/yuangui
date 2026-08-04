@@ -13,6 +13,12 @@ final class QuickToolsController: ObservableObject {
     @Published private(set) var message: String?
     @Published private(set) var isCapturing = false
 
+    /// Reports when a screenshot capture session ends (any purpose).
+    /// `true` means an image was actually captured; `false` means the user
+    /// cancelled or an error was shown. Used by the pet guide to advance its
+    /// steps and to give light feedback after a successful capture.
+    var onCaptureSessionEnded: ((Bool) -> Void)?
+
     private lazy var hotKeyManager = GlobalHotKeyManager { [weak self] action in
         self?.perform(action)
     }
@@ -108,6 +114,7 @@ final class QuickToolsController: ObservableObject {
                 message: message ?? AppLocalizer.string("请开启屏幕录制权限。"),
                 openSettings: ScreenCapturePermission.openSettings
             )
+            onCaptureSessionEnded?(false)
             return
         }
 
@@ -122,6 +129,7 @@ final class QuickToolsController: ObservableObject {
             case let .failure(error):
                 isCapturing = false
                 selectionController.cancel()
+                onCaptureSessionEnded?(false)
                 if !(error is CancellationError) { present(error, title: AppLocalizer.string("截图失败")) }
             }
         }
@@ -173,6 +181,7 @@ final class QuickToolsController: ObservableObject {
             }
             selectionController.cancel()
             isCapturing = false
+            onCaptureSessionEnded?(true)
             switch purpose {
             case .edit:
                 screenshotEditor = nil
@@ -237,6 +246,7 @@ final class QuickToolsController: ObservableObject {
         } catch {
             selectionController.cancel()
             isCapturing = false
+            onCaptureSessionEnded?(false)
             let openSettings: (() -> Void)?
             if let captureError = error as? ScreenCaptureServiceError, case .permissionDenied = captureError {
                 openSettings = ScreenCapturePermission.openSettings

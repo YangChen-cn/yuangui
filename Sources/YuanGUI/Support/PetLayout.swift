@@ -45,6 +45,8 @@ enum PetLayout {
     static let minimumBubbleWidth: CGFloat = 288
     static let minimumStatusBubbleWidth: CGFloat = 260
     static let minimumAmbientBubbleWidth: CGFloat = 240
+    static let minimumGuideBubbleWidth: CGFloat = 300
+    static let maximumGuideBubbleWidth: CGFloat = 400
     static let minimumMusicLyricBubbleWidth: CGFloat = 148
     static let maximumMusicLyricBubbleWidth: CGFloat = 350
     static let minimumChatWidth: CGFloat = 450
@@ -161,6 +163,20 @@ enum PetLayout {
 
     static func ambientBubbleWidth(scale: Double) -> CGFloat {
         min(max(baseWidth * scale - 54, minimumAmbientBubbleWidth), 370)
+    }
+
+    /// Guide bubbles carry a message plus up to two buttons, so they need more
+    /// height than the plain ambient bubble.
+    static func guideBubbleWidth(scale: Double) -> CGFloat {
+        min(max(baseWidth * scale - 20, minimumGuideBubbleWidth), maximumGuideBubbleWidth)
+    }
+
+    static func guideBubbleHeight(scale: Double) -> CGFloat {
+        176 * compactBubbleScale(scale: scale)
+    }
+
+    static func guideBubblePanelSize(scale: Double) -> CGSize {
+        CGSize(width: guideBubbleWidth(scale: scale), height: guideBubbleHeight(scale: scale) + 18)
     }
 
     static func musicLyricBubbleWidth(text: String, alertText: String? = nil) -> CGFloat {

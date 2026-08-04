@@ -20,6 +20,8 @@ enum AppRoute: Equatable, Sendable {
     case music
     case diary
     case quickDiary
+    /// Opens the system management interface for the Finder extension.
+    case finderExtension
 }
 
 enum QuickToolRoute: Equatable, Sendable {

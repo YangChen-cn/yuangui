@@ -115,6 +115,7 @@ final class PetPanelController {
     private let maintenance: MaintenanceStore
     private let focusTimer: FocusTimerStore
     private let music: MusicFeature
+    private let guide: PetGuideCoordinator
     private let appActions: AppActions
     private let chatPresentation = ChatPresentationCoordinator()
     private var lockedToolbarPanel: PetLockedToolbarPanel?
@@ -154,6 +155,7 @@ final class PetPanelController {
         maintenance: MaintenanceStore,
         focusTimer: FocusTimerStore,
         music: MusicFeature,
+        guide: PetGuideCoordinator,
         appActions: AppActions = .disabled
     ) {
         self.store = store
@@ -161,6 +163,7 @@ final class PetPanelController {
         self.maintenance = maintenance
         self.focusTimer = focusTimer
         self.music = music
+        self.guide = guide
         self.appActions = appActions
         lastLayoutScale = store.petScale
         lastLayoutShowsChat = false
@@ -194,6 +197,7 @@ final class PetPanelController {
                 maintenance: maintenance,
                 focusTimer: focusTimer,
                 music: music,
+                guide: guide,
                 auxiliaryBubblePresentation: auxiliaryBubblePresentation
             )
                 .environment(\.appActions, appActions)
@@ -358,6 +362,14 @@ final class PetPanelController {
                 }
             }
             .store(in: &cancellables)
+        guide.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await Task.yield()
+                    self?.updateAuxiliaryBubble()
+                }
+            }
+            .store(in: &cancellables)
         store.$mode
             .removeDuplicates()
             .sink { [weak self] _ in
@@ -434,6 +446,7 @@ final class PetPanelController {
                 maintenance: maintenance,
                 focusTimer: focusTimer,
                 music: music,
+                guide: guide,
                 presentation: auxiliaryBubblePresentation
             )
             .environment(\.appActions, appActions)
@@ -922,14 +935,16 @@ final class PetPanelController {
                 music.lyricsPresentation.displayedText($0.text)
             }
             : nil
-        let size = PetLayout.auxiliaryBubblePanelSize(
-            scale: store.petScale,
-            showsMaintenance: maintenance.quickMode != nil,
-            maintenanceIsBusy: maintenance.isScanning || maintenance.isWorking,
-            maintenanceIsCompleted: maintenance.quickCompleted,
-            musicLyricText: displayedMusicLyric,
-            musicAlertText: showsMusicLyric ? musicAlertText : nil
-        )
+        let size = guide.currentGuide != nil
+            ? PetLayout.guideBubblePanelSize(scale: store.petScale)
+            : PetLayout.auxiliaryBubblePanelSize(
+                scale: store.petScale,
+                showsMaintenance: maintenance.quickMode != nil,
+                maintenanceIsBusy: maintenance.isScanning || maintenance.isWorking,
+                maintenanceIsCompleted: maintenance.quickCompleted,
+                musicLyricText: displayedMusicLyric,
+                musicAlertText: showsMusicLyric ? musicAlertText : nil
+            )
         if bubblePanel.frame.size != size {
             bubblePanel.setContentSize(size)
         }
@@ -941,7 +956,8 @@ final class PetPanelController {
     private var shouldShowAuxiliaryBubble: Bool {
         guard !chatPresentation.keepsExpandedLayout else { return false }
         if maintenance.quickMode != nil { return true }
-        return store.ambientMessage != nil
+        return guide.currentGuide != nil
+            || store.ambientMessage != nil
             || store.shouldShowPetBubble
             || Self.showsMusicLyric(
                 store: store,

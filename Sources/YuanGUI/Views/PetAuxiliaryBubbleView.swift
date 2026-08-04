@@ -12,6 +12,7 @@ struct PetAuxiliaryBubbleView: View {
     @ObservedObject var maintenance: MaintenanceStore
     @ObservedObject var focusTimer: FocusTimerStore
     let music: MusicFeature
+    @ObservedObject var guide: PetGuideCoordinator
     @ObservedObject private var playback: MusicPlaybackStore
     @ObservedObject private var lyrics: LyricsStore
     @ObservedObject private var lyricsPresentation: LyricsPresentationStore
@@ -23,6 +24,7 @@ struct PetAuxiliaryBubbleView: View {
         maintenance: MaintenanceStore,
         focusTimer: FocusTimerStore,
         music: MusicFeature,
+        guide: PetGuideCoordinator,
         presentation: PetAuxiliaryBubblePresentation
     ) {
         self.store = store
@@ -30,18 +32,31 @@ struct PetAuxiliaryBubbleView: View {
         self.maintenance = maintenance
         self.focusTimer = focusTimer
         self.music = music
+        self.guide = guide
         _playback = ObservedObject(wrappedValue: music.playback)
         _lyrics = ObservedObject(wrappedValue: music.lyricsStore)
         _lyricsPresentation = ObservedObject(wrappedValue: music.lyricsPresentation)
         self.presentation = presentation
     }
 
+    /// Priority: running task > urgent reminder > user-guided tour/feature tip
+    /// > music lyric > ambient chatter > non-urgent smart states. A guide must
+    /// not be covered by weather or casual chatter, but critical battery and
+    /// severe memory pressure still outrank it.
     var body: some View {
         Group {
             if maintenance.quickMode != nil {
                 PetMaintenanceBubble(
                     store: maintenance,
                     placement: presentation.placement
+                )
+            } else if store.urgentReminderVisible {
+                PetStatusBubble(store: store, placement: presentation.placement)
+            } else if guide.currentGuide != nil {
+                PetGuideBubbleView(
+                    guide: guide,
+                    placement: presentation.placement,
+                    petScale: store.petScale
                 )
             } else if showsMusicLyric, let lyric = lyrics.currentLine?.text {
                 PetMusicLyricBubble(

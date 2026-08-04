@@ -24,6 +24,7 @@ struct SettingsView: View {
     let updater: AppUpdateStore
     let selection: SettingsSelectionModel
     let showPet: () -> Void
+    let restartOnboarding: () -> Void
 
     init(
         language: AppLanguageSettings,
@@ -38,7 +39,8 @@ struct SettingsView: View {
         finderExtension: FinderExtensionController,
         updater: AppUpdateStore,
         selection: SettingsSelectionModel,
-        showPet: @escaping () -> Void
+        showPet: @escaping () -> Void,
+        restartOnboarding: @escaping () -> Void
     ) {
         self.language = language
         self.pet = pet
@@ -53,6 +55,7 @@ struct SettingsView: View {
         self.updater = updater
         self.selection = selection
         self.showPet = showPet
+        self.restartOnboarding = restartOnboarding
     }
 
     var body: some View {
@@ -73,7 +76,8 @@ struct SettingsView: View {
                 quickTools: quickTools,
                 finderExtension: finderExtension,
                 updater: updater,
-                showPet: showPet
+                showPet: showPet,
+                restartOnboarding: restartOnboarding
             )
         }
         .frame(minWidth: 700, idealWidth: 760, minHeight: 520, idealHeight: 560)
@@ -136,13 +140,18 @@ struct SettingsDetailView: View {
     let finderExtension: FinderExtensionController
     let updater: AppUpdateStore
     let showPet: () -> Void
+    let restartOnboarding: () -> Void
 
     @ViewBuilder
     var body: some View {
         Group {
             switch selection.selectedTab {
             case .general:
-                SettingsGeneralPage(language: language, ai: ai)
+                SettingsGeneralPage(
+                    language: language,
+                    ai: ai,
+                    restartOnboarding: restartOnboarding
+                )
             case .pet:
                 PetSettingsView(pet: pet, loginItem: loginItem, showPet: showPet)
             case .quickTools:

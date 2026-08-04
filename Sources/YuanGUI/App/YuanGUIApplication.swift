@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @main
@@ -54,6 +55,29 @@ final class AppRuntime {
         petTranslationEvents: petTranslationCoordinator
     )
     let finderExtension = FinderExtensionController()
+    lazy var guideCoordinator: PetGuideCoordinator = {
+        let actions = PetGuideCoordinator.Actions(
+            beginRegionScreenshot: { [weak self] in self?.quickTools.beginRegionScreenshot() },
+            beginScreenshotTranslation: { [weak self] in self?.quickTools.beginScreenshotTranslation() },
+            startFocus: { [weak self] in self?.focusTimer.start() },
+            openMusic: { [weak self] in self?.windows.open(.music) },
+            openDiary: { [weak self] in self?.windows.open(.diary) },
+            openQuickToolsSettings: { [weak self] in self?.windows.open(.settings(.quickTools)) },
+            openFinderExtensionManagement: { [weak self] in self?.windows.open(.finderExtension) },
+            unlockPet: { [weak self] in self?.pet.setInteractionLocked(false) },
+            presentScreenshotFeedback: { [weak self] in
+                self?.pet.showToast(AppLocalizer.string("guide.screenshotFeedback"))
+            }
+        )
+        return PetGuideCoordinator(
+            defaults: .standard,
+            canPresentTip: { [weak self] in self?.petCanPresentTip() ?? false },
+            isPetInteractionLocked: { [weak self] in self?.pet.interactionLocked ?? true },
+            finderExtensionBundled: { [weak self] in self?.finderExtension.isBundled ?? false },
+            finderExtensionEnabled: { [weak self] in self?.finderExtension.isEnabled ?? false },
+            actions: actions
+        )
+    }()
     lazy var updateStore: AppUpdateStore = {
         let store = AppUpdateStore(service: updateService)
         store.setTerminationHandler { [weak self] in
@@ -85,6 +109,7 @@ final class AppRuntime {
         externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
         finderExtension: finderExtension,
+        guide: guideCoordinator,
         updater: updateStore,
         onSafeUserInteraction: { [weak self] in
             self?.updateCoordinator.handleExplicitUserInteraction()
@@ -96,12 +121,31 @@ final class AppRuntime {
     )
     private var terminationTask: Task<Void, Never>?
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var finderExtensionObservation: AnyCancellable?
+    private var onboardingStartTask: Task<Void, Never>?
 
     func start() {
         NSApp.setActivationPolicy(.accessory)
         windows.start()
         externalAudioInterruption.start()
         updateCoordinator.start()
+        guideCoordinator.start()
+        quickTools.onCaptureSessionEnded = { [weak self] completed in
+            self?.guideCoordinator.handleToolSessionEnded(completed)
+        }
+        finderExtensionObservation = finderExtension.$isEnabled
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                self?.guideCoordinator.finderExtensionStatusDidChange(enabled: enabled)
+            }
+        if !guideCoordinator.hasCompletedCurrentOnboarding {
+            onboardingStartTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(1.5)) }
+                catch { return }
+                guard !Task.isCancelled, let self, self.pet.isPetPresented else { return }
+                self.guideCoordinator.startOnboarding()
+            }
+        }
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers = [
             center.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
@@ -114,12 +158,27 @@ final class AppRuntime {
     }
 
     func stop() {
+        onboardingStartTask?.cancel()
+        onboardingStartTask = nil
+        finderExtensionObservation = nil
+        quickTools.onCaptureSessionEnded = nil
+        guideCoordinator.stop()
         updateCoordinator.stop()
         externalAudioInterruption.stop()
         windows.stop()
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.forEach(center.removeObserver)
         workspaceObservers.removeAll()
+    }
+
+    private func petCanPresentTip() -> Bool {
+        pet.isPetPresented
+            && pet.taskState == .idle
+            && !pet.isChatting
+            && !pet.isFocusActive
+            && !pet.urgentReminderVisible
+            && pet.toast == nil
+            && pet.ambientMessage == nil
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -171,6 +230,7 @@ final class WindowCoordinator: NSObject {
     private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
     private let finderExtension: FinderExtensionController
+    private let guide: PetGuideCoordinator
     private let updater: AppUpdateStore
     private let onSafeUserInteraction: () -> Void
     private let terminateForUpdate: () async -> Bool
@@ -207,6 +267,7 @@ final class WindowCoordinator: NSObject {
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
         finderExtension: FinderExtensionController,
+        guide: PetGuideCoordinator,
         updater: AppUpdateStore,
         onSafeUserInteraction: @escaping () -> Void,
         terminateForUpdate: @escaping () async -> Bool
@@ -223,6 +284,7 @@ final class WindowCoordinator: NSObject {
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
         self.finderExtension = finderExtension
+        self.guide = guide
         self.updater = updater
         self.onSafeUserInteraction = onSafeUserInteraction
         self.terminateForUpdate = terminateForUpdate
@@ -238,6 +300,7 @@ final class WindowCoordinator: NSObject {
             maintenance: maintenance,
             focusTimer: focusTimer,
             music: music,
+            guide: guide,
             appActions: actions
         )
         panelController?.show()
@@ -305,6 +368,8 @@ final class WindowCoordinator: NSObject {
                 await diary.loadIfNeeded()
                 showQuickDiary()
             }
+        case .finderExtension:
+            finderExtension.openManagement()
         }
     }
 
@@ -404,6 +469,7 @@ final class WindowCoordinator: NSObject {
                 finderExtension: finderExtension,
                 updater: updater,
                 showPet: { [weak self] in self?.panelController?.show() },
+                restartOnboarding: { [weak self] in self?.guide.restartOnboarding() },
                 appActions: actions
             )
         }

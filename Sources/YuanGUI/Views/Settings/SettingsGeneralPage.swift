@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsGeneralPage: View {
     @ObservedObject var language: AppLanguageSettings
     @ObservedObject var ai: AISettingsStore
+    var restartOnboarding: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
@@ -33,6 +34,14 @@ struct SettingsGeneralPage: View {
                     Text(AppLocalizer.string("settings.permissions.subtitle"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                Section(AppLocalizer.string("settings.guide")) {
+                    Text(AppLocalizer.string("settings.guide.subtitle"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button(AppLocalizer.string("settings.guide.restart")) {
+                        restartOnboarding()
+                    }
                 }
             }
             .formStyle(.grouped)
