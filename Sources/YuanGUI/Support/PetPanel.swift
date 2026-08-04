@@ -279,16 +279,17 @@ final class PetPanelController {
                 }
             }
             .store(in: &cancellables)
-        store.$interactionLocked
-            .removeDuplicates()
-            .sink { [weak self] locked in
+        Publishers.CombineLatest(store.$interactionLocked, store.$temporaryInteractionUnlock)
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+            .sink { [weak self] _, _ in
                 // @Published emits from willSet. Defer until PetStore has
-                // committed the new value, otherwise a newly started locked
+                // committed the new values, otherwise a newly started locked
                 // hover tracker immediately sees the old `false` value and
                 // shuts itself down.
                 Task { @MainActor [weak self] in
-                    guard let self, self.store.interactionLocked == locked else { return }
-                    self.updateInteractionLock(locked)
+                    guard let self else { return }
+                    await Task.yield()
+                    self.updateInteractionLock(self.store.effectiveInteractionLocked)
                 }
             }
             .store(in: &cancellables)
@@ -638,6 +639,17 @@ final class PetPanelController {
         (panel.isVisible || edgePeekPanel?.isVisible == true) ? hide() : show()
     }
 
+    /// Ensures the pet is visible for the guide walkthrough. Restores it from
+    /// an edge dock (using the existing restore path, so the dock preference
+    /// is dropped exactly as a manual restore would) or brings the panel back.
+    func showForGuide() {
+        if dockedEdge != nil {
+            restoreFromEdge(animated: true)
+        } else {
+            show()
+        }
+    }
+
     func focusForChatInput() {
         if dockedEdge != nil {
             restoreFromEdge(animated: false)
@@ -875,7 +887,11 @@ final class PetPanelController {
 
     private func updateInteractionLock(_ locked: Bool) {
         panel.ignoresMouseEvents = locked
-        auxiliaryBubblePanel?.ignoresMouseEvents = locked
+        // The pet sprite stays click-through while locked, and so does every
+        // non-interactive bubble. The guide bubble is interactive UI though:
+        // its buttons must stay clickable while the walkthrough demos the
+        // right-click menu on a locked pet.
+        auxiliaryBubblePanel?.ignoresMouseEvents = locked && guide.currentGuide == nil
         guard locked, panel.isVisible, dockedEdge == nil else {
             stopLockedHoverTracking()
             lockedToolbarPanel?.orderOut(nil)
@@ -914,58 +930,100 @@ final class PetPanelController {
     }
 
     private func updateAuxiliaryBubble() {
-        guard panel.isVisible, dockedEdge == nil, shouldShowAuxiliaryBubble else {
+        let kind = resolvedAuxiliaryBubbleKind
+        guard panel.isVisible, dockedEdge == nil, kind != .none else {
             auxiliaryBubblePresentation.isVisible = false
             auxiliaryBubblePanel?.orderOut(nil)
+            auxiliaryBubblePanel?.ignoresMouseEvents = true
             scheduleAuxiliaryBubbleUnload()
             return
         }
         auxiliaryBubbleUnloadTask?.cancel()
         auxiliaryBubbleUnloadTask = nil
         let bubblePanel = ensureAuxiliaryBubblePanel()
-        let showsMusicLyric = Self.showsMusicLyric(
-            store: store,
-            isChatPresented: chatPresentation.keepsExpandedLayout,
-            maintenance: maintenance,
-            focusTimer: focusTimer,
-            music: music
-        )
-        let displayedMusicLyric = showsMusicLyric
+        let displayedMusicLyric = kind == .musicLyric
             ? music.lyricsStore.currentLine.map {
                 music.lyricsPresentation.displayedText($0.text)
             }
             : nil
-        let size = guide.currentGuide != nil
-            ? PetLayout.guideBubblePanelSize(scale: store.petScale)
-            : PetLayout.auxiliaryBubblePanelSize(
+        let size: CGSize
+        switch kind {
+        case .maintenance:
+            size = PetLayout.auxiliaryBubblePanelSize(
                 scale: store.petScale,
-                showsMaintenance: maintenance.quickMode != nil,
+                showsMaintenance: true,
                 maintenanceIsBusy: maintenance.isScanning || maintenance.isWorking,
-                maintenanceIsCompleted: maintenance.quickCompleted,
-                musicLyricText: displayedMusicLyric,
-                musicAlertText: showsMusicLyric ? musicAlertText : nil
+                maintenanceIsCompleted: maintenance.quickCompleted
             )
+        case .guide:
+            size = measuredGuideBubbleSize()
+        case .musicLyric:
+            size = PetLayout.auxiliaryBubblePanelSize(
+                scale: store.petScale,
+                showsMaintenance: false,
+                musicLyricText: displayedMusicLyric,
+                musicAlertText: musicAlertText
+            )
+        case .urgentStatus, .ambient, .status:
+            size = PetLayout.auxiliaryBubblePanelSize(scale: store.petScale)
+        case .none:
+            return
+        }
         if bubblePanel.frame.size != size {
             bubblePanel.setContentSize(size)
         }
         positionAuxiliaryBubble()
         auxiliaryBubblePresentation.isVisible = true
+        // Guide bubble stays interactive even on a locked pet; all other
+        // bubbles inherit the pet's click-through state.
+        bubblePanel.ignoresMouseEvents = store.effectiveInteractionLocked && guide.currentGuide == nil
         bubblePanel.orderFrontRegardless()
     }
 
-    private var shouldShowAuxiliaryBubble: Bool {
-        guard !chatPresentation.keepsExpandedLayout else { return false }
-        if maintenance.quickMode != nil { return true }
-        return guide.currentGuide != nil
-            || store.ambientMessage != nil
-            || store.shouldShowPetBubble
-            || Self.showsMusicLyric(
+    private var resolvedAuxiliaryBubbleKind: PetAuxiliaryBubbleKind {
+        PetAuxiliaryBubbleResolver.resolve(
+            hasMaintenanceTask: maintenance.quickMode != nil,
+            urgentReminderVisible: store.urgentReminderVisible,
+            activeGuide: guide.currentGuide,
+            showsMusicLyric: Self.showsMusicLyric(
                 store: store,
                 isChatPresented: chatPresentation.keepsExpandedLayout,
                 maintenance: maintenance,
                 focusTimer: focusTimer,
                 music: music
-            )
+            ),
+            ambientMessageVisible: store.ambientMessage != nil,
+            showsStatusBubble: store.shouldShowPetBubble
+        )
+    }
+
+    /// Guide bubbles are sized by their content: fixed maximum width, intrinsic
+    /// height measured from the hosting view so long text is never clipped.
+    private func measuredGuideBubbleSize() -> CGSize {
+        let width = PetLayout.guideBubbleWidth(scale: store.petScale)
+        guard let bubblePanel = auxiliaryBubblePanel,
+              let contentView = bubblePanel.contentView else {
+            return PetLayout.guideBubblePanelSize(scale: store.petScale)
+        }
+        // Stretch the panel first so SwiftUI lays out the full message and
+        // buttons, then read the intrinsic height (NSHostingView overrides
+        // `fittingSize` with its SwiftUI content size) and clamp it.
+        bubblePanel.setContentSize(CGSize(
+            width: width,
+            height: PetLayout.guideBubbleProbeHeight
+        ))
+        contentView.layoutSubtreeIfNeeded()
+        let fittedHeight = contentView.fittingSize.height
+        let height = min(
+            max(fittedHeight, PetLayout.minimumGuideBubbleHeight),
+            PetLayout.maximumGuideBubbleHeight
+        )
+        return CGSize(width: width, height: height)
+    }
+
+    private var shouldShowAuxiliaryBubble: Bool {
+        guard !chatPresentation.keepsExpandedLayout else { return false }
+        return resolvedAuxiliaryBubbleKind != .none
     }
 
     private var musicAlertText: String? {

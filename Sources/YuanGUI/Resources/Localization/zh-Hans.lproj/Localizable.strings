@@ -1441,6 +1441,10 @@
 "settings.guide" = "新手导览";
 "settings.guide.subtitle" = "重新观看由元圭和 VCC 带你熟悉 YuanGUI 的引导。";
 "settings.guide.restart" = "重新观看新手导览";
+"settings.featureTips" = "功能发现提示";
+"settings.featureTips.subtitle" = "桌宠会偶尔提醒尚未用过的小功能，每个功能最多提醒一次。";
+"guide.unlock.temporary" = "已临时解锁，退出引导后会恢复锁定";
+"guide.unlock.restored" = "已恢复锁定状态";
 "pet.menu.screenshot" = "区域截图";
 "pet.menu.screenshotTranslation" = "截图翻译";
 "pet.menu.translateSelection" = "划词翻译";

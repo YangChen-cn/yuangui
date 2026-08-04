@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsGeneralPage: View {
     @ObservedObject var language: AppLanguageSettings
     @ObservedObject var ai: AISettingsStore
+    @ObservedObject var guide: PetGuideCoordinator
     var restartOnboarding: () -> Void = {}
 
     var body: some View {
@@ -42,6 +43,13 @@ struct SettingsGeneralPage: View {
                     Button(AppLocalizer.string("settings.guide.restart")) {
                         restartOnboarding()
                     }
+                    Toggle(AppLocalizer.string("settings.featureTips"), isOn: Binding(
+                        get: { guide.featureTipsEnabled },
+                        set: { guide.setFeatureTipsEnabled($0) }
+                    ))
+                    Text(AppLocalizer.string("settings.featureTips.subtitle"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

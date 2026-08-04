@@ -13,11 +13,20 @@ final class QuickToolsController: ObservableObject {
     @Published private(set) var message: String?
     @Published private(set) var isCapturing = false
 
-    /// Reports when a screenshot capture session ends (any purpose).
-    /// `true` means an image was actually captured; `false` means the user
-    /// cancelled or an error was shown. Used by the pet guide to advance its
-    /// steps and to give light feedback after a successful capture.
+    /// Reports when a screenshot capture session actually starts (any purpose).
+    /// The parameter is true for screenshot translation, false for region edit.
+    /// Used for lightweight local feature-usage tracking.
+    var onCaptureSessionStarted: ((Bool) -> Void)?
+
+    /// Reports when a started capture session ends (any purpose). `true` means
+    /// an image was actually captured; `false` means the user cancelled or an
+    /// error was shown. Contract: a session that returned `true` from
+    /// `beginRegionScreenshot`/`beginScreenshotTranslation` calls this exactly
+    /// once; a session that did not start never calls it.
     var onCaptureSessionEnded: ((Bool) -> Void)?
+
+    private var activeCaptureSessionID: UUID?
+    private var captureSessionDidEnd = false
 
     private lazy var hotKeyManager = GlobalHotKeyManager { [weak self] action in
         self?.perform(action)
@@ -96,16 +105,25 @@ final class QuickToolsController: ObservableObject {
         updateHotKey(action.defaultHotKey, for: action)
     }
 
-    func beginRegionScreenshot() {
+    /// Starts a region screenshot session.
+    /// - Returns: `true` if a capture session really started (it will later
+    ///   report exactly one `onCaptureSessionEnded`), `false` if it could not
+    ///   start (already capturing, permission denied, …). A failed start never
+    ///   reports an ended callback, so callers must not wait for one.
+    @discardableResult
+    func beginRegionScreenshot() -> Bool {
         beginCapture(for: .edit)
     }
 
-    func beginScreenshotTranslation() {
+    /// Starts a screenshot-translation session. Contract identical to
+    /// `beginRegionScreenshot()`.
+    @discardableResult
+    func beginScreenshotTranslation() -> Bool {
         beginCapture(for: .translate)
     }
 
-    private func beginCapture(for purpose: CapturePurpose) {
-        guard !isCapturing else { return }
+    private func beginCapture(for purpose: CapturePurpose) -> Bool {
+        guard !isCapturing else { return false }
         screenshotTranslationOverlay?.close()
         if ScreenCapturePermission.state != .granted, !ScreenCapturePermission.request() {
             message = ScreenCaptureServiceError.permissionDenied.localizedDescription
@@ -114,25 +132,37 @@ final class QuickToolsController: ObservableObject {
                 message: message ?? AppLocalizer.string("请开启屏幕录制权限。"),
                 openSettings: ScreenCapturePermission.openSettings
             )
-            onCaptureSessionEnded?(false)
-            return
+            // No session started: no ended callback is sent, and the caller
+            // already knows from the returned value that nothing will follow.
+            return false
         }
 
+        let sessionID = UUID()
+        activeCaptureSessionID = sessionID
+        captureSessionDidEnd = false
         isCapturing = true
         message = nil
+        onCaptureSessionStarted?(purpose == .translate)
         selectionController.begin { [weak self] result in
             guard let self else { return }
             switch result {
             case let .success(selection):
                 let excludedWindows = selectionController.windowNumbers
-                Task { await self.capture(selection, excluding: excludedWindows, for: purpose) }
+                Task { await self.capture(selection, excluding: excludedWindows, for: purpose, sessionID: sessionID) }
             case let .failure(error):
-                isCapturing = false
-                selectionController.cancel()
-                onCaptureSessionEnded?(false)
+                self.endCaptureSession(false, sessionID: sessionID)
                 if !(error is CancellationError) { present(error, title: AppLocalizer.string("截图失败")) }
             }
         }
+        return true
+    }
+
+    private func endCaptureSession(_ completed: Bool, sessionID: UUID) {
+        guard activeCaptureSessionID == sessionID, !captureSessionDidEnd else { return }
+        captureSessionDidEnd = true
+        activeCaptureSessionID = nil
+        isCapturing = false
+        onCaptureSessionEnded?(completed)
     }
 
     func translateSelection() {
@@ -173,15 +203,15 @@ final class QuickToolsController: ObservableObject {
     private func capture(
         _ selection: ScreenshotSelection,
         excluding windows: Set<Int>,
-        for purpose: CapturePurpose
+        for purpose: CapturePurpose,
+        sessionID: UUID
     ) async {
         do {
             let captured = try await TranslationPerformance.measure(.capture) {
                 try await captureService.capture(selection, excludingWindowNumbers: windows)
             }
             selectionController.cancel()
-            isCapturing = false
-            onCaptureSessionEnded?(true)
+            endCaptureSession(true, sessionID: sessionID)
             switch purpose {
             case .edit:
                 screenshotEditor = nil
@@ -245,8 +275,7 @@ final class QuickToolsController: ObservableObject {
             }
         } catch {
             selectionController.cancel()
-            isCapturing = false
-            onCaptureSessionEnded?(false)
+            endCaptureSession(false, sessionID: sessionID)
             let openSettings: (() -> Void)?
             if let captureError = error as? ScreenCaptureServiceError, case .permissionDenied = captureError {
                 openSettings = ScreenCapturePermission.openSettings

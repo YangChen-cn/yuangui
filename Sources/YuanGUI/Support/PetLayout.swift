@@ -47,6 +47,11 @@ enum PetLayout {
     static let minimumAmbientBubbleWidth: CGFloat = 240
     static let minimumGuideBubbleWidth: CGFloat = 300
     static let maximumGuideBubbleWidth: CGFloat = 400
+    static let minimumGuideBubbleHeight: CGFloat = 120
+    static let maximumGuideBubbleHeight: CGFloat = 320
+    /// Temporary height used to let SwiftUI lay out the full guide content
+    /// before reading its intrinsic height.
+    static let guideBubbleProbeHeight: CGFloat = 640
     static let minimumMusicLyricBubbleWidth: CGFloat = 148
     static let maximumMusicLyricBubbleWidth: CGFloat = 350
     static let minimumChatWidth: CGFloat = 450
@@ -175,6 +180,8 @@ enum PetLayout {
         176 * compactBubbleScale(scale: scale)
     }
 
+    /// Fallback size; the panel prefers the measured `NSHostingView.fittingSize`
+    /// so long English text is never clipped vertically.
     static func guideBubblePanelSize(scale: Double) -> CGSize {
         CGSize(width: guideBubbleWidth(scale: scale), height: guideBubbleHeight(scale: scale) + 18)
     }

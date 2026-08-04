@@ -21,7 +21,6 @@ struct PetGuideBubbleView: View {
                 Text(guide.currentGuide?.message ?? "")
                     .font(.system(size: max(10, 12.5 * visualScale), weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
-                    .lineLimit(5)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 

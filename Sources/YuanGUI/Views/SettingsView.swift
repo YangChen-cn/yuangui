@@ -22,6 +22,7 @@ struct SettingsView: View {
     let quickTools: QuickToolsController
     let finderExtension: FinderExtensionController
     let updater: AppUpdateStore
+    let guide: PetGuideCoordinator
     let selection: SettingsSelectionModel
     let showPet: () -> Void
     let restartOnboarding: () -> Void
@@ -38,6 +39,7 @@ struct SettingsView: View {
         quickTools: QuickToolsController,
         finderExtension: FinderExtensionController,
         updater: AppUpdateStore,
+        guide: PetGuideCoordinator,
         selection: SettingsSelectionModel,
         showPet: @escaping () -> Void,
         restartOnboarding: @escaping () -> Void
@@ -53,6 +55,7 @@ struct SettingsView: View {
         self.quickTools = quickTools
         self.finderExtension = finderExtension
         self.updater = updater
+        self.guide = guide
         self.selection = selection
         self.showPet = showPet
         self.restartOnboarding = restartOnboarding
@@ -76,6 +79,7 @@ struct SettingsView: View {
                 quickTools: quickTools,
                 finderExtension: finderExtension,
                 updater: updater,
+                guide: guide,
                 showPet: showPet,
                 restartOnboarding: restartOnboarding
             )
@@ -139,6 +143,7 @@ struct SettingsDetailView: View {
     let quickTools: QuickToolsController
     let finderExtension: FinderExtensionController
     let updater: AppUpdateStore
+    let guide: PetGuideCoordinator
     let showPet: () -> Void
     let restartOnboarding: () -> Void
 
@@ -150,6 +155,7 @@ struct SettingsDetailView: View {
                 SettingsGeneralPage(
                     language: language,
                     ai: ai,
+                    guide: guide,
                     restartOnboarding: restartOnboarding
                 )
             case .pet:

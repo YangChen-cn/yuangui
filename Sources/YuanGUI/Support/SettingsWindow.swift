@@ -6,7 +6,7 @@ final class SettingsWindowController {
     private let window: NSWindow
     private let selection = SettingsSelectionModel()
 
-    init(language: AppLanguageSettings, petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, music: MusicFeature, diary: DiaryFeature, externalAudioInterruption: ExternalAudioInterruptionController, quickTools: QuickToolsController, finderExtension: FinderExtensionController, updater: AppUpdateStore, showPet: @escaping () -> Void, restartOnboarding: @escaping () -> Void, appActions: AppActions = .disabled) {
+    init(language: AppLanguageSettings, petStore: PetStore, aiSettings: AISettingsStore, loginItem: LoginItemStore, focusTimer: FocusTimerStore, music: MusicFeature, diary: DiaryFeature, externalAudioInterruption: ExternalAudioInterruptionController, quickTools: QuickToolsController, finderExtension: FinderExtensionController, updater: AppUpdateStore, guide: PetGuideCoordinator, showPet: @escaping () -> Void, restartOnboarding: @escaping () -> Void, appActions: AppActions = .disabled) {
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .resizable],
@@ -30,6 +30,7 @@ final class SettingsWindowController {
                 quickTools: quickTools,
                 finderExtension: finderExtension,
                 updater: updater,
+                guide: guide,
                 selection: selection,
                 showPet: showPet,
                 restartOnboarding: restartOnboarding

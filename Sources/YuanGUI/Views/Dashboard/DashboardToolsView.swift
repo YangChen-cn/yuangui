@@ -41,10 +41,10 @@ struct DashboardToolsView: View {
                         launch { appActions.open(.diary) }
                     }
                     DashboardQuickAction(title: "区域截图", subtitle: quickTools.settings.screenshotHotKey.displayText, systemImage: "viewfinder", role: .system) {
-                        launch(quickTools.beginRegionScreenshot)
+                        launch { _ = quickTools.beginRegionScreenshot() }
                     }
                     DashboardQuickAction(title: "截图翻译", subtitle: quickTools.settings.screenshotTranslationHotKey.displayText, systemImage: "text.viewfinder", role: .system) {
-                        launch(quickTools.beginScreenshotTranslation)
+                        launch { _ = quickTools.beginScreenshotTranslation() }
                     }
                 }
                 Text(AppLocalizer.string("更多工具"))

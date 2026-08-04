@@ -57,14 +57,25 @@ final class AppRuntime {
     let finderExtension = FinderExtensionController()
     lazy var guideCoordinator: PetGuideCoordinator = {
         let actions = PetGuideCoordinator.Actions(
-            beginRegionScreenshot: { [weak self] in self?.quickTools.beginRegionScreenshot() },
-            beginScreenshotTranslation: { [weak self] in self?.quickTools.beginScreenshotTranslation() },
-            startFocus: { [weak self] in self?.focusTimer.start() },
+            beginRegionScreenshot: { [weak self] in
+                self?.quickTools.beginRegionScreenshot() ?? false
+            },
+            beginScreenshotTranslation: { [weak self] in
+                self?.quickTools.beginScreenshotTranslation() ?? false
+            },
+            // The focus tip promises exactly 25 minutes, so start that
+            // explicitly instead of whatever duration the user last chose.
+            startFocus: { [weak self] minutes in self?.focusTimer.start(minutes: minutes) },
             openMusic: { [weak self] in self?.windows.open(.music) },
             openDiary: { [weak self] in self?.windows.open(.diary) },
             openQuickToolsSettings: { [weak self] in self?.windows.open(.settings(.quickTools)) },
             openFinderExtensionManagement: { [weak self] in self?.windows.open(.finderExtension) },
-            unlockPet: { [weak self] in self?.pet.setInteractionLocked(false) },
+            beginTemporaryInteractionUnlock: { [weak self] in
+                self?.pet.beginTemporaryInteractionUnlock()
+            },
+            endTemporaryInteractionUnlock: { [weak self] in
+                self?.pet.endTemporaryInteractionUnlock()
+            },
             presentScreenshotFeedback: { [weak self] in
                 self?.pet.showToast(AppLocalizer.string("guide.screenshotFeedback"))
             }
@@ -72,7 +83,10 @@ final class AppRuntime {
         return PetGuideCoordinator(
             defaults: .standard,
             canPresentTip: { [weak self] in self?.petCanPresentTip() ?? false },
-            isPetInteractionLocked: { [weak self] in self?.pet.interactionLocked ?? true },
+            // Effective state: after the user taps 临时解锁 the walkthrough
+            // must show the unlocked variant even though the persisted
+            // preference is still locked.
+            isPetInteractionLocked: { [weak self] in self?.pet.effectiveInteractionLocked ?? true },
             finderExtensionBundled: { [weak self] in self?.finderExtension.isBundled ?? false },
             finderExtensionEnabled: { [weak self] in self?.finderExtension.isEnabled ?? false },
             actions: actions
@@ -122,6 +136,7 @@ final class AppRuntime {
     private var terminationTask: Task<Void, Never>?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var finderExtensionObservation: AnyCancellable?
+    private var focusUsedObservation: AnyCancellable?
     private var onboardingStartTask: Task<Void, Never>?
 
     func start() {
@@ -130,13 +145,28 @@ final class AppRuntime {
         externalAudioInterruption.start()
         updateCoordinator.start()
         guideCoordinator.start()
+        quickTools.onCaptureSessionStarted = { [weak self] isTranslation in
+            guard isTranslation else { return }
+            self?.guideCoordinator.recordFeatureUsed(.screenshotTranslation)
+        }
         quickTools.onCaptureSessionEnded = { [weak self] completed in
             self?.guideCoordinator.handleToolSessionEnded(completed)
         }
         finderExtensionObservation = finderExtension.$isEnabled
             .removeDuplicates()
             .sink { [weak self] enabled in
-                self?.guideCoordinator.finderExtensionStatusDidChange(enabled: enabled)
+                guard let self else { return }
+                self.guideCoordinator.finderExtensionStatusDidChange(enabled: enabled)
+                if enabled {
+                    self.guideCoordinator.recordFeatureUsed(.finderExtension)
+                }
+            }
+        focusUsedObservation = focusTimer.$state
+            .removeDuplicates()
+            .sink { [weak self] state in
+                if state == .running {
+                    self?.guideCoordinator.recordFeatureUsed(.focus)
+                }
             }
         if !guideCoordinator.hasCompletedCurrentOnboarding {
             onboardingStartTask = Task { [weak self] in
@@ -161,6 +191,8 @@ final class AppRuntime {
         onboardingStartTask?.cancel()
         onboardingStartTask = nil
         finderExtensionObservation = nil
+        focusUsedObservation = nil
+        quickTools.onCaptureSessionStarted = nil
         quickTools.onCaptureSessionEnded = nil
         guideCoordinator.stop()
         updateCoordinator.stop()
@@ -355,9 +387,11 @@ final class WindowCoordinator: NSObject {
             maintenance.selectTab(tab)
             showMaintenance()
         case .music:
+            guide.recordFeatureUsed(.music)
             dashboardController?.hide()
             DispatchQueue.main.async { [weak self] in self?.showMusic() }
         case .diary:
+            guide.recordFeatureUsed(.diary)
             dashboardController?.hide()
             showDiary()
             Task { await diary.loadIfNeeded() }
@@ -375,9 +409,11 @@ final class WindowCoordinator: NSObject {
 
     private func runQuickTool(_ route: QuickToolRoute) {
         switch route {
-        case .regionScreenshot: quickTools.beginRegionScreenshot()
-        case .screenshotTranslation: quickTools.beginScreenshotTranslation()
-        case .translateSelection: quickTools.translateSelection()
+        case .regionScreenshot: _ = quickTools.beginRegionScreenshot()
+        case .screenshotTranslation: _ = quickTools.beginScreenshotTranslation()
+        case .translateSelection:
+            guide.recordFeatureUsed(.selectionTranslation)
+            quickTools.translateSelection()
         }
     }
 
@@ -468,8 +504,12 @@ final class WindowCoordinator: NSObject {
                 quickTools: quickTools,
                 finderExtension: finderExtension,
                 updater: updater,
+                guide: guide,
                 showPet: { [weak self] in self?.panelController?.show() },
-                restartOnboarding: { [weak self] in self?.guide.restartOnboarding() },
+                restartOnboarding: { [weak self] in
+                    self?.showPetForGuide()
+                    self?.guide.restartOnboarding()
+                },
                 appActions: actions
             )
         }
@@ -546,5 +586,11 @@ final class WindowCoordinator: NSObject {
 
     @objc private func showDiaryFromMenu() {
         open(.diary)
+    }
+
+    /// "重新观看新手导览" must actually show the pet: restore it from an edge
+    /// dock or bring it back if the user hid it, then start the walkthrough.
+    private func showPetForGuide() {
+        panelController?.showForGuide()
     }
 }

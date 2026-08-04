@@ -27,6 +27,10 @@ final class PetStore: ObservableObject {
     @Published private(set) var urgentReminderIntervalMinutes: Int
     @Published private(set) var urgentReminderPulseVisible = true
     @Published private(set) var interactionLocked: Bool
+    /// Runtime-only override used by the pet guide while it walks the user
+    /// through the right-click menu. It never touches the persisted
+    /// `interactionLocked` preference.
+    @Published private(set) var temporaryInteractionUnlock = false
     @Published private(set) var lockedControlsVisible = false
     @Published private(set) var bedtimeReminderEnabled: Bool
     @Published private(set) var bedtimeStartMinutes: Int
@@ -74,6 +78,13 @@ final class PetStore: ObservableObject {
     private var toastToken = UUID()
     private var recentChatterIDs: [String: [String]] = [:]
     private var batteryAlertLevel: BatteryAlertLevel = .normal
+
+    /// The persisted lock preference, softened by a runtime-only temporary
+    /// unlock. UI that decides interactivity should consult this instead of
+    /// `interactionLocked` alone.
+    var effectiveInteractionLocked: Bool {
+        interactionLocked && !temporaryInteractionUnlock
+    }
 
     var currentAction: PetAction {
         resolvedAction(isMusicPlaying: false)
@@ -270,7 +281,7 @@ final class PetStore: ObservableObject {
     }
 
     func interact() {
-        guard !interactionLocked else { return }
+        guard !effectiveInteractionLocked else { return }
         actionIndex = (actionIndex + 1) % mode.actions.count
         if smartState != .normal {
             smartActionSuppressionTask?.cancel()
@@ -409,6 +420,25 @@ final class PetStore: ObservableObject {
     }
 
     func toggleInteractionLock() { setInteractionLocked(!interactionLocked) }
+
+    /// Temporary unlock used by onboarding so a locked pet can still demo its
+    /// right-click menu. Does not persist; `endTemporaryInteractionUnlock()`
+    /// restores the user's original lock preference.
+    func beginTemporaryInteractionUnlock() {
+        guard !temporaryInteractionUnlock else { return }
+        temporaryInteractionUnlock = true
+        if interactionLocked {
+            showToast(AppLocalizer.string("guide.unlock.temporary"))
+        }
+    }
+
+    func endTemporaryInteractionUnlock() {
+        guard temporaryInteractionUnlock else { return }
+        temporaryInteractionUnlock = false
+        if interactionLocked {
+            showToast(AppLocalizer.string("guide.unlock.restored"))
+        }
+    }
 
     func revealLockedControls() {
         guard interactionLocked else { return }

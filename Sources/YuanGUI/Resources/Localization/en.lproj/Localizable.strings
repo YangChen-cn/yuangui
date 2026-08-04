@@ -1447,6 +1447,10 @@
 "settings.guide" = "New User Guide";
 "settings.guide.subtitle" = "Re-watch the walkthrough where YuanGui and VCC introduce you to YuanGUI.";
 "settings.guide.restart" = "Watch the guide again";
+"settings.featureTips" = "Feature Tips";
+"settings.featureTips.subtitle" = "The pet occasionally reminds you about features you haven't used yet, at most once per feature.";
+"guide.unlock.temporary" = "Unlocked temporarily; the lock returns when the walkthrough ends";
+"guide.unlock.restored" = "Lock restored";
 "pet.menu.screenshot" = "Region Screenshot";
 "pet.menu.screenshotTranslation" = "Screenshot Translation";
 "pet.menu.translateSelection" = "Translate Selection";

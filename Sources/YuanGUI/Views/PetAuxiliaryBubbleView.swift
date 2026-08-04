@@ -39,39 +39,52 @@ struct PetAuxiliaryBubbleView: View {
         self.presentation = presentation
     }
 
-    /// Priority: running task > urgent reminder > user-guided tour/feature tip
-    /// > music lyric > ambient chatter > non-urgent smart states. A guide must
-    /// not be covered by weather or casual chatter, but critical battery and
-    /// severe memory pressure still outrank it.
+    /// Rendering, window sizing and visibility all derive from the same
+    /// resolved kind (`PetAuxiliaryBubbleResolver`), so the SwiftUI content
+    /// and the AppKit panel can never disagree about what is on screen.
     var body: some View {
         Group {
-            if maintenance.quickMode != nil {
+            switch resolvedKind {
+            case .maintenance:
                 PetMaintenanceBubble(
                     store: maintenance,
                     placement: presentation.placement
                 )
-            } else if store.urgentReminderVisible {
+            case .urgentStatus, .status:
                 PetStatusBubble(store: store, placement: presentation.placement)
-            } else if guide.currentGuide != nil {
+            case .guide:
                 PetGuideBubbleView(
                     guide: guide,
                     placement: presentation.placement,
                     petScale: store.petScale
                 )
-            } else if showsMusicLyric, let lyric = lyrics.currentLine?.text {
-                PetMusicLyricBubble(
-                    text: lyricsPresentation.displayedText(lyric),
-                    alertText: musicAlertText,
-                    placement: presentation.placement
-                )
-            } else if store.ambientMessage != nil {
+            case .musicLyric:
+                if let lyric = lyrics.currentLine?.text {
+                    PetMusicLyricBubble(
+                        text: lyricsPresentation.displayedText(lyric),
+                        alertText: musicAlertText,
+                        placement: presentation.placement
+                    )
+                }
+            case .ambient:
                 PetAmbientBubble(store: store, placement: presentation.placement)
-            } else if store.shouldShowPetBubble {
-                PetStatusBubble(store: store, placement: presentation.placement)
+            case .none:
+                EmptyView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(Color.clear)
+    }
+
+    private var resolvedKind: PetAuxiliaryBubbleKind {
+        PetAuxiliaryBubbleResolver.resolve(
+            hasMaintenanceTask: maintenance.quickMode != nil,
+            urgentReminderVisible: store.urgentReminderVisible,
+            activeGuide: guide.currentGuide,
+            showsMusicLyric: showsMusicLyric,
+            ambientMessageVisible: store.ambientMessage != nil,
+            showsStatusBubble: store.shouldShowPetBubble
+        )
     }
 
     private var showsMusicLyric: Bool {

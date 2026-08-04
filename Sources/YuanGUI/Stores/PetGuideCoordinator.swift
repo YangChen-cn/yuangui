@@ -5,19 +5,23 @@ import Foundation
 /// surface: every step is presented as a bubble with at most two buttons that
 /// dispatch to existing features through injected closures.
 ///
-/// Precedence with the rest of the pet's messages is handled by
-/// `PetAuxiliaryBubbleView`: urgent reminders and running tasks outrank the
-/// guide; the guide outranks lyrics, ambient chatter, weather and non-urgent
-/// smart states.
+/// Precedence with the rest of the pet's messages is resolved once by
+/// `PetAuxiliaryBubbleResolver` (shared by the view and the panel): running
+/// tasks and urgent reminders outrank the guide; the guide outranks lyrics,
+/// ambient chatter, weather and non-urgent smart states.
 @MainActor
 final class PetGuideCoordinator: ObservableObject {
     static let onboardingVersion = 1
     static let completedVersionKey = "onboarding.completedVersion"
+    static let migrationKey = "onboarding.migration.v1"
     static let featureTipPrefix = "featureTip.shown."
+    static let featureUsedPrefix = "featureUsed."
+    static let featureTipsEnabledKey = "featureTips.enabled"
 
     /// Wait before the first feature-tip opportunity so new users settle in.
     static let initialTipDelay: TimeInterval = 90
-    static let tipRetryInterval: TimeInterval = 10 * 60
+    /// Long retry interval so tips never feel naggy.
+    static let tipRetryInterval: TimeInterval = 30 * 60
 
     enum OnboardingPhase: Equatable {
         case idle
@@ -25,17 +29,26 @@ final class PetGuideCoordinator: ObservableObject {
         case contextMenu
         case tools
         case finder
+        case complete
     }
 
     struct Actions {
-        var beginRegionScreenshot: () -> Void = {}
-        var beginScreenshotTranslation: () -> Void = {}
-        var startFocus: () -> Void = {}
+        /// Starts a region screenshot; true = a session started (it will later
+        /// report exactly one end via `handleToolSessionEnded`), false = it
+        /// could not start and nothing will follow.
+        var beginRegionScreenshot: () -> Bool = { false }
+        var beginScreenshotTranslation: () -> Bool = { false }
+        /// Starts a focus session. The minutes parameter is always explicit so
+        /// the promised duration matches the actual behavior (the tip says
+        /// "开始 25 分钟" and starts exactly 25 minutes).
+        var startFocus: (Int) -> Void = { _ in }
         var openMusic: () -> Void = {}
         var openDiary: () -> Void = {}
         var openQuickToolsSettings: () -> Void = {}
         var openFinderExtensionManagement: () -> Void = {}
-        var unlockPet: () -> Void = {}
+        /// Runtime-only override; never persists the user's lock preference.
+        var beginTemporaryInteractionUnlock: () -> Void = {}
+        var endTemporaryInteractionUnlock: () -> Void = {}
         /// Short pet feedback after a guide-triggered screenshot succeeds.
         var presentScreenshotFeedback: () -> Void = {}
     }
@@ -69,6 +82,7 @@ final class PetGuideCoordinator: ObservableObject {
         self.finderExtensionBundled = finderExtensionBundled
         self.finderExtensionEnabled = finderExtensionEnabled
         self.actions = actions
+        runLegacyMigrationIfNeeded()
     }
 
     // MARK: - Lifecycle
@@ -80,6 +94,8 @@ final class PetGuideCoordinator: ObservableObject {
     func stop() {
         tipTask?.cancel()
         tipTask = nil
+        // Never leave a runtime unlock behind, even on quit mid-walkthrough.
+        actions.endTemporaryInteractionUnlock()
     }
 
     // MARK: - Onboarding
@@ -101,12 +117,19 @@ final class PetGuideCoordinator: ObservableObject {
     }
 
     private func beginOnboarding(at phase: OnboardingPhase) {
+        // A restart replaces any in-flight walkthrough: restore the user's
+        // original lock state first so nothing leaks across runs.
+        actions.endTemporaryInteractionUnlock()
         isOnboardingActive = true
         activeFeatureTip = nil
         presentGuide(for: phase)
     }
 
     private func presentGuide(for phase: OnboardingPhase) {
+        let previous = onboardingPhase
+        if previous == .contextMenu, phase != .contextMenu {
+            actions.endTemporaryInteractionUnlock()
+        }
         onboardingPhase = phase
         if let guide = guideFor(phase) {
             currentGuide = guide
@@ -120,7 +143,8 @@ final class PetGuideCoordinator: ObservableObject {
         case .intro: presentGuide(for: .contextMenu)
         case .contextMenu: presentGuide(for: .tools)
         case .tools: presentGuide(for: .finder)
-        case .finder, .idle: completeOnboarding()
+        case .finder: presentGuide(for: .complete)
+        case .complete, .idle: completeOnboarding()
         }
     }
 
@@ -131,6 +155,7 @@ final class PetGuideCoordinator: ObservableObject {
         currentGuide = nil
         waitingForFinderEnablement = false
         pendingScreenshotTracking = false
+        actions.endTemporaryInteractionUnlock()
         defaults.set(Self.onboardingVersion, forKey: Self.completedVersionKey)
     }
 
@@ -143,6 +168,7 @@ final class PetGuideCoordinator: ObservableObject {
         currentGuide = nil
         waitingForFinderEnablement = false
         pendingScreenshotTracking = false
+        actions.endTemporaryInteractionUnlock()
     }
 
     // MARK: - Guide actions
@@ -157,13 +183,14 @@ final class PetGuideCoordinator: ObservableObject {
         handle(action)
     }
 
-    /// Close button on the bubble: skips the current step.
+    /// Close button on the bubble: skips the current step. On the final step
+    /// it records completion.
     func dismissCurrentGuide() {
         if isOnboardingActive {
-            if onboardingPhase == .finder {
-                completeOnboarding()
-            } else {
-                endOnboardingWithoutCompleting()
+            switch onboardingPhase {
+            case .finder: presentGuide(for: .complete)
+            case .complete: completeOnboarding()
+            default: endOnboardingWithoutCompleting()
             }
         } else if let tip = activeFeatureTip {
             markTipShown(tip)
@@ -177,13 +204,29 @@ final class PetGuideCoordinator: ObservableObject {
         case .next:
             advanceOnboarding()
         case .dismiss:
-            dismissCurrentGuide()
+            if isOnboardingActive {
+                switch onboardingPhase {
+                case .finder:
+                    // "暂时不要" on Finder still lands on the closing message.
+                    presentGuide(for: .complete)
+                case .complete:
+                    completeOnboarding()
+                default:
+                    endOnboardingWithoutCompleting()
+                }
+            } else if let tip = activeFeatureTip {
+                markTipShown(tip)
+                activeFeatureTip = nil
+                currentGuide = nil
+            }
         case .regionScreenshot:
-            actions.beginRegionScreenshot()
-            pendingScreenshotTracking = true
+            if actions.beginRegionScreenshot() {
+                pendingScreenshotTracking = true
+            }
         case .screenshotTranslation:
-            actions.beginScreenshotTranslation()
-            pendingScreenshotTracking = true
+            if actions.beginScreenshotTranslation() {
+                pendingScreenshotTracking = true
+            }
         case .translateSelection:
             // Not used by the current guide set; the selection-translation tip
             // points at the shortcuts page instead.
@@ -201,7 +244,7 @@ final class PetGuideCoordinator: ObservableObject {
             actions.openQuickToolsSettings()
             finishActiveTip()
         case .startFocus:
-            actions.startFocus()
+            actions.startFocus(25)
             finishActiveTip()
         case .openMusic:
             actions.openMusic()
@@ -210,13 +253,15 @@ final class PetGuideCoordinator: ObservableObject {
             actions.openDiary()
             finishActiveTip()
         case .unlockPet:
-            actions.unlockPet()
+            actions.beginTemporaryInteractionUnlock()
             presentGuide(for: onboardingPhase)
         }
     }
 
-    /// Called by the app when a screenshot capture session ends.
-    /// `completed` is true only when an image was actually captured.
+    /// Called by the app when a started capture session ends.
+    /// `completed` is true only when an image was actually captured. A session
+    /// that never started reports nothing, matching the `Bool` contract of
+    /// `beginRegionScreenshot`/`beginScreenshotTranslation`.
     func handleToolSessionEnded(_ completed: Bool) {
         guard pendingScreenshotTracking else { return }
         pendingScreenshotTracking = false
@@ -247,15 +292,40 @@ final class PetGuideCoordinator: ObservableObject {
         currentGuide = nil
     }
 
+    // MARK: - Feature usage tracking (local only, no analytics)
+
+    func recordFeatureUsed(_ tip: FeatureTipID) {
+        defaults.set(true, forKey: Self.featureUsedPrefix + tip.rawValue)
+    }
+
+    func hasUsedFeature(_ tip: FeatureTipID) -> Bool {
+        defaults.bool(forKey: Self.featureUsedPrefix + tip.rawValue)
+    }
+
     // MARK: - Feature tips
 
+    var featureTipsEnabled: Bool {
+        defaults.object(forKey: Self.featureTipsEnabledKey) == nil
+            ? true
+            : defaults.bool(forKey: Self.featureTipsEnabledKey)
+    }
+
+    func setFeatureTipsEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Self.featureTipsEnabledKey)
+        if !enabled {
+            // Drop any tip that is currently on screen.
+            finishActiveTip()
+        }
+    }
+
     func considerFeatureTip() {
-        guard currentGuide == nil,
+        guard featureTipsEnabled,
+              currentGuide == nil,
               !isOnboardingActive,
               hasCompletedCurrentOnboarding,
               canPresentTip() else { return }
         for tip in FeatureTipID.allCases {
-            guard !isTipShown(tip) else { continue }
+            guard !isTipShown(tip), !hasUsedFeature(tip) else { continue }
             if let guide = tipGuide(for: tip) {
                 activeFeatureTip = tip
                 currentGuide = guide
@@ -281,6 +351,41 @@ final class PetGuideCoordinator: ObservableObject {
             self.considerFeatureTip()
             self.scheduleNextTipOpportunity(delay: Self.tipRetryInterval)
         }
+    }
+
+    // MARK: - Legacy install migration
+
+    /// Users who already had YuanGUI before onboarding existed must not be
+    /// treated as fresh installs. Runs once per install; never resets any
+    /// user configuration.
+    private func runLegacyMigrationIfNeeded() {
+        guard !defaults.bool(forKey: Self.migrationKey) else { return }
+        defaults.set(true, forKey: Self.migrationKey)
+        guard !hasCompletedCurrentOnboarding else { return }
+        if Self.hasLegacyInstallEvidence(defaults: defaults) {
+            defaults.set(Self.onboardingVersion, forKey: Self.completedVersionKey)
+        }
+    }
+
+    static func hasLegacyInstallEvidence(defaults: UserDefaults) -> Bool {
+        let evidenceKeys = [
+            "hasSavedPetWindowPosition",
+            "petWindowX",
+            "petMode",
+            "petScale",
+            "focusDurationMinutes",
+            "dashboardStyle",
+            "interactionLocked",
+            "smartReactionsEnabled",
+            "ambientChatterIntervalMinutes",
+            "weatherAnnouncementsEnabled",
+            "bedtimeReminderEnabled",
+            // Quick tools hot-key configuration.
+            "quickTools.screenshotHotKey",
+            "quickTools.translationHotKey",
+            "quickTools.screenshotTranslationHotKey"
+        ]
+        return evidenceKeys.contains { defaults.object(forKey: $0) != nil }
     }
 
     // MARK: - Guide content
@@ -343,6 +448,13 @@ final class PetGuideCoordinator: ObservableObject {
                 primaryAction: .openFinderExtensionSettings,
                 secondaryTitle: AppLocalizer.string("guide.later"),
                 secondaryAction: .dismiss
+            )
+        case .complete:
+            return PetGuide(
+                id: "onboarding.complete",
+                message: AppLocalizer.string("guide.complete.message"),
+                primaryTitle: AppLocalizer.string("guide.complete.primary"),
+                primaryAction: .next
             )
         }
     }
