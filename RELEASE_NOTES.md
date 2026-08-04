@@ -14,6 +14,8 @@
 - The mini player now opens the full player when its artwork is clicked and uses the entire circular play/pause control as the hit target.
 - Fixed lifecycle race condition when opening the mini player for the first time
 - Added focused lifecycle and synchronization tests for speech invalidation, translation window sizing, urgent reminder priority, Apple Music recovery, LRCLIB fallback, and mini-player window handoff.
+- Added a native FinderSync extension for creating common text and Office files, copying paths, opening the selected folder in installed terminal apps such as Kaku, and cutting or pasting items from Finder context menus.
+- Finder extension actions now survive Finder's XPC menu bridge reliably, use collision-safe file names, and refresh in place during development builds or app updates without toggling the user's extension setting or registering duplicate copies.
 
 ## Earlier releases
 

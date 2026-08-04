@@ -14,6 +14,7 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
+APP_PLUGINS="$APP_CONTENTS/PlugIns"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
@@ -23,6 +24,8 @@ RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
 # copy outside protected user folders for local development.
 RUN_STAGING_DIR="/private/tmp/${APP_NAME}-run-${UID}"
 RUN_BUNDLE="$RUN_STAGING_DIR/$APP_NAME.app"
+DIST_EXTENSION="$APP_PLUGINS/YuanGUIFinderExtension.appex"
+RUN_EXTENSION="$RUN_BUNDLE/Contents/PlugIns/YuanGUIFinderExtension.appex"
 
 if [[ "$MODE" != "build-only" && "$MODE" != "--build-only" ]]; then
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -54,6 +57,10 @@ for legal_file in LICENSE ASSET_LICENSE.md THIRD_PARTY_NOTICES.md; do
     cp "$ROOT_DIR/$legal_file" "$APP_RESOURCES/Legal/"
   fi
 done
+
+"$ROOT_DIR/script/build_finder_extension.sh" \
+  Debug "$APP_VERSION" "$APP_BUILD" \
+  "$APP_PLUGINS/YuanGUIFinderExtension.appex" -
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -101,12 +108,36 @@ cat >"$INFO_PLIST" <<PLIST
 PLIST
 
 # Keep a stable local code requirement for ServiceManagement login-item registration.
-/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+# Nested code is signed first by build_finder_extension.sh.
+/usr/bin/codesign --force --sign - "$APP_BUNDLE"
+/usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+
+stop_development_finder_extension() {
+  pkill -x "YuanGUIFinderExtension" >/dev/null 2>&1 || true
+  for _ in {1..20}; do
+    if ! pgrep -x "YuanGUIFinderExtension" >/dev/null 2>&1; then
+      return
+    fi
+    sleep 0.05
+  done
+}
+
+unregister_dist_finder_extension() {
+  # dist is a build artifact, not the development copy launched below.
+  /usr/bin/pluginkit -r "$DIST_EXTENSION" >/dev/null 2>&1 || true
+}
 
 open_app() {
+  # Finder keeps extension processes alive independently from the host app.
+  # Keep PluginKit's enabled state and stable staged path, but stop the old
+  # executable before replacing it. Re-adding the same path refreshes the one
+  # registration without toggling or duplicating the extension.
+  stop_development_finder_extension
+  unregister_dist_finder_extension
   rm -rf "$RUN_BUNDLE"
   mkdir -p "$RUN_STAGING_DIR"
   /usr/bin/ditto "$APP_BUNDLE" "$RUN_BUNDLE"
+  /usr/bin/pluginkit -a "$RUN_EXTENSION"
   /usr/bin/open -n "$RUN_BUNDLE"
 }
 

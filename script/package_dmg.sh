@@ -24,6 +24,7 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
+APP_PLUGINS="$APP_CONTENTS/PlugIns"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
@@ -60,6 +61,10 @@ for legal_file in LICENSE ASSET_LICENSE.md THIRD_PARTY_NOTICES.md; do
     cp "$ROOT_DIR/$legal_file" "$APP_RESOURCES/Legal/"
   fi
 done
+
+"$ROOT_DIR/script/build_finder_extension.sh" \
+  Release "$VERSION" "$BUILD" \
+  "$APP_PLUGINS/YuanGUIFinderExtension.appex" "$SIGNING_IDENTITY"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -107,10 +112,10 @@ cat >"$INFO_PLIST" <<PLIST
 PLIST
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
-  /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+  /usr/bin/codesign --force --sign - "$APP_BUNDLE"
   SIGNING_NOTE="这是个人分享版，使用临时签名。首次打开请按下方说明操作。"
 else
-  /usr/bin/codesign --force --deep --options runtime --timestamp \
+  /usr/bin/codesign --force --options runtime --timestamp \
     --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
   SIGNING_NOTE="此版本已使用 Apple Developer ID 签名。"
 fi

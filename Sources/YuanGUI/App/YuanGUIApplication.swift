@@ -53,6 +53,7 @@ final class AppRuntime {
         aiSettings: aiSettings,
         petTranslationEvents: petTranslationCoordinator
     )
+    let finderExtension = FinderExtensionController()
     lazy var updateStore: AppUpdateStore = {
         let store = AppUpdateStore(service: updateService)
         store.setTerminationHandler { [weak self] in
@@ -83,6 +84,7 @@ final class AppRuntime {
         diary: diary,
         externalAudioInterruption: externalAudioInterruption,
         quickTools: quickTools,
+        finderExtension: finderExtension,
         updater: updateStore,
         onSafeUserInteraction: { [weak self] in
             self?.updateCoordinator.handleExplicitUserInteraction()
@@ -168,6 +170,7 @@ final class WindowCoordinator: NSObject {
     private let diary: DiaryFeature
     private let externalAudioInterruption: ExternalAudioInterruptionController
     private let quickTools: QuickToolsController
+    private let finderExtension: FinderExtensionController
     private let updater: AppUpdateStore
     private let onSafeUserInteraction: () -> Void
     private let terminateForUpdate: () async -> Bool
@@ -203,6 +206,7 @@ final class WindowCoordinator: NSObject {
         diary: DiaryFeature,
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
+        finderExtension: FinderExtensionController,
         updater: AppUpdateStore,
         onSafeUserInteraction: @escaping () -> Void,
         terminateForUpdate: @escaping () async -> Bool
@@ -218,6 +222,7 @@ final class WindowCoordinator: NSObject {
         self.diary = diary
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
+        self.finderExtension = finderExtension
         self.updater = updater
         self.onSafeUserInteraction = onSafeUserInteraction
         self.terminateForUpdate = terminateForUpdate
@@ -226,6 +231,7 @@ final class WindowCoordinator: NSObject {
     func start() {
         installMainMenu()
         quickTools.start()
+        finderExtension.start()
         panelController = PetPanelController(
             store: pet,
             chat: chat,
@@ -257,6 +263,7 @@ final class WindowCoordinator: NSObject {
         weatherStartupTask?.cancel()
         pet.monitor.stop()
         quickTools.stop()
+        finderExtension.stop()
         music.lyricsPresentation.onVisibilityChanged = nil
         music.lyricsPresentation.onLockChanged = nil
     }
@@ -394,6 +401,7 @@ final class WindowCoordinator: NSObject {
                 diary: diary,
                 externalAudioInterruption: externalAudioInterruption,
                 quickTools: quickTools,
+                finderExtension: finderExtension,
                 updater: updater,
                 showPet: { [weak self] in self?.panelController?.show() },
                 appActions: actions

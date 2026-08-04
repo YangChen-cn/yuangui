@@ -11,6 +11,15 @@
 
 YuanGUI supports macOS 15 or later. Do not launch the bare SwiftPM executable for regular use; package the app with `./script/build_and_run.sh --verify` or install the DMG.
 
+## Enable the Finder context menu
+
+1. Launch the packaged YuanGUI app once.
+2. Open **YuanGUI Settings → Quick Tools → Finder Context Menu Extension**.
+3. Choose **Open Extension Settings**.
+4. In **System Settings → General → Login Items & Extensions**, enable **YuanGUI Finder Extension**.
+
+The extension adds file creation, Copy Path, Open in Terminal, and menu-only Cut/Paste to the desktop and local Finder locations. It does not scan folders on launch. iCloud Drive, OneDrive, and other File Provider locations are not guaranteed in this first version.
+
 ## Permission recovery
 
 | Permission | Why it is requested | Restore it after denial |

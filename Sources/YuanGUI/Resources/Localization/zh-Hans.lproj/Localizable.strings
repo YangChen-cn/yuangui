@@ -1336,6 +1336,14 @@
 "music.bilibili.login.apiError" = "哔哩哔哩登录失败：%@";
 "music.playMode.currentFormat" = "播放模式：%@";
 "quickTools.defaultShortcut" = "默认快捷指令：%@";
+"Finder 右键扩展" = "Finder 右键扩展";
+"扩展状态" = "扩展状态";
+"已启用" = "已启用";
+"未启用" = "未启用";
+"在桌面或 Finder 中右键，可新建文件、复制路径、打开终端及剪切粘贴。" = "在桌面或 Finder 中右键，可新建文件、复制路径、打开终端及剪切粘贴。";
+"当前运行版本未包含 Finder 右键扩展，请使用打包后的 YuanGUI.app。" = "当前运行版本未包含 Finder 右键扩展，请使用打包后的 YuanGUI.app。";
+"打开扩展设置" = "打开扩展设置";
+"首次使用需在“系统设置 → 通用 → 登录项与扩展”中启用 YuanGUI Finder 扩展；iCloud 与第三方云盘位置暂不保证支持。" = "首次使用需在“系统设置 → 通用 → 登录项与扩展”中启用 YuanGUI Finder 扩展；iCloud 与第三方云盘位置暂不保证支持。";
 "quickTools.hotKeySaved" = "已设置 %@ 快捷键：%@";
 "chat.error.invalidResponse" = "AI 服务返回了暂不支持的响应格式，请重试或检查所选模型。";
 "截图翻译使用 Vision 在本机 OCR。翻译默认通过系统快捷指令免费调用 Apple 翻译；在线 AI 仅在你明确选择时使用。网页与截图等只读来源支持编辑、翻译和复制，但不能替换原文。" = "截图翻译使用 Vision 在本机 OCR。翻译默认通过系统快捷指令免费调用 Apple 翻译；在线 AI 仅在你明确选择时使用。网页与截图等只读来源支持编辑、翻译和复制，但不能替换原文。";

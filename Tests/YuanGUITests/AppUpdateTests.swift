@@ -776,6 +776,8 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertTrue(script.contains("kill -TERM"))
         XCTAssertTrue(script.contains("force_attempts >= 25"))
         XCTAssertTrue(script.contains("kill -KILL"))
+        XCTAssertTrue(script.contains("pkill -x \"YuanGUIFinderExtension\""))
+        XCTAssertTrue(script.contains("pluginkit -a \"$finder_extension\""))
         XCTAssertTrue(script.contains("/usr/bin/open -n \"$target_app\""))
     }
 

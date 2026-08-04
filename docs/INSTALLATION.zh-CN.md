@@ -11,6 +11,15 @@
 
 YuanGUI 需要 macOS 15 或更高版本。日常使用请运行打包后的 App，而不是 SwiftPM 的裸可执行文件。
 
+## 启用 Finder 右键菜单
+
+1. 先启动一次打包后的 YuanGUI App。
+2. 打开“YuanGUI 设置 → 快捷工具 → Finder 右键扩展”。
+3. 点击“打开扩展设置”。
+4. 在“系统设置 → 通用 → 登录项与扩展”中启用“YuanGUI Finder Extension”。
+
+扩展会在桌面和本地 Finder 位置提供新建文件、复制路径、在终端中打开以及右键剪切/粘贴；它不会在启动时扫描文件夹。第一版暂不保证兼容 iCloud Drive、OneDrive 等 File Provider 位置。
+
 ## 被拒绝权限后的恢复
 
 | 权限 | 用途 | 恢复方法 |

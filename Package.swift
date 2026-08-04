@@ -6,9 +6,14 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "YuanGUI", targets: ["YuanGUI"])
+        .executable(name: "YuanGUI", targets: ["YuanGUI"]),
+        .library(name: "YuanGUIFinderCore", targets: ["YuanGUIFinderCore"])
     ],
     targets: [
+        .target(
+            name: "YuanGUIFinderCore",
+            path: "Sources/YuanGUIFinderCore"
+        ),
         .executableTarget(
             name: "YuanGUI",
             path: "Sources/YuanGUI",
@@ -22,7 +27,7 @@ let package = Package(
         ),
         .testTarget(
             name: "YuanGUITests",
-            dependencies: ["YuanGUI"],
+            dependencies: ["YuanGUI", "YuanGUIFinderCore"],
             path: "Tests/YuanGUITests",
             resources: [.process("Fixtures")]
         ),

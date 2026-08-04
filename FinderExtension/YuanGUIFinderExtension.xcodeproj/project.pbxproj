@@ -1,0 +1,292 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* FinderSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* FinderSync.swift */; };
+		A10000000000000000000002 /* FinderTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* FinderTargets.swift */; };
+		A10000000000000000000003 /* FinderTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* FinderTemplates.swift */; };
+		A10000000000000000000004 /* FinderCut.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* FinderCut.swift */; };
+		A10000000000000000000008 /* FinderClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* FinderClipboard.swift */; };
+		A10000000000000000000009 /* FinderTerminalApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* FinderTerminalApplication.swift */; };
+		A10000000000000000000005 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000001 /* Localizable.strings */; };
+		A10000000000000000000006 /* FinderSync.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* FinderSync.framework */; };
+		A10000000000000000000007 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* AppKit.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* FinderSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderSync.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* FinderTargets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderTargets.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* FinderTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderTemplates.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* FinderCut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderCut.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000006 /* YuanGUIFinderExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = YuanGUIFinderExtension.entitlements; sourceTree = "<group>"; };
+		A20000000000000000000007 /* YuanGUIFinderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YuanGUIFinderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000008 /* FinderSync.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FinderSync.framework; path = System/Library/Frameworks/FinderSync.framework; sourceTree = SDKROOT; };
+		A20000000000000000000009 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		A2000000000000000000000A /* English */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A2000000000000000000000B /* Simplified Chinese */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		A2000000000000000000000D /* FinderClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderClipboard.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* FinderTerminalApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderTerminalApplication.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A40000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000007 /* AppKit.framework in Frameworks */,
+				A10000000000000000000006 /* FinderSync.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A50000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A50000000000000000000002 /* Extension */,
+				A50000000000000000000003 /* Finder Core */,
+				A50000000000000000000004 /* Frameworks */,
+				A50000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A50000000000000000000002 /* Extension */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* FinderSync.swift */,
+				A2000000000000000000000E /* FinderTerminalApplication.swift */,
+				A30000000000000000000001 /* Localizable.strings */,
+				A20000000000000000000005 /* Info.plist */,
+				A20000000000000000000006 /* YuanGUIFinderExtension.entitlements */,
+			);
+			path = Extension;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000003 /* Finder Core */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000D /* FinderClipboard.swift */,
+				A20000000000000000000002 /* FinderTargets.swift */,
+				A20000000000000000000003 /* FinderTemplates.swift */,
+				A20000000000000000000004 /* FinderCut.swift */,
+			);
+			name = "Finder Core";
+			path = ../Sources/YuanGUIFinderCore;
+			sourceTree = SOURCE_ROOT;
+		};
+		A50000000000000000000004 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000009 /* AppKit.framework */,
+				A20000000000000000000008 /* FinderSync.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007 /* YuanGUIFinderExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A60000000000000000000001 /* YuanGUIFinderExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000002 /* Build configuration list for PBXNativeTarget "YuanGUIFinderExtension" */;
+			buildPhases = (
+				A40000000000000000000002 /* Sources */,
+				A40000000000000000000001 /* Frameworks */,
+				A40000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = YuanGUIFinderExtension;
+			productName = YuanGUIFinderExtension;
+			productReference = A20000000000000000000007 /* YuanGUIFinderExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A60000000000000000000002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					A60000000000000000000001 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = A70000000000000000000001 /* Build configuration list for PBXProject "YuanGUIFinderExtension" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = A50000000000000000000001;
+			productRefGroup = A50000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A60000000000000000000001 /* YuanGUIFinderExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A40000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000005 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A40000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* FinderSync.swift in Sources */,
+				A10000000000000000000009 /* FinderTerminalApplication.swift in Sources */,
+				A10000000000000000000008 /* FinderClipboard.swift in Sources */,
+				A10000000000000000000002 /* FinderTargets.swift in Sources */,
+				A10000000000000000000003 /* FinderTemplates.swift in Sources */,
+				A10000000000000000000004 /* FinderCut.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		A30000000000000000000001 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A2000000000000000000000A /* English */,
+				A2000000000000000000000B /* Simplified Chinese */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		A80000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A80000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A80000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Extension/YuanGUIFinderExtension.entitlements;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 18;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Extension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 2.7.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yang.yuangui.FinderExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A80000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Extension/YuanGUIFinderExtension.entitlements;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 18;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Extension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 2.7.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yang.yuangui.FinderExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A70000000000000000000001 /* Build configuration list for PBXProject "YuanGUIFinderExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80000000000000000000001 /* Debug */,
+				A80000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000002 /* Build configuration list for PBXNativeTarget "YuanGUIFinderExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80000000000000000000003 /* Debug */,
+				A80000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A60000000000000000000002 /* Project object */;
+}

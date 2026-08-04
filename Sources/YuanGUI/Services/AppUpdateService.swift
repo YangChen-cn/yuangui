@@ -320,6 +320,7 @@ enum AppUpdateInstallerScript {
     old_pid="$5"
     staging="${target_app}.updating-${old_pid}"
     backup="${target_app}.backup-${old_pid}"
+    finder_extension="${target_app}/Contents/PlugIns/YuanGUIFinderExtension.appex"
     wait_attempts=0
     while /bin/kill -0 "$old_pid" 2>/dev/null; do
       if (( wait_attempts >= 50 )); then
@@ -340,9 +341,14 @@ enum AppUpdateInstallerScript {
       /bin/sleep 0.2
       (( force_attempts += 1 ))
     done
+    /usr/bin/pkill -x "YuanGUIFinderExtension" 2>/dev/null || true
     /usr/bin/ditto "$source_app" "$staging"
     if [[ -e "$target_app" ]]; then /bin/mv "$target_app" "$backup"; fi
     if /bin/mv "$staging" "$target_app"; then
+      if [[ -d "$finder_extension" ]]; then
+        /usr/bin/pluginkit -a "$finder_extension" || true
+      fi
+      /usr/bin/pkill -x "YuanGUIFinderExtension" 2>/dev/null || true
       /bin/rm -rf "$backup"
       /usr/bin/open -n "$target_app"
     else

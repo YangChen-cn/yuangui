@@ -4,6 +4,7 @@ import SwiftUI
 struct QuickToolsSettingsView: View {
     @ObservedObject var controller: QuickToolsController
     @ObservedObject var settings: QuickToolsSettingsStore
+    @ObservedObject var finderExtension: FinderExtensionController
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
@@ -20,6 +21,33 @@ struct QuickToolsSettingsView: View {
                 shortcutRow(.translateSelection, binding: settings.translationHotKey)
                 Text(AppLocalizer.string("点击快捷键框后录制新组合；Esc 取消录制。"))
                     .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section(AppLocalizer.string("Finder 右键扩展")) {
+                LabeledContent(AppLocalizer.string("扩展状态")) {
+                    Label(
+                        AppLocalizer.string(finderExtension.isEnabled ? "已启用" : "未启用"),
+                        systemImage: finderExtension.isEnabled ? "checkmark.circle.fill" : "exclamationmark.circle"
+                    )
+                    .foregroundStyle(finderExtension.isEnabled ? .green : .secondary)
+                }
+                HStack {
+                    Text(AppLocalizer.string(
+                        finderExtension.isBundled
+                            ? "在桌面或 Finder 中右键，可新建文件、复制路径、打开终端及剪切粘贴。"
+                            : "当前运行版本未包含 Finder 右键扩展，请使用打包后的 YuanGUI.app。"
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(AppLocalizer.string("打开扩展设置")) {
+                        finderExtension.openManagement()
+                    }
+                    .disabled(!finderExtension.isBundled)
+                }
+                Text(AppLocalizer.string("首次使用需在“系统设置 → 通用 → 登录项与扩展”中启用 YuanGUI Finder 扩展；iCloud 与第三方云盘位置暂不保证支持。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section(AppLocalizer.string("区域截图")) {

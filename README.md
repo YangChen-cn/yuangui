@@ -58,6 +58,7 @@ The current stable release is `2.7.2`. This update adds quiet automatic updates,
 - **Screenshots and translation**: region capture, annotations, on-device Vision OCR, screenshot translation, selected-text translation, and Apple or online translation engines.
 - **Cleanup House**: conservative cleanup, uninstall tools, allowlists, operation logs, and path safety checks.
 - **Desktop interaction**: drag, edge docking, mini status, resizing, interaction lock, mouse pass-through, and Finder icon visibility controls.
+- **Finder context menu**: create TXT, Markdown, Word, Excel, and PowerPoint documents; copy paths; open Terminal; and move files with right-click Cut/Paste on local Finder locations.
 
 ## Requirements and installation
 
@@ -69,6 +70,7 @@ The current stable release is `2.7.2`. This update adds quiet automatic updates,
 Download the DMG from the [latest release](https://github.com/YangChen-cn/yuangui/releases/latest), then drag `YuanGUI.app` to Applications. Personal-share builds use an ad-hoc signature. If macOS blocks the first launch, Control-click the app and choose **Open**, or allow it in **System Settings → Privacy & Security**.
 
 See the complete [installation and permission guide](docs/INSTALLATION.md). Location, Screen Recording, Accessibility, Music/Finder Automation, and file access are requested only when the related feature is used.
+After installing the app, enable **YuanGUI Finder Extension** once in **System Settings → General → Login Items & Extensions**. iCloud Drive and third-party File Provider locations are not guaranteed in the first version.
 
 ## Build from source
 

@@ -20,6 +20,7 @@ struct SettingsView: View {
     let diary: DiaryFeature
     let externalAudioInterruption: ExternalAudioInterruptionController
     let quickTools: QuickToolsController
+    let finderExtension: FinderExtensionController
     let updater: AppUpdateStore
     let selection: SettingsSelectionModel
     let showPet: () -> Void
@@ -34,6 +35,7 @@ struct SettingsView: View {
         diary: DiaryFeature,
         externalAudioInterruption: ExternalAudioInterruptionController,
         quickTools: QuickToolsController,
+        finderExtension: FinderExtensionController,
         updater: AppUpdateStore,
         selection: SettingsSelectionModel,
         showPet: @escaping () -> Void
@@ -47,6 +49,7 @@ struct SettingsView: View {
         self.diary = diary
         self.externalAudioInterruption = externalAudioInterruption
         self.quickTools = quickTools
+        self.finderExtension = finderExtension
         self.updater = updater
         self.selection = selection
         self.showPet = showPet
@@ -68,6 +71,7 @@ struct SettingsView: View {
                 diary: diary,
                 externalAudioInterruption: externalAudioInterruption,
                 quickTools: quickTools,
+                finderExtension: finderExtension,
                 updater: updater,
                 showPet: showPet
             )
@@ -129,6 +133,7 @@ struct SettingsDetailView: View {
     let diary: DiaryFeature
     let externalAudioInterruption: ExternalAudioInterruptionController
     let quickTools: QuickToolsController
+    let finderExtension: FinderExtensionController
     let updater: AppUpdateStore
     let showPet: () -> Void
 
@@ -141,7 +146,11 @@ struct SettingsDetailView: View {
             case .pet:
                 PetSettingsView(pet: pet, loginItem: loginItem, showPet: showPet)
             case .quickTools:
-                QuickToolsSettingsView(controller: quickTools, settings: quickTools.settings)
+                QuickToolsSettingsView(
+                    controller: quickTools,
+                    settings: quickTools.settings,
+                    finderExtension: finderExtension
+                )
             case .ai:
                 SettingsAIPage(ai: ai)
             case .focus:

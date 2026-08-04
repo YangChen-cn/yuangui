@@ -1342,6 +1342,14 @@
 "music.bilibili.login.apiError" = "Bilibili sign-in failed: %@";
 "music.playMode.currentFormat" = "Playback mode: %@";
 "quickTools.defaultShortcut" = "Default Shortcut: %@";
+"Finder 右键扩展" = "Finder Context Menu Extension";
+"扩展状态" = "Extension Status";
+"已启用" = "Enabled";
+"未启用" = "Not Enabled";
+"在桌面或 Finder 中右键，可新建文件、复制路径、打开终端及剪切粘贴。" = "Right-click on the desktop or in Finder to create files, copy paths, open Terminal, and cut or paste items.";
+"当前运行版本未包含 Finder 右键扩展，请使用打包后的 YuanGUI.app。" = "This build does not contain the Finder extension. Use the packaged YuanGUI.app.";
+"打开扩展设置" = "Open Extension Settings";
+"首次使用需在“系统设置 → 通用 → 登录项与扩展”中启用 YuanGUI Finder 扩展；iCloud 与第三方云盘位置暂不保证支持。" = "For first use, enable YuanGUI Finder Extension in System Settings → General → Login Items & Extensions. iCloud and third-party file-provider locations are not guaranteed yet.";
 "quickTools.hotKeySaved" = "Set %@ shortcut: %@";
 "chat.error.invalidResponse" = "The AI service returned a response in an unsupported format. Please try again or check the selected model.";
 "截图翻译使用 Vision 在本机 OCR。翻译默认通过系统快捷指令免费调用 Apple 翻译；在线 AI 仅在你明确选择时使用。网页与截图等只读来源支持编辑、翻译和复制，但不能替换原文。" = "Screenshot translation uses Vision for on-device OCR. By default, translation calls Apple Translate for free through a system Shortcut; online AI is used only when you explicitly select it. Read-only sources such as webpages and screenshots can be edited, translated, and copied, but their original text cannot be replaced.";
