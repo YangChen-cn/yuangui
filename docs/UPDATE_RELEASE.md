@@ -5,6 +5,14 @@ GitHub is the authoritative source. Gitee serves the same manifest and DMG only
 as a delayed availability fallback; the app does not infer a source from the
 user's region, language, or IP address.
 
+The GitHub-first DMG download monitors sustained transfer speed: if the average
+stays below 50KB/s over a 10-second window (`DownloadSourcePolicy`), the app
+cancels and downloads the same manifest's Gitee asset instead, and remembers
+the decision for 30 minutes so the next check prefers Gitee without
+re-measuring. This means the two DMG assets must be byte-identical (the
+publish flow already enforces matching size and SHA-256), because a user may
+switch sources mid-download.
+
 This workflow deliberately does not use a detached manifest signature. The
 manifest is fetched over HTTPS, its schema and URLs are validated, and every
 listed asset is checked by SHA-256 and size before it is mounted. The downloaded

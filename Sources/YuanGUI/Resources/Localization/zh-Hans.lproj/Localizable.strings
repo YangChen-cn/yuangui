@@ -1453,6 +1453,13 @@
 "release.2.8.0.featureTips" = "新增一次性功能发现提示，自动跳过已用过的功能，可设置关闭；老用户升级不会被误判为新安装。";
 "release.2.8.0.temporaryUnlock" = "引导中的“临时解锁”只作用于运行时，不会修改持久化的交互锁定偏好。";
 "release.2.8.0.captureContract" = "截图会话同步报告启动与结束，引导中的截图步骤不会再因同步失败而卡住。";
+"update.source.preference" = "更新源";
+"update.source.automatic" = "自动";
+"update.source.github" = "GitHub";
+"update.source.gitee" = "Gitee";
+"update.source.subtitle" = "自动模式优先 GitHub，下载持续缓慢时会切换到 Gitee；手动选择后固定使用对应更新源。";
+"release.2.8.0.slowSwitch" = "GitHub 优先的下载会监测持续速度，10 秒窗口内平均低于 50KB/s 时自动切换到 Gitee 资产，并记住该决定 30 分钟。";
+"release.2.8.0.sourcePreference" = "设置 → 关于 中可固定更新源：自动（默认）、GitHub 或 Gitee，检查和下载都会遵循选择。";
 "pet.menu.screenshot" = "区域截图";
 "pet.menu.screenshotTranslation" = "截图翻译";
 "pet.menu.translateSelection" = "划词翻译";

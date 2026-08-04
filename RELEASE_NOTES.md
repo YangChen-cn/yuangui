@@ -22,6 +22,8 @@
 - Guide bubbles follow the same priority rules as the rest of the pet's messages: urgent reminders and running tasks outrank the guide, and the guide outranks lyrics, weather and casual chatter. The bubble sizes itself to its content instead of clipping long text.
 - The walkthrough's temporary unlock is a runtime-only state: the persisted interaction-lock preference is never changed and is restored on every exit path.
 - A screenshot step can no longer stall the walkthrough: capture sessions report their start synchronously (true/false), and each started session reports exactly one end whether the capture succeeded, was cancelled, or failed.
+- GitHub-first downloads now monitor sustained transfer speed: if the average stays below 50KB/s over a 10-second window, the app switches to the same manifest's Gitee asset and remembers the decision for 30 minutes, so a reachable-but-throttled connection no longer stalls the update.
+- Settings → About lets you pin the update source: Automatic (the default) keeps GitHub authoritative with the slow-download switch, or you can force GitHub or Gitee for both the update check and the download.
 
 ## Earlier releases
 

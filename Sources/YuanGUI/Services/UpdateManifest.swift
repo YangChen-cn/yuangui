@@ -216,6 +216,56 @@ struct UpdateManifestHedgeConfiguration: Equatable, Sendable {
     )
 }
 
+/// User override for the update source. Automatic keeps the hedged
+/// GitHub-authoritative flow (including the sustained-slow download switch);
+/// a manual choice pins both the manifest fetch and the download to that
+/// source without any fallback logic.
+enum UpdateSourcePreference: String, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case github
+    case gitee
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic: AppLocalizer.string("update.source.automatic")
+        case .github: AppLocalizer.string("update.source.github")
+        case .gitee: AppLocalizer.string("update.source.gitee")
+        }
+    }
+
+    static let storageKey = "updateSourcePreference"
+}
+
+/// Download-phase source policy. Independent of the manifest hedge timing: the
+/// hedge decides which manifest wins; this decides whether a GitHub DMG
+/// transfer that started but stays slow should give up and let the caller fall
+/// back to the Gitee asset.
+struct DownloadSourcePolicy: Equatable, Sendable {
+    /// Sustained average below this many bytes/second for the observation
+    /// window triggers `UpdateSourceAvailabilityError.downloadTooSlow`.
+    let minimumRateBytesPerSecond: Int64
+    let observationWindow: TimeInterval
+    let sampleInterval: TimeInterval
+
+    init(
+        minimumRateBytesPerSecond: Int64,
+        observationWindow: TimeInterval,
+        sampleInterval: TimeInterval
+    ) {
+        self.minimumRateBytesPerSecond = minimumRateBytesPerSecond
+        self.observationWindow = observationWindow
+        self.sampleInterval = sampleInterval
+    }
+
+    static let production = DownloadSourcePolicy(
+        minimumRateBytesPerSecond: 50 * 1024,
+        observationWindow: 10,
+        sampleInterval: 2
+    )
+}
+
 protocol UpdateSourceFetching: Sendable {
     func fetchManifest(endpoint: UpdateEndpoint, timeout: TimeInterval) async throws -> AvailableUpdate
     func fetchGitHubRelease(timeout: TimeInterval) async throws -> AvailableUpdate

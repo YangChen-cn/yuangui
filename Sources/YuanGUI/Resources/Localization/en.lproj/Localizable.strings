@@ -1459,6 +1459,13 @@
 "release.2.8.0.featureTips" = "Added one-time feature tips that skip features you already used and can be disabled; existing users are never treated as fresh installs.";
 "release.2.8.0.temporaryUnlock" = "The walkthrough's temporary unlock is runtime-only and never changes your persisted interaction-lock preference.";
 "release.2.8.0.captureContract" = "Capture sessions report their start and end synchronously, so the guided screenshot step can no longer stall on a failed start.";
+"update.source.preference" = "Update Source";
+"update.source.automatic" = "Automatic";
+"update.source.github" = "GitHub";
+"update.source.gitee" = "Gitee";
+"update.source.subtitle" = "Automatic prefers GitHub and switches to Gitee when downloads stay slow; a manual choice pins the update source.";
+"release.2.8.0.slowSwitch" = "GitHub-first downloads monitor sustained speed and switch to the Gitee asset when the 10-second average stays below 50KB/s, remembering the decision for 30 minutes.";
+"release.2.8.0.sourcePreference" = "Settings → About can pin the update source: Automatic (default), GitHub, or Gitee, for both the update check and the download.";
 "pet.menu.screenshot" = "Region Screenshot";
 "pet.menu.screenshotTranslation" = "Screenshot Translation";
 "pet.menu.translateSelection" = "Translate Selection";

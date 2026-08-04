@@ -68,6 +68,8 @@ private actor FakeAssetPreparer {
     enum ResultValue: Sendable {
         case success
         case availability(UpdateSourceAvailabilityError)
+        /// Simulates the sustained-slow monitor firing during the transfer.
+        case downloadTooSlow
         case checksumMismatch
         case checksumUnavailable
         case assetSizeMismatch
@@ -97,6 +99,7 @@ private actor FakeAssetPreparer {
                 dmgURL: URL(fileURLWithPath: "/tmp/YuanGUI.dmg")
             )
         case .availability(let error): throw error
+        case .downloadTooSlow: throw UpdateSourceAvailabilityError.downloadTooSlow
         case .checksumMismatch: throw AppUpdateError.checksumMismatch
         case .checksumUnavailable: throw AppUpdateError.checksumUnavailable
         case .assetSizeMismatch: throw AppUpdateError.assetSizeMismatch
@@ -634,6 +637,332 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
+    func testDownloadSlowSourceSelectionScenarios() async throws {
+        try await runGitHubSlowDownloadFallsBackToGiteeAndCaches()
+        try await runGitHubSlowWithoutGiteeAssetReportsUnavailable()
+        try await runGitHubSlowAndGiteeFailsDoesNotCache()
+        try await runGitHubSlowAndGiteeIntegrityFailureStops()
+    }
+
+    func testUpdateSourcePreferenceScenarios() async throws {
+        try await runManifestPreferencePinsSource()
+        try await runPreparePreferencePinsSource()
+        try await runPreparePreferenceWithoutAssetReportsUnavailable()
+        await runStorePreferencePersists()
+    }
+
+    private func runManifestPreferencePinsSource() async throws {
+        let cases: [(UpdateSourcePreference, UpdateAsset.Provider)] = [
+            (.github, .github),
+            (.gitee, .gitee)
+        ]
+        for (preference, expectedProvider) in cases {
+            let fetcher = FakeUpdateSourceFetcher(
+                gitee: .update(makeAvailableUpdate("99.9.9", provider: .gitee)),
+                github: .update(makeAvailableUpdate("99.9.9", provider: .github)),
+                api: .update(makeAvailableUpdate("99.9.9", provider: .github))
+            )
+            let service = AppUpdateService(
+                sourceFetcher: fetcher,
+                updateSourcePreference: { preference }
+            )
+
+            let result = try await service.checkForUpdate(mode: .manual)
+            guard case .available = result else {
+                XCTFail("Pinned source should produce an available update")
+                return
+            }
+            let expectedCalls = await fetcher.manifestCallCount(for: expectedProvider)
+            XCTAssertEqual(expectedCalls, 1)
+            let other: UpdateAsset.Provider = expectedProvider == .github ? .gitee : .github
+            let otherCalls = await fetcher.manifestCallCount(for: other)
+            XCTAssertEqual(otherCalls, 0, "Pinned source must never consult the other source")
+            let apiCalls = await fetcher.apiCallCount
+            XCTAssertEqual(apiCalls, 0)
+        }
+    }
+
+    private func runPreparePreferencePinsSource() async throws {
+        // GitHub pinned: even an availability failure must not fall back.
+        let pinnedGithub = FakeAssetPreparer(results: [
+            .github: .availability(.timedOut),
+            .gitee: .success
+        ])
+        let githubService = AppUpdateService(
+            assetPreparer: { asset, update in
+                try await pinnedGithub.prepare(asset: asset, update: update)
+            },
+            updateSourcePreference: { .github }
+        )
+        do {
+            _ = try await githubService.prepare(makeUpdateWithGitHubAndGiteeAssets())
+            XCTFail("Pinned GitHub failure should not fall back to Gitee")
+        } catch is UpdateSourceAvailabilityError {
+            let attempts = await pinnedGithub.attempts
+            XCTAssertEqual(attempts, [.github])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        // Gitee pinned: only the Gitee asset is tried.
+        let pinnedGitee = FakeAssetPreparer(results: [
+            .github: .success,
+            .gitee: .success
+        ])
+        let giteeService = AppUpdateService(
+            assetPreparer: { asset, update in
+                try await pinnedGitee.prepare(asset: asset, update: update)
+            },
+            updateSourcePreference: { .gitee }
+        )
+        _ = try await giteeService.prepare(makeUpdateWithGitHubAndGiteeAssets())
+        let giteeAttempts = await pinnedGitee.attempts
+        XCTAssertEqual(giteeAttempts, [.gitee])
+    }
+
+    private func runPreparePreferenceWithoutAssetReportsUnavailable() async throws {
+        let service = AppUpdateService(
+            assetPreparer: { asset, update in
+                throw UpdateSourceAvailabilityError.resourceUnavailable
+            },
+            updateSourcePreference: { .gitee }
+        )
+        do {
+            _ = try await service.prepare(makeAvailableUpdate("99.9.9", provider: .github))
+            XCTFail("Pinned Gitee without a Gitee asset should fail")
+        } catch AppUpdateError.noCompatibleAsset {
+            // expected
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    @MainActor
+    private func runStorePreferencePersists() {
+        let suite = "AppUpdateStorePreference-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppUpdateStore(service: AppUpdateService(), defaults: defaults)
+        XCTAssertEqual(store.updateSourcePreference, .automatic)
+        store.setUpdateSourcePreference(.gitee)
+        XCTAssertEqual(store.updateSourcePreference, .gitee)
+        XCTAssertEqual(defaults.string(forKey: UpdateSourcePreference.storageKey), "gitee")
+
+        let reloaded = AppUpdateStore(service: AppUpdateService(), defaults: defaults)
+        XCTAssertEqual(reloaded.updateSourcePreference, .gitee)
+    }
+
+    private func runGitHubSlowDownloadFallsBackToGiteeAndCaches() async throws {
+        let preparer = FakeAssetPreparer(results: [
+            .github: .downloadTooSlow,
+            .gitee: .success
+        ])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        // 第一次：GitHub 慢 → 切 Gitee，成功
+        _ = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+        var attempts = await preparer.attempts
+        XCTAssertEqual(attempts, [.github, .gitee])
+
+        // 第二次：30 分钟下载缓存生效，直接 Gitee 优先，不再重测 GitHub
+        _ = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+        attempts = await preparer.attempts
+        XCTAssertEqual(attempts, [.github, .gitee, .gitee])
+    }
+
+    private func runGitHubSlowWithoutGiteeAssetReportsUnavailable() async throws {
+        let preparer = FakeAssetPreparer(results: [.github: .downloadTooSlow])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        do {
+            _ = try await service.prepare(makeAvailableUpdate("99.9.9", provider: .github))
+            XCTFail("Slow GitHub without a mirror should report unavailable")
+        } catch AppUpdateError.updateSourcesUnavailable {
+            let attempts = await preparer.attempts
+            XCTAssertEqual(attempts, [.github])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    private func runGitHubSlowAndGiteeFailsDoesNotCache() async throws {
+        let preparer = FakeAssetPreparer(results: [
+            .github: .downloadTooSlow,
+            .gitee: .availability(.httpStatus(503))
+        ])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        for _ in 0..<2 {
+            do {
+                _ = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+                XCTFail("Both sources failing should be reported")
+            } catch AppUpdateError.updateSourcesUnavailable {
+                // 切换未成功 → 缓存未写 → 每次仍从 GitHub 开始
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+        let attempts = await preparer.attempts
+        XCTAssertEqual(attempts, [.github, .gitee, .github, .gitee])
+    }
+
+    private func runGitHubSlowAndGiteeIntegrityFailureStops() async throws {
+        let preparer = FakeAssetPreparer(results: [
+            .github: .downloadTooSlow,
+            .gitee: .checksumMismatch
+        ])
+        let service = AppUpdateService(assetPreparer: { asset, update in
+            try await preparer.prepare(asset: asset, update: update)
+        })
+
+        do {
+            _ = try await service.prepare(makeUpdateWithGitHubAndGiteeAssets())
+            XCTFail("Gitee integrity failure should stop, not loop")
+        } catch AppUpdateError.checksumMismatch {
+            let attempts = await preparer.attempts
+            XCTAssertEqual(attempts, [.github, .gitee])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testStreamDownloadSlowTransferThrowsDownloadTooSlow() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let policy = DownloadSourcePolicy(
+            minimumRateBytesPerSecond: 50 * 1024,
+            observationWindow: 1,
+            sampleInterval: 0.1
+        )
+        let service = AppUpdateService(
+            session: URLSession(configuration: configuration),
+            downloadSourcePolicy: policy
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-SlowDownload-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("update.dmg")
+        let url = URL(string: "https://updates.example.com/YuanGUI.dmg")!
+        // 64KB at 8KB/0.4s ≈ 20KB/s, well below the 50KB/s threshold.
+        let body = Data(repeating: 0xAA, count: 64 * 1024)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+            UpdateStreamURLProtocol.stopCount = 0
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+        UpdateStreamURLProtocol.chunkSize = 8 * 1024
+        UpdateStreamURLProtocol.chunkInterval = 0.4
+        let stopsBefore = UpdateStreamURLProtocol.stopCount
+        do {
+            _ = try await service.streamDownload(
+                URLRequest(url: url),
+                to: destination,
+                expectedBytes: Int64(body.count),
+                slowSpeedPolicy: policy
+            )
+            XCTFail("A throttled transfer should trigger the slow monitor")
+        } catch let error as UpdateSourceAvailabilityError {
+            XCTAssertEqual(error, .downloadTooSlow)
+            // The transfer really started and was torn down by the switch:
+            // URLSession cancels the protocol once the monitor aborts.
+            XCTAssertGreaterThan(
+                UpdateStreamURLProtocol.stopCount,
+                stopsBefore,
+                "The slow transfer should have been cancelled"
+            )
+            // The destination file was created before any byte arrived.
+            XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testStreamDownloadNormalSpeedWithPolicySucceeds() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let policy = DownloadSourcePolicy(
+            minimumRateBytesPerSecond: 50 * 1024,
+            observationWindow: 1,
+            sampleInterval: 0.05
+        )
+        let service = AppUpdateService(
+            session: URLSession(configuration: configuration),
+            downloadSourcePolicy: policy
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-FastDownload-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("update.dmg")
+        let url = URL(string: "https://updates.example.com/YuanGUI.dmg")!
+        let body = Data(repeating: 0xBB, count: 256 * 1024)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        // 全量即时投递：窗口内速率远超阈值，不触发慢速监控
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+        let response = try await service.streamDownload(
+            URLRequest(url: url),
+            to: destination,
+            expectedBytes: Int64(body.count),
+            slowSpeedPolicy: policy
+        )
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try Data(contentsOf: destination), body)
+    }
+
+    func testDownloadProgressTrackerSlidingWindow() async {
+        let clock = FakeClock(startingAt: Date(timeIntervalSince1970: 1_000))
+        let tracker = DownloadProgressTracker(now: { clock.now() })
+
+        // 窗口未满 → 不判定
+        await tracker.markProgress(bytes: 0)
+        clock.advance(by: 0.5)
+        await tracker.markProgress(bytes: 8 * 1024)
+        let notYet = await tracker.isSlow(under: 50 * 1024, window: 10)
+        XCTAssertFalse(notYet, "Window not full yet must not judge")
+
+        // 持续低速：10 秒内平均 10KB/s < 50KB/s → 触发
+        clock.advance(by: 1)
+        await tracker.markProgress(bytes: 16 * 1024)
+        clock.advance(by: 1)
+        await tracker.markProgress(bytes: 24 * 1024)
+        clock.advance(by: 1)
+        await tracker.markProgress(bytes: 32 * 1024)
+        clock.advance(by: 7)
+        await tracker.markProgress(bytes: 102 * 1024)
+        let slow = await tracker.isSlow(under: 50 * 1024, window: 10)
+        XCTAssertTrue(slow, "10s average of ~10KB/s must trigger")
+
+        // 突发拉高窗口平均 → 不触发
+        let burstTracker = DownloadProgressTracker(now: { clock.now() })
+        await burstTracker.markProgress(bytes: 0)
+        clock.advance(by: 2)
+        await burstTracker.markProgress(bytes: 2 * 1024 * 1024) // 前 2s 突发 2MB
+        clock.advance(by: 8)
+        await burstTracker.markProgress(bytes: 2 * 1024 * 1024 + 8 * 1024) // 后 8s 极慢
+        let burst = await burstTracker.isSlow(under: 50 * 1024, window: 10)
+        XCTAssertFalse(burst, "Burst average must not trigger")
+    }
+
     func testUnsupportedManifestDoesNotFallBackToGitHubAPI() async {
         let apiUpdate = makeAvailableUpdate("99.9.9", provider: .github)
         let fetcher = FakeUpdateSourceFetcher(
@@ -824,6 +1153,13 @@ private final class UpdateReleaseURLProtocol: URLProtocol {
 private final class UpdateStreamURLProtocol: URLProtocol {
     nonisolated(unsafe) static var statusCode = 200
     nonisolated(unsafe) static var body = Data()
+    /// When `chunkSize > 0`, the body is delivered in chunks of that size at
+    /// `chunkInterval` intervals to simulate a throttled transfer.
+    nonisolated(unsafe) static var chunkSize = 0
+    nonisolated(unsafe) static var chunkInterval: TimeInterval = 0
+    nonisolated(unsafe) static var stopCount = 0
+
+    private var deliveryTask: DispatchWorkItem?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -841,13 +1177,45 @@ private final class UpdateStreamURLProtocol: URLProtocol {
         }
 
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if (200..<300).contains(Self.statusCode) {
-            client?.urlProtocol(self, didLoad: Self.body)
+        let body = Self.body
+        let chunkSize = Self.chunkSize
+        let interval = Self.chunkInterval
+        guard (200..<300).contains(Self.statusCode), !body.isEmpty else {
+            client?.urlProtocolDidFinishLoading(self)
+            return
         }
-        client?.urlProtocolDidFinishLoading(self)
+        guard chunkSize > 0, interval > 0 else {
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            self?.deliverChunks(body, chunkSize: chunkSize, interval: interval, index: 0)
+        }
+        deliveryTask = work
+        DispatchQueue.global().async(execute: work)
     }
 
-    override func stopLoading() {}
+    private func deliverChunks(_ body: Data, chunkSize: Int, interval: TimeInterval, index: Int) {
+        let start = index * chunkSize
+        guard start < body.count else {
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        let end = min(start + chunkSize, body.count)
+        client?.urlProtocol(self, didLoad: body.subdata(in: start..<end))
+        let work = DispatchWorkItem { [weak self] in
+            self?.deliverChunks(body, chunkSize: chunkSize, interval: interval, index: index + 1)
+        }
+        deliveryTask = work
+        DispatchQueue.global().asyncAfter(deadline: .now() + interval, execute: work)
+    }
+
+    override func stopLoading() {
+        Self.stopCount += 1
+        deliveryTask?.cancel()
+        deliveryTask = nil
+    }
 }
 import XCTest
 @testable import YuanGUI
@@ -855,6 +1223,28 @@ import XCTest
 private struct TestError: LocalizedError, Sendable {
     let message: String
     var errorDescription: String? { message }
+}
+
+/// Thread-safe fake clock for the download-rate tracker's sliding window.
+private final class FakeClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: Date
+
+    init(startingAt date: Date) {
+        current = date
+    }
+
+    func now() -> Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return current
+    }
+
+    func advance(by interval: TimeInterval) {
+        lock.lock()
+        defer { lock.unlock() }
+        current = current.addingTimeInterval(interval)
+    }
 }
 
 private actor StubUpdateChecker: UpdateChecking {

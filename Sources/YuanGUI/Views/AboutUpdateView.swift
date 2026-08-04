@@ -38,6 +38,26 @@ struct AboutUpdateView: View {
                     .padding(.vertical, 4)
                 }
 
+                GroupBox(AppLocalizer.string("update.source.preference")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("", selection: Binding(
+                            get: { updater.updateSourcePreference },
+                            set: { updater.setUpdateSourcePreference($0) }
+                        )) {
+                            ForEach(UpdateSourcePreference.allCases) { option in
+                                Text(option.title).tag(option)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        Text(AppLocalizer.string("update.source.subtitle"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                }
+
                 GroupBox(AppLocalizer.string("检查更新")) {
                     VStack(alignment: .leading, spacing: 14) {
                         ViewThatFits(in: .horizontal) {

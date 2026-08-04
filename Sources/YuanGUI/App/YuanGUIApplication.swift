@@ -39,7 +39,13 @@ final class AppRuntime {
     let pet = PetStore()
     let aiSettings = AISettingsStore()
     let loginItem = LoginItemStore()
-    let updateService = AppUpdateService()
+    let updateService = AppUpdateService(
+        updateSourcePreference: {
+            UpdateSourcePreference(
+                rawValue: UserDefaults.standard.string(forKey: UpdateSourcePreference.storageKey) ?? ""
+            ) ?? .automatic
+        }
+    )
     lazy var focusTimer = FocusTimerStore(pet: pet)
     lazy var chat = ChatStore(settings: aiSettings)
     lazy var maintenance = MaintenanceStore(pet: pet)
