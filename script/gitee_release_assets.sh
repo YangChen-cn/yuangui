@@ -103,6 +103,11 @@ assets_for_release() {
   fi
 }
 
+# Byte-verify one asset. Exit status:
+#   0  the downloaded bytes match size and SHA-256
+#   1  the download succeeded and the bytes differ (confirmed mismatch)
+#   2  the download failed — verification is temporarily impossible; the
+#      caller must never treat this as a content error
 asset_matches() {
   local url="$1" expected_size="$2" expected_sha="$3"
   local tmp actual_size actual_sha
@@ -111,36 +116,75 @@ asset_matches() {
     --connect-timeout 20 --max-time 300 \
     "$url" --output "$tmp"; then
     rm -f "$tmp"
-    return 1
+    echo "Asset download failed, cannot verify: $url" >&2
+    return 2
   fi
   actual_size="$(stat -f '%z' "$tmp" 2>/dev/null || stat -c '%s' "$tmp")"
   # Note the parentheses: `a || b | awk` would parse as `a || (b | awk)` and
   # leave the full "hash  filename" in the variable on the first branch.
   actual_sha="$((shasum -a 256 "$tmp" 2>/dev/null || sha256sum "$tmp") | awk '{print $1}')"
   rm -f "$tmp"
-  [[ "$actual_size" == "$expected_size" && "$actual_sha" == "$expected_sha" ]]
+  if [[ "$actual_size" == "$expected_size" && "$actual_sha" == "$expected_sha" ]]; then
+    return 0
+  fi
+  echo "Asset bytes differ: $url (size $actual_size, sha $actual_sha)" >&2
+  return 1
 }
 
 # Keep exactly one byte-identical asset for NAME and delete every other
-# same-name asset. Exit status:
+# same-name asset. Deletion happens ONLY on confirmed facts: a verified
+# duplicate (its bytes downloaded and compared, and a kept copy already
+# exists) or a confirmed byte mismatch. An asset whose verification download
+# fails is never deleted — it is skipped this round, and if verification
+# keeps failing the whole reconcile fails (exit 2) instead of destroying a
+# possibly-correct asset. Exit status:
 #   0  exactly one byte-identical asset remains (re-listed and re-verified)
 #   1  no asset with this name remains — safe for the caller to upload
-#   2  a listing failed or stale duplicates could not be removed (IDs on stderr)
+#   2  a listing failed, an asset stayed unverifiable, or stale duplicates
+#      could not be removed (IDs on stderr)
 reconcile_assets() {
   local release_id="$1" name="$2" expected_size="$3" expected_sha="$4"
   local attempt
   for attempt in 1 2 3; do
-    local listing kept="" deleted_any="" final_remaining final_kept="" id url
+    local listing kept="" deleted_any="" skipped_any="" final_remaining final_kept="" id url match_result
     if ! listing="$(assets_for_release "$release_id" "$name")"; then
       return 2
     fi
     while IFS=$'\t' read -r id url; do
       [[ -n "$id" ]] || continue
-      if [[ -z "$kept" && -n "$url" ]] && asset_matches "$url" "$expected_size" "$expected_sha"; then
-        kept="$id"
-        echo "Gitee asset verified: $name (id=$id)" >&2
+      if [[ -z "$url" ]]; then
+        # No download URL: cannot verify, and never delete on that.
+        echo "Cannot verify asset without a download URL, keeping it: $name (id=$id)" >&2
+        skipped_any=1
         continue
       fi
+      match_result=0
+      asset_matches "$url" "$expected_size" "$expected_sha" || match_result=$?
+      if [[ "$match_result" == 0 ]]; then
+        if [[ -z "$kept" ]]; then
+          kept="$id"
+          echo "Gitee asset verified: $name (id=$id)" >&2
+        else
+          # A verified duplicate: the kept copy is byte-identical, so
+          # removing this one loses nothing — that is the point of dedup.
+          deleted_any=1
+          echo "Removing duplicate Gitee asset: $name (id=$id)" >&2
+          if ! curl --silent --show-error --fail \
+            --connect-timeout 15 --max-time 60 \
+            --request DELETE \
+            --data-urlencode "access_token=$GITEE_TOKEN" \
+            "$API/releases/$release_id/attach_files/$id" >/dev/null; then
+            echo "DELETE failed for $name (id=$id); will retry" >&2
+          fi
+        fi
+        continue
+      fi
+      if [[ "$match_result" == 2 ]]; then
+        echo "Cannot verify asset (download failed), keeping it: $name (id=$id)" >&2
+        skipped_any=1
+        continue
+      fi
+      # match_result == 1: the bytes differ — confirmed mismatch.
       deleted_any=1
       echo "Removing duplicate Gitee asset: $name (id=$id)" >&2
       if ! curl --silent --show-error --fail \
@@ -152,9 +196,10 @@ reconcile_assets() {
       fi
     done <<< "$listing"
 
-    # No deletions were attempted: the verified single entry is already the
-    # final state, and a second byte-verify of a large DMG would be wasted.
-    if [[ -z "$deleted_any" ]]; then
+    # Nothing was deleted or skipped: the verified single entry is already
+    # the final state, and a second byte-verify of a large DMG would be
+    # wasted. A skipped (unverifiable) entry means the state is NOT clean.
+    if [[ -z "$deleted_any" && -z "$skipped_any" ]]; then
       if [[ -n "$kept" ]]; then
         return 0
       fi

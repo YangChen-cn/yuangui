@@ -135,7 +135,11 @@ asset ids — reads and deletes go through `attach_files`), then uploads only
 when no asset matches. Success requires a re-listed, re-verified exactly-one
 state; a successful third upload still gets a final read-only verification,
 and deletion failures are retried and then fatal with the undeleted ids
-reported. Release lookup reads the HTTP status explicitly: Gitee reports a
+reported. Asset verification is three-way — bytes match, confirmed mismatch,
+or verification-download failed — and only confirmed mismatches (and
+verified duplicates) are ever deleted: an asset that cannot be verified is
+kept, and if verification keeps failing the operation fails instead of
+destroying a possibly-correct asset. Release lookup reads the HTTP status explicitly: Gitee reports a
 missing tag as HTTP 200 with a literal `null` body (the only "may create"
 case); every other status, a network failure, or a 200 body without a valid
 id aborts instead of being guessed as missing, and a created release is
