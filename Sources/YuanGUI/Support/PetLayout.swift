@@ -51,6 +51,8 @@ enum PetLayout {
     static let minimumMaintenanceWidth: CGFloat = 360
     static let compactTopTransparentInset: CGFloat = 58
     static let bottomToolbarButtonWidth: CGFloat = 28
+    static let bottomToolbarMusicButtonWidth: CGFloat = 34
+    static let bottomToolbarMusicDiaryGap: CGFloat = 4
     static let bottomToolbarSpacing: CGFloat = 0
     static let bottomToolbarButtonCount = 5
     static let bottomToolbarPanelPadding: CGFloat = 10
@@ -63,10 +65,12 @@ enum PetLayout {
     static let auxiliaryBubbleAboveGap: CGFloat = 2
     static let auxiliaryBubbleBelowOverlap: CGFloat = 30
     static let compactSideControlsWidth: CGFloat = 48
-    static let compactSideControlsInset: CGFloat = 8
+    static let compactSideControlsInset: CGFloat = 3
     static var bottomToolbarPanelSize: CGSize {
         CGSize(
             width: bottomToolbarButtonWidth * CGFloat(bottomToolbarButtonCount)
+                + (bottomToolbarMusicButtonWidth - bottomToolbarButtonWidth)
+                + bottomToolbarMusicDiaryGap
                 + bottomToolbarSpacing * CGFloat(bottomToolbarButtonCount - 1)
                 + bottomToolbarPanelPadding * 2,
             height: 70

@@ -692,7 +692,9 @@ final class PetStoreTests: XCTestCase {
     }
 
     private func runBottomToolbarPanelSizeMatchesItsFiveButtons() {
-        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 160)
+        XCTAssertEqual(PetLayout.bottomToolbarMusicButtonWidth, 34)
+        XCTAssertEqual(PetLayout.bottomToolbarMusicDiaryGap, 4)
+        XCTAssertEqual(PetLayout.bottomToolbarPanelSize.width, 170)
         XCTAssertEqual(PetLayout.bottomToolbarPanelSize.height, 70)
         XCTAssertEqual(PetLayout.lockedControlPanelSize.width, 48)
         XCTAssertEqual(PetLayout.lockedControlPanelSize.height, 48)

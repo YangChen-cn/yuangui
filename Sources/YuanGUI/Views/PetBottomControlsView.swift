@@ -76,10 +76,15 @@ struct PetBottomControlsView: View {
             .accessibilityLabel(AppLocalizer.string(chat.isPresented ? "收起 AI 对话" : "打开 AI 对话"))
 
             Button { isMiniPlayerPresented.toggle() } label: {
-                toolIcon("music.note", tint: .purple, selected: playback.isPlaying)
+                toolIcon(
+                    "music.note",
+                    tint: .purple,
+                    selected: playback.isPlaying,
+                    width: PetLayout.bottomToolbarMusicButtonWidth
+                )
             }
             .yuanSystemGlassButton()
-            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 30)
+            .frame(width: PetLayout.bottomToolbarMusicButtonWidth, height: 30)
             .onHover { setTip($0 ? (playback.isPlaying ? "正在播放音乐" : "打开迷你播放器") : nil) }
             .help(AppLocalizer.string("YuanGUI 音乐播放器"))
             .accessibilityLabel(AppLocalizer.string(playback.isPlaying ? "正在播放音乐" : "打开迷你播放器"))
@@ -90,6 +95,7 @@ struct PetBottomControlsView: View {
                         onOutsideClick: { isMiniPlayerPresented = false }
                     ))
             }
+            .padding(.trailing, PetLayout.bottomToolbarMusicDiaryGap)
 
             Button {
                 appActions.open(.quickDiary)
@@ -132,11 +138,16 @@ struct PetBottomControlsView: View {
         )
     }
 
-    private func toolIcon(_ systemName: String, tint: Color = .secondary, selected: Bool = false) -> some View {
+    private func toolIcon(
+        _ systemName: String,
+        tint: Color = .secondary,
+        selected: Bool = false,
+        width: CGFloat = PetLayout.bottomToolbarButtonWidth
+    ) -> some View {
         Image(systemName: systemName)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(selected ? tint : Color.primary.opacity(0.78))
-            .frame(width: PetLayout.bottomToolbarButtonWidth, height: 28)
+            .frame(width: width, height: 28)
             .background(selected ? tint.opacity(0.16) : .clear, in: .rect(cornerRadius: 8))
             .contentShape(Rectangle())
     }
