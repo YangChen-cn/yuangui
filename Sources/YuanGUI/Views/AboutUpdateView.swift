@@ -50,6 +50,7 @@ struct AboutUpdateView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
+                        .disabled(updater.isBusy)
                         Text(AppLocalizer.string("update.source.subtitle"))
                             .font(.caption)
                             .foregroundStyle(.secondary)

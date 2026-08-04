@@ -1,8 +1,11 @@
 name: Mirror release and update manifest to Gitee
 
+# The GitHub Release event is intentionally NOT a trigger: DMG uploads to
+# Gitee run from the publisher's machine (script/publish_gitee_release.sh,
+# cloud-runner multipart uploads hang), and that script would race a
+# release-triggered run. The mirror job runs only on explicit dispatch
+# (release.sh or manual), then the manifest commit on main syncs Gitee.
 on:
-  release:
-    types: [published]
   push:
     branches:
       - main
@@ -39,9 +42,7 @@ concurrency:
 
 jobs:
   mirror-release:
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'release' && github.event.release.prerelease == false)
+    if: github.event_name == 'workflow_dispatch'
     name: Upload the same DMG and manifest to Gitee
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -67,17 +68,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
-            TAG='${{ github.event.release.tag_name }}'
-            BUILD=""
-            MINIMUM_SYSTEM_VERSION="15.0"
-            ALLOW_ROLLBACK="false"
-          else
-            TAG='${{ inputs.tag }}'
-            BUILD='${{ inputs.build }}'
-            MINIMUM_SYSTEM_VERSION='${{ inputs.minimum_system_version }}'
-            ALLOW_ROLLBACK='${{ inputs.allow_rollback }}'
-          fi
+          TAG='${{ inputs.tag }}'
+          BUILD='${{ inputs.build }}'
+          MINIMUM_SYSTEM_VERSION='${{ inputs.minimum_system_version }}'
+          ALLOW_ROLLBACK='${{ inputs.allow_rollback }}'
 
           [[ "$TAG" == v* ]] || { echo "Release tag must start with v: $TAG" >&2; exit 1; }
           VERSION="${TAG#v}"
@@ -97,30 +91,8 @@ jobs:
             exit 1
           }
 
-          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
-            BUILD="$(python3 - <<'PY'
-          import json, re
-          with open("github-release.json", encoding="utf-8") as handle:
-              body = json.load(handle).get("body") or ""
-          match = re.search(r"(?im)^\s*(?:build|cfbundleversion)\s*[:=]\s*([0-9]+)\s*$", body)
-          print(match.group(1) if match else "")
-          PY
-            )"
-
-            # Same-version manual repairs may reuse the already published
-            # manifest metadata. New releases must carry an explicit build
-            # in the Release body; never guess a new build from source files.
-            if [[ -z "$BUILD" ]]; then
-              CURRENT_VERSION="$(jq -r '.version // empty' updates/latest.json)"
-              if [[ "$VERSION" == "$CURRENT_VERSION" ]]; then
-                BUILD="$(jq -r '.build // empty' updates/latest.json)"
-                MINIMUM_SYSTEM_VERSION="$(jq -r '.minimumSystemVersion // 15.0' updates/latest.json)"
-              fi
-            fi
-          fi
-
           [[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || {
-            echo "A positive CFBundleVersion is required. Add 'Build: N' to the release body or provide workflow_dispatch.build." >&2
+            echo "A positive CFBundleVersion is required; pass it as workflow_dispatch.build." >&2
             exit 1
           }
           [[ "$MINIMUM_SYSTEM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || {
@@ -233,205 +205,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
-          RELEASES_FILE="$(mktemp)"
-          curl --silent --show-error --fail-with-body \
-            --connect-timeout 15 --max-time 120 \
-            "$API/releases?per_page=100" > "$RELEASES_FILE"
-          RELEASE_ID="$(jq -r --arg tag "$TAG" '.[] | select(.tag_name == $tag) | .id' "$RELEASES_FILE" | head -n 1)"
-
-          if [[ -z "$RELEASE_ID" || "$RELEASE_ID" == "null" ]]; then
-            RELEASE_NAME="$(jq -r '.name // .tag_name' github-release.json)"
-            RELEASE_BODY="$(jq -r '.body // ""' github-release.json)"
-            PRERELEASE="$(jq -r '.prerelease // false' github-release.json)"
-            curl --silent --show-error --fail-with-body \
-              --connect-timeout 15 --max-time 120 \
-              --request POST \
-              --data-urlencode "access_token=$GITEE_TOKEN" \
-              --data-urlencode "tag_name=$TAG" \
-              --data-urlencode "name=$RELEASE_NAME" \
-              --data-urlencode "body=$RELEASE_BODY" \
-              --data-urlencode "target_commitish=main" \
-              --data-urlencode "prerelease=$PRERELEASE" \
-              "$API/releases" > gitee-release.json
-            RELEASE_ID="$(jq -er '.id' gitee-release.json)"
-          else
-            jq -c --arg tag "$TAG" '.[] | select(.tag_name == $tag)' "$RELEASES_FILE" > gitee-release.json
-          fi
-
-          rm -f "$RELEASES_FILE"
+          # Shared with the local publish script: 404-tolerant lookup, then
+          # creation only when the release does not exist yet.
+          RELEASE_NAME="$(jq -r '.name // .tag_name' github-release.json)"
+          RELEASE_BODY="$(jq -r '.body // ""' github-release.json)"
+          PRERELEASE="$(jq -r '.prerelease // false' github-release.json)"
+          RELEASE_ID="$(./script/gitee_release_assets.sh ensure-release \
+            "$TAG" "$RELEASE_NAME" "$RELEASE_BODY" "$PRERELEASE")"
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
 
       - name: Upload the DMG and checksum to Gitee
         id: gitee_asset
         env:
-          API: https://gitee.com/api/v5/repos/${{ env.GITEE_OWNER }}/${{ env.GITEE_REPO }}
-          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
+          TAG: ${{ steps.metadata.outputs.tag }}
           DMG: ${{ steps.asset.outputs.dmg }}
           ASSET_NAME: ${{ steps.asset.outputs.asset_name }}
         shell: bash
         run: |
           set -euo pipefail
-
-          refresh_gitee_release() {
-            local api_timeout="$1"
-            curl --silent --show-error --fail-with-body \
-              --connect-timeout 15 --max-time "$api_timeout" \
-              "$API/releases/$RELEASE_ID" > gitee-release.json
-          }
-
-          remote_asset_exists_and_matches() {
-            local path_name="$1"
-            local expected_size="$2"
-            local expected_sha="$3"
-            local verify_timeout="$4"
-            local existing existing_url existing_file
-            local verify_started verify_elapsed verify_status actual_size actual_sha
-
-            refresh_gitee_release 120 || return 1
-            existing="$(jq -c --arg name "$path_name" \
-              '(.assets // []) | map(select(.name == $name)) | first // empty' \
-              gitee-release.json)"
-            if [[ -z "$existing" ]]; then
-              echo "Gitee asset is not visible yet: $path_name"
-              return 1
-            fi
-
-            existing_url="$(jq -r '(.browser_download_url // .url // empty)' <<< "$existing")"
-            if [[ -z "$existing_url" ]]; then
-              echo "Gitee asset has no download URL yet: $path_name"
-              return 1
-            fi
-            existing_file="$(mktemp)"
-            verify_started="$(date +%s)"
-            set +e
-            curl --silent --show-error --fail --location --retry 3 \
-              --connect-timeout 20 --max-time "$verify_timeout" \
-              "$existing_url" --output "$existing_file"
-            verify_status=$?
-            set -e
-            verify_elapsed=$(( $(date +%s) - verify_started ))
-
-            if [[ "$verify_status" -ne 0 ]]; then
-              echo "Gitee asset download failed: asset=$path_name curl_exit=$verify_status elapsed=${verify_elapsed}s"
-              rm -f "$existing_file"
-              return 1
-            fi
-
-            actual_size="$(stat -c '%s' "$existing_file")"
-            if [[ "$actual_size" != "$expected_size" ]]; then
-              echo "Gitee asset size mismatch: asset=$path_name expected=$expected_size actual=$actual_size elapsed=${verify_elapsed}s"
-              rm -f "$existing_file"
-              return 1
-            fi
-
-            actual_sha="$(sha256sum "$existing_file" | awk '{print $1}')"
-            if [[ "$actual_sha" != "$expected_sha" ]]; then
-              echo "Gitee asset SHA-256 mismatch: asset=$path_name expected=$expected_sha actual=$actual_sha elapsed=${verify_elapsed}s"
-              rm -f "$existing_file"
-              return 1
-            fi
-
-            rm -f "$existing_file"
-            echo "Gitee asset verified: asset=$path_name bytes=$actual_size elapsed=${verify_elapsed}s"
-            return 0
-          }
-
-          remove_existing_asset() {
-            local path_name="$1"
-            local existing existing_id
-
-            refresh_gitee_release 120 || return 1
-            existing="$(jq -c --arg name "$path_name" \
-              '(.assets // []) | map(select(.name == $name)) | first // empty' \
-              gitee-release.json)"
-            [[ -n "$existing" ]] || return 0
-
-            existing_id="$(jq -r '.id // empty' <<< "$existing")"
-            [[ -n "$existing_id" ]] || {
-              echo "Gitee asset $path_name exists but has no deletable id" >&2
-              return 1
-            }
-            echo "Removing stale Gitee asset $path_name"
-            curl --silent --show-error --fail-with-body \
-              --connect-timeout 15 --max-time 120 \
-              --request DELETE \
-              --data-urlencode "access_token=$GITEE_TOKEN" \
-              "$API/releases/$RELEASE_ID/attach_files/$existing_id" >/dev/null
-          }
-
-          upload_if_validated() {
-            local path="$1"
-            local expected_size="$2"
-            local expected_sha="$3"
-            local upload_connect_timeout="$4"
-            local upload_timeout="$5"
-            local verify_timeout="$6"
-            local name upload_status upload_response upload_metrics
-            local upload_started upload_elapsed
-            local http_code time_dns time_connect time_tls time_first_byte
-            local time_total size_upload speed_upload
-            name="$(basename "$path")"
-
-            for attempt in 1 2 3; do
-              # An upload may have reached Gitee even when the response was
-              # lost. Always query and verify before sending another copy.
-              if remote_asset_exists_and_matches "$name" "$expected_size" "$expected_sha" "$verify_timeout"; then
-                return 0
-              fi
-
-              remove_existing_asset "$name" || true
-
-              echo "Uploading $name (attempt $attempt/3)"
-              upload_response="$(mktemp)"
-              upload_started="$(date +%s)"
-              set +e
-              upload_metrics="$(
-                curl --silent --show-error --fail-with-body \
-                  --connect-timeout "$upload_connect_timeout" --max-time "$upload_timeout" \
-                  --request POST \
-                  --form "access_token=$GITEE_TOKEN" \
-                  --form "file=@$path" \
-                  --output "$upload_response" \
-                  --write-out '%{http_code}|%{time_namelookup}|%{time_connect}|%{time_appconnect}|%{time_starttransfer}|%{time_total}|%{size_upload}|%{speed_upload}' \
-                  "$API/releases/$RELEASE_ID/attach_files"
-              )"
-              upload_status=$?
-              set -e
-              upload_elapsed=$(( $(date +%s) - upload_started ))
-              IFS='|' read -r http_code time_dns time_connect time_tls time_first_byte time_total size_upload speed_upload <<< "$upload_metrics"
-              echo "Gitee upload diagnostics: asset=$name attempt=$attempt curl_exit=$upload_status http=${http_code:-000} dns=${time_dns:-0}s connect=${time_connect:-0}s tls=${time_tls:-0}s first_byte=${time_first_byte:-0}s total=${time_total:-0}s uploaded=${size_upload:-0}B speed=${speed_upload:-0}B/s wall=${upload_elapsed}s"
-              rm -f "$upload_response"
-              if [[ "$upload_status" -ne 0 ]]; then
-                echo "Gitee upload returned $upload_status; checking for a completed remote asset"
-              fi
-
-              # Treat a timeout/5xx as an unknown result, not an immediate
-              # failure. The server may have stored the complete asset.
-              if remote_asset_exists_and_matches "$name" "$expected_size" "$expected_sha" "$verify_timeout"; then
-                return 0
-              fi
-
-              if [[ "$attempt" -lt 3 ]]; then
-                sleep $((attempt * 20))
-              fi
-            done
-
-            echo "Unable to upload and verify Gitee asset $name after 3 attempts" >&2
-            return 1
-          }
+          # Shared with the local publish script: keep exactly one
+          # byte-identical asset, delete every same-name duplicate, upload
+          # only when nothing matches (3 rounds, 300s cap per round). The
+          # local publish normally uploaded first; this step just reconciles.
+          ./script/gitee_release_assets.sh ensure-asset \
+            "$TAG" "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}"
 
           CHECKSUM_SIZE="$(stat -c '%s' "$DMG.sha256")"
           CHECKSUM_SHA="$(sha256sum "$DMG.sha256" | awk '{print $1}')"
-          # Gitee can hang multipart uploads from cloud runners without
-          # returning; bound each round to 5 minutes so retries surface fast.
-          upload_if_validated "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}" 20 300 300
-          upload_if_validated "$DMG.sha256" "$CHECKSUM_SIZE" "$CHECKSUM_SHA" 15 120 120
-          refresh_gitee_release 120
+          ./script/gitee_release_assets.sh ensure-asset \
+            "$TAG" "$DMG.sha256" "$CHECKSUM_SIZE" "$CHECKSUM_SHA"
 
-          GITEE_DMG_URL="$(jq -r --arg name "$ASSET_NAME" \
-            '(.assets // [])[] | select(.name == $name) | (.browser_download_url // .url // empty)' \
-            gitee-release.json | head -n 1)"
+          GITEE_DMG_URL="$(./script/gitee_release_assets.sh list-assets "$TAG" | \
+            jq -r --arg name "$ASSET_NAME" \
+              '.[] | select(.name == $name) | (.browser_download_url // .url // empty)' | \
+            head -n 1)"
           [[ "$GITEE_DMG_URL" == https://gitee.com/* ]] || {
             echo "Gitee did not return a usable HTTPS DMG URL" >&2
             exit 1

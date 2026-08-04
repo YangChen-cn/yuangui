@@ -7,6 +7,9 @@ set -euo pipefail
 # 也无超时）；本机网络正常时 29MB 上传只需数秒。因此 Gitee DMG 上传改为
 # 发布者在本地执行，workflow 只负责校验、manifest 与镜像同步。
 #
+# 资产生命周期（复用/去重/上传/校验）委托给 script/gitee_release_assets.sh，
+# 与 GitHub Actions workflow 共用同一套实现，避免两套逻辑漂移。
+#
 # 用法：
 #   VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh
 #
@@ -17,7 +20,7 @@ script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 GITEE_OWNER="yangchen716"
 GITEE_REPO="yuangui"
-API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+SHARED="$script_dir/gitee_release_assets.sh"
 
 : "${VERSION:?VERSION is required, for example VERSION=2.8.0}"
 : "${BUILD:?BUILD is required, for example BUILD=19}"
@@ -35,99 +38,17 @@ cd "$project_dir"
 EXPECTED_SIZE="$(stat -f '%z' "$DMG")"
 EXPECTED_SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 
-gitee_get() {
-  curl --silent --show-error --fail \
-    --connect-timeout 15 --max-time 60 \
-    "$API/$1"
-}
-
-# 1. 复用或创建 Gitee release
-release_id="$(gitee_get "releases/tags/$TAG?access_token=$GITEE_TOKEN" | jq -r '.id // empty')"
-if [[ -z "$release_id" ]]; then
-  print "Creating Gitee release $TAG"
-  release_id="$(curl --silent --show-error --fail \
-    --connect-timeout 15 --max-time 60 \
-    --request POST \
-    --data-urlencode "access_token=$GITEE_TOKEN" \
-    --data-urlencode "tag_name=$TAG" \
-    --data-urlencode "name=YuanGUI $VERSION" \
-    "$API/releases" | jq -r '.id')"
-fi
+# 1. 复用或创建 Gitee release（共享脚本对 404 容错，缺失时自动创建）
+release_id="$(GITEE_OWNER="$GITEE_OWNER" GITEE_REPO="$GITEE_REPO" GITEE_TOKEN="$GITEE_TOKEN" \
+  "$SHARED" ensure-release "$TAG" "YuanGUI $VERSION")"
 print "Gitee release id=$release_id"
 
-# 2. 上传并校验一个资产；已存在且字节匹配则复用，绝不重复上传。
-# The release-detail API returns assets without their id, so all reads and
-# deletes go through the attach_files endpoint which carries id + size.
-asset_exists_and_matches() {
-  local name="$1" expected_size="$2" expected_sha="$3"
-  local urls url tmp actual_size actual_sha
-  # Gitee allows duplicate asset names, so iterate every matching asset and
-  # accept the first one whose bytes match; never judge by the first entry.
-  urls="$(gitee_get "releases/$release_id/attach_files?access_token=$GITEE_TOKEN" | \
-    jq -r --arg name "$name" '.[] | select(.name == $name) | (.browser_download_url // .url // empty)')"
-  while IFS= read -r url; do
-    [[ -n "$url" ]] || continue
-    tmp="$(mktemp)"
-    curl --silent --show-error --fail --location \
-      --connect-timeout 20 --max-time 300 \
-      "$url" --output "$tmp" || { rm -f "$tmp"; continue }
-    actual_size="$(stat -f '%z' "$tmp")"
-    actual_sha="$(shasum -a 256 "$tmp" | awk '{print $1}')"
-    rm -f "$tmp"
-    if [[ "$actual_size" == "$expected_size" && "$actual_sha" == "$expected_sha" ]]; then
-      return 0
-    fi
-  done <<< "$urls"
-  return 1
-}
-
-
-remove_asset() {
-  local name="$1" id
-  # Remove every duplicate with this name, not just the first one.
-  for id in $(gitee_get "releases/$release_id/attach_files?access_token=$GITEE_TOKEN" | \
-    jq -r --arg name "$name" '.[] | select(.name == $name) | .id // empty'); do
-    print "Removing stale Gitee asset $name ($id)"
-    curl --silent --show-error --fail \
-      --connect-timeout 15 --max-time 60 \
-      --request DELETE \
-      --data-urlencode "access_token=$GITEE_TOKEN" \
-      "$API/releases/$release_id/attach_files/$id" >/dev/null
-  done
-}
-
-upload_with_verify() {
-  local file="$1" expected_size="$2" expected_sha="$3"
-  local name
-  name="${file:t}"
-  for attempt in 1 2 3; do
-    if asset_exists_and_matches "$name" "$expected_size" "$expected_sha"; then
-      print "Gitee asset already matches: $name"
-      return 0
-    fi
-    remove_asset "$name" || true
-    print "Uploading $name (attempt $attempt/3)"
-    if curl --silent --show-error --fail \
-      --connect-timeout 20 --max-time 300 \
-      --request POST \
-      --form "access_token=$GITEE_TOKEN" \
-      --form "file=@$file" \
-      "$API/releases/$release_id/attach_files" >/dev/null; then
-      if asset_exists_and_matches "$name" "$expected_size" "$expected_sha"; then
-        print "Uploaded and verified: $name"
-        return 0
-      fi
-    fi
-    [[ "$attempt" -lt 3 ]] && sleep $((attempt * 20))
-  done
-  print -u2 "Unable to upload and verify $name after 3 attempts"
-  return 1
-}
-
-# 3. 与 workflow 相同的 sidecar 格式： "<sha>  <asset name>"
+# 2. 上传并校验资产：保留一个字节一致的资产，删除所有同名重复，缺失才上传
 printf '%s  %s\n' "$EXPECTED_SHA" "YuanGUI-$VERSION.dmg" > "$DMG.sha256"
-upload_with_verify "$DMG" "$EXPECTED_SIZE" "$EXPECTED_SHA"
-upload_with_verify "$DMG.sha256" \
+GITEE_OWNER="$GITEE_OWNER" GITEE_REPO="$GITEE_REPO" GITEE_TOKEN="$GITEE_TOKEN" \
+  "$SHARED" ensure-asset "$TAG" "$DMG" "$EXPECTED_SIZE" "$EXPECTED_SHA"
+GITEE_OWNER="$GITEE_OWNER" GITEE_REPO="$GITEE_REPO" GITEE_TOKEN="$GITEE_TOKEN" \
+  "$SHARED" ensure-asset "$TAG" "$DMG.sha256" \
   "$(stat -f '%z' "$DMG.sha256")" \
   "$(shasum -a 256 "$DMG.sha256" | awk '{print $1}')"
 

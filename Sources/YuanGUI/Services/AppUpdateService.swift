@@ -32,6 +32,29 @@ enum AppVersionInfo {
             "release.2.8.0.sourcePreference"
         ].map { AppLocalizer.string($0) }
     }
+
+    /// The single update decision shared by the check and install paths:
+    /// a higher version wins; an equal version is still an update when the
+    /// remote build is higher (repair releases reuse the semantic version).
+    /// A candidate without a build number (GitHub API fallback) never counts
+    /// as newer on equal versions, and an unparseable local build never lets
+    /// the remote win.
+    static func isNewer(
+        _ candidate: AvailableUpdate,
+        thanCurrentVersion currentVersion: String = version,
+        currentBuild: String = build
+    ) -> Bool {
+        switch SemanticVersion.compare(candidate.version, currentVersion) {
+        case .orderedDescending:
+            return true
+        case .orderedAscending:
+            return false
+        case .orderedSame:
+            guard let candidateBuild = candidate.build,
+                  let localBuild = Int(currentBuild) else { return false }
+            return candidateBuild > localBuild
+        }
+    }
 }
 
 struct GitHubReleaseAsset: Decodable, Equatable, Sendable {
@@ -215,17 +238,30 @@ actor DownloadProgressTracker {
         now().timeIntervalSince(lastProgress) >= interval
     }
 
-    /// Sustained-slow detection: the observation window must be full, then the
-    /// average rate inside it decides. Bursts raise the average, so short
-    /// spikes never trigger a fallback.
+    /// Sustained-slow detection with a true trailing window: the baseline is
+    /// the newest sample at or before `now - window`, so the rate always
+    /// covers roughly the trailing `window` instead of the whole transfer
+    /// history. A long transfer at a constant slow rate stays slow forever
+    /// instead of looking faster as history accumulates. History older than
+    /// the baseline is pruned here (the monitor calls this every sample
+    /// interval); the bounded cap in `markProgress` remains a backstop.
     func isSlow(under thresholdBytesPerSecond: Int64, window: TimeInterval) -> Bool {
-        guard let oldest = samples.first,
-              let newest = samples.last,
-              now().timeIntervalSince(oldest.date) >= window else {
+        let timestamp = now()
+        let cutoff = timestamp.addingTimeInterval(-window)
+        guard samples.last != nil else { return false }
+        if let baselineIndex = samples.lastIndex(where: { $0.date <= cutoff }) {
+            samples.removeFirst(baselineIndex)
+        } else {
+            samples.removeAll { $0.date < cutoff }
+        }
+        guard let baseline = samples.first,
+              let newest = samples.last else {
             return false
         }
-        let windowBytes = newest.bytes - oldest.bytes
-        return Double(windowBytes) / window < Double(thresholdBytesPerSecond)
+        let elapsed = timestamp.timeIntervalSince(baseline.date)
+        guard elapsed >= window else { return false }
+        let windowBytes = newest.bytes - baseline.bytes
+        return Double(windowBytes) / elapsed < Double(thresholdBytesPerSecond)
     }
 }
 
@@ -557,7 +593,7 @@ actor AppUpdateService: UpdateChecking {
         guard SemanticVersion.isStable(candidate.version) else {
             throw AppUpdateError.prereleaseNotSupported
         }
-        guard SemanticVersion.isNewer(candidate.version, than: AppVersionInfo.version) else {
+        guard AppVersionInfo.isNewer(candidate) else {
             return .upToDate(candidate)
         }
         let notes: String?
@@ -1162,8 +1198,16 @@ actor AppUpdateService: UpdateChecking {
         }
         let handle = try FileHandle(forWritingTo: destination)
         let progress = DownloadProgressTracker()
+        // Only the writer may end the transfer with `.writerFinished`. The
+        // monitors return nil (cancelled, or the transfer is already
+        // complete) and throw on slow/stalled transfers, so `group.next()`
+        // can never mistake a monitor for a finished download and cancel the
+        // writer mid-flush.
+        enum DownloadStreamEvent: Sendable {
+            case writerFinished
+        }
         do {
-            try await withThrowingTaskGroup(of: Void.self) { group in
+            try await withThrowingTaskGroup(of: DownloadStreamEvent?.self) { group in
                 defer { group.cancelAll() }
                 group.addTask {
                     var buffer = Data()
@@ -1183,10 +1227,13 @@ actor AppUpdateService: UpdateChecking {
                             bytesSinceProgressMark = 0
                         }
                     }
+                    // Publish the final byte count before the tail flush so a
+                    // monitor waking mid-flush sees a complete transfer.
+                    await progress.markProgress(bytes: totalBytesRead)
                     if !buffer.isEmpty {
                         try handle.write(contentsOf: buffer)
                     }
-                    await progress.markProgress(bytes: totalBytesRead)
+                    return DownloadStreamEvent.writerFinished
                 }
                 group.addTask {
                     do {
@@ -1197,7 +1244,7 @@ actor AppUpdateService: UpdateChecking {
                             }
                         }
                     } catch is CancellationError {
-                        return
+                        return nil
                     }
                 }
                 if let policy = slowSpeedPolicy {
@@ -1205,25 +1252,30 @@ actor AppUpdateService: UpdateChecking {
                         do {
                             while true {
                                 try await Task.sleep(for: .seconds(policy.sampleInterval))
+                                // Completeness first: once every byte is
+                                // marked, the writer is finishing its last
+                                // writes and must never be judged slow.
+                                if let expectedBytes,
+                                   await progress.totalBytesRead() >= expectedBytes {
+                                    return nil
+                                }
                                 if await progress.isSlow(
                                     under: policy.minimumRateBytesPerSecond,
                                     window: policy.observationWindow
                                 ) {
                                     throw UpdateSourceAvailabilityError.downloadTooSlow
                                 }
-                                // The transfer finished while the monitor was
-                                // asleep; never race the completion itself.
-                                if let expectedBytes,
-                                   await progress.totalBytesRead() >= expectedBytes {
-                                    return
-                                }
                             }
                         } catch is CancellationError {
-                            return
+                            return nil
                         }
                     }
                 }
-                _ = try await group.next()
+                while let event = try await group.next() {
+                    if event == .writerFinished {
+                        return
+                    }
+                }
             }
             try handle.close()
         } catch {
@@ -1403,8 +1455,21 @@ final class AppUpdateStore: ObservableObject {
 
     func setUpdateSourcePreference(_ preference: UpdateSourcePreference) {
         guard updateSourcePreference != preference else { return }
+        // Switching mid-check/download/install is unsafe. The About picker
+        // is disabled while busy; this guard also covers programmatic calls.
+        guard !isBusy else { return }
         updateSourcePreference = preference
         defaults.set(preference.rawValue, forKey: UpdateSourcePreference.storageKey)
+        // The previous check result belongs to the old source and may lack
+        // the new source's asset; installing it under the new preference
+        // would fail with noCompatibleAsset. Discard the stale result and
+        // re-check immediately against the pinned source.
+        notesTask?.cancel()
+        notesTask = nil
+        latestUpdate = nil
+        latestUpdateNotes = nil
+        state = .idle
+        check()
     }
 
     var isBusy: Bool { state == .checking || state == .downloading || state == .installing }
@@ -1474,7 +1539,7 @@ final class AppUpdateStore: ObservableObject {
     }
 
     func installLatest() {
-        guard let release = latestUpdate, SemanticVersion.isNewer(release.version, than: AppVersionInfo.version) else { return }
+        guard let release = latestUpdate, AppVersionInfo.isNewer(release) else { return }
         guard !isBusy else { return }
         state = .downloading
         Task {

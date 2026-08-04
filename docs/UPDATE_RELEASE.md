@@ -5,13 +5,26 @@ GitHub is the authoritative source. Gitee serves the same manifest and DMG only
 as a delayed availability fallback; the app does not infer a source from the
 user's region, language, or IP address.
 
-The GitHub-first DMG download monitors sustained transfer speed: if the average
-stays below 50KB/s over a 10-second window (`DownloadSourcePolicy`), the app
-cancels and downloads the same manifest's Gitee asset instead, and remembers
-the decision for 30 minutes so the next check prefers Gitee without
-re-measuring. This means the two DMG assets must be byte-identical (the
-publish flow already enforces matching size and SHA-256), because a user may
-switch sources mid-download.
+The GitHub-first DMG download monitors sustained transfer speed: if the
+trailing 10-second window (`DownloadSourcePolicy`) averages below 50KB/s, the
+app cancels and downloads the same manifest's Gitee asset instead, and
+remembers the decision for 30 minutes so the next check prefers Gitee without
+re-measuring. The window is a true sliding window — the baseline is the newest
+sample at or before `now - window`, never the start of the transfer — so a
+long, uniformly slow download stays slow instead of looking faster as history
+accumulates. This means the two DMG assets must be byte-identical (the publish
+flow already enforces matching size and SHA-256), because a user may switch
+sources mid-download.
+
+The update decision compares version first, then build: a same-version
+manifest with a higher build counts as an update (repair releases reuse the
+semantic version); a candidate without a build number (GitHub API fallback)
+never counts on equal versions. The check and install paths share one
+comparison (`AppVersionInfo.isNewer`). The Settings → About source picker
+(automatic / GitHub / Gitee) pins both the manifest fetch and the download;
+switching sources discards the previous check result and re-checks
+immediately, so a stale result can never be installed against the wrong
+pinned source.
 
 This workflow deliberately does not use a detached manifest signature. The
 manifest is fetched over HTTPS, its schema and URLs are validated, and every
@@ -72,7 +85,9 @@ the manifest-and-mirror path for the verified Gitee repository
 4. Upload the DMG to Gitee from your machine:
    `VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh`
    (creates or reuses the Gitee release, uploads DMG + `.sha256` sidecar with
-   reuse-and-verify rules, prints the release URL).
+   reuse-and-verify rules, prints the release URL). Asset handling is
+   delegated to `script/gitee_release_assets.sh`, the same script the mirror
+   workflow calls, so the two paths cannot drift.
 5. Dispatch the mirror workflow:
    `gh workflow run mirror-release-to-gitee.yml -f tag=v2.8.0 -f build=19
    -f minimum_system_version=15.0`. It verifies the Gitee bytes against the
@@ -93,7 +108,11 @@ VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/release.sh
 It packages the DMG, creates or completes the GitHub Release with the three
 assets, runs the local Gitee upload, dispatches and waits for the mirror
 workflow, and verifies both raw manifests. It never edits sources or
-repository configuration.
+repository configuration. Before dispatch it records the current time, the
+main HEAD SHA, and the newest existing run id, and afterwards only accepts a
+run whose `createdAt` is at or after the dispatch time, whose `headSha` equals
+that HEAD, and whose id is newer — so it can never watch a stale run while the
+new one is still appearing in the run list.
 
 Configure the repository secret `GITEE_TOKEN` with permission to create a
 Gitee release and update the mirrored repository.
@@ -103,8 +122,13 @@ Gitee release and update the mirrored repository.
 GitHub Actions cloud runners can hang indefinitely on Gitee's large multipart
 uploads, while the same upload from a normal network takes seconds. The DMG is
 therefore uploaded locally, and the workflow reuses the verified asset. The
-workflow's own upload step remains only as a fallback when the asset is
-missing; each round is bounded to 300 seconds so failures surface fast.
+workflow's own `ensure-asset` call remains only as a fallback when the asset
+is missing; each round is bounded to 300 seconds so failures surface fast.
+Both callers invoke the same `script/gitee_release_assets.sh`, which
+keeps exactly one byte-identical asset per name and deletes every other
+same-name entry (Gitee allows duplicate asset names, and the release-detail
+API omits asset ids — reads and deletes go through `attach_files`), then
+uploads only when no asset matches.
 
 For a CLI release, the required asset upload is equivalent to:
 
@@ -120,23 +144,23 @@ downloads the two files and derives each language's manifest highlights from
 the matching document, so a missing Chinese file cannot silently publish
 English text under `zh-Hans`.
 
-The release job runs on `ubuntu-latest`. It downloads the exact GitHub DMG and
-both mandatory localized release-note assets,
-computes its SHA-256 and size with Linux tools, uploads that same file and its
-`.sha256` sidecar to Gitee, downloads the Gitee DMG again, and requires the
-size and SHA-256 to match before generating `updates/latest.json`. It does not
-mount or inspect the DMG bundle in CI; the app's existing installation checks
-remain responsible for Bundle ID, version/build, minimum macOS version, and
-code-signature validation. A release event reads `Build: N` from the GitHub
-Release body. A manual dispatch must provide `build` and may provide
-`minimum_system_version`; an interrupted same-version repair can reuse those
-values from the current manifest. The workflow then commits the manifest to
-GitHub `main` and requests a Gitee mirror refresh. If a same-named Gitee asset
-already exists, the workflow reuses it only after downloading and matching its
-size and SHA-256; stale content is deleted and uploaded again. If the
-repository mirror is not configured, it uses the Gitee contents API to create
-or update that one manifest file. It then compares the Gitee raw response with
-the GitHub file.
+The mirror job runs on `ubuntu-latest`, triggered only by `workflow_dispatch`.
+(The GitHub Release event deliberately triggers nothing: the DMG upload runs
+on the publisher's machine, and a release-triggered run would race it; the
+push event only runs the `sync-manifest` job.) It downloads the exact GitHub
+DMG and both mandatory localized release-note assets, computes its SHA-256
+and size with Linux tools, reconciles that same file and its `.sha256`
+sidecar with Gitee through the shared asset script, downloads the Gitee DMG
+again, and requires the size and SHA-256 to match before generating
+`updates/latest.json`. It does not mount or inspect the DMG bundle in CI; the
+app's existing installation checks remain responsible for Bundle ID,
+version/build, minimum macOS version, and code-signature validation. A
+dispatch must provide `build` and may provide `minimum_system_version`; an
+interrupted same-version repair can reuse those values from the current
+manifest. The workflow then commits the manifest to GitHub `main` and
+requests a Gitee mirror refresh. If the repository mirror is not configured,
+it uses the Gitee contents API to create or update that one manifest file. It
+then compares the Gitee raw response with the GitHub file.
 All release and manual runs share one non-canceling concurrency group. A
 candidate lower than the current stable manifest is refused unless
 `allow_rollback` is explicitly enabled for a manual run; an equal version is

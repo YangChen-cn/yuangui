@@ -175,6 +175,51 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertFalse(SemanticVersion.isStable("2.8.0-beta.1"))
     }
 
+    func testBuildAwareVersionComparison() async throws {
+        // A same version is only an update when the remote build is higher;
+        // the GitHub API fallback carries no build and never counts on
+        // equality. The local version comes from the running bundle, so the
+        // cases are derived from it instead of a hardcoded release.
+        let currentVersion = AppVersionInfo.version
+        let currentBuild = Int(AppVersionInfo.build) ?? 0
+        let cases: [(version: String, build: Int?, expectsUpdate: Bool)] = [
+            (currentVersion, currentBuild + 1, true),
+            (currentVersion, currentBuild, false),
+            (currentVersion, currentBuild - 1, false),
+            (currentVersion, nil, false),
+            ("0.0.1", 9_999, false)
+        ]
+        for (version, build, expectsUpdate) in cases {
+            let update = AvailableUpdate(
+                version: version,
+                build: build,
+                minimumSystemVersion: "15.0",
+                publishedAt: Date(timeIntervalSince1970: 1_754_000_000),
+                localizedHighlights: ["fixture"],
+                releasePageURL: nil,
+                assets: [UpdateAsset(
+                    provider: .github,
+                    downloadURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.0/YuanGUI-2.8.0.dmg")!,
+                    sha256: String(repeating: "a", count: 64),
+                    size: 1024
+                )],
+                metadataSource: .manifest(
+                    URL(string: "https://raw.githubusercontent.com/YangChen-cn/yuangui/main/updates/latest.json")!,
+                    provider: .github
+                )
+            )
+            let fetcher = FakeUpdateSourceFetcher(github: .update(update))
+            let service = AppUpdateService(sourceFetcher: fetcher)
+            let result = try await service.checkForUpdate()
+            switch result {
+            case .available:
+                XCTAssertTrue(expectsUpdate, "\(version)/\(String(describing: build)) should be an update")
+            case .upToDate:
+                XCTAssertFalse(expectsUpdate, "\(version)/\(String(describing: build)) should be up to date")
+            }
+        }
+    }
+
     func testOnlyNetworkAvailabilityFailuresPermitSourceFallback() {
         XCTAssertEqual(
             UpdateSourceAvailabilityError(urlError: URLError(.timedOut)),
@@ -649,6 +694,7 @@ final class AppUpdateTests: XCTestCase {
         try await runPreparePreferencePinsSource()
         try await runPreparePreferenceWithoutAssetReportsUnavailable()
         await runStorePreferencePersists()
+        await runStorePreferenceChangeDiscardsStaleResultAndRechecks()
     }
 
     private func runManifestPreferencePinsSource() async throws {
@@ -743,14 +789,42 @@ final class AppUpdateTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let store = AppUpdateStore(service: AppUpdateService(), defaults: defaults)
+        // The stub checker keeps the preference-change re-check off the network.
+        let checker = StubUpdateChecker(result: .success(.upToDate(makeRelease("2.7.1"))))
+        let store = AppUpdateStore(checking: checker, defaults: defaults)
         XCTAssertEqual(store.updateSourcePreference, .automatic)
         store.setUpdateSourcePreference(.gitee)
         XCTAssertEqual(store.updateSourcePreference, .gitee)
         XCTAssertEqual(defaults.string(forKey: UpdateSourcePreference.storageKey), "gitee")
 
-        let reloaded = AppUpdateStore(service: AppUpdateService(), defaults: defaults)
+        let reloaded = AppUpdateStore(checking: checker, defaults: defaults)
         XCTAssertEqual(reloaded.updateSourcePreference, .gitee)
+    }
+
+    @MainActor
+    private func runStorePreferenceChangeDiscardsStaleResultAndRechecks() async {
+        let suite = "AppUpdateStorePreference-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // An automatic check discovers a GitHub-only update.
+        let checker = StubUpdateChecker(result: .success(.available(
+            makeAvailableUpdate("99.9.9", provider: .github), notes: nil
+        )))
+        let store = AppUpdateStore(checking: checker, defaults: defaults)
+        store.check()
+        _ = await waitUntil { store.state == .available }
+        XCTAssertNotNil(store.latestUpdate)
+
+        // Pinning a different source must discard that stale result (its
+        // update may lack the new source's asset) and run a fresh manual
+        // check against the pinned source.
+        store.setUpdateSourcePreference(.gitee)
+        XCTAssertEqual(store.state, .checking)
+        XCTAssertNil(store.latestUpdate)
+        _ = await waitUntil { store.state == .available }
+        let modes = await checker.modes
+        XCTAssertEqual(modes, [.manual, .manual])
     }
 
     private func runGitHubSlowDownloadFallsBackToGiteeAndCaches() async throws {
@@ -929,6 +1003,95 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: destination), body)
     }
 
+    func testStreamDownloadExternalCancellationIsNotSwallowedAsSuccess() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-CancelDownload-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("update.dmg")
+        let url = URL(string: "https://updates.example.com/YuanGUI.dmg")!
+        let body = Data(repeating: 0xCC, count: 256 * 1024)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+            UpdateStreamURLProtocol.stopCount = 0
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+        UpdateStreamURLProtocol.chunkSize = 32 * 1024
+        UpdateStreamURLProtocol.chunkInterval = 0.1
+
+        let task = Task {
+            try await service.streamDownload(URLRequest(url: url), to: destination)
+        }
+        // Wait until bytes are on disk, then cancel the outer task mid-stream.
+        for _ in 0..<50 {
+            let size = (try? FileManager.default.attributesOfItem(atPath: destination.path))?[.size] as? NSNumber
+            if (size?.intValue ?? 0) > 0 { break }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("External cancellation must abort the download, not report success")
+        } catch is CancellationError {
+            // The writer aborts via structured cancellation.
+        } catch let error as URLError where error.code == .cancelled {
+            // URLSession surfaces the cancellation as URLError(.cancelled).
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testStreamDownloadSlowButShortTransferCompletesBeforeWindowFills() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let policy = DownloadSourcePolicy(
+            minimumRateBytesPerSecond: 50 * 1024,
+            observationWindow: 10,
+            sampleInterval: 0.1
+        )
+        let service = AppUpdateService(
+            session: URLSession(configuration: configuration),
+            downloadSourcePolicy: policy
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-ShortSlow-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("update.dmg")
+        let url = URL(string: "https://updates.example.com/YuanGUI.dmg")!
+        // 64KB at ~20KB/s takes ~3.2s, well inside the 10s observation
+        // window: the window never fills, so the transfer completes instead
+        // of being judged slow.
+        let body = Data(repeating: 0xDD, count: 64 * 1024)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+        UpdateStreamURLProtocol.chunkSize = 8 * 1024
+        UpdateStreamURLProtocol.chunkInterval = 0.4
+        let response = try await service.streamDownload(
+            URLRequest(url: url),
+            to: destination,
+            expectedBytes: Int64(body.count),
+            slowSpeedPolicy: policy
+        )
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try Data(contentsOf: destination), body)
+    }
+
     func testDownloadProgressTrackerSlidingWindow() async {
         let clock = FakeClock(startingAt: Date(timeIntervalSince1970: 1_000))
         let tracker = DownloadProgressTracker(now: { clock.now() })
@@ -961,6 +1124,42 @@ final class AppUpdateTests: XCTestCase {
         await burstTracker.markProgress(bytes: 2 * 1024 * 1024 + 8 * 1024) // 后 8s 极慢
         let burst = await burstTracker.isSlow(under: 50 * 1024, window: 10)
         XCTAssertFalse(burst, "Burst average must not trigger")
+    }
+
+    func testDownloadProgressTrackerLongSlowTransferStaysSlow() async {
+        let clock = FakeClock(startingAt: Date(timeIntervalSince1970: 1_000))
+        let tracker = DownloadProgressTracker(now: { clock.now() })
+
+        // Sustained 20KB/s for 60 seconds, sampled every 2s. A first/last
+        // comparison divides the whole accumulated history (1.2MB) by the
+        // fixed 10s window (120KB/s) and stops reporting slow; the trailing
+        // window must stay at ~20KB/s for the whole transfer.
+        await tracker.markProgress(bytes: 0)
+        var slowFlags: [Bool] = []
+        for second in stride(from: 2, through: 60, by: 2) {
+            clock.advance(by: 2)
+            await tracker.markProgress(bytes: Int64(second) * 20 * 1024)
+            if second >= 20 {
+                slowFlags.append(await tracker.isSlow(under: 50 * 1024, window: 10))
+            }
+        }
+        XCTAssertFalse(
+            slowFlags.contains(false),
+            "A constant 20KB/s transfer must be slow at every trailing-window check"
+        )
+        let finalSlow = await tracker.isSlow(under: 50 * 1024, window: 10)
+        XCTAssertTrue(finalSlow)
+
+        // A burst that ends well after the window baseline stays non-slow:
+        // pruning must never make a fast transfer look slow retroactively.
+        let burstTracker = DownloadProgressTracker(now: { clock.now() })
+        await burstTracker.markProgress(bytes: 0)
+        clock.advance(by: 2)
+        await burstTracker.markProgress(bytes: 2 * 1024 * 1024)
+        clock.advance(by: 8)
+        await burstTracker.markProgress(bytes: 2 * 1024 * 1024 + 8 * 1024)
+        let burstSlow = await burstTracker.isSlow(under: 50 * 1024, window: 10)
+        XCTAssertFalse(burstSlow)
     }
 
     func testUnsupportedManifestDoesNotFallBackToGitHubAPI() async {
@@ -1417,11 +1616,11 @@ private struct Fixture {
 }
 
 @MainActor
-private func makeRelease(_ version: String, body: String? = nil) -> AvailableUpdate {
+private func makeRelease(_ version: String, build: Int? = nil, body: String? = nil) -> AvailableUpdate {
     let notes = body ?? "Release notes for \(version)"
     return AvailableUpdate(
         version: version,
-        build: nil,
+        build: build,
         minimumSystemVersion: nil,
         publishedAt: nil,
         localizedHighlights: UpdateHighlightExtractor.highlights(from: notes),
@@ -2211,6 +2410,32 @@ final class AutomaticUpdateTests: XCTestCase {
     }
 
     // MARK: - Store install guard
+
+    func testInstallLatestRespectsBuildNumber() async {
+        let currentVersion = AppVersionInfo.version
+        let currentBuild = Int(AppVersionInfo.build) ?? 0
+
+        // Same version with a higher build is a repair update and installs.
+        let store = AppUpdateStore()
+        var installCount = 0
+        store.installLauncher = { _ in installCount += 1 }
+        store.commitAutomaticUpdate(release: makeRelease(currentVersion, build: currentBuild + 1), notes: nil)
+        store.installLatest()
+        _ = await waitUntil { store.state == .installing }
+        XCTAssertEqual(installCount, 1)
+        XCTAssertEqual(store.state, .installing)
+
+        // Same version with an equal (or missing) build is already current
+        // and must not start an install even when the button is reachable.
+        let store2 = AppUpdateStore()
+        var installCount2 = 0
+        store2.installLauncher = { _ in installCount2 += 1 }
+        store2.commitAutomaticUpdate(release: makeRelease(currentVersion, build: currentBuild), notes: nil)
+        store2.installLatest()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(installCount2, 0)
+        XCTAssertEqual(store2.state, .available)
+    }
 
     func testInstallLatestIgnoresRapidRepeatedClicks() async {
         let store = AppUpdateStore()
