@@ -1,5 +1,9 @@
 name: Mirror release and update manifest to Gitee
 
+# Distinguish concurrent manual dispatches of the same HEAD in the run list:
+# release.sh matches this title (tag + build) when selecting its run.
+run-name: Mirror ${{ inputs.tag }} build ${{ inputs.build }}
+
 # The GitHub Release event is intentionally NOT a trigger: DMG uploads to
 # Gitee run from the publisher's machine (script/publish_gitee_release.sh,
 # cloud-runner multipart uploads hang), and that script would race a

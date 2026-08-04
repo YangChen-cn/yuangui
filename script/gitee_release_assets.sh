@@ -57,12 +57,25 @@ release_id_for_tag() {
   body="${body%$'\n'*}"
   case "$status" in
     200)
-      local id
-      id="$(echo "$body" | jq -r '.id // empty' 2>/dev/null)" || {
+      local json_type id
+      json_type="$(echo "$body" | jq -r 'type' 2>/dev/null)" || {
         echo "Gitee release lookup returned malformed JSON: $tag" >&2
         return 1
       }
-      [[ -n "$id" ]] || return 0
+      # Only a literal `null` body means "does not exist" (the caller may
+      # create). Any other JSON without a valid id is an unexpected response
+      # and must fail, not be guessed as missing.
+      if [[ "$json_type" == "null" ]]; then
+        return 0
+      fi
+      id="$(echo "$body" | jq -er '
+        select(type == "object")
+        | .id
+        | select(type == "number" or type == "string")
+      ' 2>/dev/null)" || {
+        echo "Gitee release lookup returned an unexpected response: $tag" >&2
+        return 1
+      }
       echo "$id"
       ;;
     *)
@@ -195,8 +208,11 @@ ensure_asset() {
   for attempt in 1 2 3; do
     if reconcile_assets "$release_id" "$name" "$expected_size" "$expected_sha"; then
       return 0
+    else
+      # In Bash the `if` statement itself exits 0 when the condition fails,
+      # so the command's status is only readable inside the else clause.
+      local outcome=$?
     fi
-    local outcome=$?
     if [[ "$outcome" == 2 ]]; then
       echo "Unable to reconcile Gitee assets for $name" >&2
       return 1
@@ -234,7 +250,9 @@ ensure_release() {
     return 0
   fi
   echo "Creating Gitee release $tag" >&2
-  curl --silent --show-error --fail \
+  # The creation response must contain a valid id; a `null`/`{}` body means
+  # the creation did not happen and must fail, not echo "null".
+  if ! curl --silent --show-error --fail \
     --connect-timeout 15 --max-time 60 \
     --request POST \
     --data-urlencode "access_token=$GITEE_TOKEN" \
@@ -242,7 +260,16 @@ ensure_release() {
     --data-urlencode "name=$name" \
     --data-urlencode "body=$body" \
     --data-urlencode "prerelease=$prerelease" \
-    "$API/releases" | jq -r '.id'
+    "$API/releases" | jq -er '
+      select(type == "object")
+      | .id
+      | select(type == "number" or type == "string")
+    ' >/dev/null; then
+    echo "Gitee release creation failed for $tag" >&2
+    return 1
+  fi
+  # Confirm the new release is readable before returning its id.
+  release_id_for_tag "$tag"
 }
 
 list_assets() {

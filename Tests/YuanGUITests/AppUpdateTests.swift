@@ -839,11 +839,11 @@ final class AppUpdateTests: XCTestCase {
         let store = AppUpdateStore(checking: checker, defaults: defaults)
 
         // An automatic check started under revision 0 commits successfully.
-        XCTAssertTrue(store.commitAutomaticUpdate(
+        XCTAssertEqual(store.commitAutomaticUpdate(
             release: makeRelease("99.9.9"),
             notes: nil,
             expectedSourceRevision: 0
-        ))
+        ), .committed)
         XCTAssertEqual(store.state, .available)
         XCTAssertEqual(store.latestUpdate?.version, "99.9.9")
 
@@ -856,21 +856,30 @@ final class AppUpdateTests: XCTestCase {
 
         // The old automatic result arrives late under revision 0: it must be
         // discarded, leaving the newer up-to-date state untouched.
-        XCTAssertFalse(store.commitAutomaticUpdate(
+        XCTAssertEqual(store.commitAutomaticUpdate(
             release: makeRelease("99.9.9"),
             notes: nil,
             expectedSourceRevision: 0
-        ))
+        ), .staleSource)
         XCTAssertEqual(store.state, .upToDate)
         XCTAssertEqual(store.latestUpdate?.version, "2.7.1")
 
         // A commit under the current revision still works.
-        XCTAssertTrue(store.commitAutomaticUpdate(
+        XCTAssertEqual(store.commitAutomaticUpdate(
             release: makeRelease("99.9.9"),
             notes: nil,
             expectedSourceRevision: store.updateSourceRevision
-        ))
+        ), .committed)
         XCTAssertEqual(store.state, .available)
+
+        // A commit while an install is in flight reports .busy.
+        store.installLauncher = { _ in }
+        store.installLatest() // moves state to .downloading synchronously
+        XCTAssertEqual(store.commitAutomaticUpdate(
+            release: makeRelease("99.9.9"),
+            notes: nil,
+            expectedSourceRevision: store.updateSourceRevision
+        ), .busy)
     }
 
     private func runGitHubSlowDownloadFallsBackToGiteeAndCaches() async throws {
@@ -1494,11 +1503,15 @@ private final class FakeClock: @unchecked Sendable {
 
 private actor StubUpdateChecker: UpdateChecking {
     let result: Result<UpdateCheckResult, TestError>
+    /// Optional suspension so a test can interleave a source switch while
+    /// the automatic check is still in flight.
+    private let delay: Duration
     private(set) var callCount = 0
     private(set) var modes: [UpdateCheckMode] = []
 
-    init(result: Result<UpdateCheckResult, TestError>) {
+    init(result: Result<UpdateCheckResult, TestError>, delay: Duration = .zero) {
         self.result = result
+        self.delay = delay
     }
 
     func checkForUpdate() async throws -> UpdateCheckResult {
@@ -1508,6 +1521,9 @@ private actor StubUpdateChecker: UpdateChecking {
     func checkForUpdate(mode: UpdateCheckMode) async throws -> UpdateCheckResult {
         callCount += 1
         modes.append(mode)
+        if delay > .zero {
+            try await Task.sleep(for: delay)
+        }
         switch result {
         case .success(let value): return value
         case .failure(let error): throw error
@@ -2195,6 +2211,55 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertTrue(didCheck)
     }
 
+    func testStaleAutomaticCheckDoesNotMarkDayChecked() async {
+        let suite = "AutomaticUpdateStaleSource-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // The automatic check is slow; while it is in flight the user pins a
+        // source (revision 1). The completed stale check must neither publish
+        // its result nor mark today as checked.
+        let autoChecker = StubUpdateChecker(
+            result: .success(.available(makeRelease("99.9.9"), notes: nil)),
+            delay: .milliseconds(200)
+        )
+        let storeChecker = StubUpdateChecker(result: .success(.upToDate(makeRelease("2.7.1"))))
+        // Isolated defaults: .standard may carry a real user preference.
+        let store = AppUpdateStore(checking: storeChecker, defaults: defaults)
+        let presenter = FakeUpdatePromptPresenter()
+        let logs = LogCollector()
+        let coordinator = AutomaticUpdateCheckCoordinator(
+            checker: autoChecker,
+            store: store,
+            presenter: presenter,
+            environment: FakeUpdatePromptEnvironment(),
+            networkStatus: FakeNetworkStatus(),
+            defaults: defaults,
+            calendar: .autoupdatingCurrent,
+            startupDelay: .zero,
+            log: { logs.append($0) }
+        )
+        defer { coordinator.stop() }
+
+        coordinator.runAutomaticCheckIfNeeded()
+        // Wait until the check task has actually started: the coordinator
+        // captures the source revision right before calling the checker, so
+        // callCount == 1 guarantees the capture happened under revision 0.
+        _ = await waitForCallCount(autoChecker, 1)
+        store.setUpdateSourcePreference(.gitee)
+        _ = await waitUntil { store.state == .upToDate }
+        await coordinator.awaitCurrentCheck()
+
+        XCTAssertEqual(presenter.presentCount, 0)
+        XCTAssertEqual(store.state, .upToDate)
+        XCTAssertNil(
+            defaults.object(forKey: AutomaticUpdateCheckCoordinator.lastSuccessfulAutomaticCheckDayKey),
+            "A stale source result must not mark today as successfully checked"
+        )
+        XCTAssertTrue(logs.messages.contains("update.auto.skipped.staleSource"))
+    }
+
     func testAutomaticCheckSkippedWhileStoreIsBusy() async {
         let store = AppUpdateStore()
         store.commitAutomaticUpdate(release: makeRelease("99.9.9"), notes: nil, expectedSourceRevision: store.updateSourceRevision)
@@ -2533,4 +2598,6 @@ final class AutomaticUpdateTests: XCTestCase {
         return value
     }
 }
+
+
 

@@ -1423,6 +1423,15 @@ actor AppUpdateService: UpdateChecking {
     }
 }
 
+/// Outcome of publishing an automatic check's result into the store. The
+/// automatic coordinator uses the cases to log the exact reason a commit was
+/// skipped.
+enum AutomaticUpdateCommitResult: Sendable, Equatable {
+    case committed
+    case busy
+    case staleSource
+}
+
 @MainActor
 final class AppUpdateStore: ObservableObject {
     enum State: Equatable {
@@ -1533,23 +1542,22 @@ final class AppUpdateStore: ObservableObject {
 
     /// Publishes an update discovered by the automatic coordinator without
     /// moving the store through `.checking` or surfacing an error. Returns
-    /// false when a manual check or install is already in flight, so the
-    /// coordinator stays quiet instead of fighting the other operation.
-    /// `expectedSourceRevision` must equal `updateSourceRevision`: a check
-    /// that started before a source-preference switch reports a stale
-    /// result and is discarded.
+    /// `.busy` when a manual check or install is already in flight and
+    /// `.staleSource` when `expectedSourceRevision` does not equal
+    /// `updateSourceRevision` — a check that started before a source-
+    /// preference switch reports a stale result and is discarded.
     @discardableResult
     func commitAutomaticUpdate(
         release: AvailableUpdate,
         notes: String?,
         expectedSourceRevision: UInt64
-    ) -> Bool {
-        guard !isBusy else { return false }
-        guard expectedSourceRevision == updateSourceRevision else { return false }
+    ) -> AutomaticUpdateCommitResult {
+        guard !isBusy else { return .busy }
+        guard expectedSourceRevision == updateSourceRevision else { return .staleSource }
         latestUpdate = release
         latestUpdateNotes = notes
         state = .available
-        return true
+        return .committed
     }
 
     func installLatest() {

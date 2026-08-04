@@ -108,12 +108,15 @@ VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/release.sh
 It packages the DMG, creates or completes the GitHub Release with the three
 assets, runs the local Gitee upload, dispatches and waits for the mirror
 workflow, and verifies both raw manifests. It never edits sources or
-repository configuration. Before dispatch it fetches `origin/main` and stops
-unless the local HEAD is pushed; afterwards it only accepts a run whose event
-is `workflow_dispatch`, whose `headSha` equals that pushed HEAD, and whose
+repository configuration. Step 0 — before any external side effect — fetches
+`origin/main` and stops unless the local HEAD is pushed and the working tree
+is clean, so a release is never built from uncommitted code and never left
+half-published. Afterwards it only accepts a run whose event is
+`workflow_dispatch`, whose `headSha` equals that pushed HEAD, whose
 `databaseId` is greater than the newest run id seen before dispatch (run ids
-are monotonic, so the selection never depends on the local clock and can
-never pick a stale run while the new one is still appearing in the list).
+are monotonic, so the selection never depends on the local clock), and whose
+`displayTitle` matches the workflow's `run-name` for this tag and build — so
+a concurrent manual dispatch of the same HEAD is never mistaken for our run.
 
 Configure the repository secret `GITEE_TOKEN` with permission to create a
 Gitee release and update the mirrored repository.
@@ -133,10 +136,14 @@ when no asset matches. Success requires a re-listed, re-verified exactly-one
 state; a successful third upload still gets a final read-only verification,
 and deletion failures are retried and then fatal with the undeleted ids
 reported. Release lookup reads the HTTP status explicitly: Gitee reports a
-missing tag as HTTP 200 with a `null` body (the only "may create" case);
-every other status or a network failure aborts instead of being guessed as
-missing. The script's stdout carries only machine-readable results; logs go
-to stderr, so `RELEASE_ID="$(... ensure-release ...)"` stays a pure id.
+missing tag as HTTP 200 with a literal `null` body (the only "may create"
+case); every other status, a network failure, or a 200 body without a valid
+id aborts instead of being guessed as missing, and a created release is
+re-read before its id is returned. The script's stdout carries only
+machine-readable results; logs go to stderr, so
+`RELEASE_ID="$(... ensure-release ...)"` stays a pure id. (Bash note: a
+failed `if` condition makes the whole statement exit 0, so a command's exit
+status must be read inside the `else` clause, never after `fi`.)
 
 For a CLI release, the required asset upload is equivalent to:
 

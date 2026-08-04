@@ -313,6 +313,15 @@ final class AutomaticUpdateCheckCoordinator {
             let sourceRevision = store.updateSourceRevision
             let result = try await checker.checkForUpdate(mode: .automatic)
             guard !Task.isCancelled, !isStopped else { return }
+            // A check that started under an older source preference is stale
+            // regardless of its outcome: neither publish it nor mark the day
+            // as successfully checked, or the new source would not get a
+            // retry today. The commit below re-checks the revision as a
+            // second layer for the window between this guard and the commit.
+            guard sourceRevision == store.updateSourceRevision else {
+                log("update.auto.skipped.staleSource")
+                return
+            }
             switch result {
             case .upToDate:
                 markSuccessfulAutomaticCheck()
@@ -320,16 +329,19 @@ final class AutomaticUpdateCheckCoordinator {
             case .available(let release, let notes):
                 markSuccessfulAutomaticCheck()
                 log("update.auto.check.available")
-                guard store.commitAutomaticUpdate(
+                switch store.commitAutomaticUpdate(
                     release: release,
                     notes: notes,
                     expectedSourceRevision: sourceRevision
-                ) else {
+                ) {
+                case .committed:
+                    pendingUpdate = PendingUpdate(update: release, notes: notes)
+                    tryPresentPendingUpdate()
+                case .busy:
                     log("update.auto.skipped.busy")
-                    return
+                case .staleSource:
+                    log("update.auto.skipped.staleSource")
                 }
-                pendingUpdate = PendingUpdate(update: release, notes: notes)
-                tryPresentPendingUpdate()
             }
         } catch {
             log("update.auto.check.failed")

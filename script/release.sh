@@ -29,13 +29,28 @@ DMG="$project_dir/dist/YuanGUI-$VERSION.dmg"
 
 cd "$project_dir"
 
-# 0. 前置检查：双语 release notes 必须含完整版本段
+# 0. 前置检查：双语 release notes 必须含完整版本段；main 已推送且工作区
+# 干净。任何有外部副作用的操作之前完成——否则会留下"Release 已公开、DMG
+# 已上传但 manifest 未生成"的半发布状态，或打包未提交的本地代码。
 for notes in RELEASE_NOTES.md RELEASE_NOTES.zh-CN.md; do
   grep -q "^## $VERSION " "$notes" || {
     print -u2 "missing version section '## $VERSION' in $notes"
     exit 1
   }
 done
+
+print "checking that main is pushed and the working tree is clean"
+git fetch origin main
+LOCAL_HEAD_SHA="$(git rev-parse HEAD)"
+REMOTE_HEAD_SHA="$(git rev-parse origin/main)"
+[[ "$LOCAL_HEAD_SHA" == "$REMOTE_HEAD_SHA" ]] || {
+  print -u2 "local HEAD ($LOCAL_HEAD_SHA) differs from origin/main ($REMOTE_HEAD_SHA); commit and push first"
+  exit 1
+}
+[[ -z "$(git status --porcelain)" ]] || {
+  print -u2 "working tree is not clean; commit or stash first"
+  exit 1
+}
 
 # 1. 打包 DMG（要求显式稳定 VERSION 与正 BUILD）
 print "== 1/5 package_dmg.sh"
@@ -61,19 +76,11 @@ VERSION="$VERSION" BUILD="$BUILD" GITEE_TOKEN="$GITEE_TOKEN" \
   ./script/publish_gitee_release.sh
 
 # 4. dispatch 镜像 workflow（复用已上传资产，生成并镜像 manifest）
-# 先确认本地 main 已推送并记录 origin/main SHA 与 dispatch 前已有的最大
-# run id；之后只接受 event=workflow_dispatch、headSha 匹配、databaseId 大于
-# 该基准（run id 单调递增，不依赖本机时钟）的 run，避免新 run 尚未出现在
-# 列表时误抓旧 run。
+# 步骤 0 已校验 main 已推送且工作区干净（EXPECTED_HEAD_SHA 取自那里）。
+# run 筛选：event=workflow_dispatch、headSha 匹配、databaseId 大于 dispatch
+# 前的最大 id（单调递增，不依赖本机时钟）、displayTitle 匹配本版本的
+# tag/build（避免并发手动 dispatch 抓到别人的 run）。
 print "== 4/5 dispatch mirror workflow"
-print "checking that main is pushed"
-git fetch origin main
-LOCAL_HEAD_SHA="$(git rev-parse HEAD)"
-REMOTE_HEAD_SHA="$(git rev-parse origin/main)"
-[[ "$LOCAL_HEAD_SHA" == "$REMOTE_HEAD_SHA" ]] || {
-  print -u2 "local HEAD ($LOCAL_HEAD_SHA) differs from origin/main ($REMOTE_HEAD_SHA); push first"
-  exit 1
-}
 EXPECTED_HEAD_SHA="$REMOTE_HEAD_SHA"
 OLD_MAX_RUN_ID="$(gh run list --workflow mirror-release-to-gitee.yml --limit 1 \
   --json databaseId --jq '.[0].databaseId // 0' 2>/dev/null || print 0)"
@@ -85,9 +92,9 @@ RUN_ID=""
 for _ in {1..30}; do
   sleep 5
   RUN_ID="$(gh run list --workflow mirror-release-to-gitee.yml --limit 30 \
-    --json databaseId,event,headSha 2>/dev/null \
-    | jq -r --arg sha "$EXPECTED_HEAD_SHA" --arg old "$OLD_MAX_RUN_ID" \
-      '.[] | select(.event=="workflow_dispatch") | select(.headSha == $sha) | select(.databaseId > ($old | tonumber)) | .databaseId' \
+    --json databaseId,event,headSha,displayTitle 2>/dev/null \
+    | jq -r --arg sha "$EXPECTED_HEAD_SHA" --arg old "$OLD_MAX_RUN_ID" --arg title "Mirror $TAG build $BUILD" \
+      '.[] | select(.event=="workflow_dispatch") | select(.headSha == $sha) | select(.databaseId > ($old | tonumber)) | select(.displayTitle == $title) | .databaseId' \
     | head -n 1 || true)"
   [[ -n "$RUN_ID" ]] && break
 done
