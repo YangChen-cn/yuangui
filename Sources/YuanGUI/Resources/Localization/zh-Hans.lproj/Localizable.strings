@@ -1445,6 +1445,14 @@
 "settings.featureTips.subtitle" = "桌宠会偶尔提醒尚未用过的小功能，每个功能最多提醒一次。";
 "guide.unlock.temporary" = "已临时解锁，退出引导后会恢复锁定";
 "guide.unlock.restored" = "已恢复锁定状态";
+"release.2.8.0.translationSpeech" = "为原文和译文加入 macOS 原生语音朗读，同一时间只朗读一侧，内容、目标语言或窗口变化时立即停止过期朗读。";
+"release.2.8.0.musicWindows" = "重做迷你播放器与完整播放器的窗口交接，点击封面即可打开完整播放器，并修复首次打开迷你播放器的生命周期竞态。";
+"release.2.8.0.finderExtension" = "新增原生 FinderSync 右键扩展：新建常用文本与 Office 文件、复制路径、在已安装的终端中打开文件夹、剪切粘贴。";
+"release.2.8.0.petOnboarding" = "首次启动由元圭和 VCC 亲自引导：认识右键工具菜单、直接试一次截图与截图翻译，了解 Finder 右键增强；可跳过、可重开。";
+"release.2.8.0.petToolsMenu" = "桌宠右键菜单成为工具入口：截图、截图翻译、划词翻译、专注、音乐、手帐、Finder 增强、新手导览和设置。";
+"release.2.8.0.featureTips" = "新增一次性功能发现提示，自动跳过已用过的功能，可设置关闭；老用户升级不会被误判为新安装。";
+"release.2.8.0.temporaryUnlock" = "引导中的“临时解锁”只作用于运行时，不会修改持久化的交互锁定偏好。";
+"release.2.8.0.captureContract" = "截图会话同步报告启动与结束，引导中的截图步骤不会再因同步失败而卡住。";
 "pet.menu.screenshot" = "区域截图";
 "pet.menu.screenshotTranslation" = "截图翻译";
 "pet.menu.translateSelection" = "划词翻译";

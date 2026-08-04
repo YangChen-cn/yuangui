@@ -23,7 +23,7 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The current stable release is `2.7.2`. This update adds quiet automatic updates, a centered SwiftUI update prompt, Gitee mirror fallback, strict DMG verification, complete manual update details, and release automation. See the [2.7.2 release notes](RELEASE_NOTES.md#272--automatic-updates-gitee-mirror-and-release-reliability) for details.
+The current stable release is `2.8.0`. This update adds native translation speech, a more reliable music window experience, a FinderSync context-menu extension, and makes the companion the entry point to the app: a first-launch walkthrough with real actions, a right-click tools menu, and one-time feature tips. See the [2.8.0 release notes](RELEASE_NOTES.md#280--native-translation-speech-and-more-reliable-music-windows) for details.
 
 ## Interface preview
 
@@ -59,6 +59,7 @@ The current stable release is `2.7.2`. This update adds quiet automatic updates,
 - **Cleanup House**: conservative cleanup, uninstall tools, allowlists, operation logs, and path safety checks.
 - **Desktop interaction**: drag, edge docking, mini status, resizing, interaction lock, mouse pass-through, and Finder icon visibility controls.
 - **Finder context menu**: create TXT, Markdown, Word, Excel, and PowerPoint documents; copy paths; open Terminal; and move files with right-click Cut/Paste on local Finder locations.
+- **Pet-led onboarding and feature discovery**: a first-launch walkthrough where the companions introduce themselves and the app's tools through guide bubbles with real actions, a right-click tools menu on the pet, one-time feature tips that skip features you already used, and a re-watch entry in the pet menu and Settings.
 
 ## Requirements and installation
 

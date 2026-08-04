@@ -7,8 +7,8 @@ import Foundation
 enum AppVersionInfo {
     // Packaged builds receive these values from Info.plist; the fallback is
     // only used when the running bundle is missing its version keys.
-    static let fallbackVersion = "2.7.2"
-    static let fallbackBuild = "18"
+    static let fallbackVersion = "2.8.0"
+    static let fallbackBuild = "19"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -20,14 +20,14 @@ enum AppVersionInfo {
 
     static var currentReleaseHighlights: [String] {
         [
-            "release.2.7.2.updateFlow",
-            "release.2.7.2.prompt",
-            "release.2.7.2.sourceFallback",
-            "release.2.7.2.validation",
-            "release.2.7.2.manualDetails",
-            "release.2.7.2.releaseAutomation",
-            "release.2.7.2.dashboard",
-            "release.2.7.2.ci"
+            "release.2.8.0.translationSpeech",
+            "release.2.8.0.musicWindows",
+            "release.2.8.0.finderExtension",
+            "release.2.8.0.petOnboarding",
+            "release.2.8.0.petToolsMenu",
+            "release.2.8.0.featureTips",
+            "release.2.8.0.temporaryUnlock",
+            "release.2.8.0.captureContract"
         ].map { AppLocalizer.string($0) }
     }
 }
