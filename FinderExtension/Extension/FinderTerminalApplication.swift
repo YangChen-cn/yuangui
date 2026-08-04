@@ -2,6 +2,7 @@ import AppKit
 
 struct FinderTerminalApplication {
     let displayName: String
+    let bundleIdentifier: String
     let applicationURL: URL
 
     var menuImage: NSImage {
@@ -19,6 +20,7 @@ struct FinderTerminalApplication {
             ) else { return nil }
             return FinderTerminalApplication(
                 displayName: candidate.displayName,
+                bundleIdentifier: candidate.bundleIdentifier,
                 applicationURL: url
             )
         }
@@ -42,9 +44,11 @@ struct FinderTerminalApplication {
 struct FinderTerminalMenuSelection {
     let directoryURL: URL
     let applicationURL: URL
+    let applicationBundleIdentifier: String
 
-    init(directoryURL: URL, applicationURL: URL) {
+    init(directoryURL: URL, applicationURL: URL, applicationBundleIdentifier: String) {
         self.directoryURL = directoryURL
         self.applicationURL = applicationURL
+        self.applicationBundleIdentifier = applicationBundleIdentifier
     }
 }

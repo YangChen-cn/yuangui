@@ -7,6 +7,8 @@ private let finderLog = Logger(subsystem: "com.yang.yuangui", category: "finder-
 final class FinderSync: FIFinderSync {
     private static let itemContextTag = 1
     private static let fileTemplateItemsOffset = 1_000
+    private static let lastTerminalBundleIdentifierKey = "lastTerminalBundleIdentifier"
+    private static let systemTerminalBundleIdentifier = "com.apple.Terminal"
     private static let cutPasteboardType = NSPasteboard.PasteboardType(
         "com.yang.yuangui.finder-cut-payload"
     )
@@ -52,18 +54,6 @@ final class FinderSync: FIFinderSync {
         let selected = controller.selectedItemURLs() ?? []
         let menu = NSMenu(title: "")
         menu.addItem(newFileMenuItem(kind: kind))
-        menu.addItem(actionItem(
-            title: localized("menu.copyPath"),
-            systemImage: "doc.on.doc",
-            action: #selector(copyPath(_:)),
-            kind: kind,
-            enabled: !pathsForCopy(target: target, selected: selected, kind: kind).isEmpty
-        ))
-        menu.addItem(openTerminalMenuItem(directory: FinderTargetResolver.terminalDirectory(
-            target: target,
-            selected: selected,
-            kind: kind
-        )))
         if kind == .items {
             menu.addItem(actionItem(
                 title: localized("menu.cut"),
@@ -81,20 +71,34 @@ final class FinderSync: FIFinderSync {
             kind: kind,
             enabled: pasteDestination != nil && readableCutPayload() != nil
         ))
+        menu.addItem(actionItem(
+            title: localized("menu.copyPath"),
+            systemImage: "doc.on.doc",
+            action: #selector(copyPath(_:)),
+            kind: kind,
+            enabled: !pathsForCopy(target: target, selected: selected, kind: kind).isEmpty
+        ))
+        menu.addItem(openTerminalMenuItem(directory: FinderTargetResolver.terminalDirectory(
+            target: target,
+            selected: selected,
+            kind: kind
+        )))
         return menu
     }
 
     private func openTerminalMenuItem(directory: URL?) -> NSMenuItem {
         let title = localized("menu.openTerminal")
-        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: title, action: #selector(openTerminal(_:)), keyEquivalent: "")
+        parent.target = self
         parent.image = menuImage(systemName: "terminal", accessibility: title)
         let applications = FinderTerminalApplication.installedApplications()
         parent.isEnabled = directory != nil && !applications.isEmpty
         terminalMenuSnapshot.removeAll(keepingCapacity: true)
+        parent.tag = preferredTerminalIndex(in: applications) ?? 0
 
         let submenu = NSMenu(title: title)
         if let directory {
-            for application in applications {
+            for (index, application) in applications.enumerated() {
                 let item = NSMenuItem(
                     title: application.displayName,
                     action: #selector(openTerminal(_:)),
@@ -102,16 +106,36 @@ final class FinderSync: FIFinderSync {
                 )
                 item.target = self
                 item.image = application.menuImage
-                item.tag = terminalMenuSnapshot.count
+                item.tag = index
                 terminalMenuSnapshot.append(FinderTerminalMenuSelection(
                     directoryURL: directory,
-                    applicationURL: application.applicationURL
+                    applicationURL: application.applicationURL,
+                    applicationBundleIdentifier: application.bundleIdentifier
                 ))
                 submenu.addItem(item)
             }
         }
         parent.submenu = submenu
         return parent
+    }
+
+    private func preferredTerminalIndex(
+        in applications: [FinderTerminalApplication]
+    ) -> Int? {
+        guard !applications.isEmpty else { return nil }
+        if let savedBundleIdentifier = UserDefaults.standard.string(
+            forKey: Self.lastTerminalBundleIdentifierKey
+        ), let savedIndex = applications.firstIndex(where: {
+            $0.bundleIdentifier == savedBundleIdentifier
+        }) {
+            return savedIndex
+        }
+        if let systemIndex = applications.firstIndex(where: {
+            $0.bundleIdentifier == Self.systemTerminalBundleIdentifier
+        }) {
+            return systemIndex
+        }
+        return applications.indices.first
     }
 
     private func newFileMenuItem(kind: FinderMenuContextKind) -> NSMenuItem {
@@ -204,6 +228,10 @@ final class FinderSync: FIFinderSync {
             return
         }
         let selection = terminalMenuSnapshot[sender.tag]
+        UserDefaults.standard.set(
+            selection.applicationBundleIdentifier,
+            forKey: Self.lastTerminalBundleIdentifierKey
+        )
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.open(
