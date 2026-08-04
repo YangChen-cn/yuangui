@@ -423,7 +423,9 @@ jobs:
 
           CHECKSUM_SIZE="$(stat -c '%s' "$DMG.sha256")"
           CHECKSUM_SHA="$(sha256sum "$DMG.sha256" | awk '{print $1}')"
-          upload_if_validated "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}" 20 1200 1200
+          # Gitee can hang multipart uploads from cloud runners without
+          # returning; bound each round to 5 minutes so retries surface fast.
+          upload_if_validated "$DMG" "${{ steps.asset.outputs.size }}" "${{ steps.asset.outputs.sha256 }}" 20 300 300
           upload_if_validated "$DMG.sha256" "$CHECKSUM_SIZE" "$CHECKSUM_SHA" 15 120 120
           refresh_gitee_release 120
 
