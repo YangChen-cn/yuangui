@@ -56,6 +56,28 @@ the one-click release path for the verified Gitee repository
 3. Configure the repository secret `GITEE_TOKEN` with permission to create a
    Gitee release and update the mirrored repository.
 
+### Upload the DMG to Gitee from your machine
+
+GitHub Actions cloud runners can hang indefinitely on Gitee's large multipart
+uploads, while the same upload from a normal network takes seconds. The DMG is
+therefore uploaded locally, and the workflow reuses the verified asset:
+
+```sh
+VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh
+```
+
+The script creates or reuses the Gitee release, uploads the DMG and its
+`.sha256` sidecar (with the same size/SHA-256 reuse-and-verify rules as the
+workflow), and prints the release URL. Then run the workflow manually:
+
+```sh
+gh workflow run mirror-release-to-gitee.yml -f tag=v2.8.0 -f build=19 \
+  -f minimum_system_version=15.0
+```
+
+The workflow verifies the Gitee bytes against the GitHub Release before it
+generates `updates/latest.json`, commits it, and mirrors it to Gitee.
+
 For a CLI release, the required asset upload is equivalent to:
 
 ```sh
