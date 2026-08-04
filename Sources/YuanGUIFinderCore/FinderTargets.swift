@@ -20,9 +20,10 @@ public enum FinderTargetResolver {
         }
     }
 
-    /// The item an external application should open for the current context:
-    /// the container itself on a blank-area right-click, the selected folder
-    /// on a folder, and the selected file on a file.
+    /// The item an external application should open for the current context.
+    /// Finder reports the containing window/desktop as the targeted URL and
+    /// the clicked item through the selection. A single selected item wins;
+    /// ambiguous multi-selection falls back to the container target.
     public static func openTarget(
         target: URL?,
         selected: [URL] = [],
@@ -32,7 +33,7 @@ public enum FinderTargetResolver {
         case .container:
             target
         case .items:
-            selected.first ?? target
+            selected.count == 1 ? selected[0] : (target ?? selected.first)
         }
         return normalizedFileURL(candidate)
     }

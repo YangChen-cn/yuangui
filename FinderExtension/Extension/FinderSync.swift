@@ -11,6 +11,8 @@ final class FinderSync: FIFinderSync {
     private static let lastEditorBundleIdentifierKey = "lastEditorBundleIdentifier"
     private static let systemTerminalBundleIdentifier = "com.apple.Terminal"
     private static let kakuBundleIdentifier = "fun.tw93.kaku"
+    private static let kakuServiceName = "New Kaku Tab Here"
+    private static let filenamesPasteboardType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
     private static let cutPasteboardType = NSPasteboard.PasteboardType(
         "com.yang.yuangui.finder-cut-payload"
     )
@@ -448,16 +450,7 @@ final class FinderSync: FIFinderSync {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         if selection.applicationBundleIdentifier == Self.kakuBundleIdentifier {
-            // Kaku treats a Finder document-open event as a file import. Its
-            // current macOS build can crash when that event contains a folder;
-            // use Kaku's native CLI arguments through LaunchServices instead.
-            configuration.arguments = ["start", "--cwd", selection.targetURL.path]
-            NSWorkspace.shared.openApplication(
-                at: selection.applicationURL,
-                configuration: configuration
-            ) { [weak self] _, error in
-                self?.handleTerminalLaunchResult(error)
-            }
+            openKaku(selection, fallbackConfiguration: configuration)
         } else {
             NSWorkspace.shared.open(
                 [selection.targetURL],
@@ -466,6 +459,34 @@ final class FinderSync: FIFinderSync {
             ) { [weak self] _, error in
                 self?.handleTerminalLaunchResult(error)
             }
+        }
+    }
+
+    private func openKaku(
+        _ selection: FinderApplicationMenuSelection,
+        fallbackConfiguration: NSWorkspace.OpenConfiguration
+    ) {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(
+            "com.yang.yuangui.finder-extension.kaku-service.\(UUID().uuidString)"
+        ))
+        pasteboard.clearContents()
+        let path = selection.targetURL.path
+        let wroteFiles = pasteboard.setPropertyList(
+            [path],
+            forType: Self.filenamesPasteboardType
+        )
+        let wroteText = pasteboard.setString(path, forType: .string)
+
+        if wroteFiles, wroteText, NSPerformService(Self.kakuServiceName, pasteboard) {
+            return
+        }
+
+        finderLog.notice("Kaku service unavailable; falling back to ordinary app launch")
+        NSWorkspace.shared.openApplication(
+            at: selection.applicationURL,
+            configuration: fallbackConfiguration
+        ) { [weak self] _, error in
+            self?.handleTerminalLaunchResult(error)
         }
     }
 

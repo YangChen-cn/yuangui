@@ -59,13 +59,13 @@ enum FinderEditorApplication {
     }
 
     private static let supportedCandidates: [(displayName: String, bundleIdentifier: String)] = [
+        ("Cursor", "com.todesktop.230313mzl4w4u92"),
         ("Visual Studio Code", "com.microsoft.VSCode"),
         ("Zed", "dev.zed.Zed"),
         ("Xcode", "com.apple.dt.Xcode"),
         ("CLion", "com.jetbrains.CLion"),
         ("Nova", "com.panic.Nova"),
         ("BBEdit", "com.barebones.bbedit"),
-        ("TextEdit", "com.apple.TextEdit"),
         ("Sublime Text", "com.sublimetext.4")
     ]
 }

@@ -36,7 +36,7 @@ final class FinderExtensionCoreTests: XCTestCase {
             )
             XCTAssertEqual(
                 FinderTargetResolver.terminalDirectory(
-                    target: folder,
+                    target: root,
                     selected: [file],
                     kind: .items
                 ),
@@ -185,7 +185,7 @@ final class FinderExtensionCoreTests: XCTestCase {
             )
             XCTAssertEqual(
                 FinderClipboardFormatter.terminalArgumentString(for: [first, second]),
-                "'\(first.path)'\n'\(second.path)'"
+                "'\(first.path)' '\(second.path)'"
             )
             XCTAssertNil(FinderClipboardFormatter.fileNameString(for: []))
             XCTAssertNil(FinderClipboardFormatter.terminalArgumentString(for: []))
@@ -213,13 +213,29 @@ final class FinderExtensionCoreTests: XCTestCase {
                 FinderTargetResolver.openDirectory(target: file, kind: .items),
                 root.resolvingSymlinksInPath()
             )
+            // Finder reports the container as targetedURL and the clicked
+            // item in a single-item selection.
             XCTAssertEqual(
                 FinderTargetResolver.openTarget(target: root, selected: [file], kind: .items),
                 file.resolvingSymlinksInPath()
             )
             XCTAssertEqual(
-                FinderTargetResolver.openTarget(target: root, selected: [folder], kind: .items),
+                FinderTargetResolver.openDirectory(
+                    target: root,
+                    selected: [folder],
+                    kind: .items
+                ),
                 folder.resolvingSymlinksInPath()
+            )
+            // A single-target action on a multi-selection uses the container
+            // instead of choosing an arbitrary selected item.
+            XCTAssertEqual(
+                FinderTargetResolver.openTarget(
+                    target: root,
+                    selected: [file, folder],
+                    kind: .items
+                ),
+                root.resolvingSymlinksInPath()
             )
             // The terminal resolver shares the same rules.
             XCTAssertEqual(

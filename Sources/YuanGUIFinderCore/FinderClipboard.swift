@@ -12,13 +12,13 @@ public enum FinderClipboardFormatter {
         return names.isEmpty ? nil : names.joined(separator: "\n")
     }
 
-    /// Each path wrapped in single quotes with embedded quotes escaped, one
-    /// per line — safe to paste into a shell as positional arguments.
+    /// Each path wrapped in single quotes with embedded quotes escaped and
+    /// separated by spaces, ready to paste as shell positional arguments.
     public static func terminalArgumentString(for urls: [URL]) -> String? {
         let quoted = urls
             .compactMap(FinderTargetResolver.normalizedFileURL)
             .map { shellQuote($0.path) }
-        return quoted.isEmpty ? nil : quoted.joined(separator: "\n")
+        return quoted.isEmpty ? nil : quoted.joined(separator: " ")
     }
 
     /// POSIX single-quote escaping: `'` becomes `'\''` inside a `'…'` pair.

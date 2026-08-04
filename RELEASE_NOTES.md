@@ -9,7 +9,7 @@
 - Expanded Copy into File Name, Full Path, and shell-safe Terminal Argument options, including multi-selection support.
 - Open in Terminal now opens the correct selected folder, or the containing folder for a selected file. The main action uses the last available terminal, while a separate chooser lists installed terminals and marks the current default.
 - Added the same remembered-default flow for editors. A selected file or folder opens directly in the last available editor, with a separate chooser when more than one supported editor is installed.
-- Kaku launches through its native `start --cwd` arguments instead of receiving a Finder document-open event, preventing folder opens from crashing the app.
+- Kaku uses its registered “New Kaku Tab Here” macOS Service to open the selected directory, with an ordinary app launch fallback when the Service is unavailable.
 - Fixed the blank-file prompt so it becomes keyboard-active from Finder, and improved cut/paste target resolution and collision handling.
 - Development rebuilds and app updates refresh one Finder extension registration while preserving the user's enabled state, avoiding duplicate or short-lived menu entries.
 - Fixed sustained-slow-download detection to use a true trailing 10-second window, so a long throttled GitHub transfer can still switch to the matching Gitee asset instead of appearing faster over time.
