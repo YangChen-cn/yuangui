@@ -75,9 +75,59 @@ public enum FinderFileCreator {
         }
         throw FinderFileCreationError.tooManyConflicts
     }
+
+    /// Creates an empty file whose complete name (including the extension)
+    /// is typed by the user, e.g. `config.json` or `main.swift`. The name is
+    /// trimmed; an empty name, path separators, and `.`/`..` are rejected
+    /// before any path is constructed. Conflicts reuse the template rule and
+    /// become `name 2.ext`.
+    public static func create(
+        named rawName: String,
+        in directory: URL,
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        let directory = directory.standardizedFileURL.resolvingSymlinksInPath()
+        guard FinderTargetResolver.isDirectory(directory, fileManager: fileManager) else {
+            throw FinderFileCreationError.invalidDirectory
+        }
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw FinderFileCreationError.emptyName
+        }
+        guard !name.contains("/"), !name.contains(":"), !name.contains("\0"),
+              name != ".", name != ".." else {
+            throw FinderFileCreationError.invalidName
+        }
+
+        // Conflicts keep the typed extension intact: "config.json" becomes
+        // "config 2.json", "Makefile" becomes "Makefile 2", and a leading
+        // dot (hidden file) is part of the base name.
+        let conflictSplit: (base: String, ext: String)
+        if let dotIndex = name.lastIndex(of: "."), dotIndex != name.startIndex {
+            conflictSplit = (String(name[..<dotIndex]), String(name[dotIndex...]))
+        } else {
+            conflictSplit = (name, "")
+        }
+
+        for suffix in 1...10_000 {
+            let numberedName = suffix == 1
+                ? name
+                : "\(conflictSplit.base) \(suffix)\(conflictSplit.ext)"
+            let destination = directory.appendingPathComponent(numberedName)
+            do {
+                try Data().write(to: destination, options: .withoutOverwriting)
+                return destination
+            } catch let error as CocoaError where error.code == .fileWriteFileExists {
+                continue
+            }
+        }
+        throw FinderFileCreationError.tooManyConflicts
+    }
 }
 
 public enum FinderFileCreationError: Error, Equatable {
     case invalidDirectory
     case tooManyConflicts
+    case emptyName
+    case invalidName
 }

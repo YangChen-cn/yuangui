@@ -20,11 +20,13 @@ public enum FinderTargetResolver {
         }
     }
 
-    public static func terminalDirectory(
+    /// The item an external application should open for the current context:
+    /// the container itself on a blank-area right-click, the selected folder
+    /// on a folder, and the selected file on a file.
+    public static func openTarget(
         target: URL?,
         selected: [URL] = [],
-        kind: FinderMenuContextKind,
-        fileManager: FileManager = .default
+        kind: FinderMenuContextKind
     ) -> URL? {
         let candidate = switch kind {
         case .container:
@@ -32,11 +34,35 @@ public enum FinderTargetResolver {
         case .items:
             selected.first ?? target
         }
-        guard let candidate = normalizedFileURL(candidate) else { return nil }
+        return normalizedFileURL(candidate)
+    }
+
+    /// The directory a terminal should open for the current context. A file
+    /// opens its containing directory; a folder opens itself.
+    public static func openDirectory(
+        target: URL?,
+        selected: [URL] = [],
+        kind: FinderMenuContextKind,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let candidate = openTarget(
+            target: target,
+            selected: selected,
+            kind: kind
+        ) else { return nil }
         if isDirectory(candidate, fileManager: fileManager) {
             return candidate
         }
         return candidate.deletingLastPathComponent()
+    }
+
+    public static func terminalDirectory(
+        target: URL?,
+        selected: [URL] = [],
+        kind: FinderMenuContextKind,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        openDirectory(target: target, selected: selected, kind: kind, fileManager: fileManager)
     }
 
     public static func pasteDirectory(

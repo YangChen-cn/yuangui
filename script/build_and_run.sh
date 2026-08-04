@@ -24,8 +24,8 @@ RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
 # copy outside protected user folders for local development.
 RUN_STAGING_DIR="/private/tmp/${APP_NAME}-run-${UID}"
 RUN_BUNDLE="$RUN_STAGING_DIR/$APP_NAME.app"
-DIST_EXTENSION="$APP_PLUGINS/YuanGUIFinderExtension.appex"
 RUN_EXTENSION="$RUN_BUNDLE/Contents/PlugIns/YuanGUIFinderExtension.appex"
+FINDER_EXTENSION_BUNDLE_ID="com.yang.yuangui.FinderExtension"
 
 if [[ "$MODE" != "build-only" && "$MODE" != "--build-only" ]]; then
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -122,22 +122,42 @@ stop_development_finder_extension() {
   done
 }
 
-unregister_dist_finder_extension() {
-  # dist is a build artifact, not the development copy launched below.
-  /usr/bin/pluginkit -r "$DIST_EXTENSION" >/dev/null 2>&1 || true
+refresh_development_finder_registration() {
+  local inherited_enabled=false
+  local state
+  local extension_path
+
+  # PluginKit may have entries for an installed app, dist, and the temporary
+  # development app at the same time. Remove every stale record first. The
+  # current bundle is replaced in place on every build, so retaining a record
+  # for the same path can leave LaunchServices pointing at the previous code
+  # signature/seed and make Finder hide the menu after a short cache refresh.
+  while IFS=$'\t' read -r state extension_path; do
+    [[ -z "$extension_path" ]] && continue
+    if [[ "$state" == "+" ]]; then
+      inherited_enabled=true
+    fi
+    /usr/bin/pluginkit -r "$extension_path" >/dev/null 2>&1 || true
+  done < <(
+    /usr/bin/pluginkit -m -A -D -v -i "$FINDER_EXTENSION_BUNDLE_ID" \
+      | /usr/bin/awk -F $'\t' '$NF ~ /YuanGUIFinderExtension\.appex$/ { print substr($1, 1, 1) "\t" $NF }'
+  )
+
+  /usr/bin/pluginkit -a "$RUN_EXTENSION"
+  if [[ "$inherited_enabled" == true ]]; then
+    /usr/bin/pluginkit -e use -i "$FINDER_EXTENSION_BUNDLE_ID"
+  fi
 }
 
 open_app() {
   # Finder keeps extension processes alive independently from the host app.
-  # Keep PluginKit's enabled state and stable staged path, but stop the old
-  # executable before replacing it. Re-adding the same path refreshes the one
-  # registration without toggling or duplicating the extension.
+  # Stop the old executable before replacing the stable staged path, then
+  # refresh registration by exact path so an installed copy cannot win.
   stop_development_finder_extension
-  unregister_dist_finder_extension
   rm -rf "$RUN_BUNDLE"
   mkdir -p "$RUN_STAGING_DIR"
   /usr/bin/ditto "$APP_BUNDLE" "$RUN_BUNDLE"
-  /usr/bin/pluginkit -a "$RUN_EXTENSION"
+  refresh_development_finder_registration
   /usr/bin/open -n "$RUN_BUNDLE"
 }
 

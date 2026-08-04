@@ -124,6 +124,115 @@ final class FinderExtensionCoreTests: XCTestCase {
         ])
     }
 
+    func testBlankFileCreationValidatesNamesAndNumbersConflicts() throws {
+        try withTemporaryDirectory { root in
+            // Leading/trailing whitespace is trimmed; the typed name (with
+            // its extension) is used as-is.
+            let trimmed = try FinderFileCreator.create(named: "  config.json  ", in: root)
+            XCTAssertEqual(trimmed.lastPathComponent, "config.json")
+            XCTAssertEqual(try Data(contentsOf: trimmed), Data())
+
+            let main = try FinderFileCreator.create(named: "main.swift", in: root)
+            XCTAssertEqual(main.lastPathComponent, "main.swift")
+            XCTAssertEqual(try Data(contentsOf: main), Data())
+
+            // Conflicts follow the template rule: "name 2.ext".
+            let duplicate = try FinderFileCreator.create(named: "config.json", in: root)
+            XCTAssertEqual(duplicate.lastPathComponent, "config 2.json")
+
+            // Empty names and path separators are rejected before any file
+            // operation happens.
+            XCTAssertThrowsError(try FinderFileCreator.create(named: "   ", in: root)) { error in
+                XCTAssertEqual(error as? FinderFileCreationError, .emptyName)
+            }
+            for invalid in ["a/b.txt", "a:b.txt", ".", "..", "x\0y"] {
+                XCTAssertThrowsError(try FinderFileCreator.create(named: invalid, in: root)) { error in
+                    XCTAssertEqual(error as? FinderFileCreationError, .invalidName)
+                }
+            }
+            XCTAssertFalse(FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("a").path
+            ))
+        }
+    }
+
+    func testShellQuoteEscapesSingleQuotes() {
+        XCTAssertEqual(
+            FinderClipboardFormatter.shellQuote("/Users/yang/My Project/main.swift"),
+            "'/Users/yang/My Project/main.swift'"
+        )
+        XCTAssertEqual(
+            FinderClipboardFormatter.shellQuote("/tmp/it's"),
+            "'/tmp/it'\\''s'"
+        )
+        XCTAssertEqual(FinderClipboardFormatter.shellQuote(""), "''")
+    }
+
+    func testClipboardFormattersForFileNamesAndTerminalArguments() throws {
+        try withTemporaryDirectory { root in
+            let first = root.appendingPathComponent("My Project/one.txt")
+            let second = root.appendingPathComponent("two.md")
+            try FileManager.default.createDirectory(
+                at: first.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data().write(to: first)
+            try Data().write(to: second)
+
+            XCTAssertEqual(
+                FinderClipboardFormatter.fileNameString(for: [first, second]),
+                "one.txt\ntwo.md"
+            )
+            XCTAssertEqual(
+                FinderClipboardFormatter.terminalArgumentString(for: [first, second]),
+                "'\(first.path)'\n'\(second.path)'"
+            )
+            XCTAssertNil(FinderClipboardFormatter.fileNameString(for: []))
+            XCTAssertNil(FinderClipboardFormatter.terminalArgumentString(for: []))
+        }
+    }
+
+    func testOpenDirectoryMatchesTerminalSemantics() throws {
+        try withTemporaryDirectory { root in
+            let folder = root.appendingPathComponent("Folder", isDirectory: true)
+            let file = root.appendingPathComponent("note.txt")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data().write(to: file)
+
+            // Blank area: the container itself.
+            XCTAssertEqual(
+                FinderTargetResolver.openDirectory(target: root, kind: .container),
+                root.resolvingSymlinksInPath()
+            )
+            // Folder: the folder itself; file: its containing directory.
+            XCTAssertEqual(
+                FinderTargetResolver.openDirectory(target: folder, kind: .items),
+                folder.resolvingSymlinksInPath()
+            )
+            XCTAssertEqual(
+                FinderTargetResolver.openDirectory(target: file, kind: .items),
+                root.resolvingSymlinksInPath()
+            )
+            XCTAssertEqual(
+                FinderTargetResolver.openTarget(target: root, selected: [file], kind: .items),
+                file.resolvingSymlinksInPath()
+            )
+            XCTAssertEqual(
+                FinderTargetResolver.openTarget(target: root, selected: [folder], kind: .items),
+                folder.resolvingSymlinksInPath()
+            )
+            // The terminal resolver shares the same rules.
+            XCTAssertEqual(
+                FinderTargetResolver.terminalDirectory(
+                    target: root,
+                    selected: [file],
+                    kind: .items
+                ),
+                root.resolvingSymlinksInPath()
+            )
+        }
+    }
+
     func testClipboardPathFormattingUsesOnePathPerLine() throws {
         try withTemporaryDirectory { root in
             let first = root.appendingPathComponent("one.txt")

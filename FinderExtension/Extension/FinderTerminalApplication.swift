@@ -1,6 +1,9 @@
 import AppKit
 
-struct FinderTerminalApplication {
+/// An installed third-party application that can be offered in the Finder
+/// context menu (terminals, editors, ...). Detection is purely
+/// bundle-identifier based via NSWorkspace; only installed apps appear.
+struct FinderExternalApplication {
     let displayName: String
     let bundleIdentifier: String
     let applicationURL: URL
@@ -12,21 +15,28 @@ struct FinderTerminalApplication {
     }
 
     static func installedApplications(
+        candidates: [(displayName: String, bundleIdentifier: String)],
         workspace: NSWorkspace = .shared
-    ) -> [FinderTerminalApplication] {
-        supportedApplications.compactMap { candidate in
+    ) -> [FinderExternalApplication] {
+        candidates.compactMap { candidate in
             guard let url = workspace.urlForApplication(
                 withBundleIdentifier: candidate.bundleIdentifier
             ) else { return nil }
-            return FinderTerminalApplication(
+            return FinderExternalApplication(
                 displayName: candidate.displayName,
                 bundleIdentifier: candidate.bundleIdentifier,
                 applicationURL: url
             )
         }
     }
+}
 
-    private static let supportedApplications: [(displayName: String, bundleIdentifier: String)] = [
+enum FinderTerminalApplication {
+    static func installedApplications() -> [FinderExternalApplication] {
+        FinderExternalApplication.installedApplications(candidates: supportedCandidates)
+    }
+
+    private static let supportedCandidates: [(displayName: String, bundleIdentifier: String)] = [
         ("Kaku", "fun.tw93.kaku"),
         ("Terminal", "com.apple.Terminal"),
         ("iTerm2", "com.googlecode.iterm2"),
@@ -41,13 +51,34 @@ struct FinderTerminalApplication {
     ]
 }
 
-struct FinderTerminalMenuSelection {
-    let directoryURL: URL
+/// A small set of mainstream editors for the "open in editor" menu. Editors
+/// receive the selected file or folder; only installed candidates appear.
+enum FinderEditorApplication {
+    static func installedApplications() -> [FinderExternalApplication] {
+        FinderExternalApplication.installedApplications(candidates: supportedCandidates)
+    }
+
+    private static let supportedCandidates: [(displayName: String, bundleIdentifier: String)] = [
+        ("Visual Studio Code", "com.microsoft.VSCode"),
+        ("Zed", "dev.zed.Zed"),
+        ("Xcode", "com.apple.dt.Xcode"),
+        ("CLion", "com.jetbrains.CLion"),
+        ("Nova", "com.panic.Nova"),
+        ("BBEdit", "com.barebones.bbedit"),
+        ("TextEdit", "com.apple.TextEdit"),
+        ("Sublime Text", "com.sublimetext.4")
+    ]
+}
+
+/// One submenu entry's payload: which file-system target to open and with
+/// which app. Shared by the terminal and editor menus.
+struct FinderApplicationMenuSelection {
+    let targetURL: URL
     let applicationURL: URL
     let applicationBundleIdentifier: String
 
-    init(directoryURL: URL, applicationURL: URL, applicationBundleIdentifier: String) {
-        self.directoryURL = directoryURL
+    init(targetURL: URL, applicationURL: URL, applicationBundleIdentifier: String) {
+        self.targetURL = targetURL
         self.applicationURL = applicationURL
         self.applicationBundleIdentifier = applicationBundleIdentifier
     }
