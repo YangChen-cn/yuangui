@@ -43,40 +43,60 @@ DMG_PATH="$PWD/dist/YuanGUI-2.7.2.dmg" \
 ## Publish and mirror
 
 The repository contains `.github/workflows/mirror-release-to-gitee.yml`. It is
-the one-click release path for the verified Gitee repository
-`yangchen716/yuangui`:
+the manifest-and-mirror path for the verified Gitee repository
+`yangchen716/yuangui`; the DMG upload itself runs on the publisher's machine
+(see below).
 
-1. Prepare both complete release-note files for the new version:
+### Full flow
+
+1. Switch version sources to the target version manually (semantic edits the
+   machine must not guess): `AppVersionInfo` fallback, `script/build_and_run.sh`,
+   both Release Notes files, README version references, and the app-localized
+   About highlights. Run `swift test` and `./script/build_and_run.sh --verify`,
+   then commit and push.
+2. Prepare both complete release-note files for the new version:
    `RELEASE_NOTES.md` in English and `RELEASE_NOTES.zh-CN.md` in Simplified
    Chinese. Every release must publish both files; neither language may be
    replaced by the GitHub Release body or by the two-line manifest summary.
-2. Publish a stable GitHub Release with exactly one `YuanGUI-*.dmg` plus both
-   release-note files as assets. Prerelease tags and prerelease Releases are
-   rejected from `latest.json`.
-3. Configure the repository secret `GITEE_TOKEN` with permission to create a
-   Gitee release and update the mirrored repository.
+3. Publish a stable GitHub Release with exactly one `YuanGUI-*.dmg` plus both
+   release-note files as assets, and a `Build: N` line in the body. Prerelease
+   tags and prerelease Releases are rejected from `latest.json`.
+4. Upload the DMG to Gitee from your machine:
+   `VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh`
+   (creates or reuses the Gitee release, uploads DMG + `.sha256` sidecar with
+   reuse-and-verify rules, prints the release URL).
+5. Dispatch the mirror workflow:
+   `gh workflow run mirror-release-to-gitee.yml -f tag=v2.8.0 -f build=19
+   -f minimum_system_version=15.0`. It verifies the Gitee bytes against the
+   GitHub Release, generates `updates/latest.json`, commits it to main, and
+   mirrors it to Gitee.
+6. Wait for the read-only Gitee repository mirror, then check both raw URLs
+   and compare their response body (see "Verify" below).
 
-### Upload the DMG to Gitee from your machine
+### One-command alternative
+
+After the manual version-switch commit, `script/release.sh` performs steps
+2–6:
+
+```sh
+VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/release.sh
+```
+
+It packages the DMG, creates or completes the GitHub Release with the three
+assets, runs the local Gitee upload, dispatches and waits for the mirror
+workflow, and verifies both raw manifests. It never edits sources or
+repository configuration.
+
+Configure the repository secret `GITEE_TOKEN` with permission to create a
+Gitee release and update the mirrored repository.
+
+### Why uploads run locally
 
 GitHub Actions cloud runners can hang indefinitely on Gitee's large multipart
 uploads, while the same upload from a normal network takes seconds. The DMG is
-therefore uploaded locally, and the workflow reuses the verified asset:
-
-```sh
-VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh
-```
-
-The script creates or reuses the Gitee release, uploads the DMG and its
-`.sha256` sidecar (with the same size/SHA-256 reuse-and-verify rules as the
-workflow), and prints the release URL. Then run the workflow manually:
-
-```sh
-gh workflow run mirror-release-to-gitee.yml -f tag=v2.8.0 -f build=19 \
-  -f minimum_system_version=15.0
-```
-
-The workflow verifies the Gitee bytes against the GitHub Release before it
-generates `updates/latest.json`, commits it, and mirrors it to Gitee.
+therefore uploaded locally, and the workflow reuses the verified asset. The
+workflow's own upload step remains only as a fallback when the asset is
+missing; each round is bounded to 300 seconds so failures surface fast.
 
 For a CLI release, the required asset upload is equivalent to:
 
