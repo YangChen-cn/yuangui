@@ -19,14 +19,14 @@
     {
       "provider": "gitee",
       "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.8.0/YuanGUI-2.8.0.dmg",
-      "sha256": "11ff80f8aaed4926bbf64748dcdaf8a0e909e8757b292830af8fa6aadfdcb535",
-      "size": 29051446
+      "sha256": "06aba768c3a3a5bcd6dd9c29659a30e4cbde08a3aa95d56d7f9630eb3c579de3",
+      "size": 29043145
     },
     {
       "provider": "github",
       "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.0/YuanGUI-2.8.0.dmg",
-      "sha256": "11ff80f8aaed4926bbf64748dcdaf8a0e909e8757b292830af8fa6aadfdcb535",
-      "size": 29051446
+      "sha256": "06aba768c3a3a5bcd6dd9c29659a30e4cbde08a3aa95d56d7f9630eb3c579de3",
+      "size": 29043145
     }
   ]
 }
