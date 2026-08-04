@@ -61,12 +61,20 @@ VERSION="$VERSION" BUILD="$BUILD" GITEE_TOKEN="$GITEE_TOKEN" \
   ./script/publish_gitee_release.sh
 
 # 4. dispatch 镜像 workflow（复用已上传资产，生成并镜像 manifest）
-# 先记录 dispatch 前的基准（时间 / main HEAD / 已有最大 run id），之后只
-# 接受 createdAt >= 基准时间、headSha 匹配且不是旧 run 的 workflow_dispatch
-# run，避免新 run 尚未出现在列表时误抓上一次 dispatch。
+# 先确认本地 main 已推送并记录 origin/main SHA 与 dispatch 前已有的最大
+# run id；之后只接受 event=workflow_dispatch、headSha 匹配、databaseId 大于
+# 该基准（run id 单调递增，不依赖本机时钟）的 run，避免新 run 尚未出现在
+# 列表时误抓旧 run。
 print "== 4/5 dispatch mirror workflow"
-DISPATCH_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-EXPECTED_HEAD_SHA="$(git rev-parse HEAD)"
+print "checking that main is pushed"
+git fetch origin main
+LOCAL_HEAD_SHA="$(git rev-parse HEAD)"
+REMOTE_HEAD_SHA="$(git rev-parse origin/main)"
+[[ "$LOCAL_HEAD_SHA" == "$REMOTE_HEAD_SHA" ]] || {
+  print -u2 "local HEAD ($LOCAL_HEAD_SHA) differs from origin/main ($REMOTE_HEAD_SHA); push first"
+  exit 1
+}
+EXPECTED_HEAD_SHA="$REMOTE_HEAD_SHA"
 OLD_MAX_RUN_ID="$(gh run list --workflow mirror-release-to-gitee.yml --limit 1 \
   --json databaseId --jq '.[0].databaseId // 0' 2>/dev/null || print 0)"
 
@@ -77,9 +85,9 @@ RUN_ID=""
 for _ in {1..30}; do
   sleep 5
   RUN_ID="$(gh run list --workflow mirror-release-to-gitee.yml --limit 30 \
-    --json databaseId,event,createdAt,headSha 2>/dev/null \
-    | jq -r --arg started "$DISPATCH_STARTED" --arg sha "$EXPECTED_HEAD_SHA" --arg old "$OLD_MAX_RUN_ID" \
-      '.[] | select(.event=="workflow_dispatch") | select(.createdAt >= $started) | select(.headSha == $sha) | select(.databaseId|tostring != $old) | .databaseId' \
+    --json databaseId,event,headSha 2>/dev/null \
+    | jq -r --arg sha "$EXPECTED_HEAD_SHA" --arg old "$OLD_MAX_RUN_ID" \
+      '.[] | select(.event=="workflow_dispatch") | select(.headSha == $sha) | select(.databaseId > ($old | tonumber)) | .databaseId' \
     | head -n 1 || true)"
   [[ -n "$RUN_ID" ]] && break
 done

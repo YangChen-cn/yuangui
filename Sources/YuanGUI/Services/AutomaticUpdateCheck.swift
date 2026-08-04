@@ -306,6 +306,11 @@ final class AutomaticUpdateCheckCoordinator {
         }
         markAutomaticAttempt()
         do {
+            // Capture the source revision before the check: if the user
+            // switches the pinned update source while this slow check is in
+            // flight, the store bumps the revision and rejects the stale
+            // result at commit time.
+            let sourceRevision = store.updateSourceRevision
             let result = try await checker.checkForUpdate(mode: .automatic)
             guard !Task.isCancelled, !isStopped else { return }
             switch result {
@@ -315,7 +320,11 @@ final class AutomaticUpdateCheckCoordinator {
             case .available(let release, let notes):
                 markSuccessfulAutomaticCheck()
                 log("update.auto.check.available")
-                guard store.commitAutomaticUpdate(release: release, notes: notes) else {
+                guard store.commitAutomaticUpdate(
+                    release: release,
+                    notes: notes,
+                    expectedSourceRevision: sourceRevision
+                ) else {
                     log("update.auto.skipped.busy")
                     return
                 }

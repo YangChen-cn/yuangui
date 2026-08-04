@@ -108,11 +108,12 @@ VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/release.sh
 It packages the DMG, creates or completes the GitHub Release with the three
 assets, runs the local Gitee upload, dispatches and waits for the mirror
 workflow, and verifies both raw manifests. It never edits sources or
-repository configuration. Before dispatch it records the current time, the
-main HEAD SHA, and the newest existing run id, and afterwards only accepts a
-run whose `createdAt` is at or after the dispatch time, whose `headSha` equals
-that HEAD, and whose id is newer — so it can never watch a stale run while the
-new one is still appearing in the run list.
+repository configuration. Before dispatch it fetches `origin/main` and stops
+unless the local HEAD is pushed; afterwards it only accepts a run whose event
+is `workflow_dispatch`, whose `headSha` equals that pushed HEAD, and whose
+`databaseId` is greater than the newest run id seen before dispatch (run ids
+are monotonic, so the selection never depends on the local clock and can
+never pick a stale run while the new one is still appearing in the list).
 
 Configure the repository secret `GITEE_TOKEN` with permission to create a
 Gitee release and update the mirrored repository.
@@ -124,11 +125,18 @@ uploads, while the same upload from a normal network takes seconds. The DMG is
 therefore uploaded locally, and the workflow reuses the verified asset. The
 workflow's own `ensure-asset` call remains only as a fallback when the asset
 is missing; each round is bounded to 300 seconds so failures surface fast.
-Both callers invoke the same `script/gitee_release_assets.sh`, which
-keeps exactly one byte-identical asset per name and deletes every other
-same-name entry (Gitee allows duplicate asset names, and the release-detail
-API omits asset ids — reads and deletes go through `attach_files`), then
-uploads only when no asset matches.
+Both callers invoke the same `script/gitee_release_assets.sh`, which keeps
+exactly one byte-identical asset per name and deletes every other same-name
+entry (Gitee allows duplicate asset names, and the release-detail API omits
+asset ids — reads and deletes go through `attach_files`), then uploads only
+when no asset matches. Success requires a re-listed, re-verified exactly-one
+state; a successful third upload still gets a final read-only verification,
+and deletion failures are retried and then fatal with the undeleted ids
+reported. Release lookup reads the HTTP status explicitly: Gitee reports a
+missing tag as HTTP 200 with a `null` body (the only "may create" case);
+every other status or a network failure aborts instead of being guessed as
+missing. The script's stdout carries only machine-readable results; logs go
+to stderr, so `RELEASE_ID="$(... ensure-release ...)"` stays a pure id.
 
 For a CLI release, the required asset upload is equivalent to:
 

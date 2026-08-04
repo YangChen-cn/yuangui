@@ -1433,6 +1433,11 @@ final class AppUpdateStore: ObservableObject {
     @Published private(set) var latestUpdate: AvailableUpdate?
     @Published private(set) var latestUpdateNotes: String?
     @Published private(set) var updateSourcePreference: UpdateSourcePreference = .automatic
+    /// Bumped on every source-preference switch. An automatic check captures
+    /// the revision when it starts and passes it back at commit time; a
+    /// mismatch means the check began under an older source and its result
+    /// must be discarded instead of overwriting the newer check's outcome.
+    private(set) var updateSourceRevision: UInt64 = 0
     private let service: AppUpdateService
     private let checking: UpdateChecking
     private let defaults: UserDefaults
@@ -1460,6 +1465,7 @@ final class AppUpdateStore: ObservableObject {
         guard !isBusy else { return }
         updateSourcePreference = preference
         defaults.set(preference.rawValue, forKey: UpdateSourcePreference.storageKey)
+        updateSourceRevision += 1
         // The previous check result belongs to the old source and may lack
         // the new source's asset; installing it under the new preference
         // would fail with noCompatibleAsset. Discard the stale result and
@@ -1529,9 +1535,17 @@ final class AppUpdateStore: ObservableObject {
     /// moving the store through `.checking` or surfacing an error. Returns
     /// false when a manual check or install is already in flight, so the
     /// coordinator stays quiet instead of fighting the other operation.
+    /// `expectedSourceRevision` must equal `updateSourceRevision`: a check
+    /// that started before a source-preference switch reports a stale
+    /// result and is discarded.
     @discardableResult
-    func commitAutomaticUpdate(release: AvailableUpdate, notes: String?) -> Bool {
+    func commitAutomaticUpdate(
+        release: AvailableUpdate,
+        notes: String?,
+        expectedSourceRevision: UInt64
+    ) -> Bool {
         guard !isBusy else { return false }
+        guard expectedSourceRevision == updateSourceRevision else { return false }
         latestUpdate = release
         latestUpdateNotes = notes
         state = .available

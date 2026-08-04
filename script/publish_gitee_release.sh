@@ -52,4 +52,5 @@ GITEE_OWNER="$GITEE_OWNER" GITEE_REPO="$GITEE_REPO" GITEE_TOKEN="$GITEE_TOKEN" \
   "$(stat -f '%z' "$DMG.sha256")" \
   "$(shasum -a 256 "$DMG.sha256" | awk '{print $1}')"
 
-print "Done. Gitee release: $API/releases/$release_id"
+GITEE_RELEASE_URL="https://gitee.com/$GITEE_OWNER/$GITEE_REPO/releases/tag/$TAG"
+print "Done. Gitee release: $GITEE_RELEASE_URL"

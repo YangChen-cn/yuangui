@@ -827,6 +827,52 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(modes, [.manual, .manual])
     }
 
+    @MainActor
+    func testStaleAutomaticCommitIsDiscardedAfterSourceSwitch() async {
+        let suite = "AppUpdateStoreRevision-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // The re-check after a source switch reports up-to-date, so the
+        // stale automatic commit is only detectable if it is discarded.
+        let checker = StubUpdateChecker(result: .success(.upToDate(makeRelease("2.7.1"))))
+        let store = AppUpdateStore(checking: checker, defaults: defaults)
+
+        // An automatic check started under revision 0 commits successfully.
+        XCTAssertTrue(store.commitAutomaticUpdate(
+            release: makeRelease("99.9.9"),
+            notes: nil,
+            expectedSourceRevision: 0
+        ))
+        XCTAssertEqual(store.state, .available)
+        XCTAssertEqual(store.latestUpdate?.version, "99.9.9")
+
+        // The user pins a source: the store clears the stale result, bumps
+        // the revision, and re-checks (ending up-to-date).
+        store.setUpdateSourcePreference(.gitee)
+        XCTAssertEqual(store.updateSourceRevision, 1)
+        _ = await waitUntil { store.state == .upToDate }
+        XCTAssertEqual(store.latestUpdate?.version, "2.7.1")
+
+        // The old automatic result arrives late under revision 0: it must be
+        // discarded, leaving the newer up-to-date state untouched.
+        XCTAssertFalse(store.commitAutomaticUpdate(
+            release: makeRelease("99.9.9"),
+            notes: nil,
+            expectedSourceRevision: 0
+        ))
+        XCTAssertEqual(store.state, .upToDate)
+        XCTAssertEqual(store.latestUpdate?.version, "2.7.1")
+
+        // A commit under the current revision still works.
+        XCTAssertTrue(store.commitAutomaticUpdate(
+            release: makeRelease("99.9.9"),
+            notes: nil,
+            expectedSourceRevision: store.updateSourceRevision
+        ))
+        XCTAssertEqual(store.state, .available)
+    }
+
     private func runGitHubSlowDownloadFallsBackToGiteeAndCaches() async throws {
         let preparer = FakeAssetPreparer(results: [
             .github: .downloadTooSlow,
@@ -2151,7 +2197,7 @@ final class AutomaticUpdateTests: XCTestCase {
 
     func testAutomaticCheckSkippedWhileStoreIsBusy() async {
         let store = AppUpdateStore()
-        store.commitAutomaticUpdate(release: makeRelease("99.9.9"), notes: nil)
+        store.commitAutomaticUpdate(release: makeRelease("99.9.9"), notes: nil, expectedSourceRevision: store.updateSourceRevision)
         store.installLauncher = { _ in }
         store.installLatest() // moves state to .downloading synchronously
 
@@ -2419,7 +2465,7 @@ final class AutomaticUpdateTests: XCTestCase {
         let store = AppUpdateStore()
         var installCount = 0
         store.installLauncher = { _ in installCount += 1 }
-        store.commitAutomaticUpdate(release: makeRelease(currentVersion, build: currentBuild + 1), notes: nil)
+        store.commitAutomaticUpdate(release: makeRelease(currentVersion, build: currentBuild + 1), notes: nil, expectedSourceRevision: store.updateSourceRevision)
         store.installLatest()
         _ = await waitUntil { store.state == .installing }
         XCTAssertEqual(installCount, 1)
@@ -2430,7 +2476,7 @@ final class AutomaticUpdateTests: XCTestCase {
         let store2 = AppUpdateStore()
         var installCount2 = 0
         store2.installLauncher = { _ in installCount2 += 1 }
-        store2.commitAutomaticUpdate(release: makeRelease(currentVersion, build: currentBuild), notes: nil)
+        store2.commitAutomaticUpdate(release: makeRelease(currentVersion, build: currentBuild), notes: nil, expectedSourceRevision: store2.updateSourceRevision)
         store2.installLatest()
         try? await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(installCount2, 0)
@@ -2441,7 +2487,7 @@ final class AutomaticUpdateTests: XCTestCase {
         let store = AppUpdateStore()
         var installCount = 0
         store.installLauncher = { _ in installCount += 1 }
-        store.commitAutomaticUpdate(release: makeRelease("99.9.9"), notes: nil)
+        store.commitAutomaticUpdate(release: makeRelease("99.9.9"), notes: nil, expectedSourceRevision: store.updateSourceRevision)
 
         store.installLatest()
         store.installLatest() // second click is ignored while the first runs
