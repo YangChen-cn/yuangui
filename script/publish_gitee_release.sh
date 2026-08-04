@@ -56,36 +56,44 @@ fi
 print "Gitee release id=$release_id"
 
 # 2. 上传并校验一个资产；已存在且字节匹配则复用，绝不重复上传。
+# The release-detail API returns assets without their id, so all reads and
+# deletes go through the attach_files endpoint which carries id + size.
 asset_exists_and_matches() {
   local name="$1" expected_size="$2" expected_sha="$3"
-  local url tmp actual_size actual_sha
-  url="$(gitee_get "releases/$release_id?access_token=$GITEE_TOKEN" | \
-    jq -r --arg name "$name" '(.assets // [])[] | select(.name == $name) | (.browser_download_url // .url // empty)' | \
-    head -n 1)"
-  [[ -n "$url" ]] || return 1
-  tmp="$(mktemp)"
-  curl --silent --show-error --fail --location \
-    --connect-timeout 20 --max-time 300 \
-    "$url" --output "$tmp" || { rm -f "$tmp"; return 1 }
-  actual_size="$(stat -f '%z' "$tmp")"
-  actual_sha="$(shasum -a 256 "$tmp" | awk '{print $1}')"
-  rm -f "$tmp"
-  [[ "$actual_size" == "$expected_size" && "$actual_sha" == "$expected_sha" ]]
+  local urls url tmp actual_size actual_sha
+  # Gitee allows duplicate asset names, so iterate every matching asset and
+  # accept the first one whose bytes match; never judge by the first entry.
+  urls="$(gitee_get "releases/$release_id/attach_files?access_token=$GITEE_TOKEN" | \
+    jq -r --arg name "$name" '.[] | select(.name == $name) | (.browser_download_url // .url // empty)')"
+  while IFS= read -r url; do
+    [[ -n "$url" ]] || continue
+    tmp="$(mktemp)"
+    curl --silent --show-error --fail --location \
+      --connect-timeout 20 --max-time 300 \
+      "$url" --output "$tmp" || { rm -f "$tmp"; continue }
+    actual_size="$(stat -f '%z' "$tmp")"
+    actual_sha="$(shasum -a 256 "$tmp" | awk '{print $1}')"
+    rm -f "$tmp"
+    if [[ "$actual_size" == "$expected_size" && "$actual_sha" == "$expected_sha" ]]; then
+      return 0
+    fi
+  done <<< "$urls"
+  return 1
 }
 
 
 remove_asset() {
   local name="$1" id
-  id="$(gitee_get "releases/$release_id?access_token=$GITEE_TOKEN" | \
-    jq -r --arg name "$name" '(.assets // [])[] | select(.name == $name) | .id // empty' | \
-    head -n 1)"
-  [[ -n "$id" ]] || return 0
-  print "Removing stale Gitee asset $name"
-  curl --silent --show-error --fail \
-    --connect-timeout 15 --max-time 60 \
-    --request DELETE \
-    --data-urlencode "access_token=$GITEE_TOKEN" \
-    "$API/releases/$release_id/attach_files/$id" >/dev/null
+  # Remove every duplicate with this name, not just the first one.
+  for id in $(gitee_get "releases/$release_id/attach_files?access_token=$GITEE_TOKEN" | \
+    jq -r --arg name "$name" '.[] | select(.name == $name) | .id // empty'); do
+    print "Removing stale Gitee asset $name ($id)"
+    curl --silent --show-error --fail \
+      --connect-timeout 15 --max-time 60 \
+      --request DELETE \
+      --data-urlencode "access_token=$GITEE_TOKEN" \
+      "$API/releases/$release_id/attach_files/$id" >/dev/null
+  done
 }
 
 upload_with_verify() {
