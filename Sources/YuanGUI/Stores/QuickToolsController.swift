@@ -13,10 +13,10 @@ final class QuickToolsController: ObservableObject {
     @Published private(set) var message: String?
     @Published private(set) var isCapturing = false
 
-    /// Reports when a screenshot capture session actually starts (any purpose).
-    /// The parameter is true for screenshot translation, false for region edit.
-    /// Used for lightweight local feature-usage tracking.
-    var onCaptureSessionStarted: ((Bool) -> Void)?
+    /// Emitted from the actual execution point of a quick tool, so every entry
+    /// (hotkey, menu bar, pet, dashboard, settings page) records usage the same
+    /// way. Used for lightweight local feature-usage tracking.
+    var onQuickToolUsed: ((QuickToolAction) -> Void)?
 
     /// Reports when a started capture session ends (any purpose). `true` means
     /// an image was actually captured; `false` means the user cancelled or an
@@ -142,7 +142,7 @@ final class QuickToolsController: ObservableObject {
         captureSessionDidEnd = false
         isCapturing = true
         message = nil
-        onCaptureSessionStarted?(purpose == .translate)
+        onQuickToolUsed?(purpose == .translate ? .screenshotTranslation : .regionScreenshot)
         selectionController.begin { [weak self] result in
             guard let self else { return }
             switch result {
@@ -166,6 +166,7 @@ final class QuickToolsController: ObservableObject {
     }
 
     func translateSelection() {
+        onQuickToolUsed?(.translateSelection)
         Task { [weak self] in
             guard let self else { return }
             do {

@@ -137,6 +137,7 @@ final class AppRuntime {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var finderExtensionObservation: AnyCancellable?
     private var focusUsedObservation: AnyCancellable?
+    private var musicUsedObservation: AnyCancellable?
     private var onboardingStartTask: Task<Void, Never>?
 
     func start() {
@@ -145,13 +146,29 @@ final class AppRuntime {
         externalAudioInterruption.start()
         updateCoordinator.start()
         guideCoordinator.start()
-        quickTools.onCaptureSessionStarted = { [weak self] isTranslation in
-            guard isTranslation else { return }
-            self?.guideCoordinator.recordFeatureUsed(.screenshotTranslation)
+        // Usage is recorded at the feature's own execution point, not at any
+        // single UI entry, so hotkeys, the menu bar, the pet, the dashboard and
+        // the settings page all count the same way.
+        quickTools.onQuickToolUsed = { [weak self] action in
+            switch action {
+            case .screenshotTranslation:
+                self?.guideCoordinator.recordFeatureUsed(.screenshotTranslation)
+            case .translateSelection:
+                self?.guideCoordinator.recordFeatureUsed(.selectionTranslation)
+            case .regionScreenshot:
+                break
+            }
         }
         quickTools.onCaptureSessionEnded = { [weak self] completed in
             self?.guideCoordinator.handleToolSessionEnded(completed)
         }
+        musicUsedObservation = music.playback.$state
+            .removeDuplicates()
+            .sink { [weak self] state in
+                if state.isPlaying {
+                    self?.guideCoordinator.recordFeatureUsed(.music)
+                }
+            }
         finderExtensionObservation = finderExtension.$isEnabled
             .removeDuplicates()
             .sink { [weak self] enabled in
@@ -192,7 +209,8 @@ final class AppRuntime {
         onboardingStartTask = nil
         finderExtensionObservation = nil
         focusUsedObservation = nil
-        quickTools.onCaptureSessionStarted = nil
+        musicUsedObservation = nil
+        quickTools.onQuickToolUsed = nil
         quickTools.onCaptureSessionEnded = nil
         guideCoordinator.stop()
         updateCoordinator.stop()
@@ -387,7 +405,6 @@ final class WindowCoordinator: NSObject {
             maintenance.selectTab(tab)
             showMaintenance()
         case .music:
-            guide.recordFeatureUsed(.music)
             dashboardController?.hide()
             DispatchQueue.main.async { [weak self] in self?.showMusic() }
         case .diary:
@@ -411,9 +428,7 @@ final class WindowCoordinator: NSObject {
         switch route {
         case .regionScreenshot: _ = quickTools.beginRegionScreenshot()
         case .screenshotTranslation: _ = quickTools.beginScreenshotTranslation()
-        case .translateSelection:
-            guide.recordFeatureUsed(.selectionTranslation)
-            quickTools.translateSelection()
+        case .translateSelection: quickTools.translateSelection()
         }
     }
 

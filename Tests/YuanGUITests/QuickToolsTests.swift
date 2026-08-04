@@ -5,7 +5,31 @@ import ImageIO
 import XCTest
 @testable import YuanGUI
 
+@MainActor
+private final class FailingSelectedTextProvider: SelectedTextProviding {
+    func selectedText(promptForPermission: Bool) async throws -> TranslationTargetSnapshot {
+        throw CancellationError()
+    }
+}
+
 final class QuickToolsTests: XCTestCase {
+    @MainActor
+    func testQuickToolUsageIsReportedFromExecutionPoint() {
+        let controller = QuickToolsController(
+            selectedTextProvider: FailingSelectedTextProvider(),
+            aiSettings: nil,
+            petTranslationEvents: nil
+        )
+        var recorded: [QuickToolAction] = []
+        controller.onQuickToolUsed = { recorded.append($0) }
+
+        controller.translateSelection()
+
+        // 记录发生在功能执行点，与入口（快捷键/菜单栏/桌宠/Dashboard/设置）
+        // 无关，因此任何入口都能统一记录使用。
+        XCTAssertEqual(recorded, [.translateSelection])
+    }
+
     @MainActor
     func testTypedAppRoutingPreservesRouteParameters() {
         var opened: [AppRoute] = []
