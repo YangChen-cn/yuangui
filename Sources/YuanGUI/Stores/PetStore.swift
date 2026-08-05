@@ -77,6 +77,7 @@ final class PetStore: ObservableObject {
     private var toastToken = UUID()
     private var recentChatterIDs: [String: [String]] = [:]
     private var batteryAlertLevel: BatteryAlertLevel = .normal
+    private var dropInteractionActive = false
 
     /// The persisted lock preference, softened by a runtime-only temporary
     /// unlock. UI that decides interactivity should consult this instead of
@@ -343,6 +344,10 @@ final class PetStore: ObservableObject {
         } else {
             dismissAmbientMessage()
         }
+    }
+
+    func setDropInteractionActive(_ active: Bool) {
+        dropInteractionActive = active
     }
 
     func setAmbientChatterEnabled(_ enabled: Bool) {
@@ -673,7 +678,7 @@ final class PetStore: ObservableObject {
 
     func chooseIdleAction() {
         guard isPetPresented, idleAnimationEnabled, taskState == .idle,
-              !isChatting, activeSmartStates.isEmpty else { return }
+              !dropInteractionActive, !isChatting, activeSmartStates.isEmpty else { return }
         if petMotionEnabled {
             actionIndex = 0
             return
@@ -914,7 +919,8 @@ final class PetStore: ObservableObject {
         duration: TimeInterval = 8,
         chatterID: String? = nil
     ) {
-        guard isPetPresented, !isFocusActive, taskState == .idle, !isChatting else { return }
+        guard isPetPresented, !isFocusActive, taskState == .idle,
+              !dropInteractionActive, !isChatting else { return }
         let value = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         toastToken = UUID()
@@ -983,6 +989,7 @@ final class PetStore: ObservableObject {
     private func presentScheduledAmbientChatter() {
         guard !isFocusActive,
               taskState == .idle,
+              !dropInteractionActive,
               !isChatting,
               toast == nil,
               ambientMessage == nil else { return }
@@ -1006,6 +1013,7 @@ final class PetStore: ObservableObject {
               ambientChatterEnabled,
               weatherAnnouncementsEnabled,
               taskState == .idle,
+              !dropInteractionActive,
               !isChatting,
               toast == nil,
               ambientMessage == nil else { return }

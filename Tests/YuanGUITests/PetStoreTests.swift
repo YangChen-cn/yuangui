@@ -39,6 +39,38 @@ final class FakeDesktopIconManager: DesktopIconManaging {
 
 @MainActor
 final class PetStoreTests: XCTestCase {
+    func testDropInteractionSuppressesIdleAndAmbientBehavior() {
+        let suite = "PetStoreDropInteractionTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PetStore(
+            monitor: SystemMonitor(coordinator: MetricsCoordinator(readers: [])),
+            trashHandler: FakeTrashHandler(),
+            defaults: defaults,
+            startServices: false
+        )
+        store.setAmbientChatterEnabled(false)
+        store.setPetPresented(true)
+        store.setPetMotionEnabled(false)
+
+        store.chooseIdleAction()
+        let actionBeforeDrop = store.actionIndex
+
+        store.setDropInteractionActive(true)
+        store.chooseIdleAction()
+        store.showAmbientMessage("拖放期间不应显示")
+
+        XCTAssertEqual(store.actionIndex, actionBeforeDrop)
+        XCTAssertNil(store.ambientMessage)
+
+        store.setDropInteractionActive(false)
+        store.chooseIdleAction()
+        store.showAmbientMessage("拖放结束后恢复")
+
+        XCTAssertNotEqual(store.actionIndex, actionBeforeDrop)
+        XCTAssertEqual(store.ambientMessage, "拖放结束后恢复")
+    }
+
     func testTranslationActivityCannotDisplaceAnUrgentReminder() {
         let suite = "PetStoreTranslationUrgencyTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -62,6 +62,12 @@ struct PetSceneInteractiveLayer: View {
             reduceMotion ? nil : .easeOut(duration: 0.14),
             value: chatPresentation.keepsExpandedLayout
         )
+        .onChange(of: isDropTargeted) { _, targeted in
+            store.setDropInteractionActive(targeted)
+        }
+        .onDisappear {
+            store.setDropInteractionActive(false)
+        }
     }
 
     private func updateAdaptiveControlSide(_ providedWindow: PetPanel? = nil) {
@@ -329,6 +335,7 @@ struct PetSpriteLayer: View {
         }
         group.notify(queue: .main) {
             self.isDropTargeted = false
+            self.store.setDropInteractionActive(false)
             self.store.recycle(urls)
         }
         return true
