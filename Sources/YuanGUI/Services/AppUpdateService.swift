@@ -7,8 +7,8 @@ import Foundation
 enum AppVersionInfo {
     // Packaged builds receive these values from Info.plist; the fallback is
     // only used when the running bundle is missing its version keys.
-    static let fallbackVersion = "2.8.0"
-    static let fallbackBuild = "19"
+    static let fallbackVersion = "2.8.1"
+    static let fallbackBuild = "20"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -18,19 +18,19 @@ enum AppVersionInfo {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? fallbackBuild
     }
 
+    static let currentReleaseHighlightKeys = [
+        "release.2.8.1.finderMenuRework",
+        "release.2.8.1.newBlankFile",
+        "release.2.8.1.copySubmenu",
+        "release.2.8.1.terminalEditorOpen",
+        "release.2.8.1.liveDownloadProgress",
+        "release.2.8.1.slowDownloadSwitch",
+        "release.2.8.1.updateDecision",
+        "release.2.8.1.releasePipeline"
+    ]
+
     static var currentReleaseHighlights: [String] {
-        [
-            "release.2.8.0.translationSpeech",
-            "release.2.8.0.musicWindows",
-            "release.2.8.0.finderExtension",
-            "release.2.8.0.petOnboarding",
-            "release.2.8.0.petToolsMenu",
-            "release.2.8.0.featureTips",
-            "release.2.8.0.temporaryUnlock",
-            "release.2.8.0.captureContract",
-            "release.2.8.0.slowSwitch",
-            "release.2.8.0.sourcePreference"
-        ].map { AppLocalizer.string($0) }
+        currentReleaseHighlightKeys.map { AppLocalizer.string($0) }
     }
 
     /// The single update decision shared by the check and install paths:
@@ -379,6 +379,14 @@ struct UpdateDownloadProgress: Equatable, Sendable {
     var fractionCompleted: Double? {
         guard let totalBytes, totalBytes > 0 else { return nil }
         return min(max(Double(receivedBytes) / Double(totalBytes), 0), 1)
+    }
+
+    /// Bytes to display: never exceeds the known total, mirroring the
+    /// percentage clamp in `fractionCompleted` (a server can send more bytes
+    /// than the announced content length, and the size check then fails).
+    var displayReceivedBytes: Int64 {
+        guard let totalBytes, totalBytes > 0 else { return receivedBytes }
+        return min(receivedBytes, totalBytes)
     }
 }
 

@@ -3,6 +3,10 @@ import SwiftUI
 struct DashboardUpdateView: View {
     @ObservedObject var updater: AppUpdateStore
     @State private var showsPopover = false
+    /// Hides the Dashboard panel so it cannot float above the About window.
+    /// The default keeps previews and callers without a panel compiling.
+    var dismiss: () -> Void = {}
+    @Environment(\.appActions) private var appActions
 
     var body: some View {
         Button(action: presentUpdate) {
@@ -34,6 +38,17 @@ struct DashboardUpdateView: View {
 
     private func presentUpdate() {
         showsPopover = true
+    }
+
+    private func installUpdate() {
+        // Mirror the automatic update prompt: close the Dashboard panel and
+        // open Settings → About first so the real-time download progress
+        // stays visible, then start the install. With AppActions.disabled
+        // (previews, tests) the open is a no-op and the install still runs.
+        showsPopover = false
+        dismiss()
+        appActions.open(.settings(.about))
+        updater.installLatest()
     }
 
     private var subtitle: String {
@@ -79,7 +94,7 @@ struct DashboardUpdateView: View {
                 Button("重新检查", action: updater.check)
                     .disabled(updater.isBusy)
                 if updater.state == .available {
-                    Button("更新到 \(updater.latestUpdate?.version ?? "新版本")", action: updater.installLatest)
+                    Button("更新到 \(updater.latestUpdate?.version ?? "新版本")", action: installUpdate)
                         .buttonStyle(.borderedProminent)
                 }
             }

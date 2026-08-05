@@ -64,7 +64,7 @@ struct DashboardToolsView: View {
                     compact("设置", "快捷键与偏好", "gearshape", .system) {
                         launch(openSettings)
                     }
-                    DashboardUpdateView(updater: updater)
+                    DashboardUpdateView(updater: updater, dismiss: dismiss)
                 }
             }
             .padding(.vertical, 1)

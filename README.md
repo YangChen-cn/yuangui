@@ -23,7 +23,7 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The current stable release is `2.8.0`. This update adds native translation speech, a more reliable music window experience, a FinderSync context-menu extension, and makes the companion the entry point to the app: a first-launch walkthrough with real actions, a right-click tools menu, and one-time feature tips. See the [2.8.0 release notes](RELEASE_NOTES.md#280--native-translation-speech-and-more-reliable-music-windows) for details.
+The current stable release is `2.8.1`. This update reworks the Finder context menu (New Blank File, a Copy submenu, and remembered terminal/editor opening), adds real-time download progress with GitHub-first fallback in Settings → About, and hardens the release pipeline. See the [2.8.1 release notes](RELEASE_NOTES.md#281--finder-right-click-and-update-reliability-improvements) for details.
 
 ## Interface preview
 
@@ -80,7 +80,7 @@ git clone https://github.com/YangChen-cn/yuangui.git
 cd yuangui
 swift test
 ./script/build_and_run.sh --verify
-VERSION=2.7.2 BUILD=18 ./script/package_dmg.sh
+VERSION=2.8.1 BUILD=20 ./script/package_dmg.sh
 ```
 
 The run script builds and launches a verified app bundle. The package script creates and checks a DMG and prints its SHA-256. An ad-hoc signature is sufficient for local builds; Developer ID and notarization are optional.
@@ -119,7 +119,7 @@ YuanGUI supports English and Simplified Chinese. Open **Settings → General →
 
 ```bash
 swift test
-VERSION=2.7.2 BUILD=18 ./script/package_dmg.sh
+VERSION=2.8.1 BUILD=20 ./script/package_dmg.sh
 ```
 
 Tests cover system metrics, companion states, weather, AI services, music sources and local import, lyrics, translation layout, cleanup safety, settings persistence, and resource loading. The music suite also verifies publisher isolation and cancellation-safe shutdown with suspended services. GitHub Actions runs `swift test` for pushes and pull requests. A repeatable SwiftUI Instruments comparison is documented in [Music observation performance](docs/MUSIC_PERFORMANCE.md).

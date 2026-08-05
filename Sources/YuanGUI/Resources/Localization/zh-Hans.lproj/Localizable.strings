@@ -835,11 +835,7 @@
 "update.downloading.from" = "正在从 %@ 下载更新";
 "update.downloading.bytes" = "已下载 %@ / %@";
 "update.downloading.received" = "已下载 %@";
-"update.download.gitee.started" = "正在从 Gitee 下载更新";
-"update.download.gitee.failed" = "Gitee 下载失败，正在尝试 GitHub";
-"update.download.github.started" = "正在从 GitHub 下载更新";
-"update.download.checksumMismatch" = "下载的更新文件完整性校验失败";
-"update.installDescription" = "更新会优先尝试 Gitee，失败后回退到 GitHub；下载后校验应用标识、版本号和代码签名，再自动替换并重新打开 YuanGUI。";
+"update.installDescription" = "更新会优先从 GitHub 下载，下载持续缓慢或失败时回退到 Gitee；下载后校验应用标识、版本号和代码签名，再自动替换并重新打开 YuanGUI。";
 "检查更新" = "检查更新";
 "GitHub 项目主页" = "GitHub 项目主页";
 "在 GitHub 查看" = "在 GitHub 查看";
@@ -1448,6 +1444,14 @@
 "settings.featureTips.subtitle" = "桌宠会偶尔提醒尚未用过的小功能，每个功能最多提醒一次。";
 "guide.unlock.temporary" = "已临时解锁，退出引导后会恢复锁定";
 "guide.unlock.restored" = "已恢复锁定状态";
+"release.2.8.1.finderMenuRework" = "Finder 右键菜单重排为紧凑的原生布局：新建文件、剪切、粘贴、复制、在终端/编辑器中打开，不再有装饰性标题和多余间距。";
+"release.2.8.1.newBlankFile" = "新增“新建空白文件”，轻量原生命名弹窗支持 `config.json` 或 `main.swift` 这样的完整文件名，拒绝非法路径，并自动选择无冲突的新名称。";
+"release.2.8.1.copySubmenu" = "“复制”扩展为文件名、完整路径和终端安全参数三种选项，并支持多选。";
+"release.2.8.1.terminalEditorOpen" = "“在终端/编辑器中打开”会记住上次使用的应用；安装多个应用时会显示独立选择器，并标记当前默认项。";
+"release.2.8.1.liveDownloadProgress" = "设置 → 关于 新增实时下载进度：当前来源（GitHub 或 Gitee）、百分比和已下载字节；自动切换来源后进度条会从新来源重新开始。";
+"release.2.8.1.slowDownloadSwitch" = "修复持续慢速下载检测：改用真实的 10 秒滑动窗口，长时间被限速的 GitHub 下载仍能切换到对应的 Gitee 资产。";
+"release.2.8.1.updateDecision" = "更新检查与安装共用同一版本判定：同版本更高 Build 也视为更新；切换固定更新源会丢弃旧检查结果并重新检查。";
+"release.2.8.1.releasePipeline" = "加固发布流水线：Gitee 重复资产合并为一份并逐字节复核，校验失败不会删除不确定的资产，发布前要求 main 已推送且工作区干净。";
 "release.2.8.0.translationSpeech" = "为原文和译文加入 macOS 原生语音朗读，同一时间只朗读一侧，内容、目标语言或窗口变化时立即停止过期朗读。";
 "release.2.8.0.musicWindows" = "重做迷你播放器与完整播放器的窗口交接，点击封面即可打开完整播放器，并修复首次打开迷你播放器的生命周期竞态。";
 "release.2.8.0.finderExtension" = "新增原生 FinderSync 右键扩展：新建常用文本与 Office 文件、复制路径、在已安装的终端中打开文件夹、剪切粘贴。";

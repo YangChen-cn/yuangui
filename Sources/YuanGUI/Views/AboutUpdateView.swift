@@ -187,22 +187,47 @@ struct AboutUpdateView: View {
                 if let totalBytes = progress.totalBytes, totalBytes > 0 {
                     Text(AppLocalizer.format(
                         "update.downloading.bytes",
-                        Self.byteCount(progress.receivedBytes),
+                        Self.byteCount(progress.displayReceivedBytes),
                         Self.byteCount(totalBytes)
                     ))
                 } else {
                     Text(AppLocalizer.format(
                         "update.downloading.received",
-                        Self.byteCount(progress.receivedBytes)
+                        Self.byteCount(progress.displayReceivedBytes)
                     ))
                 }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .monospacedDigit()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(progressAccessibilityLabel(progress))
         } else {
             HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在下载 DMG…")) }
         }
+    }
+
+    /// One combined label so VoiceOver announces source, percentage, and
+    /// bytes together instead of separate unlabeled elements.
+    private func progressAccessibilityLabel(_ progress: UpdateDownloadProgress) -> String {
+        let source = AppLocalizer.format("update.downloading.from", progress.provider.displayName)
+        let bytes: String
+        if let totalBytes = progress.totalBytes, totalBytes > 0 {
+            bytes = AppLocalizer.format(
+                "update.downloading.bytes",
+                Self.byteCount(progress.displayReceivedBytes),
+                Self.byteCount(totalBytes)
+            )
+        } else {
+            bytes = AppLocalizer.format(
+                "update.downloading.received",
+                Self.byteCount(progress.displayReceivedBytes)
+            )
+        }
+        if let fraction = progress.fractionCompleted {
+            return "\(source), \(Int((fraction * 100).rounded()))%, \(bytes)"
+        }
+        return "\(source), \(bytes)"
     }
 
     private static func byteCount(_ bytes: Int64) -> String {

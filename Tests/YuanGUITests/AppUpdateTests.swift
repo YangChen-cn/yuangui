@@ -1429,6 +1429,22 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
+    func testDownloadProgressDisplayBytesClampsToTotal() {
+        // A server can send more bytes than the announced total; the display
+        // must clamp to the total, mirroring fractionCompleted.
+        let clamped = UpdateDownloadProgress(provider: .github, receivedBytes: 100, totalBytes: 80)
+        XCTAssertEqual(clamped.displayReceivedBytes, 80)
+        XCTAssertEqual(clamped.fractionCompleted, 1)
+
+        let normal = UpdateDownloadProgress(provider: .gitee, receivedBytes: 60, totalBytes: 80)
+        XCTAssertEqual(normal.displayReceivedBytes, 60)
+        XCTAssertEqual(normal.fractionCompleted, 0.75)
+
+        let unknownTotal = UpdateDownloadProgress(provider: .github, receivedBytes: 100, totalBytes: nil)
+        XCTAssertEqual(unknownTotal.displayReceivedBytes, 100)
+        XCTAssertNil(unknownTotal.fractionCompleted)
+    }
+
     func testDownloadProgressTrackerSlidingWindow() async {
         let clock = FakeClock(startingAt: Date(timeIntervalSince1970: 1_000))
         let tracker = DownloadProgressTracker(now: { clock.now() })
@@ -3027,6 +3043,19 @@ final class AutomaticUpdateTests: XCTestCase {
             String(format: tryUnwrap(english["update.downloading.bytes"]), "37.8 MB", "59.6 MB"),
             "Downloaded 37.8 MB of 59.6 MB"
         )
+    }
+
+    func testCurrentReleaseHighlightsExistInBothLanguages() {
+        let english = AppLocalizer.localizedValues(for: "en")
+        let chinese = AppLocalizer.localizedValues(for: "zh-Hans")
+        // A missing or mistyped highlight key renders as the raw key name on
+        // the About page (AppLocalizer falls back to the input), so every
+        // key of the current release must exist in both languages.
+        XCTAssertFalse(AppVersionInfo.currentReleaseHighlightKeys.isEmpty)
+        for key in AppVersionInfo.currentReleaseHighlightKeys {
+            XCTAssertNotNil(english[key], "Missing English highlight key: \(key)")
+            XCTAssertNotNil(chinese[key], "Missing Simplified Chinese highlight key: \(key)")
+        }
     }
 
     private func tryUnwrap(_ value: String?) -> String {

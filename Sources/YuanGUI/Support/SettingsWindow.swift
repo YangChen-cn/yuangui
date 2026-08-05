@@ -42,7 +42,8 @@ final class SettingsWindowController {
     func show(tab: SettingsTab) {
         selection.selectedTab = tab
         NSApp.activate(ignoringOtherApps: true)
-        window.center()
+        // Centered once at creation; re-showing must keep the user's
+        // position (the automatic prompt opens this window mid-download).
         window.makeKeyAndOrderFront(nil)
     }
 }

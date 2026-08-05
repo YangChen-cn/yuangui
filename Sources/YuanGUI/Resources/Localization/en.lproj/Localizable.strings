@@ -110,7 +110,6 @@
 "薄荷" = "Mint";
 "夜色" = "Midnight";
 "液态玻璃" = "Liquid Glass";
-"区域截图" = "Region Capture";
 "截图翻译" = "Screenshot Translation";
 "翻译所选文字" = "Translate Selected Text";
 "简体中文" = "Simplified Chinese";
@@ -805,7 +804,6 @@
 "maintenance.activity.trash" = "Trash %@";
 "maintenance.activity.summary" = "Success %ld · Skipped %ld · Failed %ld";
 "maintenance.activity.detail" = "%@: %@";
-"关于" = "About";
 "此版本更新内容" = "What's New";
 "about.version" = "Version %@ (%@)";
 "about.version.short" = "Version %@";
@@ -837,11 +835,7 @@
 "update.downloading.from" = "Downloading the update from %@";
 "update.downloading.bytes" = "Downloaded %@ of %@";
 "update.downloading.received" = "Downloaded %@";
-"update.download.gitee.started" = "Downloading the update from Gitee";
-"update.download.gitee.failed" = "The Gitee download failed. Trying GitHub";
-"update.download.github.started" = "Downloading the update from GitHub";
-"update.download.checksumMismatch" = "The downloaded update failed integrity verification";
-"update.installDescription" = "The update tries Gitee first and falls back to GitHub; after download it verifies app identity, version, and code signature before replacing and reopening YuanGUI.";
+"update.installDescription" = "The update downloads from GitHub first and falls back to Gitee when a download stays slow or fails; after download it verifies app identity, version, and code signature before replacing and reopening YuanGUI.";
 "检查更新" = "Check for Updates";
 "GitHub 项目主页" = "GitHub Project Page";
 "在 GitHub 查看" = "View on GitHub";
@@ -870,9 +864,7 @@
 "工具" = "Tools";
 "常用工具" = "Common Tools";
 "更多工具" = "More Tools";
-"区域截图" = "Capture Area";
 "截图翻译" = "Translate Screenshot";
-"划词翻译" = "Translate Selection";
 "清理屋" = "Cleanup House";
 "处理中" = "Processing";
 "设置" = "Settings";
@@ -898,7 +890,6 @@
 "退出元圭与 VCC" = "Quit YuanGUI";
 "打开设置" = "Open Settings";
 "刷新天气" = "Refresh Weather";
-"快捷工具" = "Quick Tools";
 "全局快捷键" = "Global Shortcuts";
 "区域截图" = "Region Capture";
 "保存文件夹" = "Save Folder";
@@ -1039,7 +1030,6 @@
 "手动模型名" = "Manual model name";
 "模型（可手动填写）" = "Model (manual entry allowed)";
 "修改会先应用到当前设置，点击主设置页的“保存”后才会持久保存。" = "Edits apply to the current settings first and persist only after you click Save on the main settings page.";
-"全局快捷键" = "Global Shortcuts";
 "点击快捷键框后录制新组合；Esc 取消录制。" = "Click a shortcut field to record a new combination; Esc cancels recording.";
 "屏幕录制权限已开启" = "Screen Recording permission is enabled";
 "尚未开启屏幕录制权限" = "Screen Recording permission is not enabled";
@@ -1454,6 +1444,14 @@
 "settings.featureTips.subtitle" = "The pet occasionally reminds you about features you haven't used yet, at most once per feature.";
 "guide.unlock.temporary" = "Unlocked temporarily; the lock returns when the walkthrough ends";
 "guide.unlock.restored" = "Lock restored";
+"release.2.8.1.finderMenuRework" = "Reworked the Finder right-click menu into a compact native layout: New File, Cut, Paste, Copy, Open in Terminal, and Open in Editor appear without decorative title rows or artificial spacing.";
+"release.2.8.1.newBlankFile" = "Added New Blank File with a lightweight native name prompt that accepts complete names such as config.json or main.swift, rejects invalid paths, and picks a collision-safe name.";
+"release.2.8.1.copySubmenu" = "Expanded Copy into File Name, Full Path, and shell-safe Terminal Argument options, including multi-selection support.";
+"release.2.8.1.terminalEditorOpen" = "Open in Terminal and Open in Editor remember the last used app; a separate chooser lists the installed terminals or editors and marks the current default.";
+"release.2.8.1.liveDownloadProgress" = "Added real-time download progress in Settings → About: the active source (GitHub or Gitee), percentage, and bytes downloaded; after an automatic source switch the bar restarts for the new source.";
+"release.2.8.1.slowDownloadSwitch" = "Fixed sustained-slow-download detection to use a true trailing 10-second window, so a long throttled GitHub transfer can still switch to the matching Gitee asset.";
+"release.2.8.1.updateDecision" = "Update checks and installation now share the same version-and-build decision: an equal version with a higher build is an update, and switching the pinned update source discards stale check results.";
+"release.2.8.1.releasePipeline" = "Strengthened the release pipeline: duplicate Gitee assets are reconciled to one byte-verified copy, failed verification never deletes an uncertain asset, and preflight requires a clean, pushed main.";
 "release.2.8.0.translationSpeech" = "Added native macOS speech synthesis for source and translated text; only one side speaks at a time and stale speech stops immediately.";
 "release.2.8.0.musicWindows" = "Rebuilt the mini-player and full-player window handoff around the real popover lifecycle; artwork opens the full player, and the first-open race is fixed.";
 "release.2.8.0.finderExtension" = "Added a native FinderSync right-click extension for creating common text and Office files, copying paths, opening folders in installed terminals, and cut/paste.";
