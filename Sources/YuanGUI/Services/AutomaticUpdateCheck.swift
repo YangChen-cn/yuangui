@@ -362,6 +362,11 @@ final class AutomaticUpdateCheckCoordinator {
                 self.installTriggered = true
                 self.pendingUpdate = nil
                 self.log("update.auto.prompt.install")
+                // The prompt is dismissed by its window controller before
+                // this handler runs. Open the About page first so the
+                // transfer stays visible there instead of running in the
+                // background behind a closed window.
+                self.showDetailsAction()
                 self.installAction()
             },
             onLater: { [weak self] in

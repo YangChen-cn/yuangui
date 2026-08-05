@@ -1147,6 +1147,196 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: destination), body)
     }
 
+    func testStreamDownloadReportsProgressAndFinalCompletion() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-ProgressDownload-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("update.dmg")
+        let url = URL(string: "https://updates.example.com/YuanGUI.dmg")!
+        // 100KB in 16KB chunks every 50ms: several marks land outside the
+        // 100ms snapshot throttle, so the callback sees real advancement.
+        let body = Data(repeating: 0xAB, count: 100 * 1024)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+        UpdateStreamURLProtocol.chunkSize = 16 * 1024
+        UpdateStreamURLProtocol.chunkInterval = 0.05
+
+        let collector = ProgressCollector()
+        let response = try await service.streamDownload(
+            URLRequest(url: url),
+            to: destination,
+            expectedBytes: Int64(body.count),
+            provider: .github,
+            progressHandler: { progress in
+                await collector.append(progress)
+            }
+        )
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try Data(contentsOf: destination), body)
+
+        let events = await collector.events
+        XCTAssertFalse(events.isEmpty, "The transfer must report progress")
+        XCTAssertEqual(events.first?.provider, .github)
+        XCTAssertEqual(events.first?.totalBytes, Int64(body.count))
+        for (previous, current) in zip(events, events.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(
+                current.receivedBytes,
+                previous.receivedBytes,
+                "Progress bytes must be monotonic"
+            )
+        }
+        // The final snapshot is emitted unconditionally: even when the
+        // throttle suppressed the last mark, the UI sees 100%.
+        XCTAssertEqual(events.last?.receivedBytes, Int64(body.count))
+        XCTAssertEqual(events.last?.fractionCompleted, 1.0)
+    }
+
+    func testStreamDownloadProgressCarriesProvider() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-ProviderProgress-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let body = Data("provider fixture".utf8)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+
+        let githubEvents = ProgressCollector()
+        _ = try await service.streamDownload(
+            URLRequest(url: URL(string: "https://updates.example.com/github.dmg")!),
+            to: directory.appendingPathComponent("github.dmg"),
+            expectedBytes: Int64(body.count),
+            provider: .github,
+            progressHandler: { await githubEvents.append($0) }
+        )
+        let giteeEvents = ProgressCollector()
+        _ = try await service.streamDownload(
+            URLRequest(url: URL(string: "https://updates.example.com/gitee.dmg")!),
+            to: directory.appendingPathComponent("gitee.dmg"),
+            expectedBytes: Int64(body.count),
+            provider: .gitee,
+            progressHandler: { await giteeEvents.append($0) }
+        )
+
+        let githubProviders = await githubEvents.events.allSatisfy { $0.provider == .github }
+        let giteeProviders = await giteeEvents.events.allSatisfy { $0.provider == .gitee }
+        XCTAssertTrue(githubProviders, "A GitHub asset download must report .github progress")
+        XCTAssertTrue(giteeProviders, "A Gitee asset download must report .gitee progress")
+    }
+
+    func testAutomaticFallbackRestartsProgressFromZero() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let policy = DownloadSourcePolicy(
+            minimumRateBytesPerSecond: 50 * 1024,
+            observationWindow: 1,
+            sampleInterval: 0.1
+        )
+        let service = AppUpdateService(
+            session: URLSession(configuration: configuration),
+            downloadSourcePolicy: policy
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-FallbackProgress-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+            UpdateStreamURLProtocol.urlOverrides = [:]
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        // GitHub: delivered at ~20KB/s so the sustained-slow monitor fires
+        // and aborts mid-file. Gitee: delivered immediately; its checksum is
+        // deliberately wrong so the prepared update fails deterministically
+        // right after the download instead of mounting a fake DMG.
+        let githubURL = URL(string: "https://updates.example.com/github.dmg")!
+        let giteeURL = URL(string: "https://updates.example.com/gitee.dmg")!
+        let githubBody = Data(repeating: 0xAC, count: 256 * 1024)
+        let giteeBody = Data(repeating: 0xAD, count: 64 * 1024)
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.urlOverrides = [
+            githubURL.absoluteString: UpdateStreamURLProtocol.URLDelivery(
+                body: githubBody, chunkSize: 8 * 1024, chunkInterval: 0.4
+            ),
+            giteeURL.absoluteString: UpdateStreamURLProtocol.URLDelivery(
+                body: giteeBody, chunkSize: 0, chunkInterval: 0
+            )
+        ]
+        let update = AvailableUpdate(
+            version: "99.9.9",
+            build: 17,
+            minimumSystemVersion: "15.0",
+            publishedAt: Date(timeIntervalSince1970: 1_754_000_000),
+            localizedHighlights: ["fixture"],
+            releasePageURL: URL(string: "https://github.com/YangChen-cn/yuangui/releases/tag/v99.9.9"),
+            assets: [
+                UpdateAsset(
+                    provider: .github,
+                    downloadURL: githubURL,
+                    sha256: String(repeating: "a", count: 64),
+                    size: Int64(githubBody.count)
+                ),
+                UpdateAsset(
+                    provider: .gitee,
+                    downloadURL: giteeURL,
+                    sha256: String(repeating: "b", count: 64),
+                    size: Int64(giteeBody.count)
+                )
+            ],
+            metadataSource: .manifest(
+                URL(string: "https://raw.githubusercontent.com/YangChen-cn/yuangui/main/updates/latest.json")!,
+                provider: .github
+            )
+        )
+
+        let collector = ProgressCollector()
+        do {
+            _ = try await service.prepare(update) { progress in
+                await collector.append(progress)
+            }
+            XCTFail("The mismatched Gitee checksum must stop the update")
+        } catch AppUpdateError.checksumMismatch {
+            let events = await collector.events
+            let githubEvents = events.filter { $0.provider == .github }
+            let giteeEvents = events.filter { $0.provider == .gitee }
+            XCTAssertFalse(githubEvents.isEmpty, "The GitHub attempt must report progress")
+            XCTAssertFalse(giteeEvents.isEmpty, "The Gitee fallback must report progress")
+            // All GitHub snapshots precede the first Gitee snapshot.
+            let firstGitee = events.firstIndex { $0.provider == .gitee } ?? events.count
+            let lastGithub = events.lastIndex { $0.provider == .github } ?? -1
+            XCTAssertLessThan(lastGithub, firstGitee, "Provider order must be .github then .gitee")
+            // GitHub was aborted mid-file; Gitee started fresh from a small
+            // byte count and ran to completion with its own total.
+            XCTAssertLessThan(githubEvents.last?.fractionCompleted ?? 1, 1)
+            XCTAssertLessThan(giteeEvents.first?.receivedBytes ?? 0, Int64(giteeBody.count))
+            XCTAssertEqual(giteeEvents.last?.receivedBytes, Int64(giteeBody.count))
+            XCTAssertEqual(giteeEvents.last?.fractionCompleted, 1.0)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testDownloadProgressTrackerSlidingWindow() async {
         let clock = FakeClock(startingAt: Date(timeIntervalSince1970: 1_000))
         let tracker = DownloadProgressTracker(now: { clock.now() })
@@ -1405,6 +1595,14 @@ private final class UpdateReleaseURLProtocol: URLProtocol {
 }
 
 private final class UpdateStreamURLProtocol: URLProtocol {
+    /// Per-URL delivery for mixed-speed scenarios (one slow source, one fast
+    /// mirror). When a URL is present here it wins over the static fields.
+    struct URLDelivery: Sendable {
+        var body: Data
+        var chunkSize: Int
+        var chunkInterval: TimeInterval
+    }
+
     nonisolated(unsafe) static var statusCode = 200
     nonisolated(unsafe) static var body = Data()
     /// When `chunkSize > 0`, the body is delivered in chunks of that size at
@@ -1412,6 +1610,7 @@ private final class UpdateStreamURLProtocol: URLProtocol {
     nonisolated(unsafe) static var chunkSize = 0
     nonisolated(unsafe) static var chunkInterval: TimeInterval = 0
     nonisolated(unsafe) static var stopCount = 0
+    nonisolated(unsafe) static var urlOverrides: [String: URLDelivery] = [:]
 
     private var deliveryTask: DispatchWorkItem?
 
@@ -1431,9 +1630,18 @@ private final class UpdateStreamURLProtocol: URLProtocol {
         }
 
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        let body = Self.body
-        let chunkSize = Self.chunkSize
-        let interval = Self.chunkInterval
+        let body: Data
+        let chunkSize: Int
+        let interval: TimeInterval
+        if let override = Self.urlOverrides[url.absoluteString] {
+            body = override.body
+            chunkSize = override.chunkSize
+            interval = override.chunkInterval
+        } else {
+            body = Self.body
+            chunkSize = Self.chunkSize
+            interval = Self.chunkInterval
+        }
         guard (200..<300).contains(Self.statusCode), !body.isEmpty else {
             client?.urlProtocolDidFinishLoading(self)
             return
@@ -1498,6 +1706,15 @@ private final class FakeClock: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         current = current.addingTimeInterval(interval)
+    }
+}
+
+/// Collects download progress snapshots from an async callback in call order.
+private actor ProgressCollector {
+    private(set) var events: [UpdateDownloadProgress] = []
+
+    func append(_ progress: UpdateDownloadProgress) {
+        events.append(progress)
     }
 }
 
@@ -2063,6 +2280,9 @@ final class AutomaticUpdateTests: XCTestCase {
         fixture.presenter.dismiss(choosingInstall: true)
 
         XCTAssertEqual(fixture.installCount.count, 1)
+        // Install from the automatic prompt opens the About page first so the
+        // download progress is visible there.
+        XCTAssertEqual(fixture.detailsCount.count, 1)
         XCTAssertTrue(fixture.logs.messages.contains("update.auto.prompt.install"))
     }
 
@@ -2560,6 +2780,88 @@ final class AutomaticUpdateTests: XCTestCase {
         _ = await waitUntil { store.state == .installing }
         XCTAssertEqual(installCount, 1)
         XCTAssertEqual(store.state, .installing)
+        XCTAssertNil(store.downloadProgress)
+    }
+
+    @MainActor
+    func testInstallLatestPublishesProgressAndClearsOnFailure() async throws {
+        let suite = "AppUpdateStoreProgress-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Real streamed download through the URLProtocol seam: the fixture
+        // body fails asset-size verification (expected 1024), so the install
+        // ends in .failed without touching the disk. The transfer is
+        // throttled so the published progress is observable: with immediate
+        // delivery the whole download, progress publication, and failure all
+        // complete between the test's polling intervals.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let store = AppUpdateStore(service: service, defaults: defaults)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+        }
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = Data(repeating: 0xAD, count: 64 * 1024)
+        UpdateStreamURLProtocol.chunkSize = 8 * 1024
+        UpdateStreamURLProtocol.chunkInterval = 0.05
+
+        store.commitAutomaticUpdate(
+            release: makeAvailableUpdate("99.9.9", provider: .github),
+            notes: nil,
+            expectedSourceRevision: store.updateSourceRevision
+        )
+        store.installLatest()
+        XCTAssertEqual(store.state, .downloading)
+        XCTAssertNil(store.downloadProgress)
+
+        let sawProgress = await waitUntil { store.downloadProgress != nil }
+        XCTAssertTrue(sawProgress, "The store must publish download progress")
+        let failed = await waitUntil {
+            if case .failed = store.state { return true }
+            return false
+        }
+        XCTAssertTrue(failed, "The size mismatch must fail the install")
+        XCTAssertNil(store.downloadProgress, "A failed install must clear progress")
+    }
+
+    func testAutomaticInstallOpensAboutPageBeforeStartingInstall() async {
+        var order: [String] = []
+        let suite = "AutomaticUpdateOrder-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let checker = StubUpdateChecker(
+            result: .success(.available(makeRelease("99.9.9"), notes: nil))
+        )
+        let store = AppUpdateStore(checking: checker, defaults: defaults)
+        let presenter = FakeUpdatePromptPresenter()
+        let coordinator = AutomaticUpdateCheckCoordinator(
+            checker: checker,
+            store: store,
+            presenter: presenter,
+            environment: FakeUpdatePromptEnvironment(),
+            networkStatus: FakeNetworkStatus(),
+            defaults: defaults,
+            startupDelay: .zero,
+            install: { order.append("install") },
+            showDetails: { order.append("details") }
+        )
+        defer { coordinator.stop() }
+
+        coordinator.runAutomaticCheckIfNeeded()
+        await coordinator.awaitCurrentCheck()
+        presenter.dismiss(choosingInstall: true)
+
+        // The About page must open before the install starts so the download
+        // progress is visible there instead of running in the background.
+        XCTAssertEqual(order, ["details", "install"])
     }
 
     // MARK: - Localization
@@ -2588,6 +2890,28 @@ final class AutomaticUpdateTests: XCTestCase {
         XCTAssertEqual(english["update.auto.prompt.install"], "Update Now")
         XCTAssertEqual(english["update.auto.prompt.later"], "Later")
         XCTAssertEqual(english["update.auto.prompt.details"], "View Details")
+    }
+
+    func testDownloadProgressKeysExistInBothLanguagesAndFormatInEnglish() {
+        let english = AppLocalizer.localizedValues(for: "en")
+        let chinese = AppLocalizer.localizedValues(for: "zh-Hans")
+        let keys = [
+            "update.downloading.from",
+            "update.downloading.bytes",
+            "update.downloading.received"
+        ]
+        for key in keys {
+            XCTAssertNotNil(english[key], "Missing English key: \(key)")
+            XCTAssertNotNil(chinese[key], "Missing Simplified Chinese key: \(key)")
+        }
+        XCTAssertEqual(
+            String(format: tryUnwrap(english["update.downloading.from"]), "GitHub"),
+            "Downloading the update from GitHub"
+        )
+        XCTAssertEqual(
+            String(format: tryUnwrap(english["update.downloading.bytes"]), "37.8 MB", "59.6 MB"),
+            "Downloaded 37.8 MB of 59.6 MB"
+        )
     }
 
     private func tryUnwrap(_ value: String?) -> String {

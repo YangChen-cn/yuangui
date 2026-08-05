@@ -834,6 +834,9 @@
 "update.auto.prompt.later" = "Later";
 "update.auto.prompt.details" = "View Details";
 "update.checking" = "Checking for updates…";
+"update.downloading.from" = "Downloading the update from %@";
+"update.downloading.bytes" = "Downloaded %@ of %@";
+"update.downloading.received" = "Downloaded %@";
 "update.download.gitee.started" = "Downloading the update from Gitee";
 "update.download.gitee.failed" = "The Gitee download failed. Trying GitHub";
 "update.download.github.started" = "Downloading the update from GitHub";

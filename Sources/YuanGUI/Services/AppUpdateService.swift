@@ -366,6 +366,27 @@ enum UpdateSourceAvailabilityError: Error, Equatable, Sendable {
     }
 }
 
+/// A snapshot of the DMG transfer, published to the UI. The provider is part
+/// of the model because an automatic GitHub → Gitee switch restarts the byte
+/// count from zero; the UI must show the new source and its own percentage
+/// instead of a misleading stale one. `totalBytes` is nil when the size is
+/// unknown (indeterminate progress).
+struct UpdateDownloadProgress: Equatable, Sendable {
+    let provider: UpdateAsset.Provider
+    let receivedBytes: Int64
+    let totalBytes: Int64?
+
+    var fractionCompleted: Double? {
+        guard let totalBytes, totalBytes > 0 else { return nil }
+        return min(max(Double(receivedBytes) / Double(totalBytes), 0), 1)
+    }
+}
+
+/// Receives download progress snapshots from the service. The handler is
+/// async so the service never blocks its writer on UI publishing; callers hop
+/// to their own actor (the store hops to MainActor).
+typealias UpdateDownloadProgressHandler = @Sendable (UpdateDownloadProgress) async -> Void
+
 struct PreparedAppUpdate: Sendable {
     let sourceApp: URL
     let targetApp: URL
@@ -924,7 +945,13 @@ actor AppUpdateService: UpdateChecking {
         return notes
     }
 
-    func prepare(_ update: AvailableUpdate) async throws -> PreparedAppUpdate {
+    /// `progress` receives transfer snapshots for every source attempt in
+    /// order (a fallback emits `.github` events, then `.gitee` events with the
+    /// byte count restarted). A nil handler skips emission entirely.
+    func prepare(
+        _ update: AvailableUpdate,
+        progress: UpdateDownloadProgressHandler? = nil
+    ) async throws -> PreparedAppUpdate {
         switch updateSourcePreference() {
         case .github:
             guard let githubAsset = update.assets.first(where: { $0.provider == .github }) else {
@@ -932,19 +959,22 @@ actor AppUpdateService: UpdateChecking {
             }
             AutomaticUpdateLog.log("update.download.github.pinned")
             // Pinned source: no slow-switch monitoring, no availability cache.
-            return try await prepare(asset: githubAsset, for: update)
+            return try await prepare(asset: githubAsset, for: update, progress: progress)
         case .gitee:
             guard let giteeAsset = update.assets.first(where: { $0.provider == .gitee }) else {
                 throw AppUpdateError.noCompatibleAsset
             }
             AutomaticUpdateLog.log("update.download.gitee.pinned")
-            return try await prepare(asset: giteeAsset, for: update)
+            return try await prepare(asset: giteeAsset, for: update, progress: progress)
         case .automatic:
-            return try await prepareAutomatic(update)
+            return try await prepareAutomatic(update, progress: progress)
         }
     }
 
-    private func prepareAutomatic(_ update: AvailableUpdate) async throws -> PreparedAppUpdate {
+    private func prepareAutomatic(
+        _ update: AvailableUpdate,
+        progress: UpdateDownloadProgressHandler?
+    ) async throws -> PreparedAppUpdate {
         let githubAsset = update.assets.first { $0.provider == .github }
         let giteeAsset = update.assets.first { $0.provider == .gitee }
         let manifestProvider = update.metadataSource.manifestProvider
@@ -970,7 +1000,8 @@ actor AppUpdateService: UpdateChecking {
             return try await prepareGiteeAssetFirst(
                 giteeAsset,
                 githubAsset: githubAsset,
-                update: update
+                update: update,
+                progress: progress
             )
         }
 
@@ -983,7 +1014,8 @@ actor AppUpdateService: UpdateChecking {
                 let prepared = try await prepare(
                     asset: githubAsset,
                     for: update,
-                    slowSpeedPolicy: giteeAsset != nil ? downloadSourcePolicy : nil
+                    slowSpeedPolicy: giteeAsset != nil ? downloadSourcePolicy : nil,
+                    progress: progress
                 )
                 githubDownloadUnavailableUntil = nil
                 AutomaticUpdateLog.log("update.download.verified")
@@ -998,7 +1030,7 @@ actor AppUpdateService: UpdateChecking {
                 }
                 AutomaticUpdateLog.log("update.download.gitee.fallback.started")
                 do {
-                    let prepared = try await prepare(asset: giteeAsset, for: update)
+                    let prepared = try await prepare(asset: giteeAsset, for: update, progress: progress)
                     if case .downloadTooSlow = error {
                         githubDownloadUnavailableUntil = Date()
                             .addingTimeInterval(Self.githubUnavailableCacheDuration)
@@ -1022,7 +1054,7 @@ actor AppUpdateService: UpdateChecking {
         guard let giteeAsset else { throw AppUpdateError.noCompatibleAsset }
         AutomaticUpdateLog.log("update.download.gitee.started")
         do {
-            let prepared = try await prepare(asset: giteeAsset, for: update)
+            let prepared = try await prepare(asset: giteeAsset, for: update, progress: progress)
             AutomaticUpdateLog.log("update.download.verified")
             return prepared
         } catch is UpdateSourceAvailabilityError {
@@ -1037,11 +1069,12 @@ actor AppUpdateService: UpdateChecking {
     private func prepareGiteeAssetFirst(
         _ giteeAsset: UpdateAsset,
         githubAsset: UpdateAsset?,
-        update: AvailableUpdate
+        update: AvailableUpdate,
+        progress: UpdateDownloadProgressHandler?
     ) async throws -> PreparedAppUpdate {
         AutomaticUpdateLog.log("update.download.gitee.started")
         do {
-            let prepared = try await prepare(asset: giteeAsset, for: update)
+            let prepared = try await prepare(asset: giteeAsset, for: update, progress: progress)
             AutomaticUpdateLog.log("update.download.verified")
             return prepared
         } catch is UpdateSourceAvailabilityError {
@@ -1051,7 +1084,7 @@ actor AppUpdateService: UpdateChecking {
             }
             AutomaticUpdateLog.log("update.download.github.fallback.started")
             do {
-                let prepared = try await prepare(asset: githubAsset, for: update)
+                let prepared = try await prepare(asset: githubAsset, for: update, progress: progress)
                 AutomaticUpdateLog.log("update.download.verified")
                 return prepared
             } catch is UpdateSourceAvailabilityError {
@@ -1098,17 +1131,15 @@ actor AppUpdateService: UpdateChecking {
         try? fileManager.removeItem(at: update.dmgURL.deletingLastPathComponent())
     }
 
-    private func prepare(asset: UpdateAsset, for update: AvailableUpdate) async throws -> PreparedAppUpdate {
-        try await prepare(asset: asset, for: update, slowSpeedPolicy: nil)
-    }
-
     /// `slowSpeedPolicy` enables sustained-slow detection during the body
     /// transfer. Only the GitHub-first path passes a policy (when a Gitee
     /// asset exists to fall back to); the reverse direction never monitors.
+    /// `progress` forwards every transfer snapshot with the asset's provider.
     private func prepare(
         asset: UpdateAsset,
         for update: AvailableUpdate,
-        slowSpeedPolicy: DownloadSourcePolicy?
+        slowSpeedPolicy: DownloadSourcePolicy? = nil,
+        progress: UpdateDownloadProgressHandler? = nil
     ) async throws -> PreparedAppUpdate {
         if let assetPreparer {
             return try await assetPreparer(asset, update)
@@ -1136,7 +1167,9 @@ actor AppUpdateService: UpdateChecking {
                 request,
                 to: dmgURL,
                 expectedBytes: asset.size,
-                slowSpeedPolicy: slowSpeedPolicy
+                slowSpeedPolicy: slowSpeedPolicy,
+                provider: asset.provider,
+                progressHandler: progress
             )
             try verifyDownloadedAsset(at: dmgURL, asset: asset)
             let mountPoint = try mount(dmgURL)
@@ -1162,7 +1195,9 @@ actor AppUpdateService: UpdateChecking {
         _ request: URLRequest,
         to destination: URL,
         expectedBytes: Int64? = nil,
-        slowSpeedPolicy: DownloadSourcePolicy? = nil
+        slowSpeedPolicy: DownloadSourcePolicy? = nil,
+        provider: UpdateAsset.Provider = .other,
+        progressHandler: UpdateDownloadProgressHandler? = nil
     ) async throws -> URLResponse {
         let session = self.session
         let (bytes, response) = try await withThrowingTaskGroup(
@@ -1206,6 +1241,21 @@ actor AppUpdateService: UpdateChecking {
         enum DownloadStreamEvent: Sendable {
             case writerFinished
         }
+        // The manifest's asset size is authoritative; the HTTP response's
+        // content length is the fallback when the caller has no expected
+        // size. When both are unknown the UI shows indeterminate progress.
+        let totalBytes: Int64? = expectedBytes ?? {
+            let length = response.expectedContentLength
+            return length >= 0 ? length : nil
+        }()
+        let reportProgress: @Sendable (Int64) async -> Void = { [provider, totalBytes, progressHandler] receivedBytes in
+            guard let progressHandler else { return }
+            await progressHandler(UpdateDownloadProgress(
+                provider: provider,
+                receivedBytes: receivedBytes,
+                totalBytes: totalBytes
+            ))
+        }
         do {
             try await withThrowingTaskGroup(of: DownloadStreamEvent?.self) { group in
                 defer { group.cancelAll() }
@@ -1213,6 +1263,10 @@ actor AppUpdateService: UpdateChecking {
                     var buffer = Data()
                     var bytesSinceProgressMark = 0
                     var totalBytesRead: Int64 = 0
+                    // Snapshot throttle: the slow/stall monitors keep their
+                    // own sampling, so this exists purely to keep SwiftUI
+                    // publishing near ~10 events per second.
+                    var lastUIProgressAt = Date.distantPast
                     buffer.reserveCapacity(64 * 1024)
                     for try await byte in bytes {
                         buffer.append(byte)
@@ -1225,6 +1279,11 @@ actor AppUpdateService: UpdateChecking {
                         if bytesSinceProgressMark >= 16 * 1024 {
                             await progress.markProgress(bytes: totalBytesRead)
                             bytesSinceProgressMark = 0
+                            let now = Date()
+                            if now.timeIntervalSince(lastUIProgressAt) >= 0.1 {
+                                lastUIProgressAt = now
+                                await reportProgress(totalBytesRead)
+                            }
                         }
                     }
                     // Publish the final byte count before the tail flush so a
@@ -1233,6 +1292,10 @@ actor AppUpdateService: UpdateChecking {
                     if !buffer.isEmpty {
                         try handle.write(contentsOf: buffer)
                     }
+                    // Final snapshot: even when the throttle suppressed the
+                    // last mark, the UI must see the completed transfer (100%
+                    // whenever the total is known).
+                    await reportProgress(totalBytesRead)
                     return DownloadStreamEvent.writerFinished
                 }
                 group.addTask {
@@ -1441,6 +1504,10 @@ final class AppUpdateStore: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var latestUpdate: AvailableUpdate?
     @Published private(set) var latestUpdateNotes: String?
+    /// Current DMG transfer snapshot, non-nil only while `.downloading`. A
+    /// fallback replaces it with the new provider's progress (bytes restarted
+    /// from zero); `.installing` and `.failed` clear it.
+    @Published private(set) var downloadProgress: UpdateDownloadProgress?
     @Published private(set) var updateSourcePreference: UpdateSourcePreference = .automatic
     /// Bumped on every source-preference switch. An automatic check captures
     /// the revision when it starts and passes it back at commit time; a
@@ -1564,17 +1631,29 @@ final class AppUpdateStore: ObservableObject {
         guard let release = latestUpdate, AppVersionInfo.isNewer(release) else { return }
         guard !isBusy else { return }
         state = .downloading
+        downloadProgress = nil
         Task {
             do {
                 if let installLauncher {
                     try await installLauncher(release)
+                    downloadProgress = nil
                     state = .installing
                     return
                 }
-                let prepared = try await service.prepare(release)
+                let prepared = try await service.prepare(release) { [weak self] progress in
+                    // The callback is non-isolated; hop to MainActor to touch
+                    // the published property. Binding the weak reference to a
+                    // local first keeps the nested closure capture immutable.
+                    let store = self
+                    await MainActor.run {
+                        store?.downloadProgress = progress
+                    }
+                }
+                downloadProgress = nil
                 state = .installing
                 guard await terminateForUpdate() else {
                     await service.discard(prepared)
+                    downloadProgress = nil
                     state = .failed(AppLocalizer.string("日记保存失败，更新安装已取消。"))
                     return
                 }
@@ -1586,6 +1665,7 @@ final class AppUpdateStore: ObservableObject {
                 }
                 NSApp.terminate(nil)
             } catch {
+                downloadProgress = nil
                 state = .failed(error.localizedDescription)
             }
         }

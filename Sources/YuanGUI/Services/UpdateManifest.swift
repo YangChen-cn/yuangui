@@ -25,6 +25,18 @@ struct UpdateAsset: Equatable, Sendable {
     let size: Int64?
 }
 
+extension UpdateAsset.Provider {
+    /// User-visible source name. Both providers are proper nouns, so no
+    /// localization is needed.
+    var displayName: String {
+        switch self {
+        case .github: return "GitHub"
+        case .gitee: return "Gitee"
+        case .other: return "Other"
+        }
+    }
+}
+
 struct AvailableUpdate: Equatable, Sendable {
     let version: String
     let build: Int?

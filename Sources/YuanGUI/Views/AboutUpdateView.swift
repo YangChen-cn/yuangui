@@ -153,7 +153,7 @@ struct AboutUpdateView: View {
             Label(AppLocalizer.format("about.releaseAvailable", updater.latestUpdate?.version ?? ""), systemImage: "arrow.down.circle.fill")
                 .foregroundStyle(.blue)
         case .downloading:
-            HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在下载 DMG…")) }
+            downloadProgressView
         case .installing:
             HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在准备安装，应用即将重启…")) }
         case .failed(let message):
@@ -162,6 +162,51 @@ struct AboutUpdateView: View {
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    @ViewBuilder
+    private var downloadProgressView: some View {
+        if let progress = updater.downloadProgress {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(AppLocalizer.format(
+                        "update.downloading.from",
+                        progress.provider.displayName
+                    ))
+                    Spacer(minLength: 12)
+                    if let fraction = progress.fractionCompleted {
+                        Text("\(Int((fraction * 100).rounded()))%")
+                            .font(.callout.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                }
+                // A nil value renders an indeterminate bar: when the total
+                // size is unknown the received count still shows.
+                ProgressView(value: progress.fractionCompleted)
+                    .progressViewStyle(.linear)
+                if let totalBytes = progress.totalBytes, totalBytes > 0 {
+                    Text(AppLocalizer.format(
+                        "update.downloading.bytes",
+                        Self.byteCount(progress.receivedBytes),
+                        Self.byteCount(totalBytes)
+                    ))
+                } else {
+                    Text(AppLocalizer.format(
+                        "update.downloading.received",
+                        Self.byteCount(progress.receivedBytes)
+                    ))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        } else {
+            HStack { ProgressView().controlSize(.small); Text(AppLocalizer.string("正在下载 DMG…")) }
+        }
+    }
+
+    private static func byteCount(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private func releaseNotes(_ body: String) -> some View {

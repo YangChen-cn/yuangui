@@ -832,6 +832,9 @@
 "update.auto.prompt.later" = "稍后";
 "update.auto.prompt.details" = "查看更新内容";
 "update.checking" = "正在检查更新…";
+"update.downloading.from" = "正在从 %@ 下载更新";
+"update.downloading.bytes" = "已下载 %@ / %@";
+"update.downloading.received" = "已下载 %@";
 "update.download.gitee.started" = "正在从 Gitee 下载更新";
 "update.download.gitee.failed" = "Gitee 下载失败，正在尝试 GitHub";
 "update.download.github.started" = "正在从 GitHub 下载更新";
