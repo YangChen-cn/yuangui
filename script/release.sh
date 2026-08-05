@@ -2,8 +2,12 @@
 set -euo pipefail
 
 # 一键发布稳定版本：
-#   打包 DMG → 创建 GitHub Release（三资产）→ 本地上传 Gitee → dispatch 镜像
-#   workflow → 等待完成 → 验证两个 raw manifest。
+#   打包 DMG → 创建 GitHub Release（三资产）→ 本地上传 Gitee → 本地生成并
+#   镜像 manifest → 验证两个 raw manifest。
+#
+# 所有涉及 Gitee 的步骤都在发布者本机执行（云 runner 连 Gitee 的大文件操作
+# 会挂起）：DMG 上传走 publish_gitee_release.sh，manifest 生成与双端镜像走
+# mirror_manifest_locally.sh。
 #
 # 前提（手动，机器不代做语义修改）：
 #   - AppVersionInfo / build_and_run.sh / README / RELEASE_NOTES / About 高亮
@@ -11,7 +15,7 @@ set -euo pipefail
 #   - 仓库 secret GITEE_TOKEN 可创建 Gitee release
 #
 # 用法：
-#   VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/release.sh
+#   VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/release.sh
 #
 # 脚本本身不修改任何源码或仓库配置；所有发布动作都是 gh/curl 调用。
 
@@ -75,32 +79,12 @@ print "== 3/5 publish to Gitee"
 VERSION="$VERSION" BUILD="$BUILD" GITEE_TOKEN="$GITEE_TOKEN" \
   ./script/publish_gitee_release.sh
 
-# 4. dispatch 镜像 workflow（复用已上传资产，生成并镜像 manifest）
-# 步骤 0 已校验 main 已推送且工作区干净（EXPECTED_HEAD_SHA 取自那里）。
-# run 筛选：event=workflow_dispatch、headSha 匹配、databaseId 大于 dispatch
-# 前的最大 id（单调递增，不依赖本机时钟）、displayTitle 匹配本版本的
-# tag/build（避免并发手动 dispatch 抓到别人的 run）。
-print "== 4/5 dispatch mirror workflow"
-EXPECTED_HEAD_SHA="$REMOTE_HEAD_SHA"
-OLD_MAX_RUN_ID="$(gh run list --workflow mirror-release-to-gitee.yml --limit 1 \
-  --json databaseId --jq '.[0].databaseId // 0' 2>/dev/null || print 0)"
-
-gh workflow run mirror-release-to-gitee.yml \
-  -f tag="$TAG" -f build="$BUILD" -f minimum_system_version=15.0
-
-RUN_ID=""
-for _ in {1..30}; do
-  sleep 5
-  RUN_ID="$(gh run list --workflow mirror-release-to-gitee.yml --limit 30 \
-    --json databaseId,event,headSha,displayTitle 2>/dev/null \
-    | jq -r --arg sha "$EXPECTED_HEAD_SHA" --arg old "$OLD_MAX_RUN_ID" --arg title "Mirror $TAG build $BUILD" \
-      '.[] | select(.event=="workflow_dispatch") | select(.headSha == $sha) | select(.databaseId > ($old | tonumber)) | select(.displayTitle == $title) | .databaseId' \
-    | head -n 1 || true)"
-  [[ -n "$RUN_ID" ]] && break
-done
-[[ -n "$RUN_ID" ]] || { print -u2 "could not find the dispatched workflow run"; exit 1 }
-print "waiting for run $RUN_ID"
-gh run watch "$RUN_ID" --exit-status
+# 4. 本地生成并镜像 manifest：Gitee 资产字节校验、双语高亮提取、防回退守卫、
+# manifest 生成/校验、提交推送 GitHub main、Gitee contents API 写入并轮询 raw
+# 一致。云 runner 连 Gitee 的大文件验证会挂起，全部步骤在发布者本机完成。
+print "== 4/5 mirror manifest locally"
+VERSION="$VERSION" BUILD="$BUILD" GITEE_TOKEN="$GITEE_TOKEN" \
+  ./script/mirror_manifest_locally.sh
 
 # 5. 验证两个 raw manifest 与 Gitee DMG
 print "== 5/5 verify raw manifests"

@@ -83,18 +83,20 @@ the manifest-and-mirror path for the verified Gitee repository
    release-note files as assets, and a `Build: N` line in the body. Prerelease
    tags and prerelease Releases are rejected from `latest.json`.
 4. Upload the DMG to Gitee from your machine:
-   `VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh`
+   `VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh`
    (creates or reuses the Gitee release, uploads DMG + `.sha256` sidecar with
    reuse-and-verify rules, prints the release URL). Asset handling is
-   delegated to `script/gitee_release_assets.sh`, the same script the mirror
-   workflow calls, so the two paths cannot drift.
-5. Dispatch the mirror workflow:
-   `gh workflow run mirror-release-to-gitee.yml -f tag=v2.8.0 -f build=19
-   -f minimum_system_version=15.0`. It verifies the Gitee bytes against the
-   GitHub Release, generates `updates/latest.json`, commits it to main, and
-   mirrors it to Gitee.
-6. Wait for the read-only Gitee repository mirror, then check both raw URLs
-   and compare their response body (see "Verify" below).
+   delegated to `script/gitee_release_assets.sh`.
+5. Generate and mirror the manifest from your machine:
+   `VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/mirror_manifest_locally.sh`
+   It verifies the local DMG against the GitHub Release asset digest, keeps
+   the Gitee DMG byte-identical (reusing the upload from step 4), extracts
+   the bilingual highlights from the two release-note files, refuses a true
+   downgrade unless `ALLOW_ROLLBACK=true`, generates and validates
+   `updates/latest.json`, commits it to GitHub main, writes it to Gitee
+   through the contents API, and polls the Gitee raw manifest until its bytes
+   match.
+6. Check both raw URLs and compare their response body (see "Verify" below).
 
 ### One-command alternative
 
@@ -102,32 +104,29 @@ After the manual version-switch commit, `script/release.sh` performs steps
 2–6:
 
 ```sh
-VERSION=2.8.0 BUILD=19 GITEE_TOKEN=xxx ./script/release.sh
+VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/release.sh
 ```
 
 It packages the DMG, creates or completes the GitHub Release with the three
-assets, runs the local Gitee upload, dispatches and waits for the mirror
-workflow, and verifies both raw manifests. It never edits sources or
+assets, runs the local Gitee upload, generates and mirrors the manifest
+locally, and verifies both raw manifests. It never edits sources or
 repository configuration. Step 0 — before any external side effect — fetches
 `origin/main` and stops unless the local HEAD is pushed and the working tree
 is clean, so a release is never built from uncommitted code and never left
-half-published. Afterwards it only accepts a run whose event is
-`workflow_dispatch`, whose `headSha` equals that pushed HEAD, whose
-`databaseId` is greater than the newest run id seen before dispatch (run ids
-are monotonic, so the selection never depends on the local clock), and whose
-`displayTitle` matches the workflow's `run-name` for this tag and build — so
-a concurrent manual dispatch of the same HEAD is never mistaken for our run.
+half-published.
 
 Configure the repository secret `GITEE_TOKEN` with permission to create a
 Gitee release and update the mirrored repository.
 
-### Why uploads run locally
+### Why everything Gitee-related runs locally
 
 GitHub Actions cloud runners can hang indefinitely on Gitee's large multipart
-uploads, while the same upload from a normal network takes seconds. The DMG is
-therefore uploaded locally, and the workflow reuses the verified asset. The
-workflow's own `ensure-asset` call remains only as a fallback when the asset
-is missing; each round is bounded to 300 seconds so failures surface fast.
+uploads, and the same flakiness affects the verification download of a large
+Gitee asset from the cloud runner (the mirror job got stuck on it repeatedly).
+The DMG upload, the byte verification, and the manifest mirror therefore all
+run from the publisher's machine, where Gitee is fast and reliable. The
+`ensure-asset` call reuses the verified asset; each round is bounded to 300
+seconds so failures surface fast.
 Both callers invoke the same `script/gitee_release_assets.sh`, which keeps
 exactly one byte-identical asset per name and deletes every other same-name
 entry (Gitee allows duplicate asset names, and the release-detail API omits
@@ -158,34 +157,29 @@ gh release upload "v$VERSION" \
   RELEASE_NOTES.zh-CN.md
 ```
 
-The workflow deliberately fails when either release-note asset is absent. It
-downloads the two files and derives each language's manifest highlights from
-the matching document, so a missing Chinese file cannot silently publish
-English text under `zh-Hans`.
+The mirror script deliberately fails when either release-note asset is absent
+on the GitHub Release. It derives each language's manifest highlights from
+the matching repository file, so a missing Chinese file cannot silently
+publish English text under `zh-Hans`.
 
-The mirror job runs on `ubuntu-latest`, triggered only by `workflow_dispatch`.
-(The GitHub Release event deliberately triggers nothing: the DMG upload runs
-on the publisher's machine, and a release-triggered run would race it; the
-push event only runs the `sync-manifest` job.) It downloads the exact GitHub
-DMG and both mandatory localized release-note assets, computes its SHA-256
-and size with Linux tools, reconciles that same file and its `.sha256`
-sidecar with Gitee through the shared asset script, downloads the Gitee DMG
-again, and requires the size and SHA-256 to match before generating
-`updates/latest.json`. It does not mount or inspect the DMG bundle in CI; the
-app's existing installation checks remain responsible for Bundle ID,
-version/build, minimum macOS version, and code-signature validation. A
-dispatch must provide `build` and may provide `minimum_system_version`; an
-interrupted same-version repair can reuse those values from the current
-manifest. The workflow then commits the manifest to GitHub `main` and
-requests a Gitee mirror refresh. If the repository mirror is not configured,
-it uses the Gitee contents API to create or update that one manifest file. It
-then compares the Gitee raw response with the GitHub file.
-All release and manual runs share one non-canceling concurrency group. A
-candidate lower than the current stable manifest is refused unless
-`allow_rollback` is explicitly enabled for a manual run; an equal version is
-allowed so interrupted uploads and manifest repairs can be retried idempotently.
-For an uncertain Gitee upload response, the workflow re-reads the release and
-verifies any same-named asset before retrying, for up to three upload rounds.
+The GitHub Actions workflow now has no release job at all: the DMG upload and
+the manifest mirror run on the publisher's machine, and a release-triggered
+run would race them. The push event only runs the `sync-manifest` job, which
+keeps a later manual edit of `updates/latest.json` on GitHub main in sync
+with Gitee through the contents API — a small JSON write that is reliable
+even from a cloud runner. The mirror script verifies the local DMG bytes
+against the GitHub Release asset digest (no download), reconciles the DMG and
+its `.sha256` sidecar with Gitee through the shared asset script, downloads
+the Gitee DMG again from the publisher's machine, and requires the size and
+SHA-256 to match before generating `updates/latest.json`. It does not mount
+or inspect the DMG bundle; the app's existing installation checks remain
+responsible for Bundle ID, version/build, minimum macOS version, and
+code-signature validation. A candidate lower than the current stable manifest
+is refused unless `ALLOW_ROLLBACK=true`; an equal version is allowed so
+interrupted uploads and manifest repairs can be retried idempotently. For an
+uncertain Gitee upload response, the shared asset script re-reads the release
+and verifies any same-named asset before retrying, for up to three upload
+rounds.
 The production manifest URL is therefore:
 
 ```text
