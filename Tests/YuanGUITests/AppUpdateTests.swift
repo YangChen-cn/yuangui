@@ -1006,7 +1006,14 @@ final class AppUpdateTests: XCTestCase {
         } catch let error as UpdateSourceAvailabilityError {
             XCTAssertEqual(error, .downloadTooSlow)
             // The transfer really started and was torn down by the switch:
-            // URLSession cancels the protocol once the monitor aborts.
+            // URLSession cancels the protocol once the monitor aborts. That
+            // teardown is asynchronous — URLSession delivers stopLoading on
+            // its own queue — so wait briefly instead of reading the counter
+            // the instant the monitor throws (flaky on loaded CI runners).
+            let stopDeadline = Date().addingTimeInterval(2)
+            while UpdateStreamURLProtocol.stopCount <= stopsBefore, Date() < stopDeadline {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
             XCTAssertGreaterThan(
                 UpdateStreamURLProtocol.stopCount,
                 stopsBefore,
@@ -1178,18 +1185,22 @@ final class AppUpdateTests: XCTestCase {
             to: destination,
             expectedBytes: Int64(body.count),
             provider: .github,
-            progressHandler: { progress in
-                await collector.append(progress)
+            progressHandler: { event in
+                await collector.append(event)
             }
         )
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         XCTAssertEqual(try Data(contentsOf: destination), body)
 
+        // The service flushes the reporting side path before returning, so
+        // the collector is complete and in order.
         let events = await collector.events
-        XCTAssertFalse(events.isEmpty, "The transfer must report progress")
-        XCTAssertEqual(events.first?.provider, .github)
-        XCTAssertEqual(events.first?.totalBytes, Int64(body.count))
-        for (previous, current) in zip(events, events.dropFirst()) {
+        let snapshots = progressEvents(events)
+        XCTAssertFalse(snapshots.isEmpty, "The transfer must report progress")
+        XCTAssertEqual(events.last, .downloadCompleted)
+        XCTAssertEqual(snapshots.first?.provider, .github)
+        XCTAssertEqual(snapshots.first?.totalBytes, Int64(body.count))
+        for (previous, current) in zip(snapshots, snapshots.dropFirst()) {
             XCTAssertGreaterThanOrEqual(
                 current.receivedBytes,
                 previous.receivedBytes,
@@ -1198,8 +1209,8 @@ final class AppUpdateTests: XCTestCase {
         }
         // The final snapshot is emitted unconditionally: even when the
         // throttle suppressed the last mark, the UI sees 100%.
-        XCTAssertEqual(events.last?.receivedBytes, Int64(body.count))
-        XCTAssertEqual(events.last?.fractionCompleted, 1.0)
+        XCTAssertEqual(snapshots.last?.receivedBytes, Int64(body.count))
+        XCTAssertEqual(snapshots.last?.fractionCompleted, 1.0)
     }
 
     func testStreamDownloadProgressCarriesProvider() async throws {
@@ -1236,10 +1247,76 @@ final class AppUpdateTests: XCTestCase {
             progressHandler: { await giteeEvents.append($0) }
         )
 
-        let githubProviders = await githubEvents.events.allSatisfy { $0.provider == .github }
-        let giteeProviders = await giteeEvents.events.allSatisfy { $0.provider == .gitee }
-        XCTAssertTrue(githubProviders, "A GitHub asset download must report .github progress")
-        XCTAssertTrue(giteeProviders, "A Gitee asset download must report .gitee progress")
+        let githubProviders = await githubEvents.events.compactMap { event -> UpdateAsset.Provider? in
+            guard case .progress(let progress) = event else { return nil }
+            return progress.provider
+        }
+        let giteeProviders = await giteeEvents.events.compactMap { event -> UpdateAsset.Provider? in
+            guard case .progress(let progress) = event else { return nil }
+            return progress.provider
+        }
+        XCTAssertFalse(githubProviders.isEmpty, "A GitHub asset download must report progress")
+        XCTAssertFalse(giteeProviders.isEmpty, "A Gitee asset download must report progress")
+        XCTAssertTrue(
+            githubProviders.allSatisfy { $0 == .github },
+            "A GitHub asset download must report .github progress"
+        )
+        XCTAssertTrue(
+            giteeProviders.allSatisfy { $0 == .gitee },
+            "A Gitee asset download must report .gitee progress"
+        )
+    }
+
+    func testSlowUIHandlerDoesNotBlockTheDownloader() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateStreamURLProtocol.self]
+        let service = AppUpdateService(session: URLSession(configuration: configuration))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YuanGUI-SlowHandler-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("update.dmg")
+        let url = URL(string: "https://updates.example.com/YuanGUI.dmg")!
+        let body = Data(repeating: 0xAE, count: 64 * 1024)
+        defer {
+            UpdateStreamURLProtocol.statusCode = 200
+            UpdateStreamURLProtocol.body = Data()
+            UpdateStreamURLProtocol.chunkSize = 0
+            UpdateStreamURLProtocol.chunkInterval = 0
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        UpdateStreamURLProtocol.statusCode = 200
+        UpdateStreamURLProtocol.body = body
+
+        // A UI handler that sleeps far longer than the whole transfer must
+        // not gate the downloader: the writer only yields snapshots, so a
+        // busy MainActor can neither stall the transfer nor slow it enough
+        // to trip the sustained-slow GitHub → Gitee monitor. The file must
+        // be fully written within one handler sleep.
+        let task = Task {
+            try await service.streamDownload(
+                URLRequest(url: url),
+                to: destination,
+                expectedBytes: Int64(body.count),
+                progressHandler: { _ in
+                    try? await Task.sleep(for: .seconds(0.5))
+                }
+            )
+        }
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            let size = (try? FileManager.default.attributesOfItem(atPath: destination.path))?[.size] as? NSNumber
+            if (size?.intValue ?? 0) >= body.count { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        let finalSize = (try? FileManager.default.attributesOfItem(atPath: destination.path))?[.size] as? NSNumber
+        XCTAssertEqual(
+            finalSize?.intValue,
+            body.count,
+            "The transfer must complete even while the UI handler is slow"
+        )
+        _ = try await task.value
+        XCTAssertEqual(try Data(contentsOf: destination), body)
     }
 
     func testAutomaticFallbackRestartsProgressFromZero() async throws {
@@ -1312,26 +1389,33 @@ final class AppUpdateTests: XCTestCase {
 
         let collector = ProgressCollector()
         do {
-            _ = try await service.prepare(update) { progress in
-                await collector.append(progress)
+            _ = try await service.prepare(update) { event in
+                await collector.append(event)
             }
             XCTFail("The mismatched Gitee checksum must stop the update")
         } catch AppUpdateError.checksumMismatch {
+            // Each attempt's reporting side path is flushed before it returns
+            // or throws, so no stale GitHub snapshot can leak into the Gitee
+            // event sequence.
             let events = await collector.events
-            let githubEvents = events.filter { $0.provider == .github }
-            let giteeEvents = events.filter { $0.provider == .gitee }
-            XCTAssertFalse(githubEvents.isEmpty, "The GitHub attempt must report progress")
-            XCTAssertFalse(giteeEvents.isEmpty, "The Gitee fallback must report progress")
+            let snapshots = progressEvents(events)
+            let githubSnapshots = snapshots.filter { $0.provider == .github }
+            let giteeSnapshots = snapshots.filter { $0.provider == .gitee }
+            XCTAssertFalse(githubSnapshots.isEmpty, "The GitHub attempt must report progress")
+            XCTAssertFalse(giteeSnapshots.isEmpty, "The Gitee fallback must report progress")
             // All GitHub snapshots precede the first Gitee snapshot.
-            let firstGitee = events.firstIndex { $0.provider == .gitee } ?? events.count
-            let lastGithub = events.lastIndex { $0.provider == .github } ?? -1
+            let firstGitee = snapshots.firstIndex { $0.provider == .gitee } ?? snapshots.count
+            let lastGithub = snapshots.lastIndex { $0.provider == .github } ?? -1
             XCTAssertLessThan(lastGithub, firstGitee, "Provider order must be .github then .gitee")
             // GitHub was aborted mid-file; Gitee started fresh from a small
             // byte count and ran to completion with its own total.
-            XCTAssertLessThan(githubEvents.last?.fractionCompleted ?? 1, 1)
-            XCTAssertLessThan(giteeEvents.first?.receivedBytes ?? 0, Int64(giteeBody.count))
-            XCTAssertEqual(giteeEvents.last?.receivedBytes, Int64(giteeBody.count))
-            XCTAssertEqual(giteeEvents.last?.fractionCompleted, 1.0)
+            XCTAssertLessThan(githubSnapshots.last?.fractionCompleted ?? 1, 1)
+            XCTAssertLessThan(giteeSnapshots.first?.receivedBytes ?? 0, Int64(giteeBody.count))
+            XCTAssertEqual(giteeSnapshots.last?.receivedBytes, Int64(giteeBody.count))
+            XCTAssertEqual(giteeSnapshots.last?.fractionCompleted, 1.0)
+            // Only the winning attempt signals transfer completion; the
+            // aborted GitHub attempt never does.
+            XCTAssertTrue(events.contains(.downloadCompleted))
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
@@ -1709,12 +1793,20 @@ private final class FakeClock: @unchecked Sendable {
     }
 }
 
-/// Collects download progress snapshots from an async callback in call order.
+/// Collects transfer lifecycle events from an async callback in call order.
 private actor ProgressCollector {
-    private(set) var events: [UpdateDownloadProgress] = []
+    private(set) var events: [UpdateDownloadEvent] = []
 
-    func append(_ progress: UpdateDownloadProgress) {
-        events.append(progress)
+    func append(_ event: UpdateDownloadEvent) {
+        events.append(event)
+    }
+}
+
+/// The `.progress` payloads from a collected event sequence.
+private func progressEvents(_ events: [UpdateDownloadEvent]) -> [UpdateDownloadProgress] {
+    events.compactMap { event in
+        guard case .progress(let progress) = event else { return nil }
+        return progress
     }
 }
 
@@ -2792,15 +2884,19 @@ final class AutomaticUpdateTests: XCTestCase {
 
         // Real streamed download through the URLProtocol seam: the fixture
         // body fails asset-size verification (expected 1024), so the install
-        // ends in .failed without touching the disk. The transfer is
-        // throttled so the published progress is observable: with immediate
-        // delivery the whole download, progress publication, and failure all
-        // complete between the test's polling intervals.
+        // ends in .failed. The transfer is throttled so progress publishing
+        // is observable. The .installing phase on transfer completion lasts
+        // microseconds (verification fails immediately), so it is captured
+        // through the store's own publisher instead of polling: every
+        // transition is recorded synchronously.
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [UpdateStreamURLProtocol.self]
         let service = AppUpdateService(session: URLSession(configuration: configuration))
         let store = AppUpdateStore(service: service, defaults: defaults)
+        var observedStates: [AppUpdateStore.State] = []
+        let cancellable = store.$state.sink { observedStates.append($0) }
         defer {
+            cancellable.cancel()
             UpdateStreamURLProtocol.statusCode = 200
             UpdateStreamURLProtocol.body = Data()
             UpdateStreamURLProtocol.chunkSize = 0
@@ -2828,6 +2924,17 @@ final class AutomaticUpdateTests: XCTestCase {
         }
         XCTAssertTrue(failed, "The size mismatch must fail the install")
         XCTAssertNil(store.downloadProgress, "A failed install must clear progress")
+        // The network transfer's end is a separate lifecycle event: the
+        // store enters .installing for verification/mounting right when the
+        // transfer completes, never lingering in .downloading at 100%.
+        let installingIndex = observedStates.firstIndex(of: .installing)
+        let failedIndex = observedStates.firstIndex { state in
+            if case .failed = state { return true }
+            return false
+        }
+        XCTAssertNotNil(installingIndex, "Transfer completion must move the store to .installing")
+        XCTAssertNotNil(failedIndex)
+        XCTAssertLessThan(installingIndex ?? .max, failedIndex ?? .min)
     }
 
     func testAutomaticInstallOpensAboutPageBeforeStartingInstall() async {

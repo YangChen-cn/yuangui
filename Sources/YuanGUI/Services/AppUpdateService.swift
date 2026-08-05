@@ -382,10 +382,21 @@ struct UpdateDownloadProgress: Equatable, Sendable {
     }
 }
 
-/// Receives download progress snapshots from the service. The handler is
-/// async so the service never blocks its writer on UI publishing; callers hop
-/// to their own actor (the store hops to MainActor).
-typealias UpdateDownloadProgressHandler = @Sendable (UpdateDownloadProgress) async -> Void
+/// A transfer lifecycle event emitted by the service: throttled progress
+/// snapshots, then a final `downloadCompleted` when the network transfer ends.
+/// Everything after the transfer (SHA-256, mounting, validation, signing)
+/// belongs to the store's `.installing` phase, not to the download.
+enum UpdateDownloadEvent: Equatable, Sendable {
+    case progress(UpdateDownloadProgress)
+    case downloadCompleted
+}
+
+/// Receives transfer lifecycle events from the service. The service invokes
+/// the handler on a dedicated drain task that is flushed when a transfer
+/// attempt ends — the download writer itself only yields snapshots into a
+/// buffer, so a slow UI can never stall the transfer or slow it enough to
+/// trip the sustained-slow GitHub → Gitee monitor.
+typealias UpdateDownloadEventHandler = @Sendable (UpdateDownloadEvent) async -> Void
 
 struct PreparedAppUpdate: Sendable {
     let sourceApp: URL
@@ -945,12 +956,14 @@ actor AppUpdateService: UpdateChecking {
         return notes
     }
 
-    /// `progress` receives transfer snapshots for every source attempt in
-    /// order (a fallback emits `.github` events, then `.gitee` events with the
-    /// byte count restarted). A nil handler skips emission entirely.
+    /// `progress` receives transfer events for every source attempt in order
+    /// (a fallback emits `.github` progress, then `.gitee` progress with the
+    /// byte count restarted) and a final `.downloadCompleted` when the
+    /// winning attempt's network transfer ends. A nil handler skips
+    /// emission entirely.
     func prepare(
         _ update: AvailableUpdate,
-        progress: UpdateDownloadProgressHandler? = nil
+        progress: UpdateDownloadEventHandler? = nil
     ) async throws -> PreparedAppUpdate {
         switch updateSourcePreference() {
         case .github:
@@ -973,7 +986,7 @@ actor AppUpdateService: UpdateChecking {
 
     private func prepareAutomatic(
         _ update: AvailableUpdate,
-        progress: UpdateDownloadProgressHandler?
+        progress: UpdateDownloadEventHandler?
     ) async throws -> PreparedAppUpdate {
         let githubAsset = update.assets.first { $0.provider == .github }
         let giteeAsset = update.assets.first { $0.provider == .gitee }
@@ -1070,7 +1083,7 @@ actor AppUpdateService: UpdateChecking {
         _ giteeAsset: UpdateAsset,
         githubAsset: UpdateAsset?,
         update: AvailableUpdate,
-        progress: UpdateDownloadProgressHandler?
+        progress: UpdateDownloadEventHandler?
     ) async throws -> PreparedAppUpdate {
         AutomaticUpdateLog.log("update.download.gitee.started")
         do {
@@ -1139,7 +1152,7 @@ actor AppUpdateService: UpdateChecking {
         asset: UpdateAsset,
         for update: AvailableUpdate,
         slowSpeedPolicy: DownloadSourcePolicy? = nil,
-        progress: UpdateDownloadProgressHandler? = nil
+        progress: UpdateDownloadEventHandler? = nil
     ) async throws -> PreparedAppUpdate {
         if let assetPreparer {
             return try await assetPreparer(asset, update)
@@ -1197,7 +1210,7 @@ actor AppUpdateService: UpdateChecking {
         expectedBytes: Int64? = nil,
         slowSpeedPolicy: DownloadSourcePolicy? = nil,
         provider: UpdateAsset.Provider = .other,
-        progressHandler: UpdateDownloadProgressHandler? = nil
+        progressHandler: UpdateDownloadEventHandler? = nil
     ) async throws -> URLResponse {
         let session = self.session
         let (bytes, response) = try await withThrowingTaskGroup(
@@ -1248,13 +1261,29 @@ actor AppUpdateService: UpdateChecking {
             let length = response.expectedContentLength
             return length >= 0 ? length : nil
         }()
-        let reportProgress: @Sendable (Int64) async -> Void = { [provider, totalBytes, progressHandler] receivedBytes in
-            guard let progressHandler else { return }
-            await progressHandler(UpdateDownloadProgress(
+        // UI reporting is a side path: the writer only yields snapshots into
+        // this buffer — it never awaits a consumer. A dedicated drain task
+        // invokes the handler, so a busy MainActor can neither stall the
+        // transfer nor slow it enough to trip the sustained-slow GitHub →
+        // Gitee monitor. The drain is flushed once when the attempt ends
+        // (success or abort), which both delivers `.downloadCompleted` before
+        // verification starts and guarantees no snapshot of a failed attempt
+        // leaks into the fallback attempt's events.
+        let (eventStream, eventContinuation) = AsyncStream<UpdateDownloadEvent>.makeStream()
+        let reportProgress: @Sendable (Int64) -> Void = { [provider, totalBytes, eventContinuation] receivedBytes in
+            eventContinuation.yield(.progress(UpdateDownloadProgress(
                 provider: provider,
                 receivedBytes: receivedBytes,
                 totalBytes: totalBytes
-            ))
+            )))
+        }
+        var drainTask: Task<Void, Never>?
+        if let progressHandler {
+            drainTask = Task {
+                for await event in eventStream {
+                    await progressHandler(event)
+                }
+            }
         }
         do {
             try await withThrowingTaskGroup(of: DownloadStreamEvent?.self) { group in
@@ -1282,7 +1311,7 @@ actor AppUpdateService: UpdateChecking {
                             let now = Date()
                             if now.timeIntervalSince(lastUIProgressAt) >= 0.1 {
                                 lastUIProgressAt = now
-                                await reportProgress(totalBytesRead)
+                                reportProgress(totalBytesRead)
                             }
                         }
                     }
@@ -1295,7 +1324,10 @@ actor AppUpdateService: UpdateChecking {
                     // Final snapshot: even when the throttle suppressed the
                     // last mark, the UI must see the completed transfer (100%
                     // whenever the total is known).
-                    await reportProgress(totalBytesRead)
+                    reportProgress(totalBytesRead)
+                    // The network transfer is over; everything after this
+                    // point (verification, mounting) belongs to .installing.
+                    eventContinuation.yield(.downloadCompleted)
                     return DownloadStreamEvent.writerFinished
                 }
                 group.addTask {
@@ -1340,8 +1372,19 @@ actor AppUpdateService: UpdateChecking {
                     }
                 }
             }
+            // Flush the reporting side path before returning so the store
+            // learns `.downloadCompleted` before verification begins. The
+            // transfer is already done here; waiting for the drain costs no
+            // download time.
+            eventContinuation.finish()
+            await drainTask?.value
             try handle.close()
         } catch {
+            // End the attempt's stream and drain whatever it buffered so no
+            // snapshot of this (failed) attempt leaks into a fallback's
+            // event sequence.
+            eventContinuation.finish()
+            await drainTask?.value
             try? handle.close()
             if let availabilityError = error as? UpdateSourceAvailabilityError {
                 throw availabilityError
@@ -1640,13 +1683,29 @@ final class AppUpdateStore: ObservableObject {
                     state = .installing
                     return
                 }
-                let prepared = try await service.prepare(release) { [weak self] progress in
-                    // The callback is non-isolated; hop to MainActor to touch
-                    // the published property. Binding the weak reference to a
-                    // local first keeps the nested closure capture immutable.
+                let prepared = try await service.prepare(release) { [weak self] event in
+                    // The callback runs on the service's drain task, never on
+                    // the download writer, and is flushed before prepare
+                    // returns — so a busy MainActor cannot slow the transfer.
+                    // The store hops to MainActor to touch published state;
+                    // binding the weak reference to a local first keeps the
+                    // nested closure capture immutable.
                     let store = self
                     await MainActor.run {
-                        store?.downloadProgress = progress
+                        guard let store else { return }
+                        switch event {
+                        case .progress(let progress):
+                            store.downloadProgress = progress
+                        case .downloadCompleted:
+                            // The network transfer ended; verification,
+                            // mounting, and signing happen under .installing.
+                            // The guard also absorbs a late event racing the
+                            // store's own .installing transition below.
+                            store.downloadProgress = nil
+                            if store.state == .downloading {
+                                store.state = .installing
+                            }
+                        }
                     }
                 }
                 downloadProgress = nil

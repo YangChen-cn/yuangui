@@ -15,6 +15,10 @@
 - Fixed sustained-slow-download detection to use a true trailing 10-second window, so a long throttled GitHub transfer can still switch to the matching Gitee asset instead of appearing faster over time.
 - Hardened download completion and cancellation. Progress and stall monitors can no longer interrupt the writer during its final flush, and cancelling an update cannot be mistaken for a successful download.
 - Update checks and installation now share the same version-and-build decision. An equal version with a higher build is accepted, while switching the pinned update source discards any result started under the previous source and checks again.
+- Added real-time download progress in Settings → About: the active source (GitHub or Gitee), percentage, and bytes downloaded, shown as a linear progress bar. After an automatic source switch the bar restarts for the new source instead of continuing a stale percentage.
+- Downloading is never slowed by the progress interface: the transfer reports through a side channel, so a busy window cannot make a fast connection look slow and trigger the source switch.
+- The update moves to the “preparing to install” phase the moment the download finishes, so checksum, signature, and mount verification no longer show as a stuck 100% download.
+- Choosing Update Now in the automatic update prompt opens the About page, keeping the download progress visible while the update installs.
 - Strengthened the release pipeline's Gitee asset handling: duplicate names are reconciled to one byte-verified copy, failed verification never deletes an uncertain asset, and every upload is re-read before success is reported.
 - Added release preflight checks that require a clean, pushed `main` before external changes and identify the exact dispatched mirror workflow by commit, tag, build, and run ID.
 
