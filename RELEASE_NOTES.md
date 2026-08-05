@@ -19,6 +19,8 @@
 - Downloading is never slowed by the progress interface: the transfer reports through a side channel, so a busy window cannot make a fast connection look slow and trigger the source switch.
 - The update moves to the “preparing to install” phase the moment the download finishes, so checksum, signature, and mount verification no longer show as a stuck 100% download.
 - Choosing Update Now in the automatic update prompt opens the About page, keeping the download progress visible while the update installs.
+- Reduced redundant high-frequency work in screenshot editing and pet interaction paths: in-progress annotations stay in the canvas until the gesture ends, auxiliary bubble positioning is coalesced, and drag paths reuse the current pet window and screen without changing exported output or interaction behavior.
+- Fixed file drag-over behavior so idle actions and ambient/weather announcements remain suppressed while the pet is a drop target, then resume after the interaction ends.
 - Strengthened the release pipeline's Gitee asset handling: duplicate names are reconciled to one byte-verified copy, failed verification never deletes an uncertain asset, and every upload is re-read before success is reported.
 - Added release preflight checks that require a clean, pushed `main` before external changes and identify the exact dispatched mirror workflow by commit, tag, build, and run ID.
 
