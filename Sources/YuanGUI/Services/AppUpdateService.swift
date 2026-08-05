@@ -1213,54 +1213,6 @@ actor AppUpdateService: UpdateChecking {
         progressHandler: UpdateDownloadEventHandler? = nil
     ) async throws -> URLResponse {
         let session = self.session
-        let (bytes, response) = try await withThrowingTaskGroup(
-            of: (URLSession.AsyncBytes, URLResponse).self,
-            returning: (URLSession.AsyncBytes, URLResponse).self
-        ) { group in
-            defer { group.cancelAll() }
-            group.addTask {
-                try await session.bytes(for: request)
-            }
-            group.addTask {
-                try await Task.sleep(for: .seconds(12))
-                throw UpdateSourceAvailabilityError.timedOut
-            }
-            guard let first = try await group.next() else {
-                throw UpdateSourceAvailabilityError.resourceUnavailable
-            }
-            return first
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw AppUpdateError.invalidResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            if UpdateSourceAvailabilityError.isFallbackHTTPStatus(http.statusCode) {
-                throw UpdateSourceAvailabilityError.httpStatus(http.statusCode)
-            }
-            throw AppUpdateError.invalidResponse
-        }
-
-        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        let handle = try FileHandle(forWritingTo: destination)
-        let progress = DownloadProgressTracker()
-        // Only the writer may end the transfer with `.writerFinished`. The
-        // monitors return nil (cancelled, or the transfer is already
-        // complete) and throw on slow/stalled transfers, so `group.next()`
-        // can never mistake a monitor for a finished download and cancel the
-        // writer mid-flush.
-        enum DownloadStreamEvent: Sendable {
-            case writerFinished
-        }
-        // The manifest's asset size is authoritative; the HTTP response's
-        // content length is the fallback when the caller has no expected
-        // size. When both are unknown the UI shows indeterminate progress.
-        let totalBytes: Int64? = expectedBytes ?? {
-            let length = response.expectedContentLength
-            return length >= 0 ? length : nil
-        }()
         // UI reporting is a side path: the writer only yields snapshots into
         // this buffer — it never awaits a consumer. A dedicated drain task
         // invokes the handler, so a busy MainActor can neither stall the
@@ -1270,22 +1222,82 @@ actor AppUpdateService: UpdateChecking {
         // verification starts and guarantees no snapshot of a failed attempt
         // leaks into the fallback attempt's events.
         let (eventStream, eventContinuation) = AsyncStream<UpdateDownloadEvent>.makeStream()
-        let reportProgress: @Sendable (Int64) -> Void = { [provider, totalBytes, eventContinuation] receivedBytes in
-            eventContinuation.yield(.progress(UpdateDownloadProgress(
-                provider: provider,
-                receivedBytes: receivedBytes,
-                totalBytes: totalBytes
-            )))
-        }
         var drainTask: Task<Void, Never>?
         if let progressHandler {
+            // The attempt announces itself immediately with a zero snapshot:
+            // after a GitHub → Gitee switch the UI must show the new source
+            // at 0% instead of the previous attempt's stale progress while
+            // the new connection is being established. `expectedBytes` is
+            // the only total known before the response arrives; later
+            // snapshots fall back to the response's content length.
+            eventContinuation.yield(.progress(UpdateDownloadProgress(
+                provider: provider,
+                receivedBytes: 0,
+                totalBytes: expectedBytes
+            )))
             drainTask = Task {
                 for await event in eventStream {
                     await progressHandler(event)
                 }
             }
         }
+
         do {
+            let (bytes, response) = try await withThrowingTaskGroup(
+                of: (URLSession.AsyncBytes, URLResponse).self,
+                returning: (URLSession.AsyncBytes, URLResponse).self
+            ) { group in
+                defer { group.cancelAll() }
+                group.addTask {
+                    try await session.bytes(for: request)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(12))
+                    throw UpdateSourceAvailabilityError.timedOut
+                }
+                guard let first = try await group.next() else {
+                    throw UpdateSourceAvailabilityError.resourceUnavailable
+                }
+                return first
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                throw AppUpdateError.invalidResponse
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                if UpdateSourceAvailabilityError.isFallbackHTTPStatus(http.statusCode) {
+                    throw UpdateSourceAvailabilityError.httpStatus(http.statusCode)
+                }
+                throw AppUpdateError.invalidResponse
+            }
+
+            guard fileManager.createFile(atPath: destination.path, contents: nil) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            let handle = try FileHandle(forWritingTo: destination)
+            let progress = DownloadProgressTracker()
+            // Only the writer may end the transfer with `.writerFinished`. The
+            // monitors return nil (cancelled, or the transfer is already
+            // complete) and throw on slow/stalled transfers, so `group.next()`
+            // can never mistake a monitor for a finished download and cancel
+            // the writer mid-flush.
+            enum DownloadStreamEvent: Sendable {
+                case writerFinished
+            }
+            // The manifest's asset size is authoritative; the HTTP response's
+            // content length is the fallback when the caller has no expected
+            // size. When both are unknown the UI shows indeterminate progress.
+            let totalBytes: Int64? = expectedBytes ?? {
+                let length = response.expectedContentLength
+                return length >= 0 ? length : nil
+            }()
+            let reportProgress: @Sendable (Int64) -> Void = { [provider, totalBytes, eventContinuation] receivedBytes in
+                eventContinuation.yield(.progress(UpdateDownloadProgress(
+                    provider: provider,
+                    receivedBytes: receivedBytes,
+                    totalBytes: totalBytes
+                )))
+            }
             try await withThrowingTaskGroup(of: DownloadStreamEvent?.self) { group in
                 defer { group.cancelAll() }
                 group.addTask {
@@ -1379,13 +1391,15 @@ actor AppUpdateService: UpdateChecking {
             eventContinuation.finish()
             await drainTask?.value
             try handle.close()
+            return response
         } catch {
-            // End the attempt's stream and drain whatever it buffered so no
-            // snapshot of this (failed) attempt leaks into a fallback's
-            // event sequence.
+            // The attempt failed before or during the transfer: end the
+            // reporting side path on every exit so the zero snapshot is
+            // delivered, no drain task outlives the attempt, and a failed
+            // attempt's snapshots never leak into a fallback's event
+            // sequence. The file handle closes on deallocation.
             eventContinuation.finish()
             await drainTask?.value
-            try? handle.close()
             if let availabilityError = error as? UpdateSourceAvailabilityError {
                 throw availabilityError
             }
@@ -1394,7 +1408,6 @@ actor AppUpdateService: UpdateChecking {
             }
             throw error
         }
-        return response
     }
 
     private func logIntegrityOrConfigurationFailure(

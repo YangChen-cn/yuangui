@@ -1198,7 +1198,10 @@ final class AppUpdateTests: XCTestCase {
         let snapshots = progressEvents(events)
         XCTAssertFalse(snapshots.isEmpty, "The transfer must report progress")
         XCTAssertEqual(events.last, .downloadCompleted)
+        // The attempt announces itself with a zero snapshot before the
+        // first byte, so the UI never shows a stale previous attempt.
         XCTAssertEqual(snapshots.first?.provider, .github)
+        XCTAssertEqual(snapshots.first?.receivedBytes, 0)
         XCTAssertEqual(snapshots.first?.totalBytes, Int64(body.count))
         for (previous, current) in zip(snapshots, snapshots.dropFirst()) {
             XCTAssertGreaterThanOrEqual(
@@ -1407,10 +1410,15 @@ final class AppUpdateTests: XCTestCase {
             let firstGitee = snapshots.firstIndex { $0.provider == .gitee } ?? snapshots.count
             let lastGithub = snapshots.lastIndex { $0.provider == .github } ?? -1
             XCTAssertLessThan(lastGithub, firstGitee, "Provider order must be .github then .gitee")
-            // GitHub was aborted mid-file; Gitee started fresh from a small
-            // byte count and ran to completion with its own total.
+            // Each attempt announces itself at zero; GitHub was aborted
+            // mid-file, and Gitee ran to completion with its own total.
+            XCTAssertEqual(githubSnapshots.first?.receivedBytes, 0)
             XCTAssertLessThan(githubSnapshots.last?.fractionCompleted ?? 1, 1)
-            XCTAssertLessThan(giteeSnapshots.first?.receivedBytes ?? 0, Int64(giteeBody.count))
+            XCTAssertEqual(
+                giteeSnapshots.first?.receivedBytes,
+                0,
+                "The fallback attempt must show the new source at 0%, not continue the GitHub byte count"
+            )
             XCTAssertEqual(giteeSnapshots.last?.receivedBytes, Int64(giteeBody.count))
             XCTAssertEqual(giteeSnapshots.last?.fractionCompleted, 1.0)
             // Only the winning attempt signals transfer completion; the
