@@ -221,13 +221,16 @@ UPDATE_VERSION="$VERSION" UPDATE_BUILD="$BUILD" DMG_PATH="$DMG" \
 UPDATE_MANIFEST_PATH="$project_dir/updates/latest.json" DMG_PATH="$DMG" \
   ./script/verify_update_manifest.sh
 
-# 8. 提交并推送 GitHub main
+# 8. 提交并推送 GitHub main。commit message 带 [skip-gitee-sync] 标记：push
+# 触发的 sync-manifest workflow 会跳过这次提交（Gitee 已由本脚本写好），
+# 避免本地 contents API 写入与 Actions 的写入竞争同一个 Gitee 文件 SHA。
+# 只有人工手动修改 updates/latest.json 的提交（不带标记）才由 workflow 同步。
 print "== committing updates/latest.json to GitHub main"
 git add updates/latest.json
 if git diff --cached --quiet; then
   print "updates/latest.json is already current"
 else
-  git commit -m "Publish update manifest for $VERSION"
+  git commit -m "Publish update manifest for $VERSION [skip-gitee-sync]"
   git push origin HEAD:main
 fi
 

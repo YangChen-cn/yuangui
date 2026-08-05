@@ -167,7 +167,13 @@ the manifest mirror run on the publisher's machine, and a release-triggered
 run would race them. The push event only runs the `sync-manifest` job, which
 keeps a later manual edit of `updates/latest.json` on GitHub main in sync
 with Gitee through the contents API — a small JSON write that is reliable
-even from a cloud runner. The mirror script verifies the local DMG bytes
+even from a cloud runner. The mirror script commits the manifest with a
+`[skip-gitee-sync]` marker in the message, and the workflow skips commits
+carrying that marker: Gitee is already written by the script, so letting the
+workflow write it too would race the same Gitee file SHA (both read it,
+one PUT wins, the other gets a stale-SHA 409). Manual edits without the
+marker are still synced automatically. The mirror script verifies the local
+DMG bytes
 against the GitHub Release asset digest (no download), reconciles the DMG and
 its `.sha256` sidecar with Gitee through the shared asset script, downloads
 the Gitee DMG again from the publisher's machine, and requires the size and

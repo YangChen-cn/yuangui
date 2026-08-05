@@ -7,6 +7,11 @@ name: Sync update manifest to Gitee
 # keeps a later manual edit of updates/latest.json on GitHub main in sync with
 # Gitee: it writes a small JSON file through the Gitee contents API, which is
 # reliable even from a cloud runner.
+#
+# Commits whose message contains [skip-gitee-sync] are skipped: the local
+# mirror script writes Gitee itself before pushing such a commit, and letting
+# this job also write would race the script's contents-API PUT against the
+# same Gitee file SHA. Manual edits (no marker) are synced as before.
 on:
   push:
     branches:
@@ -20,6 +25,7 @@ permissions:
 
 jobs:
   sync-manifest:
+    if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip-gitee-sync]')
     name: Sync latest.json to Gitee
     runs-on: ubuntu-latest
     timeout-minutes: 15
