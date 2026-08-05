@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "version": "2.8.0",
-  "build": 19,
+  "version": "2.8.1",
+  "build": 20,
   "minimumSystemVersion": "15.0",
-  "publishedAt": "2026-08-04T15:21:17Z",
-  "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.8.0",
+  "publishedAt": "2026-08-05T14:11:02Z",
+  "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.8.1",
   "highlights": {
     "zh-Hans": [
-      "重新设计划词翻译窗口，采用更轻、更紧凑且与 YuanGUI 统一的 macOS 界面。原文、译文、状态、语言选择和文字替换操作拥有更清晰的层级，动态窗口尺寸也更加稳定。",
-      "为原文和译文加入 macOS 原生语音朗读，提供相互独立的控制和按语言选择系统声音的能力。同一时间只朗读一侧；原文、目标语言、翻译结果或窗口生命周期变化时会立即停止过时内容。"
+      "调整 FinderSync 菜单顺序：新建文件、剪切、粘贴、复制、在终端中打开、在编辑器中打开。菜单不再使用装饰标题行，也不会插入多余留白。",
+      "新增“新建空白文件”，使用轻量的原生名称输入窗口。可以直接输入 config.json、main.swift 等完整文件名；无效路径会被拒绝，遇到重名时会保留扩展名并自动选择新名称。"
     ],
     "en": [
-      "Redesigned the selection translation window with a lighter, more compact macOS interface that matches the rest of…",
-      "Added native macOS speech synthesis for both source and translated text, with independent controls and automatic…"
+      "Reworked the FinderSync menu into a compact native layout: New File, Cut, Paste, Copy, Open in Terminal, and Open in…",
+      "Added New Blank File with a lightweight native name prompt. The field accepts complete names such as config.json or…"
     ]
   },
   "assets": [
     {
       "provider": "gitee",
-      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.8.0/YuanGUI-2.8.0.dmg",
-      "sha256": "06aba768c3a3a5bcd6dd9c29659a30e4cbde08a3aa95d56d7f9630eb3c579de3",
-      "size": 29043145
+      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.8.1/YuanGUI-2.8.1.dmg",
+      "sha256": "0ce1ab608c7000c7b184ca7ef31887f41372f00e891310426f8612a80d92971e",
+      "size": 29136684
     },
     {
       "provider": "github",
-      "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.0/YuanGUI-2.8.0.dmg",
-      "sha256": "06aba768c3a3a5bcd6dd9c29659a30e4cbde08a3aa95d56d7f9630eb3c579de3",
-      "size": 29043145
+      "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.1/YuanGUI-2.8.1.dmg",
+      "sha256": "0ce1ab608c7000c7b184ca7ef31887f41372f00e891310426f8612a80d92971e",
+      "size": 29136684
     }
   ]
 }
