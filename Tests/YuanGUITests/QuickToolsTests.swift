@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
 import CoreGraphics
 import ImageIO
 import XCTest
@@ -1296,17 +1297,83 @@ final class QuickToolsTests: XCTestCase {
     @MainActor
     func testScreenshotEditorUndoAndRedo() throws {
         let store = ScreenshotEditorStore(image: try makeImage(width: 80, height: 60))
+        var publishCount = 0
+        let observation = store.objectWillChange.sink { _ in publishCount += 1 }
+        defer { observation.cancel() }
         store.beginDrawing(at: CGPoint(x: 10, y: 10))
+        XCTAssertTrue(store.annotations.isEmpty)
+        XCTAssertNotNil(store.activeAnnotation)
         store.continueDrawing(to: CGPoint(x: 30, y: 30))
+        XCTAssertTrue(store.annotations.isEmpty)
+        XCTAssertEqual(publishCount, 0)
         store.endDrawing(at: CGPoint(x: 40, y: 40))
         XCTAssertEqual(store.annotations.count, 1)
         XCTAssertTrue(store.canUndo)
+        XCTAssertEqual(publishCount, 1)
+        guard case let .stroke(_, points, _, _) = store.annotations[0] else {
+            return XCTFail("Expected a committed stroke")
+        }
+        XCTAssertEqual(points, [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 30), CGPoint(x: 40, y: 40)])
 
         store.undo()
         XCTAssertTrue(store.annotations.isEmpty)
         XCTAssertTrue(store.canRedo)
 
         store.redo()
+        XCTAssertEqual(store.annotations.count, 1)
+    }
+
+    @MainActor
+    func testScreenshotEditorUpdatesGeometryOnlyWhenGestureEnds() throws {
+        let store = ScreenshotEditorStore(image: try makeImage(width: 80, height: 60))
+
+        store.selectedTool = .line
+        store.beginDrawing(at: CGPoint(x: 40, y: 40))
+        store.continueDrawing(to: CGPoint(x: 10, y: 20))
+        XCTAssertTrue(store.annotations.isEmpty)
+        guard case let .line(_, start, end, _, arrow) = store.activeAnnotation else {
+            return XCTFail("Expected an active line")
+        }
+        XCTAssertEqual(start, CGPoint(x: 40, y: 40))
+        XCTAssertEqual(end, CGPoint(x: 10, y: 20))
+        XCTAssertFalse(arrow)
+        store.endDrawing(at: CGPoint(x: 10, y: 20))
+        XCTAssertEqual(store.annotations.count, 1)
+        XCTAssertTrue(store.canUndo)
+
+        store.undo()
+        XCTAssertTrue(store.annotations.isEmpty)
+        store.redo()
+        XCTAssertEqual(store.annotations.count, 1)
+
+        store.selectedTool = .rectangle
+        store.beginDrawing(at: CGPoint(x: 50, y: 45))
+        store.continueDrawing(to: CGPoint(x: 20, y: 10))
+        XCTAssertEqual(store.annotations.count, 1)
+        guard case let .rectangle(_, rect, _, ellipse) = store.activeAnnotation else {
+            return XCTFail("Expected an active rectangle")
+        }
+        XCTAssertEqual(rect, CGRect(x: 20, y: 10, width: 30, height: 35))
+        XCTAssertFalse(ellipse)
+        store.endDrawing(at: CGPoint(x: 20, y: 10))
+        XCTAssertEqual(store.annotations.count, 2)
+        guard case let .rectangle(_, committedRect, _, _) = store.annotations[1] else {
+            return XCTFail("Expected a committed rectangle")
+        }
+        XCTAssertEqual(committedRect, rect)
+    }
+
+    @MainActor
+    func testScreenshotEditorFiltersNearbyStrokePoints() throws {
+        let store = ScreenshotEditorStore(image: try makeImage(width: 80, height: 60))
+        store.beginDrawing(at: CGPoint(x: 10, y: 10))
+        store.continueDrawing(to: CGPoint(x: 10.5, y: 10.5))
+        store.continueDrawing(to: CGPoint(x: 13, y: 10))
+        guard case let .stroke(_, points, _, _) = store.activeAnnotation else {
+            return XCTFail("Expected an active stroke")
+        }
+        XCTAssertEqual(points.count, 2)
+        store.endDrawing(at: CGPoint(x: 13, y: 10))
         XCTAssertEqual(store.annotations.count, 1)
     }
 

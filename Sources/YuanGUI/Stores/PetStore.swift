@@ -45,7 +45,6 @@ final class PetStore: ObservableObject {
     @Published private(set) var isChatting = false
     @Published private var isSmartActionSuppressed = false
     @Published private(set) var automaticBubbleSuppressed = false
-    @Published var isDropTargeted = false
     @Published private(set) var toast: String?
     @Published private(set) var ambientMessage: String?
     @Published private(set) var taskState: TaskState = .idle
@@ -579,7 +578,6 @@ final class PetStore: ObservableObject {
     }
 
     func recycle(_ urls: [URL]) {
-        isDropTargeted = false
         Task { await recycleItems(urls) }
     }
 
@@ -675,7 +673,7 @@ final class PetStore: ObservableObject {
 
     func chooseIdleAction() {
         guard isPetPresented, idleAnimationEnabled, taskState == .idle,
-              !isDropTargeted, !isChatting, activeSmartStates.isEmpty else { return }
+              !isChatting, activeSmartStates.isEmpty else { return }
         if petMotionEnabled {
             actionIndex = 0
             return
@@ -916,7 +914,7 @@ final class PetStore: ObservableObject {
         duration: TimeInterval = 8,
         chatterID: String? = nil
     ) {
-        guard isPetPresented, !isFocusActive, taskState == .idle, !isDropTargeted, !isChatting else { return }
+        guard isPetPresented, !isFocusActive, taskState == .idle, !isChatting else { return }
         let value = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         toastToken = UUID()
@@ -985,7 +983,6 @@ final class PetStore: ObservableObject {
     private func presentScheduledAmbientChatter() {
         guard !isFocusActive,
               taskState == .idle,
-              !isDropTargeted,
               !isChatting,
               toast == nil,
               ambientMessage == nil else { return }
@@ -1009,7 +1006,6 @@ final class PetStore: ObservableObject {
               ambientChatterEnabled,
               weatherAnnouncementsEnabled,
               taskState == .idle,
-              !isDropTargeted,
               !isChatting,
               toast == nil,
               ambientMessage == nil else { return }

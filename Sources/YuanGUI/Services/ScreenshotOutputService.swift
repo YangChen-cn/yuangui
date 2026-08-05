@@ -87,16 +87,39 @@ enum ScreenshotRenderer {
         return context.makeImage()
     }
 
-    static func drawAnnotations(_ annotations: [ScreenshotAnnotation], image: CGImage, in context: CGContext) {
-        let pixelated = annotations.contains(where: {
+    static func drawAnnotations(
+        _ annotations: [ScreenshotAnnotation],
+        activeAnnotation: ScreenshotAnnotation? = nil,
+        image: CGImage,
+        in context: CGContext
+    ) {
+        let completedHasMosaic = annotations.contains(where: {
             if case .mosaic = $0 { return true }
             return false
-        }) ? pixelatedImage(image) : nil
+        })
+        let activeHasMosaic = activeAnnotation.map {
+            if case .mosaic = $0 { return true }
+            return false
+        } ?? false
+        let pixelated = completedHasMosaic || activeHasMosaic ? pixelatedImage(image) : nil
 
         for annotation in annotations {
-            switch annotation {
+            drawAnnotation(annotation, image: image, pixelated: pixelated, in: context)
+        }
+        if let activeAnnotation {
+            drawAnnotation(activeAnnotation, image: image, pixelated: pixelated, in: context)
+        }
+    }
+
+    private static func drawAnnotation(
+        _ annotation: ScreenshotAnnotation,
+        image: CGImage,
+        pixelated: CGImage?,
+        in context: CGContext
+    ) {
+        switch annotation {
             case let .stroke(_, points, style, _):
-                guard points.count > 1 else { continue }
+                guard points.count > 1 else { return }
                 context.saveGState()
                 context.setStrokeColor(style.color.cgColor)
                 context.setLineWidth(style.lineWidth)
@@ -141,7 +164,7 @@ enum ScreenshotRenderer {
                 context.restoreGState()
 
             case let .mosaic(_, points, width):
-                guard points.count > 1, let pixelated else { continue }
+                guard points.count > 1, let pixelated else { return }
                 context.saveGState()
                 let path = CGMutablePath()
                 path.move(to: points[0])
@@ -152,7 +175,6 @@ enum ScreenshotRenderer {
                 context.interpolationQuality = .none
                 context.draw(pixelated, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
                 context.restoreGState()
-            }
         }
     }
 

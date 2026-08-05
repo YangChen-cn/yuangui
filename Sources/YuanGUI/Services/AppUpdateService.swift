@@ -398,6 +398,11 @@ enum UpdateDownloadEvent: Equatable, Sendable {
 /// trip the sustained-slow GitHub → Gitee monitor.
 typealias UpdateDownloadEventHandler = @Sendable (UpdateDownloadEvent) async -> Void
 
+private struct UpdateDownloadReporting: Sendable {
+    let continuation: AsyncStream<UpdateDownloadEvent>.Continuation
+    let drainTask: Task<Void, Never>
+}
+
 struct PreparedAppUpdate: Sendable {
     let sourceApp: URL
     let targetApp: URL
@@ -1221,9 +1226,9 @@ actor AppUpdateService: UpdateChecking {
         // (success or abort), which both delivers `.downloadCompleted` before
         // verification starts and guarantees no snapshot of a failed attempt
         // leaks into the fallback attempt's events.
-        let (eventStream, eventContinuation) = AsyncStream<UpdateDownloadEvent>.makeStream()
-        var drainTask: Task<Void, Never>?
+        let reporting: UpdateDownloadReporting?
         if let progressHandler {
+            let (eventStream, eventContinuation) = AsyncStream<UpdateDownloadEvent>.makeStream()
             // The attempt announces itself immediately with a zero snapshot:
             // after a GitHub → Gitee switch the UI must show the new source
             // at 0% instead of the previous attempt's stale progress while
@@ -1235,11 +1240,15 @@ actor AppUpdateService: UpdateChecking {
                 receivedBytes: 0,
                 totalBytes: expectedBytes
             )))
-            drainTask = Task {
+            reporting = UpdateDownloadReporting(continuation: eventContinuation, drainTask: Task {
                 for await event in eventStream {
                     await progressHandler(event)
                 }
-            }
+            })
+        } else {
+            // Progress is a side channel. Avoid creating an unconsumed stream
+            // and drain task when the caller does not observe it.
+            reporting = nil
         }
 
         do {
@@ -1291,8 +1300,8 @@ actor AppUpdateService: UpdateChecking {
                 let length = response.expectedContentLength
                 return length >= 0 ? length : nil
             }()
-            let reportProgress: @Sendable (Int64) -> Void = { [provider, totalBytes, eventContinuation] receivedBytes in
-                eventContinuation.yield(.progress(UpdateDownloadProgress(
+            let reportProgress: @Sendable (Int64) -> Void = { [provider, totalBytes, reporting] receivedBytes in
+                reporting?.continuation.yield(.progress(UpdateDownloadProgress(
                     provider: provider,
                     receivedBytes: receivedBytes,
                     totalBytes: totalBytes
@@ -1339,7 +1348,7 @@ actor AppUpdateService: UpdateChecking {
                     reportProgress(totalBytesRead)
                     // The network transfer is over; everything after this
                     // point (verification, mounting) belongs to .installing.
-                    eventContinuation.yield(.downloadCompleted)
+                    reporting?.continuation.yield(.downloadCompleted)
                     return DownloadStreamEvent.writerFinished
                 }
                 group.addTask {
@@ -1388,8 +1397,10 @@ actor AppUpdateService: UpdateChecking {
             // learns `.downloadCompleted` before verification begins. The
             // transfer is already done here; waiting for the drain costs no
             // download time.
-            eventContinuation.finish()
-            await drainTask?.value
+            if let reporting {
+                reporting.continuation.finish()
+                await reporting.drainTask.value
+            }
             try handle.close()
             return response
         } catch {
@@ -1398,8 +1409,10 @@ actor AppUpdateService: UpdateChecking {
             // delivered, no drain task outlives the attempt, and a failed
             // attempt's snapshots never leak into a fallback's event
             // sequence. The file handle closes on deallocation.
-            eventContinuation.finish()
-            await drainTask?.value
+            if let reporting {
+                reporting.continuation.finish()
+                await reporting.drainTask.value
+            }
             if let availabilityError = error as? UpdateSourceAvailabilityError {
                 throw availabilityError
             }

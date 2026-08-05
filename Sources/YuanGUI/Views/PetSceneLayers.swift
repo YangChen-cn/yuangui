@@ -16,6 +16,7 @@ struct PetSceneInteractiveLayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @State private var sideControlsOnRight = false
+    @State private var isDropTargeted = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -28,7 +29,8 @@ struct PetSceneInteractiveLayer: View {
                 focusTimer: focusTimer,
                 music: music,
                 guide: guide,
-                updateAdaptiveControlSide: updateAdaptiveControlSide
+                updateAdaptiveControlSide: updateAdaptiveControlSide,
+                isDropTargeted: $isDropTargeted
             )
             PetChatLayer(
                 chat: chat,
@@ -47,7 +49,8 @@ struct PetSceneInteractiveLayer: View {
                 music: music,
                 auxiliaryBubblePresentation: auxiliaryBubblePresentation,
                 isHovering: $isHovering,
-                sideControlsOnRight: $sideControlsOnRight
+                sideControlsOnRight: $sideControlsOnRight,
+                isDropTargeted: $isDropTargeted
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -63,8 +66,8 @@ struct PetSceneInteractiveLayer: View {
 
     private func updateAdaptiveControlSide(_ providedWindow: PetPanel? = nil) {
         let window = providedWindow ?? self.window
-        let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
-            ?? window.screen
+        let screen = window.screen
+            ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.main
         guard let screen else { return }
         let petVisualCenterX = window.frame.midX + 35 * CGFloat(store.petScale)
@@ -87,6 +90,7 @@ struct PetSpriteLayer: View {
     let music: MusicFeature
     let guide: PetGuideCoordinator
     let updateAdaptiveControlSide: (PetPanel?) -> Void
+    @Binding var isDropTargeted: Bool
 
     @Environment(\.appActions) private var appActions
     @State private var dragStartOrigin: NSPoint?
@@ -101,7 +105,8 @@ struct PetSpriteLayer: View {
         focusTimer: FocusTimerStore,
         music: MusicFeature,
         guide: PetGuideCoordinator,
-        updateAdaptiveControlSide: @escaping (PetPanel?) -> Void
+        updateAdaptiveControlSide: @escaping (PetPanel?) -> Void,
+        isDropTargeted: Binding<Bool>
     ) {
         self.window = window
         self.store = store
@@ -112,6 +117,7 @@ struct PetSpriteLayer: View {
         self.music = music
         self.guide = guide
         self.updateAdaptiveControlSide = updateAdaptiveControlSide
+        _isDropTargeted = isDropTargeted
         _playback = ObservedObject(wrappedValue: music.playback)
     }
 
@@ -177,7 +183,7 @@ struct PetSpriteLayer: View {
             .simultaneousGesture(windowDragGesture)
             .onDrop(
                 of: [UTType.fileURL.identifier],
-                isTargeted: $store.isDropTargeted,
+                isTargeted: $isDropTargeted,
                 perform: handleDrop
             )
         }
@@ -268,7 +274,6 @@ struct PetSpriteLayer: View {
     private var windowDragGesture: some Gesture {
         DragGesture(minimumDistance: 7)
             .onChanged { _ in
-                guard let window = NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel else { return }
                 if dragStartOrigin == nil {
                     window.isUserDragging = true
                     dragStartOrigin = window.frame.origin
@@ -285,11 +290,9 @@ struct PetSpriteLayer: View {
                 updateAdaptiveControlSide(window)
             }
             .onEnded { _ in
-                if let window = NSApp.windows.first(where: { $0 is PetPanel }) as? PetPanel {
-                    window.isUserDragging = false
-                    updateAdaptiveControlSide(window)
-                    window.dragEndedAction?()
-                }
+                window.isUserDragging = false
+                updateAdaptiveControlSide(window)
+                window.dragEndedAction?()
                 dragStartOrigin = nil
                 dragStartMouseLocation = nil
             }
@@ -324,7 +327,10 @@ struct PetSpriteLayer: View {
                 lock.unlock()
             }
         }
-        group.notify(queue: .main) { self.store.recycle(urls) }
+        group.notify(queue: .main) {
+            self.isDropTargeted = false
+            self.store.recycle(urls)
+        }
         return true
     }
 }
@@ -365,6 +371,7 @@ private struct PetSideControlsLayer: View {
     @ObservedObject var auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation
     @Binding var isHovering: Bool
     @Binding var sideControlsOnRight: Bool
+    @Binding var isDropTargeted: Bool
 
     @ObservedObject private var playback: MusicPlaybackStore
     @Environment(\.appActions) private var appActions
@@ -384,7 +391,8 @@ private struct PetSideControlsLayer: View {
         music: MusicFeature,
         auxiliaryBubblePresentation: PetAuxiliaryBubblePresentation,
         isHovering: Binding<Bool>,
-        sideControlsOnRight: Binding<Bool>
+        sideControlsOnRight: Binding<Bool>,
+        isDropTargeted: Binding<Bool>
     ) {
         self.window = window
         self.store = store
@@ -396,6 +404,7 @@ private struct PetSideControlsLayer: View {
         self.auxiliaryBubblePresentation = auxiliaryBubblePresentation
         _isHovering = isHovering
         _sideControlsOnRight = sideControlsOnRight
+        _isDropTargeted = isDropTargeted
         _playback = ObservedObject(wrappedValue: music.playback)
     }
 
@@ -424,12 +433,12 @@ private struct PetSideControlsLayer: View {
 
     var body: some View {
         Group {
-            if store.isDropTargeted {
+            if isDropTargeted {
                 dropOverlay
                     .transition(.scale.combined(with: .opacity))
             }
 
-            if !store.isDropTargeted && !chatPresentation.keepsExpandedLayout {
+            if !isDropTargeted && !chatPresentation.keepsExpandedLayout {
                 if hasActiveFocusCountdown {
                     focusModeSideControls
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: sideControlsOnRight ? .bottomTrailing : .bottomLeading)
@@ -688,8 +697,8 @@ private struct PetSideControlsLayer: View {
     }
 
     private func updateAdaptiveControlSide() {
-        let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
-            ?? window.screen
+        let screen = window.screen
+            ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.main
         guard let screen else { return }
         let petVisualCenterX = window.frame.midX + 35 * scale

@@ -24,7 +24,10 @@ final class ScreenshotEditorStore: ObservableObject {
     private var undoStack: [[ScreenshotAnnotation]] = []
     private var redoStack: [[ScreenshotAnnotation]] = []
     private var gestureStartSnapshot: [ScreenshotAnnotation]?
-    private var activeAnnotationID: UUID?
+    private var activeAnnotationValue: ScreenshotAnnotation?
+    private var activeDrawingStart: CGPoint?
+
+    var activeAnnotation: ScreenshotAnnotation? { activeAnnotationValue }
 
     init(image: CGImage) {
         self.image = image
@@ -46,43 +49,50 @@ final class ScreenshotEditorStore: ObservableObject {
         }
 
         gestureStartSnapshot = annotations
+        activeDrawingStart = point
         let id = UUID()
-        activeAnnotationID = id
         switch selectedTool {
         case .pen:
-            annotations.append(.stroke(id: id, points: [point], style: style, highlighter: false))
+            activeAnnotationValue = .stroke(id: id, points: [point], style: style, highlighter: false)
         case .highlighter:
             var highlighterStyle = style
             highlighterStyle.color = color.withAlphaComponent(0.34)
             highlighterStyle.lineWidth = max(10, lineWidth * 2.4)
-            annotations.append(.stroke(id: id, points: [point], style: highlighterStyle, highlighter: true))
+            activeAnnotationValue = .stroke(id: id, points: [point], style: highlighterStyle, highlighter: true)
         case .line:
-            annotations.append(.line(id: id, start: point, end: point, style: style, arrow: false))
+            activeAnnotationValue = .line(id: id, start: point, end: point, style: style, arrow: false)
         case .arrow:
-            annotations.append(.line(id: id, start: point, end: point, style: style, arrow: true))
+            activeAnnotationValue = .line(id: id, start: point, end: point, style: style, arrow: true)
         case .rectangle:
-            annotations.append(.rectangle(id: id, rect: CGRect(origin: point, size: .zero), style: style, ellipse: false))
+            activeAnnotationValue = .rectangle(id: id, rect: CGRect(origin: point, size: .zero), style: style, ellipse: false)
         case .ellipse:
-            annotations.append(.rectangle(id: id, rect: CGRect(origin: point, size: .zero), style: style, ellipse: true))
+            activeAnnotationValue = .rectangle(id: id, rect: CGRect(origin: point, size: .zero), style: style, ellipse: true)
         case .mosaic:
-            annotations.append(.mosaic(id: id, points: [point], width: max(18, lineWidth * 3)))
+            activeAnnotationValue = .mosaic(id: id, points: [point], width: max(18, lineWidth * 3))
         case .text:
             break
         }
     }
 
     func continueDrawing(to point: CGPoint) {
-        guard let id = activeAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
+        guard let activeAnnotation = activeAnnotationValue else { return }
         let point = clamped(point)
-        switch annotations[index] {
+        switch activeAnnotation {
         case let .stroke(id, points, style, highlighter):
-            annotations[index] = .stroke(id: id, points: points + [point], style: style, highlighter: highlighter)
+            guard let previous = points.last, Self.isMeaningfullyDifferent(point, from: previous) else { return }
+            activeAnnotationValue = .stroke(id: id, points: points + [point], style: style, highlighter: highlighter)
         case let .line(id, start, _, style, arrow):
-            annotations[index] = .line(id: id, start: start, end: point, style: style, arrow: arrow)
+            activeAnnotationValue = .line(id: id, start: start, end: point, style: style, arrow: arrow)
         case let .rectangle(id, rect, style, ellipse):
-            annotations[index] = .rectangle(id: id, rect: Self.normalizedRect(from: rect.origin, to: point), style: style, ellipse: ellipse)
+            activeAnnotationValue = .rectangle(
+                id: id,
+                rect: Self.normalizedRect(from: activeDrawingStart ?? rect.origin, to: point),
+                style: style,
+                ellipse: ellipse
+            )
         case let .mosaic(id, points, width):
-            annotations[index] = .mosaic(id: id, points: points + [point], width: width)
+            guard let previous = points.last, Self.isMeaningfullyDifferent(point, from: previous) else { return }
+            activeAnnotationValue = .mosaic(id: id, points: points + [point], width: width)
         case .text:
             break
         }
@@ -90,14 +100,15 @@ final class ScreenshotEditorStore: ObservableObject {
 
     func endDrawing(at point: CGPoint) {
         continueDrawing(to: point)
-        guard activeAnnotationID != nil else { return }
-        activeAnnotationID = nil
+        guard let completed = activeAnnotationValue else { return }
+        activeAnnotationValue = nil
+        activeDrawingStart = nil
+        annotations.append(completed)
         if let gestureStartSnapshot {
             undoStack.append(gestureStartSnapshot)
             redoStack.removeAll()
         }
         gestureStartSnapshot = nil
-        objectWillChange.send()
     }
 
     func addText(_ text: String, at origin: CGPoint) {
@@ -111,14 +122,12 @@ final class ScreenshotEditorStore: ObservableObject {
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(annotations)
         annotations = previous
-        objectWillChange.send()
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(annotations)
         annotations = next
-        objectWillChange.send()
     }
 
     func removeLast() {
@@ -145,7 +154,12 @@ final class ScreenshotEditorStore: ObservableObject {
     private func pushUndoSnapshot() {
         undoStack.append(annotations)
         redoStack.removeAll()
-        objectWillChange.send()
+    }
+
+    private static func isMeaningfullyDifferent(_ point: CGPoint, from previous: CGPoint) -> Bool {
+        let dx = point.x - previous.x
+        let dy = point.y - previous.y
+        return dx * dx + dy * dy >= 1.5 * 1.5
     }
 
     private static func normalizedRect(from start: CGPoint, to end: CGPoint) -> CGRect {

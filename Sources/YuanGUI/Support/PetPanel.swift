@@ -135,6 +135,7 @@ final class PetPanelController {
     private var lockedHoverFallbackTimer: DispatchSourceTimer?
     private var lastLockedPointerInside = false
     private var layoutUpdateScheduled = false
+    private var auxiliaryBubblePositionUpdateScheduled = false
     private var isApplyingProgrammaticLayout = false
     private var lastLayoutScale: Double
     private var lastLayoutShowsChat: Bool
@@ -356,11 +357,8 @@ final class PetPanelController {
             .store(in: &cancellables)
         store.objectWillChange
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    await Task.yield()
-                    guard let self, self.auxiliaryBubblePanel?.isVisible == true else { return }
-                    self.positionAuxiliaryBubble()
-                }
+                guard self?.auxiliaryBubblePanel?.isVisible == true else { return }
+                self?.scheduleAuxiliaryBubblePositionUpdate()
             }
             .store(in: &cancellables)
         guide.objectWillChange
@@ -712,6 +710,19 @@ final class PetPanelController {
             guard let self else { return }
             self.layoutUpdateScheduled = false
             self.resizeToCurrentLayout()
+        }
+    }
+
+    private func scheduleAuxiliaryBubblePositionUpdate() {
+        guard auxiliaryBubblePanel?.isVisible == true,
+              !auxiliaryBubblePositionUpdateScheduled else { return }
+        auxiliaryBubblePositionUpdateScheduled = true
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self else { return }
+            self.auxiliaryBubblePositionUpdateScheduled = false
+            guard self.auxiliaryBubblePanel?.isVisible == true else { return }
+            self.positionAuxiliaryBubble()
         }
     }
 

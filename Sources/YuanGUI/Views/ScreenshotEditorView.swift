@@ -147,7 +147,12 @@ private final class ScreenshotCanvasNSView: NSView {
         context.draw(store.image, in: rect)
         context.translateBy(x: rect.minX, y: rect.minY)
         context.scaleBy(x: rect.width / store.imageSize.width, y: rect.height / store.imageSize.height)
-        ScreenshotRenderer.drawAnnotations(store.annotations, image: store.image, in: context)
+        ScreenshotRenderer.drawAnnotations(
+            store.annotations,
+            activeAnnotation: store.activeAnnotation,
+            image: store.image,
+            in: context
+        )
         context.restoreGState()
     }
 
