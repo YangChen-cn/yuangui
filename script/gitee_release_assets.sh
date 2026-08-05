@@ -294,6 +294,12 @@ ensure_release() {
     echo "$release_id"
     return 0
   fi
+  # Gitee rejects release creation without a non-empty body and a target
+  # commit. The default body mirrors the release name; callers pass a richer
+  # one when they have it.
+  if [[ -z "$body" ]]; then
+    body="$name"
+  fi
   echo "Creating Gitee release $tag" >&2
   # The creation response must contain a valid id; a `null`/`{}` body means
   # the creation did not happen and must fail, not echo "null".
@@ -304,6 +310,7 @@ ensure_release() {
     --data-urlencode "tag_name=$tag" \
     --data-urlencode "name=$name" \
     --data-urlencode "body=$body" \
+    --data-urlencode "target_commitish=main" \
     --data-urlencode "prerelease=$prerelease" \
     "$API/releases" | jq -er '
       select(type == "object")
