@@ -44,7 +44,11 @@ struct DashboardMusicView: View {
         DashboardSectionSurface(prominence: .hero) {
             VStack(spacing: 7) {
                 HStack(spacing: 12) {
-                    MusicArtworkView(track: track, size: 66)
+                    MiniPlayerArtworkButton(
+                        track: track,
+                        action: openFullPlayer,
+                        size: 66
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         Text(track.title)
                             .font(.headline)

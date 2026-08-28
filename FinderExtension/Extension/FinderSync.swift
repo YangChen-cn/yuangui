@@ -31,6 +31,13 @@ final class FinderSync: FIFinderSync {
             finderLog.info("Interactive activation policy enabled: \(changed, privacy: .public)")
         }
         refreshMonitoredVolumes()
+        terminalApplicationsSnapshot = FinderTerminalApplication.cachedInstalledApplications()
+        editorApplicationsSnapshot = FinderEditorApplication.cachedInstalledApplications()
+        if terminalApplicationsSnapshot.isEmpty && editorApplicationsSnapshot.isEmpty {
+            refreshApplicationSnapshots()
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.refreshApplicationSnapshots() }
+        }
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers = [
             center.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) {
@@ -38,6 +45,12 @@ final class FinderSync: FIFinderSync {
             },
             center.addObserver(forName: NSWorkspace.didUnmountNotification, object: nil, queue: .main) {
                 [weak self] _ in self?.refreshMonitoredVolumes()
+            },
+            center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) {
+                [weak self] _ in self?.refreshApplicationSnapshots()
+            },
+            center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) {
+                [weak self] _ in self?.refreshApplicationSnapshots()
             }
         ]
     }
@@ -113,7 +126,7 @@ final class FinderSync: FIFinderSync {
         let parent = NSMenuItem(title: title, action: #selector(openTerminal(_:)), keyEquivalent: "")
         parent.target = self
         parent.image = menuImage(systemName: "terminal", accessibility: title)
-        let applications = FinderTerminalApplication.installedApplications()
+        let applications = terminalApplicationsSnapshot
         terminalApplicationsSnapshot = applications
         parent.isEnabled = directory != nil && !applications.isEmpty
         terminalMenuSnapshot.removeAll(keepingCapacity: true)
@@ -241,7 +254,7 @@ final class FinderSync: FIFinderSync {
             systemName: "chevron.left.forwardslash.chevron.right",
             accessibility: title
         )
-        let applications = FinderEditorApplication.installedApplications()
+        let applications = editorApplicationsSnapshot
         editorApplicationsSnapshot = applications
         parent.isEnabled = target != nil && !applications.isEmpty
         editorMenuSnapshot.removeAll(keepingCapacity: true)
@@ -329,16 +342,20 @@ final class FinderSync: FIFinderSync {
             return
         }
         let template = FinderFileTemplate.allCases[templateIndex]
-        do {
-            let url = try FinderFileCreator.create(
-                template: template,
-                baseName: localized(template.baseNameKey),
-                in: directory
-            )
-            revealInFinderIfAppropriate([url])
-        } catch {
-            finderLog.error("File creation failed: \(error.localizedDescription, privacy: .public)")
-            presentError(localized("error.createFailed"))
+        let defaultName = "\(localized(template.baseNameKey)).\(template.pathExtension)"
+        promptForFileName(initialValue: defaultName) { [weak self] name in
+            guard let self, let name else { return }
+            do {
+                let url = try FinderFileCreator.create(template: template, named: name, in: directory)
+                self.revealInFinderIfAppropriate([url])
+            } catch FinderFileCreationError.emptyName {
+                self.presentError(self.localized("blankFile.error.nameRequired"))
+            } catch FinderFileCreationError.invalidName {
+                self.presentError(self.localized("blankFile.error.invalidName"))
+            } catch {
+                finderLog.error("File creation failed: \(error.localizedDescription, privacy: .public)")
+                self.presentError(self.localized("error.createFailed"))
+            }
         }
     }
 
@@ -383,7 +400,7 @@ final class FinderSync: FIFinderSync {
         // delivered. Defer the alert until that menu has closed, otherwise
         // AppKit can order the dialog behind Finder and the action appears to
         // do nothing.
-        promptForBlankFileName { [weak self] name in
+        promptForFileName(initialValue: "") { [weak self] name in
             guard let self, let name else { return }
             do {
                 let url = try FinderFileCreator.create(named: name, in: directory)
@@ -399,7 +416,10 @@ final class FinderSync: FIFinderSync {
         }
     }
 
-    private func promptForBlankFileName(completion: @escaping (String?) -> Void) {
+    private func promptForFileName(
+        initialValue: String,
+        completion: @escaping (String?) -> Void
+    ) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             BlankFilePromptController(
@@ -408,6 +428,7 @@ final class FinderSync: FIFinderSync {
                 placeholder: self.localized("blankFile.prompt.placeholder"),
                 confirmTitle: self.localized("blankFile.prompt.create"),
                 cancelTitle: self.localized("action.cancel"),
+                initialValue: initialValue,
                 completion: completion
             ).present()
         }
@@ -604,6 +625,11 @@ final class FinderSync: FIFinderSync {
         )
     }
 
+    private func refreshApplicationSnapshots() {
+        terminalApplicationsSnapshot = FinderTerminalApplication.refreshInstalledApplications()
+        editorApplicationsSnapshot = FinderEditorApplication.refreshInstalledApplications()
+    }
+
     private func presentError(_ message: String) {
         guard !message.isEmpty else { return }
         NSSound.beep()
@@ -636,6 +662,7 @@ private final class BlankFilePromptController: NSObject {
         placeholder: String,
         confirmTitle: String,
         cancelTitle: String,
+        initialValue: String,
         completion: @escaping (String?) -> Void
     ) {
         self.completion = completion
@@ -674,6 +701,7 @@ private final class BlankFilePromptController: NSObject {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         field.placeholderString = placeholder
+        field.stringValue = initialValue
         field.setAccessibilityLabel(fieldAccessibilityLabel)
         field.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         field.controlSize = .regular

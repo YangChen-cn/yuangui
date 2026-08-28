@@ -47,6 +47,17 @@ extension MusicLyricsCoordinator {
                 }
             }
             if track.source == .bilibili {
+                // A lyric match the user explicitly requested must remain the
+                // selected lyric source. Bilibili subtitles are a fallback,
+                // not a reason to discard a persisted LRCLIB match whenever
+                // playback reloads or the account state changes.
+                if cached?.source == "LRCLIB" {
+                    guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
+                    lyrics = cached
+                    updateLyric()
+                    finishLyricLoad(revision, trackID: track.id)
+                    return
+                }
                 let exactSubtitleURL = await bilibili.subtitleURL(for: track)
                 guard isCurrentLyricLoad(revision, trackID: track.id) else { return }
                 if let exactSubtitleURL {
@@ -57,10 +68,6 @@ extension MusicLyricsCoordinator {
                             removeCachedLyrics(for: track)
                             cached = nil
                         }
-                    }
-                    if cached?.source == "LRCLIB" {
-                        removeCachedLyrics(for: track)
-                        cached = nil
                     }
                 }
             }
@@ -106,7 +113,12 @@ extension MusicLyricsCoordinator {
     func refreshCurrentBilibiliSubtitleAfterLogin() async {
         guard !isShuttingDown,
               let track = currentTrack,
-              track.source == .bilibili,
+              track.source == .bilibili else {
+            return
+        }
+        // Login can expose a subtitle URL after playback started, but it must
+        // not replace lyrics already matched through LRCLIB.
+        guard cachedLyrics(for: track)?.source != "LRCLIB",
               let subtitleURL = await bilibili.subtitleURL(for: track),
               !Task.isCancelled,
               !isShuttingDown,
@@ -114,9 +126,6 @@ extension MusicLyricsCoordinator {
             return
         }
         updateSubtitleURL(subtitleURL, for: track.id)
-        if cachedLyrics(for: track)?.source == "LRCLIB" {
-            removeCachedLyrics(for: track)
-        }
         loadLyrics(for: currentTrack ?? track)
     }
 

@@ -2,6 +2,15 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
+## 2.8.2 — Stable maintenance release
+
+- New Finder documents now open a native naming prompt with the suggested complete filename selected, so the next action is typing the name, including the extension.
+- Cached installed terminals and editors are used while FinderSync starts, then refreshed when apps launch or quit. This removes the repeated application-discovery work that could delay a right-click menu after the extension had been restarted.
+- The complete player’s Bilibili and Local Music rows now use their full row width as the double-click play target.
+- A matched LRCLIB lyric is now retained for Bilibili tracks. Newly available Bilibili subtitles remain a fallback and no longer replace that selection during playback reloads or login refreshes.
+- The menu-bar music panel reuses the mini-player’s interactive cover: click the cover to close the panel and open the complete player.
+- Development builds and packaged DMGs now default to the registered `YuanGui` self-signed identity instead of ad-hoc signing. The scripts fail explicitly if that identity is unavailable.
+
 ## 2.8.1 — Finder right-click and update reliability improvements
 
 - Reworked the FinderSync menu into a compact native layout: New File, Cut, Paste, Copy, Open in Terminal, and Open in Editor appear without decorative title rows or artificial spacing.

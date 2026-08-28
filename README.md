@@ -23,7 +23,7 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The current stable release is `2.8.1`. This update reworks the Finder context menu (New Blank File, a Copy submenu, and remembered terminal/editor opening), adds real-time download progress with GitHub-first fallback in Settings → About, and hardens the release pipeline. See the [2.8.1 release notes](RELEASE_NOTES.md#281--finder-right-click-and-update-reliability-improvements) for details.
+The current stable release is `2.8.2`. This maintenance release makes Finder document names immediately editable, removes repeated FinderSync application discovery after a restart, expands playlist play targets, preserves selected LRCLIB lyrics for Bilibili, and makes the menu-bar cover open the complete player. See the [2.8.2 release notes](RELEASE_NOTES.md#282--stable-maintenance-release) for details.
 
 ## Interface preview
 
@@ -68,7 +68,7 @@ The current stable release is `2.8.1`. This update reworks the Finder context me
 - Your own OpenAI-compatible API URL and key for AI chat
 - Network access for weather, Bilibili playback, lyric matching, and update checks
 
-Download the DMG from the [latest release](https://github.com/YangChen-cn/yuangui/releases/latest), then drag `YuanGUI.app` to Applications. Personal-share builds use an ad-hoc signature. If macOS blocks the first launch, Control-click the app and choose **Open**, or allow it in **System Settings → Privacy & Security**.
+Download the DMG from the [latest release](https://github.com/YangChen-cn/yuangui/releases/latest), then drag `YuanGUI.app` to Applications. Builds use the local `YuanGui` self-signed identity. If macOS blocks the first launch, Control-click the app and choose **Open**, or allow it in **System Settings → Privacy & Security**.
 
 See the complete [installation and permission guide](docs/INSTALLATION.md). Location, Screen Recording, Accessibility, Music/Finder Automation, and file access are requested only when the related feature is used.
 After installing the app, enable **YuanGUI Finder Extension** once in **System Settings → General → Login Items & Extensions**. iCloud Drive and third-party File Provider locations are not guaranteed in the first version.
@@ -80,10 +80,10 @@ git clone https://github.com/YangChen-cn/yuangui.git
 cd yuangui
 swift test
 ./script/build_and_run.sh --verify
-VERSION=2.8.1 BUILD=20 ./script/package_dmg.sh
+VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
 ```
 
-The run script builds and launches a verified app bundle. The package script creates and checks a DMG and prints its SHA-256. An ad-hoc signature is sufficient for local builds; Developer ID and notarization are optional.
+The run script builds and launches a verified app bundle. The package script creates and checks a DMG and prints its SHA-256. Both default to the registered `YuanGui` self-signed identity; Developer ID and notarization remain optional overrides.
 
 ## Music
 
@@ -119,7 +119,7 @@ YuanGUI supports English and Simplified Chinese. Open **Settings → General →
 
 ```bash
 swift test
-VERSION=2.8.1 BUILD=20 ./script/package_dmg.sh
+VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
 ```
 
 Tests cover system metrics, companion states, weather, AI services, music sources and local import, lyrics, translation layout, cleanup safety, settings persistence, and resource loading. The music suite also verifies publisher isolation and cancellation-safe shutdown with suspended services. GitHub Actions runs `swift test` for pushes and pull requests. A repeatable SwiftUI Instruments comparison is documented in [Music observation performance](docs/MUSIC_PERFORMANCE.md).

@@ -83,12 +83,12 @@ the manifest-and-mirror path for the verified Gitee repository
    release-note files as assets, and a `Build: N` line in the body. Prerelease
    tags and prerelease Releases are rejected from `latest.json`.
 4. Upload the DMG to Gitee from your machine:
-   `VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh`
+   `VERSION=2.8.2 BUILD=21 GITEE_TOKEN=xxx ./script/publish_gitee_release.sh`
    (creates or reuses the Gitee release, uploads DMG + `.sha256` sidecar with
    reuse-and-verify rules, prints the release URL). Asset handling is
    delegated to `script/gitee_release_assets.sh`.
 5. Generate and mirror the manifest from your machine:
-   `VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/mirror_manifest_locally.sh`
+   `VERSION=2.8.2 BUILD=21 GITEE_TOKEN=xxx ./script/mirror_manifest_locally.sh`
    It verifies the local DMG against the GitHub Release asset digest, keeps
    the Gitee DMG byte-identical (reusing the upload from step 4), extracts
    the bilingual highlights from the two release-note files, refuses a true
@@ -104,7 +104,7 @@ After the manual version-switch commit, `script/release.sh` performs steps
 2–6:
 
 ```sh
-VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/release.sh
+VERSION=2.8.2 BUILD=21 GITEE_TOKEN=xxx ./script/release.sh
 ```
 
 It packages the DMG, creates or completes the GitHub Release with the three

@@ -8,4 +8,4 @@ This file records values to apply manually on GitHub. It does not change reposit
 - Release title: `YuanGUI 2.7.0`
 - Upload: `dist/YuanGUI-2.7.0.dmg` and its SHA-256 emitted by `./script/package_dmg.sh`
 
-Before publishing, run `swift test`, `./script/build_and_run.sh --verify`, and `./script/package_dmg.sh`; verify `2.7.0 (16)`, Bundle ID `com.yang.yuangui`, ad-hoc signature, `en.lproj` and `zh-Hans.lproj`, legal documents, and the mounted DMG contents.
+Before publishing, run `swift test`, `./script/build_and_run.sh --verify`, and `./script/package_dmg.sh`; verify `2.8.2 (21)`, Bundle ID `com.yang.yuangui`, the `YuanGui` self-signed identity, `en.lproj` and `zh-Hans.lproj`, legal documents, and the mounted DMG contents.

@@ -86,6 +86,28 @@ public enum FinderFileCreator {
         in directory: URL,
         fileManager: FileManager = .default
     ) throws -> URL {
+        try create(data: Data(), named: rawName, in: directory, fileManager: fileManager)
+    }
+
+    /// Creates a template using the complete name selected in the native
+    /// rename prompt. Keeping this separate from `baseName` creation lets the
+    /// Finder extension offer an immediately editable default name without
+    /// losing the appropriate Office document payload.
+    public static func create(
+        template: FinderFileTemplate,
+        named rawName: String,
+        in directory: URL,
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        try create(data: template.data, named: rawName, in: directory, fileManager: fileManager)
+    }
+
+    private static func create(
+        data: Data,
+        named rawName: String,
+        in directory: URL,
+        fileManager: FileManager
+    ) throws -> URL {
         let directory = directory.standardizedFileURL.resolvingSymlinksInPath()
         guard FinderTargetResolver.isDirectory(directory, fileManager: fileManager) else {
             throw FinderFileCreationError.invalidDirectory
@@ -115,7 +137,7 @@ public enum FinderFileCreator {
                 : "\(conflictSplit.base) \(suffix)\(conflictSplit.ext)"
             let destination = directory.appendingPathComponent(numberedName)
             do {
-                try Data().write(to: destination, options: .withoutOverwriting)
+                try data.write(to: destination, options: .withoutOverwriting)
                 return destination
             } catch let error as CocoaError where error.code == .fileWriteFileExists {
                 continue

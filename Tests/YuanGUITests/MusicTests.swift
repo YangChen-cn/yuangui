@@ -2385,6 +2385,35 @@ final class MusicObservationTests: XCTestCase {
         XCTAssertFalse(lyricsStore.isSearching)
     }
 
+    func testBilibiliSubtitleDoesNotReplaceCachedLRCLIBMatch() async {
+        let track = makeBilibiliTrack(id: "preserve-lrclib")
+        let bilibili = CountingBilibiliProvider()
+        let lyricsStore = LyricsStore()
+        let coordinator = MusicLyricsCoordinator(
+            store: lyricsStore,
+            presentation: LyricsPresentationStore(
+                defaults: UserDefaults(suiteName: "LyricsPresentation-\(UUID().uuidString)")!
+            ),
+            defaults: UserDefaults(suiteName: "LyricsDefaults-\(UUID().uuidString)")!,
+            lyricsService: StubLyricsProvider(),
+            localMusicImporter: StubLocalMusicImporter(),
+            bilibili: bilibili
+        )
+        let delegate = RecordingLyricsCoordinatorDelegate(track: track)
+        coordinator.delegate = delegate
+        let matched = LyricsParser.parseLRC("[00:01.00]保留 LRCLIB", source: "LRCLIB")
+        coordinator.lyricsByTrackID[track.lyricsCacheKey] = matched
+
+        coordinator.loadLyrics(for: track)
+        for _ in 0..<12 { await Task.yield() }
+        let subtitleRequests = await bilibili.subtitleRequestCount()
+
+        XCTAssertEqual(lyricsStore.document?.source, "LRCLIB")
+        XCTAssertEqual(lyricsStore.document?.lines.first?.text, "保留 LRCLIB")
+        XCTAssertEqual(subtitleRequests, 0)
+        await coordinator.shutdown()
+    }
+
     func testBilibiliFavoriteBatchDeduplicatesRepeatedTrackIDs() {
         let store = MusicLibraryStore()
         let controller = MusicLibraryController(
@@ -2455,6 +2484,25 @@ private final class RecordingBilibiliCoordinatorDelegate:
     }
 
     func refreshCurrentBilibiliLyricsAfterLogin() async {}
+}
+
+private actor CountingBilibiliProvider: BilibiliMusicProviding {
+    private var subtitleRequests = 0
+
+    func resolveTracks(from input: String) async throws -> [MusicTrack] { [] }
+
+    func audioLocation(for track: MusicTrack) async throws -> BilibiliAudioLocation {
+        BilibiliAudioLocation(candidates: [URL(string: "https://example.com/audio.mp3")!])
+    }
+
+    func subtitleURL(for track: MusicTrack) async -> URL? {
+        subtitleRequests += 1
+        return URL(string: "https://example.com/subtitle.json")
+    }
+
+    func playbackHeaders() async -> [String: String] { [:] }
+
+    func subtitleRequestCount() -> Int { subtitleRequests }
 }
 
 private actor SuspendedBilibiliProvider: BilibiliMusicProviding {
@@ -2836,4 +2884,3 @@ final class MusicInstrumentsProfileTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
     }
 }
-

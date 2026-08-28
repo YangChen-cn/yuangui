@@ -15,7 +15,7 @@ set -euo pipefail
 #   - 仓库 secret GITEE_TOKEN 可创建 Gitee release
 #
 # 用法：
-#   VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/release.sh
+#   VERSION=2.8.2 BUILD=21 GITEE_TOKEN=xxx ./script/release.sh
 #
 # 脚本本身不修改任何源码或仓库配置；所有发布动作都是 gh/curl 调用。
 

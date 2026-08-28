@@ -156,6 +156,19 @@ final class FinderExtensionCoreTests: XCTestCase {
         }
     }
 
+    func testTemplateCreationUsesTheEditedCompleteNameAndKeepsItsPayload() throws {
+        try withTemporaryDirectory { root in
+            let created = try FinderFileCreator.create(
+                template: .word,
+                named: "Project Notes.docx",
+                in: root
+            )
+
+            XCTAssertEqual(created.lastPathComponent, "Project Notes.docx")
+            XCTAssertEqual(try Data(contentsOf: created), FinderFileTemplate.word.data)
+        }
+    }
+
     func testShellQuoteEscapesSingleQuotes() {
         XCTAssertEqual(
             FinderClipboardFormatter.shellQuote("/Users/yang/My Project/main.swift"),

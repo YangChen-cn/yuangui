@@ -13,7 +13,7 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="SwiftPM" src="https://img.shields.io/badge/build-SwiftPM-orange">
   <a href="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml"><img alt="自动测试" src="https://github.com/YangChen-cn/yuangui/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.8.1.dmg"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
+  <a href="https://github.com/YangChen-cn/yuangui/releases/latest"><img alt="下载最新版 DMG" src="https://img.shields.io/badge/下载最新版-DMG-2ea44f?logo=github"></a>
 </p>
 
 ## 项目简介
@@ -22,7 +22,7 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-当前稳定版本为 `2.8.1`。这次更新重做 Finder 右键菜单（新建空白文件、复制子菜单、记住默认的终端/编辑器打开），在设置 → 关于 中加入实时下载进度与更可靠的下载回退，并加固发布流水线。详情见 [2.8.1 更新说明](RELEASE_NOTES.zh-CN.md#281--finder-右键与更新可靠性改进)。
+当前稳定版本为 `2.8.2`。本次稳定维护让 Finder 新建文件可立即改名，减少 FinderSync 重启后的右键等待，扩大播放列表的切歌触发范围，保留已匹配的 LRCLIB 歌词，并让菜单栏音乐封面直接打开完整播放器。详情见 [2.8.2 更新说明](RELEASE_NOTES.zh-CN.md#282--稳定维护版)。
 
 ## 界面预览
 
@@ -100,9 +100,9 @@
 
 ### 使用 DMG
 
-[一键下载最新版 `YuanGUI-2.8.1.dmg`](https://github.com/YangChen-cn/yuangui/releases/latest/download/YuanGUI-2.8.1.dmg)
+[一键下载最新版](https://github.com/YangChen-cn/yuangui/releases/latest)
 
-1. 打开 `YuanGUI-2.8.1.dmg`。
+1. 打开下载的 `YuanGUI.dmg`。
 2. 将 `YuanGUI.app` 拖入“应用程序”文件夹。
 3. 个人分享版使用临时签名。首次启动可按住 Control 点击应用并选择“打开”。
 4. 如果 macOS 仍然拦截，请前往“系统设置 → 隐私与安全性”，选择“仍要打开”。
@@ -200,13 +200,13 @@ swift test
 ## 打包 DMG
 
 ```bash
-VERSION=2.8.1 BUILD=20 ./script/package_dmg.sh
+VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
 ```
 
-默认会执行 Release 构建、生成应用包、临时签名、制作 DMG 并验证镜像完整性。当前已发布示例产物位于：
+默认会执行 Release 构建、生成应用包、使用已注册的 `YuanGui` 自签名身份签名、制作 DMG 并验证镜像完整性。产物位于：
 
 ```text
-dist/YuanGUI-2.8.1.dmg
+dist/YuanGUI-<版本号>.dmg
 ```
 
 如需 Developer ID 签名与公证，可以提供以下环境变量：
@@ -214,7 +214,7 @@ dist/YuanGUI-2.8.1.dmg
 ```bash
 SIGNING_IDENTITY="Developer ID Application: ..." \
 NOTARY_PROFILE="your-notary-profile" \
-VERSION=2.8.1 BUILD=20 ./script/package_dmg.sh
+VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
 ```
 
 ## 项目结构

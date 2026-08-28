@@ -397,6 +397,8 @@ private struct MusicPlayerContentRoot: View {
                                 Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .tag(track.id)
                         .contextMenu {
                             Button("播放") { music.play(track) }
@@ -504,6 +506,8 @@ private struct MusicPlayerContentRoot: View {
                                     }
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                             .tag(track.id)
                             .contextMenu {
                                 Button("播放") { music.play(track) }

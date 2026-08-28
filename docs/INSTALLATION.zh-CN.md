@@ -6,7 +6,7 @@
 
 1. 从[最新发布页](https://github.com/YangChen-cn/yuangui/releases/latest)下载 DMG。
 2. 打开后将 `YuanGUI.app` 拖入 `Applications`。
-3. 当前本地/个人分享版使用临时签名。按住 Control 点击应用，选择“打开”，再确认。
+3. 当前本地/个人分享版使用 `YuanGui` 自签名身份。按住 Control 点击应用，选择“打开”，再确认。
 4. 如果 Gatekeeper 仍然拦截，请在“系统设置 → 隐私与安全性”中为 YuanGUI 点击“仍要打开”。
 
 YuanGUI 需要 macOS 15 或更高版本。日常使用请运行打包后的 App，而不是 SwiftPM 的裸可执行文件。

@@ -15,7 +15,7 @@ BUNDLE_ID="com.yang.yuangui"
   exit 1
 }
 MIN_SYSTEM_VERSION="15.0"
-SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-YuanGui}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -111,13 +111,16 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
-if [[ "$SIGNING_IDENTITY" == "-" ]]; then
-  /usr/bin/codesign --force --sign - "$APP_BUNDLE"
-  SIGNING_NOTE="这是个人分享版，使用临时签名。首次打开请按下方说明操作。"
+# The default `YuanGui` identity is intentionally self-signed. It must not be
+# timestamped or described as Developer ID signed; callers who provide an
+# Apple-issued identity can still opt into the hardened-runtime/timestamp path.
+if [[ "$SIGNING_IDENTITY" == "YuanGui" ]]; then
+  /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
+  SIGNING_NOTE="此版本已使用 YuanGui 自签名证书签名。"
 else
   /usr/bin/codesign --force --options runtime --timestamp \
     --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
-  SIGNING_NOTE="此版本已使用 Apple Developer ID 签名。"
+  SIGNING_NOTE="此版本已使用指定的代码签名身份签名。"
 fi
 
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
@@ -136,8 +139,8 @@ done
   "$DMG_PATH"
 
 if [[ -n "$NOTARY_PROFILE" ]]; then
-  if [[ "$SIGNING_IDENTITY" == "-" ]]; then
-    echo "NOTARY_PROFILE requires a Developer ID Application signing identity" >&2
+  if [[ "$SIGNING_IDENTITY" == "YuanGui" ]]; then
+    echo "NOTARY_PROFILE requires an Apple-issued Developer ID Application signing identity" >&2
     exit 1
   fi
   xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait

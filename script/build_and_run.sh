@@ -5,8 +5,9 @@ MODE="${1:-run}"
 APP_NAME="YuanGUI"
 BUNDLE_ID="com.yang.yuangui"
 MIN_SYSTEM_VERSION="15.0"
-APP_VERSION="2.8.1"
-APP_BUILD="20"
+APP_VERSION="2.8.2"
+APP_BUILD="21"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-YuanGui}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -108,8 +109,10 @@ cat >"$INFO_PLIST" <<PLIST
 PLIST
 
 # Keep a stable local code requirement for ServiceManagement login-item registration.
-# Nested code is signed first by build_finder_extension.sh.
-/usr/bin/codesign --force --sign - "$APP_BUNDLE"
+# Nested code is signed first by build_finder_extension.sh. `YuanGui` is the
+# registered local self-signed identity; do not silently downgrade to ad-hoc
+# signing when it is unavailable.
+/usr/bin/codesign --force --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
 stop_development_finder_extension() {

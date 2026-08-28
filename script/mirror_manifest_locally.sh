@@ -18,7 +18,7 @@ set -euo pipefail
 #   → 经 Gitee contents API 写入该文件，轮询 raw 直到字节一致
 #
 # 用法：
-#   VERSION=2.8.1 BUILD=20 GITEE_TOKEN=xxx ./script/mirror_manifest_locally.sh
+#   VERSION=2.8.2 BUILD=21 GITEE_TOKEN=xxx ./script/mirror_manifest_locally.sh
 # 可选：MINIMUM_SYSTEM_VERSION（默认 15.0）、ALLOW_ROLLBACK=true（有意回退时）。
 #
 # 脚本不修改任何源码；唯一仓库改动是提交生成的 updates/latest.json。
@@ -31,8 +31,8 @@ SHARED="$script_dir/gitee_release_assets.sh"
 GITEE_API="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
 GITEE_RAW_URL="https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/updates/latest.json"
 
-: "${VERSION:?VERSION is required, for example VERSION=2.8.1}"
-: "${BUILD:?BUILD is required, for example BUILD=20}"
+: "${VERSION:?VERSION is required, for example VERSION=2.8.2}"
+: "${BUILD:?BUILD is required, for example BUILD=21}"
 : "${GITEE_TOKEN:?GITEE_TOKEN is required}"
 MINIMUM_SYSTEM_VERSION="${MINIMUM_SYSTEM_VERSION:-15.0}"
 ALLOW_ROLLBACK="${ALLOW_ROLLBACK:-false}"

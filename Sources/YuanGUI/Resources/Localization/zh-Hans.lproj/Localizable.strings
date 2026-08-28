@@ -1452,6 +1452,12 @@
 "release.2.8.1.slowDownloadSwitch" = "修复持续慢速下载检测：改用真实的 10 秒滑动窗口，长时间被限速的 GitHub 下载仍能切换到对应的 Gitee 资产。";
 "release.2.8.1.updateDecision" = "更新检查与安装共用同一版本判定：同版本更高 Build 也视为更新；切换固定更新源会丢弃旧检查结果并重新检查。";
 "release.2.8.1.releasePipeline" = "加固发布流水线：Gitee 重复资产合并为一份并逐字节复核，校验失败不会删除不确定的资产，发布前要求 main 已推送且工作区干净。";
+"release.2.8.2.finderRename" = "Finder 新建文档会预选完整建议文件名，下一步可以直接输入名称。";
+"release.2.8.2.finderWarmMenu" = "FinderSync 启动时复用已缓存的终端和编辑器，避免扩展重启后重复枚举应用。";
+"release.2.8.2.playlistHitTarget" = "哔哩哔哩和本地音乐播放列表的整行都可双击播放。";
+"release.2.8.2.bilibiliLyricsPreference" = "哔哩哔哩歌曲已匹配的 LRCLIB 歌词会被保留，字幕不再在重载时覆盖它。";
+"release.2.8.2.dashboardArtwork" = "点击菜单栏音乐面板中的封面即可打开完整播放器。";
+"release.2.8.2.signing" = "开发构建和 DMG 现在使用已注册的 YuanGui 自签名身份，不再使用临时签名。";
 "release.2.8.0.translationSpeech" = "为原文和译文加入 macOS 原生语音朗读，同一时间只朗读一侧，内容、目标语言或窗口变化时立即停止过期朗读。";
 "release.2.8.0.musicWindows" = "重做迷你播放器与完整播放器的窗口交接，点击封面即可打开完整播放器，并修复首次打开迷你播放器的生命周期竞态。";
 "release.2.8.0.finderExtension" = "新增原生 FinderSync 右键扩展：新建常用文本与 Office 文件、复制路径、在已安装的终端中打开文件夹、剪切粘贴。";

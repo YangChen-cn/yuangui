@@ -40,8 +40,8 @@ final class FinderExtensionController: ObservableObject {
             isBundled = false
         }
 
-        // FinderSync's host query can report false for ad-hoc development copies
-        // even while PluginKit has elected and launched the extension. A running
+        // FinderSync's host query can report false for locally signed development
+        // copies even while PluginKit has elected and launched the extension. A running
         // extension process is direct public-API evidence that it is usable.
         let isExtensionRunning = !NSRunningApplication.runningApplications(
             withBundleIdentifier: Self.extensionBundleIdentifier

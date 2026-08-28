@@ -3,6 +3,7 @@ import SwiftUI
 struct MiniPlayerArtworkButton: View {
     let track: MusicTrack?
     let action: () -> Void
+    var size: CGFloat = 52
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
@@ -10,7 +11,7 @@ struct MiniPlayerArtworkButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                MusicArtworkView(track: track, size: 52)
+                MusicArtworkView(track: track, size: size)
 
                 MiniPlayerArtworkEdgeHint(
                     isActive: isHovering,
@@ -29,7 +30,7 @@ struct MiniPlayerArtworkButton: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .scaleEffect(reduceMotion || !isHovering ? 0.88 : 1)
             }
-            .frame(width: 52, height: 52)
+            .frame(width: size, height: size)
             .contentShape(RoundedRectangle(cornerRadius: 9))
             .scaleEffect(reduceMotion || !isHovering ? 1 : 1.035)
         }

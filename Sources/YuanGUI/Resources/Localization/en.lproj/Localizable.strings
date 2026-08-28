@@ -1452,6 +1452,12 @@
 "release.2.8.1.slowDownloadSwitch" = "Fixed sustained-slow-download detection to use a true trailing 10-second window, so a long throttled GitHub transfer can still switch to the matching Gitee asset.";
 "release.2.8.1.updateDecision" = "Update checks and installation now share the same version-and-build decision: an equal version with a higher build is an update, and switching the pinned update source discards stale check results.";
 "release.2.8.1.releasePipeline" = "Strengthened the release pipeline: duplicate Gitee assets are reconciled to one byte-verified copy, failed verification never deletes an uncertain asset, and preflight requires a clean, pushed main.";
+"release.2.8.2.finderRename" = "New Finder documents now open with the suggested complete filename selected, so you can type the name immediately.";
+"release.2.8.2.finderWarmMenu" = "FinderSync now reuses cached terminal and editor choices while it starts, avoiding repeated app discovery after an extension restart.";
+"release.2.8.2.playlistHitTarget" = "Expanded the double-click play target to the full width of Bilibili and Local Music playlist rows.";
+"release.2.8.2.bilibiliLyricsPreference" = "Matched LRCLIB lyrics remain selected for Bilibili tracks; available subtitles no longer overwrite them during reloads.";
+"release.2.8.2.dashboardArtwork" = "Click the cover in the menu-bar music panel to open the complete player.";
+"release.2.8.2.signing" = "Development builds and DMGs now use the registered YuanGui self-signed identity instead of ad-hoc signing.";
 "release.2.8.0.translationSpeech" = "Added native macOS speech synthesis for source and translated text; only one side speaks at a time and stale speech stops immediately.";
 "release.2.8.0.musicWindows" = "Rebuilt the mini-player and full-player window handoff around the real popover lifecycle; artwork opens the full player, and the first-open race is fixed.";
 "release.2.8.0.finderExtension" = "Added a native FinderSync right-click extension for creating common text and Office files, copying paths, opening folders in installed terminals, and cut/paste.";

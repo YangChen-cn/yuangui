@@ -6,7 +6,7 @@
 
 1. Download the DMG from the [latest release page](https://github.com/YangChen-cn/yuangui/releases/latest).
 2. Open it and drag `YuanGUI.app` to `Applications`.
-3. This project currently uses an ad-hoc signature for local/personal distribution. Control-click the app, choose **Open**, then confirm.
+3. This project uses the local `YuanGui` self-signed identity for personal distribution. Control-click the app, choose **Open**, then confirm.
 4. If Gatekeeper still blocks it, open **System Settings → Privacy & Security** and choose **Open Anyway** for YuanGUI.
 
 YuanGUI supports macOS 15 or later. Do not launch the bare SwiftPM executable for regular use; package the app with `./script/build_and_run.sh --verify` or install the DMG.

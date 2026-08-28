@@ -29,11 +29,58 @@ struct FinderExternalApplication {
             )
         }
     }
+
+    static func cachedApplications(
+        candidates: [(displayName: String, bundleIdentifier: String)],
+        cacheKey: String,
+        defaults: UserDefaults = .standard
+    ) -> [FinderExternalApplication] {
+        let paths = defaults.dictionary(forKey: cacheKey) as? [String: String] ?? [:]
+        return candidates.compactMap { candidate in
+            guard let path = paths[candidate.bundleIdentifier],
+                  FileManager.default.fileExists(atPath: path) else {
+                return nil
+            }
+            return FinderExternalApplication(
+                displayName: candidate.displayName,
+                bundleIdentifier: candidate.bundleIdentifier,
+                applicationURL: URL(fileURLWithPath: path, isDirectory: true)
+            )
+        }
+    }
+
+    static func refreshApplications(
+        candidates: [(displayName: String, bundleIdentifier: String)],
+        cacheKey: String,
+        defaults: UserDefaults = .standard,
+        workspace: NSWorkspace = .shared
+    ) -> [FinderExternalApplication] {
+        let applications = installedApplications(candidates: candidates, workspace: workspace)
+        defaults.set(
+            Dictionary(uniqueKeysWithValues: applications.map {
+                ($0.bundleIdentifier, $0.applicationURL.path)
+            }),
+            forKey: cacheKey
+        )
+        return applications
+    }
 }
 
 enum FinderTerminalApplication {
-    static func installedApplications() -> [FinderExternalApplication] {
-        FinderExternalApplication.installedApplications(candidates: supportedCandidates)
+    private static let cacheKey = "finderTerminalApplications"
+
+    static func cachedInstalledApplications() -> [FinderExternalApplication] {
+        FinderExternalApplication.cachedApplications(
+            candidates: supportedCandidates,
+            cacheKey: cacheKey
+        )
+    }
+
+    static func refreshInstalledApplications() -> [FinderExternalApplication] {
+        FinderExternalApplication.refreshApplications(
+            candidates: supportedCandidates,
+            cacheKey: cacheKey
+        )
     }
 
     private static let supportedCandidates: [(displayName: String, bundleIdentifier: String)] = [
@@ -54,8 +101,20 @@ enum FinderTerminalApplication {
 /// A small set of mainstream editors for the "open in editor" menu. Editors
 /// receive the selected file or folder; only installed candidates appear.
 enum FinderEditorApplication {
-    static func installedApplications() -> [FinderExternalApplication] {
-        FinderExternalApplication.installedApplications(candidates: supportedCandidates)
+    private static let cacheKey = "finderEditorApplications"
+
+    static func cachedInstalledApplications() -> [FinderExternalApplication] {
+        FinderExternalApplication.cachedApplications(
+            candidates: supportedCandidates,
+            cacheKey: cacheKey
+        )
+    }
+
+    static func refreshInstalledApplications() -> [FinderExternalApplication] {
+        FinderExternalApplication.refreshApplications(
+            candidates: supportedCandidates,
+            cacheKey: cacheKey
+        )
     }
 
     private static let supportedCandidates: [(displayName: String, bundleIdentifier: String)] = [
