@@ -1,28 +1,100 @@
 import AppKit
+import Foundation
 import SwiftUI
+
+@MainActor
+private final class MusicArtworkMemoryCache {
+    static let shared = MusicArtworkMemoryCache()
+
+    private let images = NSCache<NSString, NSImage>()
+
+    private init() {
+        // Keeps recently displayed artwork warm across transient SwiftUI view
+        // lifecycles while allowing AppKit to evict it under memory pressure.
+        images.countLimit = 80
+    }
+
+    func image(for key: String) -> NSImage? {
+        images.object(forKey: key as NSString)
+    }
+
+    func insert(_ image: NSImage, for key: String) {
+        images.setObject(image, forKey: key as NSString)
+    }
+}
 
 struct MusicArtworkView: View {
     let track: MusicTrack?
     var size: CGFloat = 54
-    @State private var localArtwork: NSImage?
+    @State private var artwork: NSImage?
+    @State private var loadedArtworkKey: String?
 
     var body: some View {
         Group {
-            if let localArtwork {
-                Image(nsImage: localArtwork).resizable().scaledToFill()
-            } else if let url = displayCoverURL {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { placeholder }
+            if let artwork, loadedArtworkKey == artworkCacheKey {
+                Image(nsImage: artwork).resizable().scaledToFill()
+            } else if let cachedArtwork {
+                Image(nsImage: cachedArtwork).resizable().scaledToFill()
             } else { placeholder }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: size * 0.18).stroke(.primary.opacity(0.12), lineWidth: 0.7))
-        .task(id: track?.localArtworkCacheKey) {
-            localArtwork = nil
-            guard let track, track.localArtworkCacheKey != nil,
-                  let data = await LocalMusicArtworkRepository.shared.data(for: track) else { return }
-            localArtwork = NSImage(data: data)
+        .task(id: artworkCacheKey) {
+            await loadArtwork()
         }
+    }
+
+    private var artworkCacheKey: String? {
+        if let key = track?.localArtworkCacheKey { return "local:\(key)" }
+        if let url = displayCoverURL { return "remote:\(url.absoluteString)" }
+        return nil
+    }
+
+    private var cachedArtwork: NSImage? {
+        guard let artworkCacheKey else { return nil }
+        return MusicArtworkMemoryCache.shared.image(for: artworkCacheKey)
+    }
+
+    private func loadArtwork() async {
+        guard let track, let cacheKey = artworkCacheKey else {
+            artwork = nil
+            loadedArtworkKey = nil
+            return
+        }
+        if let cachedArtwork {
+            artwork = cachedArtwork
+            loadedArtworkKey = cacheKey
+            return
+        }
+        artwork = nil
+        loadedArtworkKey = nil
+
+        let data: Data?
+        if track.localArtworkCacheKey != nil {
+            data = await LocalMusicArtworkRepository.shared.data(for: track)
+        } else if let url = displayCoverURL {
+            data = await remoteArtworkData(from: url)
+        } else {
+            data = nil
+        }
+
+        guard !Task.isCancelled,
+              artworkCacheKey == cacheKey,
+              let data,
+              let image = NSImage(data: data) else { return }
+        MusicArtworkMemoryCache.shared.insert(image, for: cacheKey)
+        artwork = image
+        loadedArtworkKey = cacheKey
+    }
+
+    private func remoteArtworkData(from url: URL) async -> Data? {
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let response = response as? HTTPURLResponse,
+              (200..<300).contains(response.statusCode) else {
+            return nil
+        }
+        return data
     }
 
     private var displayCoverURL: URL? {
