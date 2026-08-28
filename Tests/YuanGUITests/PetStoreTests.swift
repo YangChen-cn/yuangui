@@ -50,6 +50,7 @@ final class PetStoreTests: XCTestCase {
             startServices: false
         )
         store.setAmbientChatterEnabled(false)
+        store.setBedtimeReminderEnabled(false)
         store.setPetPresented(true)
         store.setPetMotionEnabled(false)
 
