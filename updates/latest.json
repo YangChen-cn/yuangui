@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "version": "2.8.1",
-  "build": 20,
+  "version": "2.8.2",
+  "build": 21,
   "minimumSystemVersion": "15.0",
-  "publishedAt": "2026-08-05T14:11:02Z",
-  "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.8.1",
+  "publishedAt": "2026-08-28T16:53:39Z",
+  "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.8.2",
   "highlights": {
     "zh-Hans": [
-      "调整 FinderSync 菜单顺序：新建文件、剪切、粘贴、复制、在终端中打开、在编辑器中打开。菜单不再使用装饰标题行，也不会插入多余留白。",
-      "新增“新建空白文件”，使用轻量的原生名称输入窗口。可以直接输入 config.json、main.swift 等完整文件名；无效路径会被拒绝，遇到重名时会保留扩展名并自动选择新名称。"
+      "Finder 新建文档会直接弹出原生命名框，并预选完整建议文件名；下一步直接输入名称即可，扩展名也能一起修改。",
+      "菜单栏音乐面板会为最近显示过的本地和在线封面保留受限内存缓存；重新打开时不再闪现占位封面，同时不会让隐藏面板继续进行 SwiftUI 刷新。"
     ],
     "en": [
-      "Reworked the FinderSync menu into a compact native layout: New File, Cut, Paste, Copy, Open in Terminal, and Open in…",
-      "Added New Blank File with a lightweight native name prompt. The field accepts complete names such as config.json or…"
+      "New Finder documents now open a native naming prompt with the suggested complete filename selected, so the next…",
+      "Recently displayed local and online covers now use a bounded in-memory cache when the menu-bar music panel reopens.…"
     ]
   },
   "assets": [
     {
       "provider": "gitee",
-      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.8.1/YuanGUI-2.8.1.dmg",
-      "sha256": "0ce1ab608c7000c7b184ca7ef31887f41372f00e891310426f8612a80d92971e",
-      "size": 29136684
+      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.8.2/YuanGUI-2.8.2.dmg",
+      "sha256": "f1e2528a7f140038acaa776b868016571c8273ab0c998c42fcbd5ef3baf08b92",
+      "size": 29154080
     },
     {
       "provider": "github",
-      "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.1/YuanGUI-2.8.1.dmg",
-      "sha256": "0ce1ab608c7000c7b184ca7ef31887f41372f00e891310426f8612a80d92971e",
-      "size": 29136684
+      "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.2/YuanGUI-2.8.2.dmg",
+      "sha256": "f1e2528a7f140038acaa776b868016571c8273ab0c998c42fcbd5ef3baf08b92",
+      "size": 29154080
     }
   ]
 }
