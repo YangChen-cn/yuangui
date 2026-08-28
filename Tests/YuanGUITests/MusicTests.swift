@@ -1481,6 +1481,7 @@ final class MusicTests: XCTestCase {
                 factoryCalls += 1
                 return player
             },
+            lyricsService: StubLyricsProvider(),
             library: RecordingMusicLibraryCoordinator()
         )
 
@@ -1522,6 +1523,7 @@ final class MusicTests: XCTestCase {
                 factoryCalls += 1
                 return factoryCalls == 1 ? firstPlayer : RecordingURLMusicPlayer()
             },
+            lyricsService: StubLyricsProvider(),
             library: RecordingMusicLibraryCoordinator(),
             urlPlayerReleaseDelay: .milliseconds(20)
         )
@@ -1549,7 +1551,13 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(firstPlayer.stopCount, 1)
 
         feature.connectAppleMusic()
-        try? await Task.sleep(for: .milliseconds(100))
+        // Switching source stops the player immediately; delayed unloading
+        // stops it once more before discarding it. Wait for that second stop
+        // instead of assuming the release task has run after a fixed delay.
+        for _ in 0..<100 where firstPlayer.stopCount < 3 {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(firstPlayer.stopCount, 3)
         feature.play(track)
 
         XCTAssertEqual(factoryCalls, 2)
