@@ -1,11 +1,33 @@
-# 2.7.0 local release checklist
+# 2.8.2 stable release checklist
 
-This file records values to apply manually on GitHub. It does not change repository metadata.
+This checklist records the exact stable-release values and required local
+verification. The release scripts remain authoritative for asset, manifest,
+and mirror validation.
 
-- Description: `A native macOS desktop companion with music, system monitoring, AI chat, OCR translation, journaling, and safe cleanup.`
-- Topics: `macos`, `swift`, `swiftui`, `appkit`, `macos-app`, `desktop-pet`, `menu-bar-app`, `productivity`, `system-monitor`, `ocr`, `translation`, `mac-cleaner`
-- Proposed tag: `v2.7.0`
-- Release title: `YuanGUI 2.7.0`
-- Upload: `dist/YuanGUI-2.7.0.dmg` and its SHA-256 emitted by `./script/package_dmg.sh`
+- Tag: `v2.8.2`
+- Title: `YuanGUI 2.8.2`
+- Build: `21`
+- DMG: `dist/YuanGUI-2.8.2.dmg`
+- Bundle ID: `com.yang.yuangui`
+- Minimum macOS: `15.0`
+- Signing identity: `YuanGui` (registered self-signed identity)
+- GitHub Release assets: the exact DMG bytes, `RELEASE_NOTES.md`, and
+  `RELEASE_NOTES.zh-CN.md`
+- Gitee Release assets: the same DMG bytes and its `.sha256` sidecar
+- Manifest sources: GitHub is authoritative; Gitee is the delayed verified
+  fallback. Both must publish the identical `updates/latest.json`.
 
-Before publishing, run `swift test`, `./script/build_and_run.sh --verify`, and `./script/package_dmg.sh`; verify `2.8.2 (21)`, Bundle ID `com.yang.yuangui`, the `YuanGui` self-signed identity, `en.lproj` and `zh-Hans.lproj`, legal documents, and the mounted DMG contents.
+Before publishing, run `swift test --skip 'YuanGUIBenchmarks'` and
+`./script/build_and_run.sh --verify`. Confirm the packaged app and embedded
+Finder extension both report `2.8.2 (21)`, carry the `YuanGui` signature, and
+pass deep strict verification. Then run the release flow from a clean, pushed
+`main`:
+
+```sh
+VERSION=2.8.2 BUILD=21 GITEE_TOKEN=... ./script/release.sh
+```
+
+The script packages the DMG once, uploads that exact file plus both bilingual
+notes to GitHub, verifies and mirrors the same bytes to Gitee, generates the
+manifest from the stable GitHub Release timestamp, and checks both raw
+manifests before reporting success.

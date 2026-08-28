@@ -24,6 +24,7 @@ enum AppVersionInfo {
         "release.2.8.2.playlistHitTarget",
         "release.2.8.2.bilibiliLyricsPreference",
         "release.2.8.2.dashboardArtwork",
+        "release.2.8.2.artworkCache",
         "release.2.8.2.signing"
     ]
 

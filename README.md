@@ -23,7 +23,7 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The current stable release is `2.8.2`. This maintenance release makes Finder document names immediately editable, removes repeated FinderSync application discovery after a restart, expands playlist play targets, preserves selected LRCLIB lyrics for Bilibili, and makes the menu-bar cover open the complete player. See the [2.8.2 release notes](RELEASE_NOTES.md#282--stable-maintenance-release) for details.
+The current stable release is `2.8.2`. This maintenance release makes Finder document names immediately editable, removes repeated FinderSync application discovery after a restart, expands playlist play targets, preserves selected LRCLIB lyrics for Bilibili, makes the menu-bar cover open the complete player, and keeps recently shown covers warm without retaining a hidden panel. See the [2.8.2 release notes](RELEASE_NOTES.md#282--stable-maintenance-release) for details.
 
 ## Interface preview
 

@@ -1457,6 +1457,7 @@
 "release.2.8.2.playlistHitTarget" = "Expanded the double-click play target to the full width of Bilibili and Local Music playlist rows.";
 "release.2.8.2.bilibiliLyricsPreference" = "Matched LRCLIB lyrics remain selected for Bilibili tracks; available subtitles no longer overwrite them during reloads.";
 "release.2.8.2.dashboardArtwork" = "Click the cover in the menu-bar music panel to open the complete player.";
+"release.2.8.2.artworkCache" = "Recently displayed music covers now use a bounded 64 MB in-memory cache, so reopening the menu-bar panel avoids a placeholder flash without keeping its hidden interface active.";
 "release.2.8.2.signing" = "Development builds and DMGs now use the registered YuanGui self-signed identity instead of ad-hoc signing.";
 "release.2.8.0.translationSpeech" = "Added native macOS speech synthesis for source and translated text; only one side speaks at a time and stale speech stops immediately.";
 "release.2.8.0.musicWindows" = "Rebuilt the mini-player and full-player window handoff around the real popover lifecycle; artwork opens the full player, and the first-open race is fixed.";

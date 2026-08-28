@@ -5,6 +5,7 @@
 ## 2.8.2 — Stable maintenance release
 
 - New Finder documents now open a native naming prompt with the suggested complete filename selected, so the next action is typing the name, including the extension.
+- Recently displayed local and online covers now use a bounded in-memory cache when the menu-bar music panel reopens. This avoids a placeholder flash without retaining the hidden panel's SwiftUI refresh work.
 - Cached installed terminals and editors are used while FinderSync starts, then refreshed when apps launch or quit. This removes the repeated application-discovery work that could delay a right-click menu after the extension had been restarted.
 - The complete player’s Bilibili and Local Music rows now use their full row width as the double-click play target.
 - A matched LRCLIB lyric is now retained for Bilibili tracks. Newly available Bilibili subtitles remain a fallback and no longer replace that selection during playback reloads or login refreshes.

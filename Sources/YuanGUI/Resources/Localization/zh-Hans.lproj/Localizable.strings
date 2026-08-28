@@ -1457,6 +1457,7 @@
 "release.2.8.2.playlistHitTarget" = "哔哩哔哩和本地音乐播放列表的整行都可双击播放。";
 "release.2.8.2.bilibiliLyricsPreference" = "哔哩哔哩歌曲已匹配的 LRCLIB 歌词会被保留，字幕不再在重载时覆盖它。";
 "release.2.8.2.dashboardArtwork" = "点击菜单栏音乐面板中的封面即可打开完整播放器。";
+"release.2.8.2.artworkCache" = "最近显示过的音乐封面会保存在受限于 64 MB 的内存缓存中，重新打开菜单栏面板不再闪现占位封面，也不会让隐藏界面持续刷新。";
 "release.2.8.2.signing" = "开发构建和 DMG 现在使用已注册的 YuanGui 自签名身份，不再使用临时签名。";
 "release.2.8.0.translationSpeech" = "为原文和译文加入 macOS 原生语音朗读，同一时间只朗读一侧，内容、目标语言或窗口变化时立即停止过期朗读。";
 "release.2.8.0.musicWindows" = "重做迷你播放器与完整播放器的窗口交接，点击封面即可打开完整播放器，并修复首次打开迷你播放器的生命周期竞态。";

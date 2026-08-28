@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 private final class MusicArtworkMemoryCache {
     static let shared = MusicArtworkMemoryCache()
+    private static let totalCostLimit = 64 * 1024 * 1024
 
     private let images = NSCache<NSString, NSImage>()
 
@@ -12,6 +13,7 @@ private final class MusicArtworkMemoryCache {
         // Keeps recently displayed artwork warm across transient SwiftUI view
         // lifecycles while allowing AppKit to evict it under memory pressure.
         images.countLimit = 80
+        images.totalCostLimit = Self.totalCostLimit
     }
 
     func image(for key: String) -> NSImage? {
@@ -19,7 +21,21 @@ private final class MusicArtworkMemoryCache {
     }
 
     func insert(_ image: NSImage, for key: String) {
-        images.setObject(image, forKey: key as NSString)
+        images.setObject(
+            image,
+            forKey: key as NSString,
+            cost: estimatedMemoryCost(of: image)
+        )
+    }
+
+    private func estimatedMemoryCost(of image: NSImage) -> Int {
+        let pixelCount = image.representations.reduce(Int64(0)) { maximum, representation in
+            let width = Int64(max(representation.pixelsWide, 0))
+            let height = Int64(max(representation.pixelsHigh, 0))
+            return max(maximum, width * height)
+        }
+        guard pixelCount > 0 else { return 1 }
+        return Int(min(pixelCount * 4, Int64(Self.totalCostLimit)))
     }
 }
 
