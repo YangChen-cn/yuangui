@@ -22,7 +22,9 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-当前稳定版本为 `2.8.2`。本次稳定维护让 Finder 新建文件可立即改名，减少 FinderSync 重启后的右键等待，扩大播放列表的切歌触发范围，保留已匹配的 LRCLIB 歌词，让菜单栏音乐封面直接打开完整播放器，并让最近显示过的封面无需保留隐藏面板也能快速恢复。详情见 [2.8.2 更新说明](RELEASE_NOTES.zh-CN.md#282--稳定维护版)。
+下一开发版本为 `2.9.0`（build `22`），新增基于 Microsoft MarkItDown 的本地 PDF 转 Markdown、位图导出，并减少工具面板和手帐预览的重复刷新开销。详情见 [2.9.0 更新说明](RELEASE_NOTES.zh-CN.md#290--pdf-转-markdown)。
+
+从 **工具 → PDF 转 Markdown** 进入，首次安装转换组件后，选择或拖入一个 PDF 即可本地转换。可以预览、复制正文，或导出 Markdown 和配套图片文件夹。复杂分栏、公式、扫描文字和矢量图不会被完整还原，识别到的位图区域按页码附在文末。参见[转换说明与第三方声明](docs/PDF_CONVERSION.md)。
 
 ## 界面预览
 
@@ -200,7 +202,7 @@ swift test
 ## 打包 DMG
 
 ```bash
-VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
+VERSION=2.9.0 BUILD=22 ./script/package_dmg.sh
 ```
 
 默认会执行 Release 构建、生成应用包、使用已注册的 `YuanGui` 自签名身份签名、制作 DMG 并验证镜像完整性。产物位于：
@@ -214,7 +216,7 @@ dist/YuanGUI-<版本号>.dmg
 ```bash
 SIGNING_IDENTITY="Developer ID Application: ..." \
 NOTARY_PROFILE="your-notary-profile" \
-VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
+VERSION=2.9.0 BUILD=22 ./script/package_dmg.sh
 ```
 
 ## 项目结构

@@ -18,7 +18,7 @@ struct DashboardToolsView: View {
     static let toolIdentifiers = DashboardToolIdentifier.allCases
 
     @ObservedObject var quickTools: QuickToolsController
-    @ObservedObject var updater: AppUpdateStore
+    let updater: AppUpdateStore
     let openSettings: () -> Void
     let dismiss: () -> Void
 
@@ -52,6 +52,9 @@ struct DashboardToolsView: View {
                     .bold()
                     .padding(.top, 2)
                 VStack(spacing: 1) {
+                    compact("pdf.title", "pdf.toolSubtitle", "doc.richtext", .yuanGUI) {
+                        launch { appActions.open(.pdfToMarkdown) }
+                    }
                     compact("划词翻译", quickTools.settings.translationHotKey.displayText, "translate", .system) {
                         launch(quickTools.translateSelection)
                     }

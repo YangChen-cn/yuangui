@@ -18,6 +18,7 @@ let package = Package(
             name: "YuanGUI",
             path: "Sources/YuanGUI",
             resources: [
+                .copy("Resources/PDFConversion"),
                 .copy("Resources/Sprites"),
                 .copy("Resources/YuanGUI.Translate.shortcut"),
                 .copy("Resources/AppIcon.png"),

@@ -3,10 +3,11 @@ import SwiftUI
 /// Markdown 预览（AttributedString 渲染，轻量实现）
 struct DiaryMarkdownPreview: View {
     let markdown: String
+    @State private var cache = DiaryMarkdownCache()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(parseBlocks().enumerated()), id: \.offset) { _, block in
+            ForEach(Array(cache.blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(let text, let level):
                     Group {
@@ -18,13 +19,13 @@ struct DiaryMarkdownPreview: View {
                         }
                     }
                 case .paragraph(let text):
-                    Text(parseInline(text))
+                    Text(text)
                         .font(.body)
                         .lineSpacing(4)
                 case .bullet(let text):
                     HStack(alignment: .top, spacing: 6) {
                         Text("•")
-                        Text(parseInline(text))
+                        Text(text)
                     }
                     .font(.body)
                 case .code(let text):
@@ -38,17 +39,32 @@ struct DiaryMarkdownPreview: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: markdown, initial: true) { _, value in cache.update(value) }
+    }
+}
+
+/// One document per preview; unrelated view updates never reparse the body.
+struct DiaryMarkdownCache {
+    private(set) var source: String?
+    private(set) var blocks: [Block] = []
+    private(set) var parseCount = 0
+
+    mutating func update(_ markdown: String) {
+        guard source != markdown else { return }
+        source = markdown
+        blocks = parseBlocks(markdown)
+        parseCount += 1
     }
 
-    private enum Block {
+    enum Block {
         case heading(String, Int)
-        case paragraph(String)
-        case bullet(String)
+        case paragraph(AttributedString)
+        case bullet(AttributedString)
         case code(String)
         case divider
     }
 
-    private func parseBlocks() -> [Block] {
+    private func parseBlocks(_ markdown: String) -> [Block] {
         let lines = markdown.components(separatedBy: .newlines)
         var blocks: [Block] = []
         var inCode = false
@@ -78,9 +94,9 @@ struct DiaryMarkdownPreview: View {
             } else if line.hasPrefix("### ") {
                 blocks.append(.heading(String(line.dropFirst(4)), 3))
             } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
-                blocks.append(.bullet(String(line.dropFirst(2))))
+                blocks.append(.bullet(parseInline(String(line.dropFirst(2)))))
             } else if !line.trimmingCharacters(in: .whitespaces).isEmpty {
-                blocks.append(.paragraph(line))
+                blocks.append(.paragraph(parseInline(line)))
             }
         }
         if inCode, !codeBuffer.isEmpty {

@@ -1,0 +1,3 @@
+markitdown[pdf]==0.1.7
+# Last release providing Python 3.12 wheels for both Apple Silicon and Intel Macs.
+onnxruntime==1.23.2

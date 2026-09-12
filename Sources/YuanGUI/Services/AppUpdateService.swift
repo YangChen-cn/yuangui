@@ -7,8 +7,8 @@ import Foundation
 enum AppVersionInfo {
     // Packaged builds receive these values from Info.plist; the fallback is
     // only used when the running bundle is missing its version keys.
-    static let fallbackVersion = "2.8.2"
-    static let fallbackBuild = "21"
+    static let fallbackVersion = "2.9.0"
+    static let fallbackBuild = "22"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? fallbackVersion
@@ -19,13 +19,8 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlightKeys = [
-        "release.2.8.2.finderRename",
-        "release.2.8.2.finderWarmMenu",
-        "release.2.8.2.playlistHitTarget",
-        "release.2.8.2.bilibiliLyricsPreference",
-        "release.2.8.2.dashboardArtwork",
-        "release.2.8.2.artworkCache",
-        "release.2.8.2.signing"
+        "release.2.9.0.pdf",
+        "release.2.9.0.performance"
     ]
 
     static var currentReleaseHighlights: [String] {

@@ -2,6 +2,14 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
+## 2.9.0 — PDF to Markdown
+
+- Added a local PDF-to-Markdown window powered by Microsoft MarkItDown: choose or drop one PDF, preview the source, copy text, and export Markdown with bitmap images appended by page.
+- First use installs a private, version-pinned Python environment with verified conversion dependencies. Conversion does not upload documents; installation and conversion can be cancelled.
+- Large previews are bounded to 200,000 characters while exports retain all text. Export names are numbered to preserve existing files, and incomplete exports are cleaned up.
+- Reduced tool-panel refreshes during update progress and cached diary Markdown parsing until the body changes.
+- Complex paper layouts, formulas, OCR and vector figure reconstruction remain outside this version's conversion capabilities.
+
 ## 2.8.2 — Stable maintenance release
 
 - New Finder documents now open a native naming prompt with the suggested complete filename selected, so the next action is typing the name, including the extension.

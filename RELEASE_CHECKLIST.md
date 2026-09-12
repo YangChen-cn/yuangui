@@ -1,13 +1,13 @@
-# 2.8.2 stable release checklist
+# 2.9.0 release preparation checklist
 
-This checklist records the exact stable-release values and required local
+This version is in development and has not been published. This checklist records the intended release values and required local
 verification. The release scripts remain authoritative for asset, manifest,
 and mirror validation.
 
-- Tag: `v2.8.2`
-- Title: `YuanGUI 2.8.2`
-- Build: `21`
-- DMG: `dist/YuanGUI-2.8.2.dmg`
+- Tag: `v2.9.0`
+- Title: `YuanGUI 2.9.0`
+- Build: `22`
+- DMG: `dist/YuanGUI-2.9.0.dmg`
 - Bundle ID: `com.yang.yuangui`
 - Minimum macOS: `15.0`
 - Signing identity: `YuanGui` (registered self-signed identity)
@@ -19,12 +19,12 @@ and mirror validation.
 
 Before publishing, run `swift test --skip 'YuanGUIBenchmarks'` and
 `./script/build_and_run.sh --verify`. Confirm the packaged app and embedded
-Finder extension both report `2.8.2 (21)`, carry the `YuanGui` signature, and
+Finder extension both report `2.9.0 (22)`, carry the `YuanGui` signature, and
 pass deep strict verification. Then run the release flow from a clean, pushed
 `main`:
 
 ```sh
-VERSION=2.8.2 BUILD=21 GITEE_TOKEN=... ./script/release.sh
+VERSION=2.9.0 BUILD=22 GITEE_TOKEN=... ./script/release.sh
 ```
 
 The script packages the DMG once, uploads that exact file plus both bilingual

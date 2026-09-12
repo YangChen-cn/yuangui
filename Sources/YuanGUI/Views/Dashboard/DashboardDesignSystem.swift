@@ -117,6 +117,7 @@ enum DashboardToolIdentifier: String, CaseIterable {
     case translateSelection
     case cleanup
     case uninstall
+    case pdfToMarkdown
     case settings
     case update
 }

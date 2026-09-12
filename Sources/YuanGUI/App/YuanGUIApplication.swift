@@ -298,6 +298,7 @@ final class WindowCoordinator: NSObject {
     private var maintenanceController: MaintenanceWindowController?
     private var musicController: MusicWindowController?
     private var diaryController: DiaryWindowController?
+    private var pdfController: PDFConversionWindowController?
     private var lyricsController: LyricsPanelController?
     private var weatherStartupTask: Task<Void, Never>?
 
@@ -380,6 +381,7 @@ final class WindowCoordinator: NSObject {
 
     func stop() {
         weatherStartupTask?.cancel()
+        pdfController?.stop()
         pet.monitor.stop()
         quickTools.stop()
         finderExtension.stop()
@@ -427,6 +429,12 @@ final class WindowCoordinator: NSObject {
             }
         case .finderExtension:
             finderExtension.openManagement()
+        case .pdfToMarkdown:
+            dashboardController?.hide()
+            if pdfController == nil {
+                pdfController = PDFConversionWindowController { [weak self] in self?.pdfController = nil }
+            }
+            pdfController?.show()
         }
     }
 

@@ -20,6 +20,7 @@ enum AppRoute: Equatable, Sendable {
     case music
     case diary
     case quickDiary
+    case pdfToMarkdown
     /// Opens the system management interface for the Finder extension.
     case finderExtension
 }

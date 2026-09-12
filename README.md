@@ -23,7 +23,9 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The current stable release is `2.8.2`. This maintenance release makes Finder document names immediately editable, removes repeated FinderSync application discovery after a restart, expands playlist play targets, preserves selected LRCLIB lyrics for Bilibili, makes the menu-bar cover open the complete player, and keeps recently shown covers warm without retaining a hidden panel. See the [2.8.2 release notes](RELEASE_NOTES.md#282--stable-maintenance-release) for details.
+The next version under development is `2.9.0` (build `22`). It adds local PDF-to-Markdown conversion with Microsoft MarkItDown, bitmap export, and reduced tool-panel and diary-preview refresh work. See the [2.9.0 release notes](RELEASE_NOTES.md#290--pdf-to-markdown).
+
+Open **Tools → PDF to Markdown**, install the conversion components once, then choose or drop one PDF. Conversion stays on your Mac. Preview or copy the Markdown text, or export it with a companion image folder. Complex columns, formulas, scanned text and vector figures are not reconstructed; extracted bitmap regions are appended by page. See [conversion details and third-party notices](docs/PDF_CONVERSION.md).
 
 ## Interface preview
 
@@ -80,7 +82,7 @@ git clone https://github.com/YangChen-cn/yuangui.git
 cd yuangui
 swift test
 ./script/build_and_run.sh --verify
-VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
+VERSION=2.9.0 BUILD=22 ./script/package_dmg.sh
 ```
 
 The run script builds and launches a verified app bundle. The package script creates and checks a DMG and prints its SHA-256. Both default to the registered `YuanGui` self-signed identity; Developer ID and notarization remain optional overrides.
@@ -119,7 +121,7 @@ YuanGUI supports English and Simplified Chinese. Open **Settings → General →
 
 ```bash
 swift test
-VERSION=2.8.2 BUILD=21 ./script/package_dmg.sh
+VERSION=2.9.0 BUILD=22 ./script/package_dmg.sh
 ```
 
 Tests cover system metrics, companion states, weather, AI services, music sources and local import, lyrics, translation layout, cleanup safety, settings persistence, and resource loading. The music suite also verifies publisher isolation and cancellation-safe shutdown with suspended services. GitHub Actions runs `swift test` for pushes and pull requests. A repeatable SwiftUI Instruments comparison is documented in [Music observation performance](docs/MUSIC_PERFORMANCE.md).
