@@ -40,6 +40,46 @@ deletes only its own partial directory, nothing outside
 Application Support/YuanGUI/PDFConversion is touched, and the install lock is held
 during the cleanup so a concurrent installer is never disturbed.
 
+## Runtime size
+
+An install ends by removing what this configuration provably never reads, and then runs
+the self-check on what is left, so the verified tree is the tree that ships. The audit
+behind the list:
+
+- The only ONNX models loaded are the default layout model
+  (`layout_rf2.4.1+imf1.onnx`), its image-feature model (`feature_imf1.onnx`) and the
+  V4-EP table-grid model (`table_grid_model_v4_ep.onnx`). Tracing
+  `onnxruntime.InferenceSession` shows exactly these three at import and no others while
+  converting text, ruled-table, figure, scan and 400-page documents. The alternative
+  feature sets and table-grid versions (V1, V1A, V1B, V1T, V2, V2A, V2B, V2C, V3,
+  V4, V4-DO, `feature_imf2`) are reachable only through constructor arguments YuanGUI
+  never passes; the package reads no environment variable or config file, and the
+  version map is a static table. Those model files and their YAML configs are removed
+  (~35 MB).
+- `sympy`, `mpmath` and `networkx` are declared by onnxruntime and pymupdf-layout but
+  imported only by onnxruntime's model tooling (`tools/symbolic_shape_infer.py`), which
+  is not part of inference, so they and `onnxruntime/{tools,transformers,quantization}`
+  are removed (~43 MB).
+- The installer's own `uv` binary is removed once it has done its work (~35 MB); the
+  downloaded archive and uv cache were already deleted. PyMuPDF's `mupdf-devel`
+  directory (C headers and static libraries for building native extensions, reached only
+  through a `pymupdf._mupdf_devel()` helper this app never calls) goes as well.
+- OpenCV, Shapely, Pillow, PyYAML, pyclipper and RapidOCR stay. RapidOCR imports OpenCV,
+  and the layout package also imports OpenCV in its non-default table-grid extractors and
+  its visualization helpers, so it is not provably unneeded.
+
+That takes a fresh installation from about 490 MB to 358 MB as measured after a real
+install (about 290 MB of venv plus the managed Python). Nothing about the conversion path
+changes: the pruned
+runtime produces byte-identical Markdown, images and manifests for the whole validation
+corpus, including the 400-page document and an OCR run. An installation made by an
+earlier build keeps its extra files until it is reinstalled — the window's uninstall
+button is the quickest way to get the smaller tree.
+
+The window shows how much disk the installed runtime occupies and offers **Uninstall…**
+behind a confirmation. Uninstalling takes the same lock the installer uses, deletes only
+Application Support/YuanGUI/PDFConversion, and leaves the window ready to install again.
+
 ## Preflight
 
 Before any model is loaded, the worker opens the PDF with PyMuPDF alone and reports the
@@ -49,9 +89,10 @@ having a text layer when `get_text()` yields at least 32 non-whitespace characte
 the document is reported as a probable scan when no sampled page does. There is no
 classifier beyond that heuristic.
 
-The window shows the page count and, for a probable scan, a hint to enable automatic
-OCR. OCR is never enabled automatically. Password-protected PDFs are reported from the
-probe and fail the conversion before the Layout model starts.
+The window shows the page count and, for a probable scan, a note that OCR will be used.
+Nothing is switched on behind the user's back: hybrid OCR is already on by default, and
+the note changes to a hint to enable it if the checkbox was cleared. Password-protected
+PDFs are reported from the probe and fail the conversion before the Layout model starts.
 
 ## Conversion
 
@@ -73,12 +114,17 @@ number, chapter header and copyright lines repeated on every page. Turn the opti
 for a document whose pages carry only a single headline, which the model can read as a
 header.
 
-**OCR.** Off by default. When enabled, the worker passes `--ocr` and RapidOCR recognizes
-the text of picture areas the engine considers worth OCR; its Chinese/English models
-ship inside the installed distribution, so conversion never downloads models and needs no
-system Tesseract. ONNX Runtime is loaded either way because the Layout model runs on it,
-but with OCR off the worker never imports RapidOCR or OpenCV. The models stay installed
-regardless, so enabling OCR later needs no reinstallation.
+**OCR.** Hybrid OCR is on by default and never forced: the worker passes `--ocr`, the
+engine decides page by page whether recognition is worth it, and only then does RapidOCR
+read the text of picture areas. A document with its own text layer therefore converts
+exactly as it would with OCR off — measured on the text fixture, both settings take 0.4 s,
+import neither RapidOCR nor OpenCV, and produce identical Markdown. A page that has no
+usable text layer, or that already carries an OCR layer the engine prefers to keep, is
+handled accordingly. Clearing the checkbox drops `--ocr`, and the worker then reads only
+the PDF's own text layer, so a scanned page stays empty. RapidOCR's Chinese/English
+models ship inside the installed distribution: conversion never downloads models and
+needs no system Tesseract. ONNX Runtime is loaded either way because the Layout model runs
+on it, and the models stay installed, so toggling OCR needs no reinstallation.
 
 Display rotation metadata is cleared only on the in-memory document used by Layout, which
 otherwise missed text in rotated-page fixtures. The input PDF is never saved.

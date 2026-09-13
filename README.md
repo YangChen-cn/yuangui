@@ -25,7 +25,7 @@ Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, 
 
 The next version under development is `2.9.0` (build `22`). It adds local PDF-to-Markdown conversion with PyMuPDF Layout 1.28.2 on Apple Silicon, optional Chinese/English OCR, figure export, and reduced tool-panel and diary-preview refresh work. See the [2.9.0 release notes](RELEASE_NOTES.md#290--pdf-to-markdown).
 
-Open **Tools → PDF to Markdown**, install the conversion components once, then choose or drop one PDF. Conversion stays on your Mac. Preview or copy the Markdown text, or export it with a companion `_assets` folder, where figures — including vector diagrams — stay next to their position in the text. Repeated page headers and footers are removed by default, and automatic OCR for scanned pages is a checkbox that is off by default. Complex columns and formulas still need review. See [conversion details and third-party notices](docs/PDF_CONVERSION.md).
+Open **Tools → PDF to Markdown**, install the conversion components once — the window shows how much disk they occupy and can remove them again — then choose or drop one PDF. Conversion stays on your Mac. Preview or copy the Markdown text, or export it with a companion `_assets` folder, where figures — including vector diagrams — stay next to their position in the text. Repeated page headers and footers are removed by default, and hybrid OCR reads scanned pages — and only those — unless the checkbox is cleared. Complex columns and formulas still need review. See [conversion details and third-party notices](docs/PDF_CONVERSION.md).
 
 ## Interface preview
 

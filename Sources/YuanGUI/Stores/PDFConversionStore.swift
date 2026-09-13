@@ -11,7 +11,8 @@ final class PDFConversionStore: ObservableObject {
     @Published private(set) var exportedURL: URL?
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var startedAt: Date?
-    /// Automatic OCR is off unless the user opts in; text PDFs need no recognition.
+    /// Hybrid OCR: on by default, and the engine recognizes only the pages that need it,
+    /// so a page with its own text layer never reaches the recognition stack.
     @Published private(set) var ocrEnabled: Bool
     /// Repeated page headers and footers are dropped unless the user opts out.
     @Published private(set) var removeHeaderFooter: Bool
@@ -19,8 +20,13 @@ final class PDFConversionStore: ObservableObject {
     @Published private(set) var ocrApplied = false
     /// Cheap document facts for the selected file, once a runtime is installed.
     @Published private(set) var probe: PDFProbe?
+    /// Bytes of disk the installed runtime occupies.
+    @Published private(set) var runtimeBytes: Int64 = 0
     private var task: Task<Void, Never>?
     private var probeTask: Task<Void, Never>?
+    /// Startup housekeeping holds the install lock, so both install and uninstall wait
+    /// for it instead of racing it and reporting a spurious "busy" failure.
+    private var housekeeping: Task<Void, Never>?
     private var generation = UUID()
     private var closed = false
     private let environment: PDFConversionEnvironment
@@ -28,6 +34,7 @@ final class PDFConversionStore: ObservableObject {
     private let installOperation: @Sendable (@escaping @Sendable (String) async -> Void) async throws -> Void
     private let convertOperation: @Sendable (URL, PDFConversionOptions, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult
     private let probeOperation: @Sendable (URL) async throws -> PDFProbe
+    private let uninstallOperation: @Sendable () async throws -> Void
 
     private static let ocrKey = "pdf.ocrEnabled"
     private static let marginsKey = "pdf.removeHeaderFooter"
@@ -36,11 +43,12 @@ final class PDFConversionStore: ObservableObject {
          defaults: UserDefaults = .standard,
          install: (@Sendable (@escaping @Sendable (String) async -> Void) async throws -> Void)? = nil,
          convert: (@Sendable (URL, PDFConversionOptions, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult)? = nil,
-         probe: (@Sendable (URL) async throws -> PDFProbe)? = nil) {
+         probe: (@Sendable (URL) async throws -> PDFProbe)? = nil,
+         uninstall: (@Sendable () async throws -> Void)? = nil) {
         self.environment = environment
         self.defaults = defaults
         isReady = environment.isReady
-        ocrEnabled = defaults.bool(forKey: Self.ocrKey)
+        ocrEnabled = defaults.object(forKey: Self.ocrKey) as? Bool ?? true
         removeHeaderFooter = defaults.object(forKey: Self.marginsKey) as? Bool ?? true
         installOperation = install ?? { progress in try await environment.install(progress: progress) }
         convertOperation = convert ?? { url, options, progress in
@@ -49,11 +57,37 @@ final class PDFConversionStore: ObservableObject {
         probeOperation = probe ?? { url in
             try await PDFConversionService(environment: environment).probe(url)
         }
+        uninstallOperation = uninstall ?? { try environment.uninstall() }
         // A previous app version may have left its runtime behind; only this version's
         // revision is needed, and it is verified before anything is removed.
         if isReady {
             let environment = environment
-            Task.detached(priority: .utility) { environment.removeStaleRevisions() }
+            housekeeping = Task.detached(priority: .utility) { environment.removeStaleRevisions() }
+            refreshRuntimeBytes()
+        }
+    }
+
+    /// Measuring walks the whole runtime, so it runs off the main thread.
+    private func refreshRuntimeBytes() {
+        let environment = environment
+        Task { [weak self] in
+            let bytes = await Task.detached(priority: .utility) { environment.sizeOnDisk() }.value
+            self?.runtimeBytes = bytes
+        }
+    }
+
+    func uninstall() {
+        guard !isBusy, !closed else { return }
+        clearResult()
+        probeTask?.cancel()
+        probe = nil
+        start(stage: "uninstalling") { [self] token in
+            await housekeeping?.value
+            try await uninstallOperation()
+            guard accepts(token) else { return }
+            isReady = environment.isReady
+            runtimeBytes = environment.sizeOnDisk()
+            stage = "uninstalled"
         }
     }
 
@@ -85,11 +119,13 @@ final class PDFConversionStore: ObservableObject {
 
     func install() {
         start(stage: "download") { [self] token in
+            await housekeeping?.value
             try await installOperation { [weak self] stage in await self?.update(stage, token: token) }
             guard accepts(token) else { return }
             isReady = environment.isReady
             if !isReady { throw PDFConversionError.message("pdf.error.resources") }
             stage = "ready"
+            refreshRuntimeBytes()
             if let source { startProbe(source) }
         }
     }

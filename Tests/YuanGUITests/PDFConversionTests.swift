@@ -118,6 +118,100 @@ final class PDFConversionTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: newer.path))
     }
 
+    /// A ready-looking runtime with a known payload, used by the size and removal tests.
+    private func installedEnvironment(_ name: String, payload: Int = 3) throws -> (PDFConversionEnvironment, Int64) {
+        let environment = PDFConversionEnvironment(root: root.appendingPathComponent(name))
+        let fm = FileManager.default
+        try fm.createDirectory(at: environment.python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: environment.python)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: environment.python.path)
+        try Data(Self.revisionMarker.utf8).write(to: environment.directory.appendingPathComponent("ready"))
+        // The ready marker is part of the installed payload the size walk reports.
+        var bytes = Int64(Self.revisionMarker.utf8.count)
+        for index in 0..<payload {
+            let file = environment.directory.appendingPathComponent("payload-\(index).bin")
+            try Data(repeating: 0, count: 4096 + index).write(to: file)
+            bytes += Int64(4096 + index)
+        }
+        return (environment, bytes)
+    }
+
+    private static let revisionMarker = "pymupdf-layout-1.28.2-ocr-v1"
+
+    func testSizeOnDiskCountsTheInstalledRuntime() throws {
+        let (environment, payload) = try installedEnvironment("size")
+        XCTAssertTrue(environment.isReady)
+        XCTAssertEqual(environment.sizeOnDisk(), payload)
+        let missing = PDFConversionEnvironment(root: root.appendingPathComponent("absent"))
+        XCTAssertEqual(missing.sizeOnDisk(), 0)
+        XCTAssertFalse(missing.isReady)
+    }
+
+    func testUninstallRemovesOnlyThisRuntime() async throws {
+        let (environment, _) = try installedEnvironment("uninstall")
+        let neighbour = root.appendingPathComponent("unrelated")
+        try Data("keep".utf8).write(to: neighbour)
+        try environment.uninstall()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: environment.root.path))
+        XCTAssertFalse(environment.isReady)
+        XCTAssertEqual(environment.sizeOnDisk(), 0)
+        XCTAssertEqual(try String(contentsOf: neighbour, encoding: .utf8), "keep")
+    }
+
+    func testUninstallRefusesWhileAnotherInstallerHoldsTheLock() async throws {
+        let (environment, payload) = try installedEnvironment("locked-uninstall")
+        let descriptor = Darwin.open(environment.root.appendingPathComponent(".install-lock").path, O_CREAT | O_RDWR, 0o600)
+        XCTAssertGreaterThanOrEqual(descriptor, 0)
+        defer { flock(descriptor, LOCK_UN); Darwin.close(descriptor) }
+        XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+        do { try environment.uninstall(); XCTFail("The lock must protect the runtime") }
+        catch { XCTAssertEqual(error.localizedDescription, AppLocalizer.string("pdf.error.busy")) }
+        XCTAssertEqual(environment.sizeOnDisk(), payload)
+    }
+
+    /// The installer may only delete files the pinned engine never reads.
+    func testRemovingUnusedFilesKeepsWhatTheEngineLoads() throws {
+        let (environment, _) = try installedEnvironment("prune")
+        let site = environment.directory.appendingPathComponent("venv/lib/python3.12/site-packages")
+        let models = site.appendingPathComponent("pymupdf/layout/resources/onnx")
+        try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
+        let kept = ["layout_rf2.4.1+imf1.onnx", "layout_rf2.4.1+imf1.yaml", "feature_imf1.onnx", "table_grid_model_v4_ep.onnx"]
+        let unused = ["layout_imf1.onnx", "layout_rf2.4.1.onnx", "table_grid_model_v2c.onnx", "table_grid_model_v1t.onnx"]
+        for name in kept + unused {
+            try Data(repeating: 1, count: 1024).write(to: models.appendingPathComponent(name))
+        }
+        let tools = ["sympy", "mpmath", "networkx", "onnxruntime/tools", "onnxruntime/transformers", "onnxruntime/quantization"]
+        for name in tools {
+            let folder = site.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(repeating: 2, count: 2048).write(to: folder.appendingPathComponent("module.py"))
+        }
+        // OpenCV, Pillow and PyYAML are needed by the optional OCR pass and must survive.
+        let ocr = site.appendingPathComponent("cv2/__init__.py")
+        try FileManager.default.createDirectory(at: ocr.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: ocr)
+        let removed = environment.removeUnusedFiles()
+        XCTAssertGreaterThanOrEqual(removed, Int64(unused.count * 1024 + tools.count * 2048))
+        for name in kept { XCTAssertTrue(FileManager.default.fileExists(atPath: models.appendingPathComponent(name).path), name) }
+        for name in unused { XCTAssertFalse(FileManager.default.fileExists(atPath: models.appendingPathComponent(name).path), name) }
+        for name in tools { XCTAssertFalse(FileManager.default.fileExists(atPath: site.appendingPathComponent(name).path), name) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ocr.path))
+    }
+
+    @MainActor
+    func testUninstallResetsTheWindowState() async throws {
+        let (environment, _) = try installedEnvironment("store-uninstall")
+        let store = PDFConversionStore(environment: environment, uninstall: { try environment.uninstall() })
+        XCTAssertTrue(store.isReady)
+        store.uninstall()
+        await drain(store)
+        XCTAssertFalse(store.isReady)
+        XCTAssertEqual(store.runtimeBytes, 0)
+        XCTAssertEqual(store.stage, "uninstalled")
+        XCTAssertNil(store.error)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: environment.root.path))
+    }
+
     func testConcurrentInstallerCannotRemoveActiveEnvironment() async throws {
         let environment = PDFConversionEnvironment(root: root)
         try FileManager.default.createDirectory(at: environment.directory, withIntermediateDirectories: true)
@@ -197,7 +291,7 @@ final class PDFConversionTests: XCTestCase {
         try Data("pdf".utf8).write(to: source)
         let service = PDFConversionService(environment: environment)
         let cases: [(options: PDFConversionOptions, flags: Set<String>)] = [
-            (PDFConversionOptions(), []),
+            (PDFConversionOptions(useOCR: false, removeHeaderFooter: true), []),
             (PDFConversionOptions(useOCR: true, removeHeaderFooter: false), ["--ocr", "--keep-header-footer"])
         ]
         for testCase in cases {
@@ -230,7 +324,7 @@ final class PDFConversionTests: XCTestCase {
     }
 
     @MainActor
-    func testOptionsDefaultOffAndOnPersistAndDriveConversion() async throws {
+    func testOptionDefaultsPersistAndDriveConversion() async throws {
         let suite = "PDFConversionTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -246,23 +340,23 @@ final class PDFConversionTests: XCTestCase {
             return options.useOCR ? changedResult : defaultResult
         })
         store.select([root.appendingPathComponent("paper.pdf")])
-        XCTAssertFalse(store.ocrEnabled)
+        XCTAssertTrue(store.ocrEnabled, "Hybrid OCR is on by default")
         XCTAssertTrue(store.removeHeaderFooter, "Repeated headers and footers are dropped by default")
         store.convert()
         await drain(store)
-        XCTAssertFalse(store.ocrApplied)
-        store.setOCR(true)
+        XCTAssertTrue(store.ocrApplied)
+        store.setOCR(false)
         store.setRemoveHeaderFooter(false)
-        XCTAssertTrue(defaults.bool(forKey: "pdf.ocrEnabled"))
+        XCTAssertFalse(defaults.bool(forKey: "pdf.ocrEnabled"))
         XCTAssertFalse(defaults.bool(forKey: "pdf.removeHeaderFooter"))
         store.convert()
         await drain(store)
-        XCTAssertTrue(store.ocrApplied)
+        XCTAssertFalse(store.ocrApplied)
         let reopened = PDFConversionStore(environment: environment, defaults: defaults)
-        XCTAssertTrue(reopened.ocrEnabled)
+        XCTAssertFalse(reopened.ocrEnabled, "An explicit choice survives the new default")
         XCTAssertFalse(reopened.removeHeaderFooter)
         let recordedOptions = await recorded.values
-        XCTAssertEqual(recordedOptions, [PDFConversionOptions(), PDFConversionOptions(useOCR: true, removeHeaderFooter: false)])
+        XCTAssertEqual(recordedOptions, [PDFConversionOptions(), PDFConversionOptions(useOCR: false, removeHeaderFooter: false)])
     }
 
     @MainActor
@@ -334,6 +428,25 @@ final class PDFConversionTests: XCTestCase {
         try await environment.install { print("PDF install: \($0)") }
         XCTAssertTrue(environment.isReady)
         XCTAssertFalse(FileManager.default.fileExists(atPath: environment.directory.appendingPathComponent("bin").path))
+        // The installer keeps only what the conversion path reads.
+        let site = environment.directory.appendingPathComponent("venv/lib/python3.12/site-packages")
+        for relative in ["uv-aarch64-apple-darwin", "sympy", "mpmath", "networkx",
+                         "venv/lib/python3.12/site-packages/onnxruntime/tools"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: environment.directory.appendingPathComponent(relative).path), relative)
+        }
+        let models = site.appendingPathComponent("pymupdf/layout/resources/onnx")
+        for name in ["layout_rf2.4.1+imf1.onnx", "layout_rf2.4.1+imf1.yaml", "feature_imf1.onnx", "table_grid_model_v4_ep.onnx"] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: models.appendingPathComponent(name).path), name)
+        }
+        for name in ["layout_imf1.onnx", "layout_rf2.4.1.onnx", "table_grid_model_v4.onnx", "table_grid_model_v2c.onnx"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: models.appendingPathComponent(name).path), name)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: site.appendingPathComponent("pymupdf/mupdf-devel").path), "mupdf-devel")
+        let installedBytes = environment.sizeOnDisk()
+        print("PDF runtime size: \(installedBytes / 1_048_576) MB")
+        XCTAssertGreaterThan(installedBytes, 100 * 1_048_576)
+        XCTAssertLessThan(installedBytes, 420 * 1_048_576, "Pruned runtime must stay well under the unpruned 490 MB")
         // A second install is a read-only fast path.
         try await environment.install { _ in XCTFail("Ready environment should not reinstall") }
         let pdf = root.appendingPathComponent("论文 sample.pdf")
@@ -386,12 +499,13 @@ final class PDFConversionTests: XCTestCase {
         let scannedProbe = try await service.probe(scannedText)
         XCTAssertTrue(scannedProbe.scanned, "A rasterized page has no text layer to offer")
         XCTAssertEqual(scannedProbe.textPages, 0)
-        let textOnly = try await service.convert(scannedText, options: PDFConversionOptions()) { _ in }
+        let textOnly = try await service.convert(
+            scannedText, options: PDFConversionOptions(useOCR: false)) { _ in }
         defer { try? FileManager.default.removeItem(at: textOnly.directory) }
-        // Without the opt-in flag there is no text layer to extract from the rasterized page.
+        // With OCR switched off there is no text layer to extract from the rasterized page.
         XCTAssertFalse(textOnly.preview.lowercased().contains("research paper"))
-        let recognized = try await service.convert(
-            scannedText, options: PDFConversionOptions(useOCR: true)) { _ in }
+        // The default is hybrid OCR, which recognizes such a page.
+        let recognized = try await service.convert(scannedText, options: PDFConversionOptions()) { _ in }
         defer { try? FileManager.default.removeItem(at: recognized.directory) }
         XCTAssertTrue(recognized.preview.lowercased().contains("research paper"))
         XCTAssertTrue(recognized.preview.contains("中文"))

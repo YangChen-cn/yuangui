@@ -1,9 +1,11 @@
 import Foundation
 
-/// What the window asks the local converter to do. Defaults mirror the worker's own
-/// defaults: read the PDF's text layer, and drop repeated page headers and footers.
+/// What the window asks the local converter to do. The defaults are the window's own:
+/// hybrid OCR, which the engine applies only to pages that need it, and repeated page
+/// headers and footers dropped. The worker's command line defaults to no OCR, so the
+/// service passes `--ocr` for these options.
 struct PDFConversionOptions: Sendable, Equatable {
-    var useOCR = false
+    var useOCR = true
     var removeHeaderFooter = true
 }
 

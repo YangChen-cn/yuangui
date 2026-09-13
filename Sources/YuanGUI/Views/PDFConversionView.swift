@@ -6,6 +6,9 @@ struct PDFConversionView: View {
     let chooseFile: () -> Void
     let chooseDestination: () -> Void
     @State private var dropTargeted = false
+    @State private var confirmingUninstall = false
+
+    private static let byteCount = ByteCountFormatter()
 
     private var stageKey: String {
         store.stage == "text" && store.ocrApplied ? "pdf.stage.textOCR" : "pdf.stage.\(store.stage)"
@@ -60,7 +63,8 @@ struct PDFConversionView: View {
                 .disabled(store.isBusy)
                 Text(AppLocalizer.string("pdf.ocrHelp")).font(.caption).foregroundStyle(.secondary)
                 if store.probe?.scanned == true {
-                    Text(AppLocalizer.string("pdf.scanned")).font(.caption).foregroundStyle(.orange)
+                    Text(AppLocalizer.string(store.ocrEnabled ? "pdf.scanned" : "pdf.scannedNoOCR"))
+                        .font(.caption).foregroundStyle(.orange)
                 }
                 Toggle(isOn: Binding(get: { store.removeHeaderFooter }, set: store.setRemoveHeaderFooter)) {
                     Text(AppLocalizer.string("pdf.margins")).font(.callout)
@@ -68,6 +72,14 @@ struct PDFConversionView: View {
                 .toggleStyle(.checkbox)
                 .disabled(store.isBusy)
                 Text(AppLocalizer.string("pdf.marginsHelp")).font(.caption).foregroundStyle(.secondary)
+            }
+            if store.isReady, store.runtimeBytes > 0 {
+                HStack {
+                    Text(AppLocalizer.format("pdf.runtimeSize", Self.byteCount.string(fromByteCount: store.runtimeBytes)))
+                    Button(AppLocalizer.string("pdf.uninstall")) { confirmingUninstall = true }
+                        .disabled(store.isBusy)
+                    Spacer()
+                }.font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 Text(AppLocalizer.string(stageKey))
@@ -111,6 +123,13 @@ struct PDFConversionView: View {
         }
         .padding(20)
         .frame(minWidth: 580, minHeight: 420)
+        .confirmationDialog(AppLocalizer.string("pdf.uninstall.confirm"), isPresented: $confirmingUninstall,
+                            titleVisibility: .visible) {
+            Button(AppLocalizer.string("pdf.uninstall"), role: .destructive) { store.uninstall() }
+            Button(AppLocalizer.string("pdf.cancel"), role: .cancel) { }
+        } message: {
+            Text(AppLocalizer.string("pdf.uninstall.detail"))
+        }
     }
 }
 
