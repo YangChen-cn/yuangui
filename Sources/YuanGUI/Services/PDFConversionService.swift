@@ -1,10 +1,24 @@
 import Foundation
 
+/// What the window asks the local converter to do. Defaults mirror the worker's own
+/// defaults: read the PDF's text layer, and drop repeated page headers and footers.
+struct PDFConversionOptions: Sendable, Equatable {
+    var useOCR = false
+    var removeHeaderFooter = true
+}
+
+/// Cheap facts gathered before the Layout model is loaded.
+struct PDFProbe: Codable, Sendable, Equatable {
+    let pages: Int
+    let encrypted: Bool
+    let textPages: Int
+    let sampledPages: Int
+    let scanned: Bool
+}
+
 struct PDFConversionResult: Sendable {
     struct Manifest: Codable, Sendable {
-        struct Image: Codable, Sendable { let name: String; let page: Int }
-        let images: [Image]
-        let failedPages: [Int]
+        let images: [String]
         let emptyText: Bool
     }
     let directory: URL
@@ -15,13 +29,25 @@ struct PDFConversionResult: Sendable {
 }
 
 struct PDFConversionService: Sendable {
+    /// Must match the directory the worker writes its picture links against.
+    static let assetsDirectory = "_assets"
     let environment: PDFConversionEnvironment
 
-    func convert(_ source: URL, useOCR: Bool = false,
-                 progress: @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult {
-        guard source.isFileURL, source.pathExtension.lowercased() == "pdf" else {
+    func probe(_ source: URL) async throws -> PDFProbe {
+        try Self.validate(source)
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        let output = try await PDFProcessRunner().run(environment.python,
+            arguments: ["-I", try PDFConversionEnvironment.resource("convert.py").path, "--probe", source.path])
+        guard let probe = Self.event(in: output, \.probe) else {
             throw PDFConversionError.message("pdf.error.invalid")
         }
+        return probe
+    }
+
+    func convert(_ source: URL, options: PDFConversionOptions,
+                 progress: @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult {
+        try Self.validate(source)
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("YuanGUI-PDF-\(UUID().uuidString)")
@@ -29,13 +55,12 @@ struct PDFConversionService: Sendable {
         var success = false
         defer { if !success { try? FileManager.default.removeItem(at: directory) } }
         var arguments = ["-I", try PDFConversionEnvironment.resource("convert.py").path, source.path, directory.path]
-        if useOCR { arguments.append("--ocr") }
+        if options.useOCR { arguments.append("--ocr") }
+        if !options.removeHeaderFooter { arguments.append("--keep-header-footer") }
         _ = try await PDFProcessRunner().run(environment.python,
             arguments: arguments,
             progress: { output in
-                guard let line = output.split(separator: "\n").last,
-                      let event = try? JSONDecoder().decode(PDFWorkerEvent.self, from: Data(line.utf8)),
-                      let stage = event.stage else { return }
+                guard let event = Self.lastEvent(in: output), let stage = event.stage else { return }
                 await progress(stage)
             })
         try Task.checkCancellation()
@@ -43,6 +68,28 @@ struct PDFConversionService: Sendable {
         let (preview, truncated) = try Self.readPreview(directory.appendingPathComponent("body.md"))
         success = true
         return PDFConversionResult(directory: directory, manifest: manifest, preview: preview, truncated: truncated)
+    }
+
+    private static func validate(_ source: URL) throws {
+        guard source.isFileURL, source.pathExtension.lowercased() == "pdf" else {
+            throw PDFConversionError.message("pdf.error.invalid")
+        }
+    }
+
+    /// The worker reports progress continuously, so only the newest decoded event counts.
+    private static func lastEvent(in output: String) -> PDFWorkerEvent? {
+        for line in output.split(separator: "\n").reversed() {
+            if let event = try? JSONDecoder().decode(PDFWorkerEvent.self, from: Data(line.utf8)) { return event }
+        }
+        return nil
+    }
+
+    private static func event<T>(in output: String, _ extract: (PDFWorkerEvent) -> T?) -> T? {
+        for line in output.split(separator: "\n").reversed() {
+            if let event = try? JSONDecoder().decode(PDFWorkerEvent.self, from: Data(line.utf8)),
+               let value = extract(event) { return value }
+        }
+        return nil
     }
 
     static func readPreview(_ url: URL, limit: Int = 200_000) throws -> (String, Bool) {
@@ -72,23 +119,21 @@ struct PDFConversionService: Sendable {
             let assets = folder.appendingPathComponent(assetsName)
             guard !fm.fileExists(atPath: md.path), !fm.fileExists(atPath: assets.path) else { continue }
             let stagedMD = staging.appendingPathComponent("document.md")
-            try fm.copyItem(at: result.bodyURL, to: stagedMD)
             let stagedAssets = staging.appendingPathComponent("assets")
             try fm.createDirectory(at: stagedAssets, withIntermediateDirectories: false)
-            let file = try FileHandle(forWritingTo: stagedMD)
-            do {
-                try file.seekToEnd()
-                for image in result.manifest.images {
-                    try Task.checkCancellation()
-                    guard URL(fileURLWithPath: image.name).lastPathComponent == image.name else {
-                        throw PDFConversionError.message("pdf.error.invalid")
-                    }
-                    try fm.copyItem(at: result.directory.appendingPathComponent(image.name), to: stagedAssets.appendingPathComponent(image.name))
-                    let relative = (assetsName + "/" + image.name).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
-                    try file.write(contentsOf: Data("\n\n![Page \(image.page)](<\(relative)>)".utf8))
+            // Pictures are linked as "_assets/<file>" while previewing; the export points
+            // them at the sibling folder that actually receives them.
+            let encodedAssets = assetsName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+            let body = try String(contentsOf: result.bodyURL, encoding: .utf8)
+            try Data(body.replacingOccurrences(of: "](\(assetsDirectory)/", with: "](\(encodedAssets)/").utf8)
+                .write(to: stagedMD)
+            for image in result.manifest.images {
+                try Task.checkCancellation()
+                guard URL(fileURLWithPath: image).lastPathComponent == image else {
+                    throw PDFConversionError.message("pdf.error.invalid")
                 }
-                try file.close()
-            } catch { try? file.close(); throw error }
+                try fm.copyItem(at: result.directory.appendingPathComponent(image), to: stagedAssets.appendingPathComponent(image))
+            }
             var movedAssets = false
             do {
                 try Task.checkCancellation()

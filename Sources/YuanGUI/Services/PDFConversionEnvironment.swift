@@ -2,6 +2,10 @@ import Foundation
 import CryptoKit
 import Darwin
 
+#if !arch(arm64)
+#error("YuanGUI's PDF conversion runtime supports Apple Silicon Macs only.")
+#endif
+
 struct PDFConversionEnvironment: Sendable {
     static let revision = "pymupdf-layout-1.28.2-ocr-v1"
     let root: URL
@@ -35,8 +39,45 @@ struct PDFConversionEnvironment: Sendable {
         throw PDFConversionError.message("pdf.error.resources")
     }
 
+    /// Remove runtime revisions other than the current one, which is installed and
+    /// verified. Backs off while another installer holds the lock.
+    func removeStaleRevisions() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: root.path) else { return }
+        let descriptor = Darwin.open(root.appendingPathComponent(".install-lock").path, O_CREAT | O_RDWR, 0o600)
+        guard descriptor >= 0 else { return }
+        defer { Darwin.close(descriptor) }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { return }
+        defer { flock(descriptor, LOCK_UN) }
+        removeRevisionsLocked()
+    }
+
+    /// Callers must hold the install lock: it keeps a concurrent installer's working
+    /// files out of the way of this removal.
+    private func removeRevisionsLocked() {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey]
+        let entries = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: keys)) ?? []
+        let current = try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        for entry in entries where entry.lastPathComponent != directory.lastPathComponent {
+            // Only ever remove a sibling revision directory inside this folder, and only
+            // one installed before this revision: a newer app version may own it.
+            guard let marker = entry.lastPathComponent.range(of: "-v", options: .backwards),
+                  !entry.lastPathComponent.hasPrefix("."),
+                  marker.upperBound < entry.lastPathComponent.endIndex,
+                  entry.lastPathComponent[marker.upperBound...].allSatisfy(\.isNumber),
+                  let values = try? entry.resourceValues(forKeys: Set(keys)),
+                  values.isDirectory == true, values.isSymbolicLink != true,
+                  let installed = values.contentModificationDate, let current, installed < current else { continue }
+            try? fm.removeItem(at: entry)
+        }
+    }
+
     func install(progress: @escaping @Sendable (String) async -> Void) async throws {
-        if isReady { return }
+        if isReady {
+            removeStaleRevisions()
+            return
+        }
         let fm = FileManager.default
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         // A just-closed window may still be reaping its cancelled installer.
@@ -47,7 +88,10 @@ struct PDFConversionEnvironment: Sendable {
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { throw PDFConversionError.message("pdf.error.busy") }
         defer { flock(descriptor, LOCK_UN) }
         try Task.checkCancellation()
-        if isReady { return }
+        if isReady {
+            removeRevisionsLocked()
+            return
+        }
         // Partial environments are never considered ready. Keep the final venv path stable:
         // Python launchers contain absolute paths and cannot be relocated after creation.
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
@@ -55,13 +99,9 @@ struct PDFConversionEnvironment: Sendable {
         var completed = false
         defer { if !completed { try? fm.removeItem(at: directory) } }
         await progress("download")
-        #if arch(arm64)
+        // Apple Silicon only: the pinned runtime has no Intel build.
         let architecture = "aarch64"
         let checksum = "7e6ddb9316acc00f2296c82ff4d99977870ee34b2f0ddcae9444d714db9364ed"
-        #else
-        let architecture = "x86_64"
-        let checksum = "5e287ef61cb6a9b61b3a83fef124fd143e400468a7dac794230147a810e17119"
-        #endif
         let archiveName = "uv-\(architecture)-apple-darwin"
         let url = URL(string: "https://github.com/astral-sh/uv/releases/download/0.12.13/\(archiveName).tar.gz")!
         let configuration = URLSessionConfiguration.ephemeral
@@ -103,5 +143,7 @@ struct PDFConversionEnvironment: Sendable {
         completed = true
         try? fm.removeItem(at: archive)
         try? fm.removeItem(at: directory.appendingPathComponent("cache"))
+        // Only now that this revision is verified is any earlier one expendable.
+        removeRevisionsLocked()
     }
 }

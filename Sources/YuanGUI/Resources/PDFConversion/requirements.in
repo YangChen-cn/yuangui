@@ -1,7 +1,9 @@
+# Direct requirements of the private PDF conversion runtime (Apple Silicon only).
 pymupdf4llm==1.28.2
-# This distribution includes its Chinese/English ONNX models, without runtime downloads.
+# Chinese/English OCR engine used only while the window's automatic OCR option is on.
+# Its ONNX models ship inside the distribution, so conversion never downloads models.
 rapidocr-onnxruntime==1.4.4
-# Compatible prebuilt OCR image-processing wheels for both Mac architectures.
+# Image processing for RapidOCR. Pinned to a release with a macOS arm64 wheel.
 opencv-python==4.11.0.86
-# Last release providing Python 3.12 wheels for both Apple Silicon and Intel Macs.
+# Runs the PyMuPDF Layout model for every conversion and RapidOCR only when enabled.
 onnxruntime==1.23.2

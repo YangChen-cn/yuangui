@@ -18,7 +18,16 @@ and mirror validation.
   fallback. Both must publish the identical `updates/latest.json`.
 
 Before publishing, run `swift test --skip 'YuanGUIBenchmarks'` and
-`./script/build_and_run.sh --verify`. Confirm the packaged app and embedded
+`./script/build_and_run.sh --verify`. The default suite never downloads the PDF
+conversion runtime, so also exercise it once, which installs into a temporary directory,
+converts generated fixtures and removes the runtime again:
+
+```sh
+YUANGUI_TEST_PDF_INSTALL=1 swift test --filter PDFConversionTests/testRealInstallationAndPDFConversion
+```
+
+Check the packaged app on an Apple Silicon Mac only: PDF conversion is not built for
+Intel. Confirm the packaged app and embedded
 Finder extension both report `2.9.0 (22)`, carry the `YuanGui` signature, and
 pass deep strict verification. Then run the release flow from a clean, pushed
 `main`:

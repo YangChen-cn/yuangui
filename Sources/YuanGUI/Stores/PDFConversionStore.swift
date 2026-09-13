@@ -13,29 +13,47 @@ final class PDFConversionStore: ObservableObject {
     @Published private(set) var startedAt: Date?
     /// Automatic OCR is off unless the user opts in; text PDFs need no recognition.
     @Published private(set) var ocrEnabled: Bool
+    /// Repeated page headers and footers are dropped unless the user opts out.
+    @Published private(set) var removeHeaderFooter: Bool
     /// Whether the current task, or the finished result on screen, ran with OCR.
     @Published private(set) var ocrApplied = false
+    /// Cheap document facts for the selected file, once a runtime is installed.
+    @Published private(set) var probe: PDFProbe?
     private var task: Task<Void, Never>?
+    private var probeTask: Task<Void, Never>?
     private var generation = UUID()
     private var closed = false
     private let environment: PDFConversionEnvironment
     private let defaults: UserDefaults
     private let installOperation: @Sendable (@escaping @Sendable (String) async -> Void) async throws -> Void
-    private let convertOperation: @Sendable (URL, Bool, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult
+    private let convertOperation: @Sendable (URL, PDFConversionOptions, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult
+    private let probeOperation: @Sendable (URL) async throws -> PDFProbe
 
     private static let ocrKey = "pdf.ocrEnabled"
+    private static let marginsKey = "pdf.removeHeaderFooter"
 
     init(environment: PDFConversionEnvironment = PDFConversionEnvironment(),
          defaults: UserDefaults = .standard,
          install: (@Sendable (@escaping @Sendable (String) async -> Void) async throws -> Void)? = nil,
-         convert: (@Sendable (URL, Bool, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult)? = nil) {
+         convert: (@Sendable (URL, PDFConversionOptions, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult)? = nil,
+         probe: (@Sendable (URL) async throws -> PDFProbe)? = nil) {
         self.environment = environment
         self.defaults = defaults
         isReady = environment.isReady
         ocrEnabled = defaults.bool(forKey: Self.ocrKey)
+        removeHeaderFooter = defaults.object(forKey: Self.marginsKey) as? Bool ?? true
         installOperation = install ?? { progress in try await environment.install(progress: progress) }
-        convertOperation = convert ?? { url, useOCR, progress in
-            try await PDFConversionService(environment: environment).convert(url, useOCR: useOCR, progress: progress)
+        convertOperation = convert ?? { url, options, progress in
+            try await PDFConversionService(environment: environment).convert(url, options: options, progress: progress)
+        }
+        probeOperation = probe ?? { url in
+            try await PDFConversionService(environment: environment).probe(url)
+        }
+        // A previous app version may have left its runtime behind; only this version's
+        // revision is needed, and it is verified before anything is removed.
+        if isReady {
+            let environment = environment
+            Task.detached(priority: .utility) { environment.removeStaleRevisions() }
         }
     }
 
@@ -43,6 +61,12 @@ final class PDFConversionStore: ObservableObject {
         guard !isBusy else { return }
         ocrEnabled = enabled
         defaults.set(enabled, forKey: Self.ocrKey)
+    }
+
+    func setRemoveHeaderFooter(_ enabled: Bool) {
+        guard !isBusy else { return }
+        removeHeaderFooter = enabled
+        defaults.set(enabled, forKey: Self.marginsKey)
     }
 
     func select(_ urls: [URL]) {
@@ -56,6 +80,7 @@ final class PDFConversionStore: ObservableObject {
         error = nil
         stage = "idle"
         elapsed = 0
+        startProbe(url)
     }
 
     func install() {
@@ -65,16 +90,19 @@ final class PDFConversionStore: ObservableObject {
             isReady = environment.isReady
             if !isReady { throw PDFConversionError.message("pdf.error.resources") }
             stage = "ready"
+            if let source { startProbe(source) }
         }
     }
 
     func convert() {
         guard !isBusy, !closed, isReady, let source else { return }
         clearResult()
+        probeTask?.cancel()
         let useOCR = ocrEnabled
         ocrApplied = useOCR
+        let options = PDFConversionOptions(useOCR: useOCR, removeHeaderFooter: removeHeaderFooter)
         start(stage: "text") { [self] token in
-            let converted = try await convertOperation(source, useOCR) { [weak self] stage in await self?.update(stage, token: token) }
+            let converted = try await convertOperation(source, options) { [weak self] stage in await self?.update(stage, token: token) }
             guard accepts(token) else {
                 try? FileManager.default.removeItem(at: converted.directory)
                 return
@@ -110,8 +138,26 @@ final class PDFConversionStore: ObservableObject {
     func close() {
         closed = true
         generation = UUID()
+        probeTask?.cancel()
         task?.cancel()
         if !isBusy { clearResult() }
+    }
+
+    /// Reading the document is cheap and only needs PyMuPDF, so it runs while the user
+    /// is still deciding. Failures stay silent: converting reports them properly.
+    private func startProbe(_ url: URL) {
+        probeTask?.cancel()
+        probe = nil
+        guard isReady, !closed else { return }
+        let operation = probeOperation
+        probeTask = Task { [self] in
+            let facts = try? await operation(url)
+            guard !closed, !Task.isCancelled, source == url else { return }
+            probe = facts
+            if facts?.encrypted == true, error == nil {
+                error = AppLocalizer.string("pdf.error.locked")
+            }
+        }
     }
 
     private func start(stage initialStage: String, operation: @escaping @MainActor (UUID) async throws -> Void) {

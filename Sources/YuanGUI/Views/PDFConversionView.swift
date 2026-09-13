@@ -26,6 +26,9 @@ struct PDFConversionView: View {
             HStack {
                 Label(store.source?.lastPathComponent ?? AppLocalizer.string("pdf.drop"), systemImage: "doc.fill")
                     .lineLimit(2).textSelection(.enabled)
+                if let probe = store.probe, !probe.encrypted, probe.pages > 0 {
+                    Text(AppLocalizer.format("pdf.pageCount", probe.pages)).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 if store.isBusy {
                     ProgressView().controlSize(.small)
@@ -56,6 +59,15 @@ struct PDFConversionView: View {
                 .toggleStyle(.checkbox)
                 .disabled(store.isBusy)
                 Text(AppLocalizer.string("pdf.ocrHelp")).font(.caption).foregroundStyle(.secondary)
+                if store.probe?.scanned == true {
+                    Text(AppLocalizer.string("pdf.scanned")).font(.caption).foregroundStyle(.orange)
+                }
+                Toggle(isOn: Binding(get: { store.removeHeaderFooter }, set: store.setRemoveHeaderFooter)) {
+                    Text(AppLocalizer.string("pdf.margins")).font(.callout)
+                }
+                .toggleStyle(.checkbox)
+                .disabled(store.isBusy)
+                Text(AppLocalizer.string("pdf.marginsHelp")).font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 Text(AppLocalizer.string(stageKey))
@@ -74,14 +86,13 @@ struct PDFConversionView: View {
                     Text(AppLocalizer.string(store.ocrApplied ? "pdf.emptyText" : "pdf.emptyTextNoOCR"))
                         .font(.caption).foregroundStyle(.orange)
                 }
-                if !result.manifest.failedPages.isEmpty {
-                    Text(AppLocalizer.format("pdf.imageFailures", result.manifest.failedPages.map(String.init).joined(separator: ", ")))
-                        .font(.caption).foregroundStyle(.orange)
-                }
                 HStack {
                     Text(AppLocalizer.format("pdf.imageCount", result.manifest.images.count))
                     if result.truncated { Text(AppLocalizer.string("pdf.truncated")) }
                 }.font(.caption).foregroundStyle(.secondary)
+                if !result.manifest.images.isEmpty {
+                    Text(AppLocalizer.string("pdf.imageAssets")).font(.caption).foregroundStyle(.secondary)
+                }
                 PDFSourceTextView(text: result.preview)
                 HStack {
                     Button(AppLocalizer.string("pdf.copy"), action: store.copy)

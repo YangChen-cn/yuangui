@@ -124,4 +124,5 @@ enum PDFConversionError: LocalizedError {
 struct PDFWorkerEvent: Decodable {
     var stage: String?
     var error: String?
+    var probe: PDFProbe?
 }

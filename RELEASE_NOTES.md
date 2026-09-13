@@ -4,12 +4,14 @@
 
 ## 2.9.0 — PDF to Markdown
 
-- Added a local PDF-to-Markdown window powered by PyMuPDF Layout 1.28.2 with its local layout model: choose or drop one PDF, preview the source, copy text, and export Markdown with bitmap images appended by page.
+- Added a local PDF-to-Markdown window powered by PyMuPDF Layout 1.28.2 running on Apple Silicon: choose or drop one PDF, preview the source, copy text, and export Markdown with a companion `_assets` folder. Figures — including vector diagrams — now stay next to their position in the text instead of being appended at the end.
+- Repeated page headers and footers such as running titles, page numbers and copyright lines are removed by default, with a checkbox to keep them.
+- Selecting a PDF preflights it in under a second: page count, encryption and whether a text layer exists. Locked documents fail before the layout model is loaded, and documents that look scanned are flagged with a hint to enable OCR.
 - Automatic Chinese/English RapidOCR for scanned pages is a checkbox in the window, off by default and remembered between sessions. Text PDFs never load the recognition stack; turning it on needs no reinstallation.
-- First use installs a private, version-pinned Python environment with verified conversion dependencies. Conversion does not upload documents; installation and conversion can be cancelled.
+- First use installs a private, version-pinned Python runtime for Apple Silicon with verified conversion dependencies. Conversion does not upload documents; installation and conversion can be cancelled, and a verified install replaces earlier runtime revisions.
 - Large previews are bounded to 200,000 characters while exports retain all text. Export names are numbered to preserve existing files, and incomplete exports are cleaned up.
 - Reduced tool-panel refreshes during update progress and cached diary Markdown parsing until the body changes.
-- Complex reading order, tables and code still need review. Formula and vector figure reconstruction are not included; OCR accuracy depends on scan quality.
+- Complex reading order, tables and code still need review. Formula reconstruction is not included, and OCR accuracy depends on scan quality.
 
 ## 2.8.2 — Stable maintenance release
 

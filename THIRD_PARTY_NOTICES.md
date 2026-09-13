@@ -10,12 +10,14 @@ The system-shortcut integration follows the JSON input protocol documented by [r
 
 ## PDF conversion components
 
-The optional local Python runtime installs PyMuPDF, PyMuPDF4LLM and PyMuPDF Layout
-1.28.2 (AGPL-3.0 or Artifex commercial license), RapidOCR-ONNXRuntime 1.4.4
-(Apache-2.0), and their version-locked dependencies. Layout and OCR models run on
-the user's Mac. Published distributions retain their license metadata; YuanGUI
-does not fork these engines. See [PDF conversion](docs/PDF_CONVERSION.md) for the
-installation details and upstream project links.
+The optional local Python runtime is built for Apple Silicon Macs and installs PyMuPDF,
+PyMuPDF4LLM and PyMuPDF Layout 1.28.2 (AGPL-3.0 or Artifex commercial license),
+ONNX Runtime 1.23.2 (MIT, and required by the Layout model), RapidOCR-ONNXRuntime 1.4.4
+(Apache-2.0) with OpenCV 4.11.0.86 (Apache-2.0) for the optional OCR pass, plus their
+version-locked dependencies. Layout and OCR models run on the user's Mac. Published
+distributions retain their license metadata; YuanGUI does not fork these engines. See
+[PDF conversion](docs/PDF_CONVERSION.md) for the installation details and upstream
+project links.
 
 ## Service acknowledgements
 

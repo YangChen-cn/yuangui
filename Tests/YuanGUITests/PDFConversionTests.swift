@@ -3,9 +3,9 @@ import AppKit
 import PDFKit
 @testable import YuanGUI
 
-private actor OCRRecorder {
-    private(set) var values: [Bool] = []
-    func record(_ value: Bool) { values.append(value) }
+private actor OptionsRecorder {
+    private(set) var values: [PDFConversionOptions] = []
+    func record(_ value: PDFConversionOptions) { values.append(value) }
 }
 
 final class PDFConversionTests: XCTestCase {
@@ -17,17 +17,18 @@ final class PDFConversionTests: XCTestCase {
     }
     override func tearDownWithError() throws { try FileManager.default.removeItem(at: root) }
 
-    private func result(body: String = "中文 **paper**", images: [PDFConversionResult.Manifest.Image] = []) throws -> PDFConversionResult {
+    private func result(body: String = "中文 **paper**", images: [String] = []) throws -> PDFConversionResult {
         let work = root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         try Data(body.utf8).write(to: work.appendingPathComponent("body.md"))
         return PDFConversionResult(directory: work,
-            manifest: .init(images: images, failedPages: [], emptyText: body.isEmpty), preview: body, truncated: false)
+            manifest: .init(images: images, emptyText: body.isEmpty), preview: body, truncated: false)
     }
 
-    func testExportIncludesImagesAndNeverOverwritesEitherExistingName() throws {
-        let converted = try result(images: [.init(name: "page-1.png", page: 1)])
-        try Data([1, 2, 3]).write(to: converted.directory.appendingPathComponent("page-1.png"))
+    func testExportRewritesPictureLinksAndNeverOverwritesEitherExistingName() throws {
+        let body = "中文 **paper**\n\n![](\(PDFConversionService.assetsDirectory)/figure-0001-01.png)\ntail"
+        let converted = try result(body: body, images: ["figure-0001-01.png"])
+        try Data([1, 2, 3]).write(to: converted.directory.appendingPathComponent("figure-0001-01.png"))
         let existing = root.appendingPathComponent("论文 paper.md")
         try Data("keep".utf8).write(to: existing)
         let first = try PDFConversionService.export(converted, to: root, name: "论文 paper")
@@ -35,16 +36,18 @@ final class PDFConversionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "keep")
         let markdown = try String(contentsOf: first, encoding: .utf8)
         XCTAssertTrue(markdown.hasPrefix("中文 **paper**"))
-        XCTAssertTrue(markdown.contains("![Page 1]"))
-        let image = root.appendingPathComponent("论文 paper (1)_assets/page-1.png")
+        // No temporary path, and no link left pointing at the preview-time folder.
+        XCTAssertFalse(markdown.contains("](\(PDFConversionService.assetsDirectory)/"))
+        XCTAssertTrue(markdown.contains("(%E8%AE%BA%E6%96%87%20paper%20(1)_assets/figure-0001-01.png)"))
+        XCTAssertTrue(markdown.hasSuffix("tail"))
+        let image = root.appendingPathComponent("论文 paper (1)_assets/figure-0001-01.png")
         XCTAssertEqual(try Data(contentsOf: image), Data([1, 2, 3]))
-        XCTAssertTrue(markdown.contains("%E8%AE%BA%E6%96%87%20paper%20(1)_assets/page-1.png"))
         let second = try PDFConversionService.export(converted, to: root, name: "论文 paper")
         XCTAssertEqual(second.lastPathComponent, "论文 paper (2).md")
     }
 
     func testExportFailureCleansStagingAndPreservesOtherFiles() throws {
-        let converted = try result(images: [.init(name: "missing.png", page: 1)])
+        let converted = try result(images: ["missing.png"])
         let before = try FileManager.default.contentsOfDirectory(atPath: root.path).sorted()
         XCTAssertThrowsError(try PDFConversionService.export(converted, to: root, name: "paper"))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).sorted(), before)
@@ -83,6 +86,36 @@ final class PDFConversionTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertEqual(kill(child, 0), -1)
+    }
+
+    func testStaleRuntimeCleanupKeepsTheCurrentRevisionAndUnrelatedFiles() throws {
+        let environment = PDFConversionEnvironment(root: root.appendingPathComponent("runtime-root"))
+        let fm = FileManager.default
+        try fm.createDirectory(at: environment.directory, withIntermediateDirectories: true)
+        let stale = environment.root.appendingPathComponent("markitdown-0.1.7-v1")
+        let unrelatedFolder = environment.root.appendingPathComponent("notes")
+        let hiddenFolder = environment.root.appendingPathComponent(".hidden-v1")
+        for folder in [stale, unrelatedFolder, hiddenFolder] {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        let file = environment.root.appendingPathComponent("keep-v1.txt")
+        try Data("keep".utf8).write(to: file)
+        // An older install, and one a newer app version could own.
+        let older = Date(timeIntervalSince1970: 1_000_000)
+        try fm.setAttributes([.modificationDate: older], ofItemAtPath: stale.path)
+        try fm.setAttributes([.modificationDate: older.addingTimeInterval(3600)], ofItemAtPath: environment.directory.path)
+        environment.removeStaleRevisions()
+        XCTAssertFalse(fm.fileExists(atPath: stale.path), "An installed revision replaces earlier ones")
+        XCTAssertTrue(fm.fileExists(atPath: environment.directory.path), "The current revision survives")
+        XCTAssertTrue(fm.fileExists(atPath: unrelatedFolder.path))
+        XCTAssertTrue(fm.fileExists(atPath: file.path))
+        XCTAssertTrue(fm.fileExists(atPath: hiddenFolder.path))
+        // A newer app version may own a revision this build knows nothing about.
+        let newer = environment.root.appendingPathComponent("pymupdf-layout-2.0.0-v1")
+        try fm.createDirectory(at: newer, withIntermediateDirectories: true)
+        try fm.setAttributes([.modificationDate: older.addingTimeInterval(7200)], ofItemAtPath: newer.path)
+        environment.removeStaleRevisions()
+        XCTAssertTrue(fm.fileExists(atPath: newer.path))
     }
 
     func testConcurrentInstallerCannotRemoveActiveEnvironment() async throws {
@@ -144,8 +177,8 @@ final class PDFConversionTests: XCTestCase {
         }
     }
 
-    /// The Python worker must only load RapidOCR and ONNX Runtime when the user opted in.
-    func testOCRFlagReachesWorkerOnlyWhenEnabled() async throws {
+    /// Window options must reach the worker as command line flags, and nothing else.
+    func testWorkerFlagsFollowTheWindowOptions() async throws {
         let environment = PDFConversionEnvironment(root: root.appendingPathComponent("fake"))
         try FileManager.default.createDirectory(at: environment.python.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data().write(to: environment.directory.appendingPathComponent("ready"))
@@ -156,25 +189,48 @@ final class PDFConversionTests: XCTestCase {
         printf '%s\\n' "$@" > "\(log.path)"
         mkdir -p "$4"
         printf 'text' > "$4/body.md"
-        printf '{"images":[],"failedPages":[],"emptyText":false}' > "$4/result.json"
+        printf '{"images":[],"emptyText":false}' > "$4/result.json"
         """
         try Data(script.utf8).write(to: environment.python)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: environment.python.path)
         let source = root.appendingPathComponent("paper.pdf")
         try Data("pdf".utf8).write(to: source)
         let service = PDFConversionService(environment: environment)
-        for useOCR in [false, true] {
-            let converted = try await service.convert(source, useOCR: useOCR) { _ in }
+        let cases: [(options: PDFConversionOptions, flags: Set<String>)] = [
+            (PDFConversionOptions(), []),
+            (PDFConversionOptions(useOCR: true, removeHeaderFooter: false), ["--ocr", "--keep-header-footer"])
+        ]
+        for testCase in cases {
+            let converted = try await service.convert(source, options: testCase.options) { _ in }
             defer { try? FileManager.default.removeItem(at: converted.directory) }
             let arguments = try String(contentsOf: log, encoding: .utf8)
-            XCTAssertEqual(arguments.contains("--ocr"), useOCR)
             XCTAssertTrue(arguments.hasPrefix("-I\n"), "convert.py must not run with the user's Python startup paths")
+            for flag in ["--ocr", "--keep-header-footer"] {
+                XCTAssertEqual(arguments.contains(flag), testCase.flags.contains(flag), flag)
+            }
             XCTAssertEqual(converted.preview, "text")
         }
     }
 
+    /// The probe runs before the Layout model and must survive the worker's JSON channel.
+    func testProbeReportsDocumentFacts() async throws {
+        let environment = PDFConversionEnvironment(root: root.appendingPathComponent("probe"))
+        try FileManager.default.createDirectory(at: environment.python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: environment.directory.appendingPathComponent("ready"))
+        let script = """
+        #!/bin/sh
+        printf '%s\\n' '{"probe": {"pages": 405, "encrypted": false, "textPages": 0, "sampledPages": 5, "scanned": true}}'
+        """
+        try Data(script.utf8).write(to: environment.python)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: environment.python.path)
+        let source = root.appendingPathComponent("scan.pdf")
+        try Data("pdf".utf8).write(to: source)
+        let probe = try await PDFConversionService(environment: environment).probe(source)
+        XCTAssertEqual(probe, PDFProbe(pages: 405, encrypted: false, textPages: 0, sampledPages: 5, scanned: true))
+    }
+
     @MainActor
-    func testOCRToggleDefaultsOffPersistsAndDrivesConversion() async throws {
+    func testOptionsDefaultOffAndOnPersistAndDriveConversion() async throws {
         let suite = "PDFConversionTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -182,26 +238,52 @@ final class PDFConversionTests: XCTestCase {
         try FileManager.default.createDirectory(at: environment.python.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: environment.python, withDestinationURL: URL(fileURLWithPath: "/usr/bin/true"))
         try Data().write(to: environment.directory.appendingPathComponent("ready"))
-        let recorded = OCRRecorder()
+        let recorded = OptionsRecorder()
         let defaultResult = try result()
-        let ocrResult = try result()
-        let store = PDFConversionStore(environment: environment, defaults: defaults, convert: { _, useOCR, _ in
-            await recorded.record(useOCR)
-            return useOCR ? ocrResult : defaultResult
+        let changedResult = try result()
+        let store = PDFConversionStore(environment: environment, defaults: defaults, convert: { _, options, _ in
+            await recorded.record(options)
+            return options.useOCR ? changedResult : defaultResult
         })
         store.select([root.appendingPathComponent("paper.pdf")])
         XCTAssertFalse(store.ocrEnabled)
+        XCTAssertTrue(store.removeHeaderFooter, "Repeated headers and footers are dropped by default")
         store.convert()
         await drain(store)
         XCTAssertFalse(store.ocrApplied)
         store.setOCR(true)
+        store.setRemoveHeaderFooter(false)
         XCTAssertTrue(defaults.bool(forKey: "pdf.ocrEnabled"))
+        XCTAssertFalse(defaults.bool(forKey: "pdf.removeHeaderFooter"))
         store.convert()
         await drain(store)
         XCTAssertTrue(store.ocrApplied)
-        XCTAssertTrue(PDFConversionStore(environment: environment, defaults: defaults).ocrEnabled)
-        let recordedValues = await recorded.values
-        XCTAssertEqual(recordedValues, [false, true])
+        let reopened = PDFConversionStore(environment: environment, defaults: defaults)
+        XCTAssertTrue(reopened.ocrEnabled)
+        XCTAssertFalse(reopened.removeHeaderFooter)
+        let recordedOptions = await recorded.values
+        XCTAssertEqual(recordedOptions, [PDFConversionOptions(), PDFConversionOptions(useOCR: true, removeHeaderFooter: false)])
+    }
+
+    @MainActor
+    func testProbeDrivesScannedHintAndLockedError() async throws {
+        let environment = PDFConversionEnvironment(root: root.appendingPathComponent("hint"))
+        try FileManager.default.createDirectory(at: environment.python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: environment.python, withDestinationURL: URL(fileURLWithPath: "/usr/bin/true"))
+        try Data().write(to: environment.directory.appendingPathComponent("ready"))
+        let locked = PDFProbe(pages: 2, encrypted: true, textPages: 0, sampledPages: 0, scanned: false)
+        let store = PDFConversionStore(environment: environment, probe: { _ in locked })
+        store.select([root.appendingPathComponent("paper.pdf")])
+        for _ in 0..<200 {
+            if store.probe != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(store.probe, locked)
+        XCTAssertEqual(store.error, AppLocalizer.string("pdf.error.locked"))
+        // Selecting another document clears the previous verdict.
+        store.select([root.appendingPathComponent("other.pdf")])
+        XCTAssertNil(store.probe)
+        XCTAssertNil(store.error)
     }
 
     @MainActor
@@ -257,16 +339,40 @@ final class PDFConversionTests: XCTestCase {
         let pdf = root.appendingPathComponent("论文 sample.pdf")
         try Self.makePDF(pdf)
         let service = PDFConversionService(environment: environment)
-        let converted = try await service.convert(pdf) { print("PDF convert: \($0)") }
+        let probed = try await service.probe(pdf)
+        XCTAssertEqual(probed.pages, 1)
+        XCTAssertFalse(probed.encrypted)
+        XCTAssertFalse(probed.scanned)
+        let converted = try await service.convert(pdf, options: PDFConversionOptions()) { print("PDF convert: \($0)") }
         defer { try? FileManager.default.removeItem(at: converted.directory) }
         XCTAssertTrue(converted.preview.contains("Research paper"))
         // CoreText's PDF font map can encode 文 as the visually equivalent Kangxi
         // radical ⽂. Verify text retention without changing the converter's output.
         XCTAssertTrue(converted.preview.precomposedStringWithCompatibilityMapping.contains("中文"))
         XCTAssertFalse(converted.manifest.images.isEmpty)
-        XCTAssertTrue(converted.manifest.failedPages.isEmpty)
+        // Pictures stay next to their position in the text and are named for export.
+        for image in converted.manifest.images {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: converted.directory.appendingPathComponent(image).path))
+            XCTAssertTrue(converted.preview.contains("](\(PDFConversionService.assetsDirectory)/\(image))"), image)
+            XCTAssertFalse(converted.preview.contains("/private/"), "No temporary path may reach the Markdown")
+        }
         let export = try PDFConversionService.export(converted, to: root, name: "converted")
         XCTAssertTrue(FileManager.default.fileExists(atPath: export.path))
+        let exported = try String(contentsOf: export, encoding: .utf8)
+        XCTAssertFalse(exported.contains("](\(PDFConversionService.assetsDirectory)/"))
+        let firstImage = try XCTUnwrap(converted.manifest.images.first)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("converted_assets/\(firstImage)").path))
+        // Repeated page headers and footers are dropped by default and kept on request.
+        let running = root.appendingPathComponent("running.pdf")
+        try Self.makeRunningHeaderPDF(running)
+        let trimmed = try await service.convert(running, options: PDFConversionOptions()) { _ in }
+        defer { try? FileManager.default.removeItem(at: trimmed.directory) }
+        XCTAssertFalse(trimmed.preview.contains("Datasheet KV-2400"))
+        XCTAssertFalse(trimmed.preview.contains("Page 1 of 3"))
+        XCTAssertTrue(trimmed.preview.contains("Section body text"))
+        let kept = try await service.convert(running, options: PDFConversionOptions(removeHeaderFooter: false)) { _ in }
+        defer { try? FileManager.default.removeItem(at: kept.directory) }
+        XCTAssertTrue(kept.preview.contains("Datasheet KV-2400"))
         let scannedText = root.appendingPathComponent("扫描文字 OCR.pdf")
         let rasterize = """
         import pymupdf, sys
@@ -277,45 +383,31 @@ final class PDFConversionTests: XCTestCase {
             scanned.save(sys.argv[2])
         """
         _ = try await PDFProcessRunner().run(environment.python, arguments: ["-I", "-c", rasterize, pdf.path, scannedText.path])
-        let textOnly = try await service.convert(scannedText) { _ in }
+        let scannedProbe = try await service.probe(scannedText)
+        XCTAssertTrue(scannedProbe.scanned, "A rasterized page has no text layer to offer")
+        XCTAssertEqual(scannedProbe.textPages, 0)
+        let textOnly = try await service.convert(scannedText, options: PDFConversionOptions()) { _ in }
         defer { try? FileManager.default.removeItem(at: textOnly.directory) }
         // Without the opt-in flag there is no text layer to extract from the rasterized page.
         XCTAssertFalse(textOnly.preview.lowercased().contains("research paper"))
-        let recognized = try await service.convert(scannedText, useOCR: true) { _ in }
+        let recognized = try await service.convert(
+            scannedText, options: PDFConversionOptions(useOCR: true)) { _ in }
         defer { try? FileManager.default.removeItem(at: recognized.directory) }
         XCTAssertTrue(recognized.preview.lowercased().contains("research paper"))
         XCTAssertTrue(recognized.preview.contains("中文"))
         XCTAssertFalse(recognized.manifest.emptyText)
-        let partial = root.appendingPathComponent("partial")
-        let script = """
-        import runpy, sys
-        from unittest.mock import patch
-        from pathlib import Path
-        worker = runpy.run_path(sys.argv[1])
-        def fail_image(*args):
-            raise RuntimeError('simulated image failure')
-        with patch.dict(worker['convert'].__globals__, render_image=fail_image):
-            worker['convert'](Path(sys.argv[2]), Path(sys.argv[3]))
-        """
-        _ = try await PDFProcessRunner().run(environment.python, arguments: ["-I", "-c", script,
-            try PDFConversionEnvironment.resource("convert.py").path, pdf.path, partial.path])
-        let partialManifest = try JSONDecoder().decode(PDFConversionResult.Manifest.self,
-            from: Data(contentsOf: partial.appendingPathComponent("result.json")))
-        XCTAssertEqual(partialManifest.failedPages, [1])
-        XCTAssertTrue(partialManifest.images.isEmpty)
-        XCTAssertTrue(try String(contentsOf: partial.appendingPathComponent("body.md"), encoding: .utf8).contains("Research paper"))
-        for kind in ["scan", "rotated", "columns", "table"] {
+        for kind in ["ordinary", "scan", "rotated", "columns", "table"] {
             let fixture = root.appendingPathComponent("\(kind).pdf")
             try Self.makePDF(fixture, kind: kind)
-            let output = try await service.convert(fixture) { _ in }
+            let output = try await service.convert(fixture, options: PDFConversionOptions()) { _ in }
             defer { try? FileManager.default.removeItem(at: output.directory) }
             if kind == "scan" {
                 XCTAssertTrue(output.manifest.emptyText)
-                XCTAssertFalse(output.manifest.images.isEmpty)
             } else {
                 XCTAssertFalse(output.manifest.emptyText)
             }
             if kind == "rotated" { XCTAssertFalse(output.manifest.images.isEmpty) }
+            if kind == "ordinary" { XCTAssertFalse(output.manifest.images.isEmpty, "The bitmap must survive as a picture") }
             if kind == "columns" {
                 XCTAssertTrue(output.preview.contains("Left column"))
                 XCTAssertTrue(output.preview.contains("Right column"))
@@ -325,13 +417,37 @@ final class PDFConversionTests: XCTestCase {
         }
         let broken = root.appendingPathComponent("broken.pdf")
         try Data("not a pdf".utf8).write(to: broken)
-        do { _ = try await service.convert(broken) { _ in }; XCTFail("Invalid PDF accepted") } catch { }
+        do { _ = try await service.convert(broken, options: PDFConversionOptions()) { _ in }; XCTFail("Invalid PDF accepted") } catch { }
+        do { _ = try await service.probe(broken); XCTFail("Invalid PDF accepted") } catch { }
         let locked = try XCTUnwrap(PDFDocument(url: pdf))
         let lockedURL = root.appendingPathComponent("locked.pdf")
         XCTAssertTrue(locked.write(to: lockedURL, withOptions: [.userPasswordOption: "secret", .ownerPasswordOption: "owner"]))
-        do { _ = try await service.convert(lockedURL) { _ in }; XCTFail("Locked PDF accepted") } catch {
+        // A locked document is reported without loading the Layout model.
+        let lockedProbe = try await service.probe(lockedURL)
+        XCTAssertTrue(lockedProbe.encrypted)
+        do { _ = try await service.convert(lockedURL, options: PDFConversionOptions()) { _ in }; XCTFail("Locked PDF accepted") } catch {
             XCTAssertEqual(error.localizedDescription, AppLocalizer.string("pdf.error.locked"))
         }
+    }
+
+    /// Three pages repeating the same running header and footer, as a datasheet does.
+    private static func makeRunningHeaderPDF(_ url: URL) throws {
+        var box = CGRect(x: 0, y: 0, width: 600, height: 800)
+        let context = try XCTUnwrap(CGContext(url as CFURL, mediaBox: &box, nil))
+        for page in 1...3 {
+            context.beginPDFPage(nil)
+            func text(_ value: String, x: CGFloat, y: CGFloat, size: CGFloat = 18) {
+                let line = CTLineCreateWithAttributedString(NSAttributedString(string: value, attributes: [.font: NSFont.systemFont(ofSize: size)]))
+                context.textPosition = CGPoint(x: x, y: y)
+                CTLineDraw(line, context)
+            }
+            text("Datasheet KV-2400", x: 40, y: 770, size: 9)
+            text("Page \(page) of 3", x: 40, y: 20, size: 9)
+            text("Section body text for page \(page)", x: 40, y: 500)
+            for row in 0..<6 { text("Specification line \(row) with details.", x: 40, y: CGFloat(460 - row * 22), size: 12) }
+            context.endPDFPage()
+        }
+        context.closePDF()
     }
 
     private static func makePDF(_ url: URL, kind: String = "ordinary") throws {
@@ -343,7 +459,12 @@ final class PDFConversionTests: XCTestCase {
             context.textPosition = CGPoint(x: x, y: y)
             CTLineDraw(line, context)
         }
-        if kind != "scan" { text("Research paper 中文论文", x: 40, y: 740) }
+        if kind != "scan" { text("Research paper 中文论文", x: 40, y: 700) }
+        if kind == "ordinary" || kind == "rotated" {
+            // Body text below the title, as a real page has. A lone line near the top
+            // edge is what the layout model reads as a running page header.
+            for row in 0..<6 { text("Body line \(row) of the scheduler notes.", x: 40, y: CGFloat(660 - row * 24)) }
+        }
         if kind == "columns" {
             for row in 0..<5 {
                 text("Left column \(row)", x: 40, y: CGFloat(700 - row * 25))
@@ -359,7 +480,7 @@ final class PDFConversionTests: XCTestCase {
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         bitmap.setFillColor(CGColor(red: 0, green: 0.3, blue: 0.8, alpha: 1))
         bitmap.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
-        context.draw(try XCTUnwrap(bitmap.makeImage()), in: CGRect(x: 40, y: 500, width: 100, height: 100))
+        context.draw(try XCTUnwrap(bitmap.makeImage()), in: CGRect(x: 40, y: 360, width: 100, height: 100))
         context.endPDFPage()
         context.closePDF()
         if kind == "rotated" {
