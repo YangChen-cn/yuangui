@@ -3,7 +3,7 @@ import CryptoKit
 import Darwin
 
 struct PDFConversionEnvironment: Sendable {
-    static let revision = "markitdown-0.1.7-v1"
+    static let revision = "pymupdf-layout-1.28.2-ocr-v1"
     let root: URL
 
     init(root: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -97,7 +97,7 @@ struct PDFConversionEnvironment: Sendable {
                                                try Self.resource("requirements.lock").path], environment: environment)
         try Task.checkCancellation()
         await progress("verify")
-        _ = try await runner.run(python, arguments: ["-I", "-c", "import importlib.metadata, pdfplumber; from markitdown import MarkItDown; assert importlib.metadata.version('markitdown') == '0.1.7'; MarkItDown(enable_plugins=False)"])
+        _ = try await runner.run(python, arguments: ["-I", try Self.resource("convert.py").path, "--self-test"])
         try Task.checkCancellation()
         try Data(Self.revision.utf8).write(to: directory.appendingPathComponent("ready"), options: .atomic)
         completed = true

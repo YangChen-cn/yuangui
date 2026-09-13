@@ -8,6 +8,15 @@ The Cleanup House rule catalog is a native Swift reimplementation informed by [t
 
 The system-shortcut integration follows the JSON input protocol documented by [ringozzt/quicktranslate](https://github.com/ringozzt/quicktranslate), licensed MIT. YuanGUI does not bundle QuickTranslate source code.
 
+## PDF conversion components
+
+The optional local Python runtime installs PyMuPDF, PyMuPDF4LLM and PyMuPDF Layout
+1.28.2 (AGPL-3.0 or Artifex commercial license), RapidOCR-ONNXRuntime 1.4.4
+(Apache-2.0), and their version-locked dependencies. Layout and OCR models run on
+the user's Mac. Published distributions retain their license metadata; YuanGUI
+does not fork these engines. See [PDF conversion](docs/PDF_CONVERSION.md) for the
+installation details and upstream project links.
+
 ## Service acknowledgements
 
 YuanGUI interoperates with Apple frameworks and services (Vision, Music, Finder automation, Shortcuts), Open-Meteo, LRCLIB, Bilibili, GitHub Releases, and user-configured OpenAI-compatible APIs. These are service/API acknowledgements, not bundled source-code notices or endorsements.

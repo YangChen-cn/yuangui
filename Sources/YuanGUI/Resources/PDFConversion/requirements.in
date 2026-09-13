@@ -1,3 +1,7 @@
-markitdown[pdf]==0.1.7
+pymupdf4llm==1.28.2
+# This distribution includes its Chinese/English ONNX models, without runtime downloads.
+rapidocr-onnxruntime==1.4.4
+# Compatible prebuilt OCR image-processing wheels for both Mac architectures.
+opencv-python==4.11.0.86
 # Last release providing Python 3.12 wheels for both Apple Silicon and Intel Macs.
 onnxruntime==1.23.2

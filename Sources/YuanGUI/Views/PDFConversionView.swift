@@ -7,6 +7,10 @@ struct PDFConversionView: View {
     let chooseDestination: () -> Void
     @State private var dropTargeted = false
 
+    private var stageKey: String {
+        store.stage == "text" && store.ocrApplied ? "pdf.stage.textOCR" : "pdf.stage.\(store.stage)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -45,8 +49,16 @@ struct PDFConversionView: View {
             if !store.isReady {
                 Text(AppLocalizer.string("pdf.installHelp")).font(.caption).foregroundStyle(.secondary)
             }
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(isOn: Binding(get: { store.ocrEnabled }, set: store.setOCR)) {
+                    Text(AppLocalizer.string("pdf.ocr")).font(.callout)
+                }
+                .toggleStyle(.checkbox)
+                .disabled(store.isBusy)
+                Text(AppLocalizer.string("pdf.ocrHelp")).font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
-                Text(AppLocalizer.string("pdf.stage.\(store.stage)"))
+                Text(AppLocalizer.string(stageKey))
                 Spacer()
                 if let started = store.startedAt {
                     PDFElapsedView(started: started)
@@ -59,7 +71,8 @@ struct PDFConversionView: View {
             }
             if let result = store.result {
                 if result.manifest.emptyText {
-                    Text(AppLocalizer.string("pdf.emptyText")).font(.caption).foregroundStyle(.orange)
+                    Text(AppLocalizer.string(store.ocrApplied ? "pdf.emptyText" : "pdf.emptyTextNoOCR"))
+                        .font(.caption).foregroundStyle(.orange)
                 }
                 if !result.manifest.failedPages.isEmpty {
                     Text(AppLocalizer.format("pdf.imageFailures", result.manifest.failedPages.map(String.init).joined(separator: ", ")))

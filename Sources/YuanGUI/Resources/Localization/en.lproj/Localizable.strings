@@ -1462,15 +1462,18 @@
 
 "pdf.title" = "PDF to Markdown";
 "pdf.toolSubtitle" = "Convert locally, export with images";
-"pdf.subtitle" = "Powered by Microsoft MarkItDown · Local conversion";
+"pdf.subtitle" = "PyMuPDF Layout 1.28.2 · Local layout model, optional OCR";
 "pdf.choose" = "Choose PDF…";
 "pdf.drop" = "Drop one PDF here";
 "pdf.cancel" = "Cancel";
 "pdf.convert" = "Convert";
 "pdf.install" = "Install conversion components";
-"pdf.installHelp" = "First use downloads a private Python environment and conversion dependencies. It does not modify your system Python. Documents stay on this Mac.";
+"pdf.installHelp" = "First use downloads a private Python environment, layout model and Chinese/English OCR models. It does not modify system Python. Conversion and recognition run locally after installation.";
+"pdf.ocr" = "Automatic OCR";
+"pdf.ocrHelp" = "Recognizes text in scanned pages using the installed Chinese/English models. Slower and uses more memory, so it stays off for PDFs that already contain text.";
 "pdf.elapsed" = "%.1f seconds";
-"pdf.emptyText" = "No text was extracted. This may be a scanned PDF; OCR is not included.";
+"pdf.emptyText" = "Automatic OCR found no text. The pages may contain no text or be too blurry.";
+"pdf.emptyTextNoOCR" = "No text layer was found. If this is a scanned document, turn on automatic OCR and convert again.";
 "pdf.imageFailures" = "Some images could not be extracted on pages: %@";
 "pdf.imageCount" = "%ld bitmap images will be appended on export.";
 "pdf.truncated" = "Preview limited to 200,000 characters; export includes all text.";
@@ -1489,7 +1492,7 @@
 "pdf.error.locked" = "This PDF is password protected. Unlock it before converting.";
 "pdf.error.selection" = "Choose or drop exactly one local PDF file.";
 "pdf.error.export" = "Could not create the export. Choose another destination.";
-"release.2.9.0.pdf" = "Convert PDFs locally with MarkItDown, preview and copy Markdown, and export bitmap images.";
+"release.2.9.0.pdf" = "Convert PDFs with local PyMuPDF Layout models, preview and copy Markdown, and export bitmap images. Automatic OCR for scanned pages is a checkbox in the window, off by default.";
 "release.2.9.0.performance" = "Reduced tool-panel refreshes and cached diary Markdown parsing.";
 "pdf.stage.idle" = "Ready to choose a PDF";
 "pdf.stage.download" = "Downloading conversion components…";
@@ -1497,7 +1500,8 @@
 "pdf.stage.dependencies" = "Installing dependencies…";
 "pdf.stage.verify" = "Verifying installation…";
 "pdf.stage.ready" = "Components ready";
-"pdf.stage.text" = "Extracting text and tables…";
+"pdf.stage.text" = "Analyzing layout and extracting text…";
+"pdf.stage.textOCR" = "Analyzing layout, extracting text and applying OCR when needed…";
 "pdf.stage.images" = "Extracting bitmap images…";
 "pdf.stage.finished" = "Conversion finished";
 "pdf.stage.exporting" = "Exporting…";

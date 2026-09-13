@@ -17,7 +17,8 @@ struct PDFConversionResult: Sendable {
 struct PDFConversionService: Sendable {
     let environment: PDFConversionEnvironment
 
-    func convert(_ source: URL, progress: @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult {
+    func convert(_ source: URL, useOCR: Bool = false,
+                 progress: @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult {
         guard source.isFileURL, source.pathExtension.lowercased() == "pdf" else {
             throw PDFConversionError.message("pdf.error.invalid")
         }
@@ -27,8 +28,10 @@ struct PDFConversionService: Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var success = false
         defer { if !success { try? FileManager.default.removeItem(at: directory) } }
+        var arguments = ["-I", try PDFConversionEnvironment.resource("convert.py").path, source.path, directory.path]
+        if useOCR { arguments.append("--ocr") }
         _ = try await PDFProcessRunner().run(environment.python,
-            arguments: ["-I", try PDFConversionEnvironment.resource("convert.py").path, source.path, directory.path],
+            arguments: arguments,
             progress: { output in
                 guard let line = output.split(separator: "\n").last,
                       let event = try? JSONDecoder().decode(PDFWorkerEvent.self, from: Data(line.utf8)),

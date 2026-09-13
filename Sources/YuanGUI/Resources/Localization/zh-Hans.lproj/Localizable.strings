@@ -1462,15 +1462,18 @@
 
 "pdf.title" = "PDF 转 Markdown";
 "pdf.toolSubtitle" = "本地转换，带图导出";
-"pdf.subtitle" = "基于 Microsoft MarkItDown · 本地转换";
+"pdf.subtitle" = "PyMuPDF Layout 1.28.2 · 本地版面模型，可选 OCR";
 "pdf.choose" = "选择 PDF…";
 "pdf.drop" = "拖入一个 PDF 文件";
 "pdf.cancel" = "取消";
 "pdf.convert" = "转换";
 "pdf.install" = "安装转换组件";
-"pdf.installHelp" = "首次使用会下载独立 Python 环境和转换依赖，不修改系统 Python。文档仅在本机处理。";
+"pdf.installHelp" = "首次使用会下载独立 Python 环境、版面模型和中英文 OCR 模型，不修改系统 Python。安装后文档与识别均在本机处理。";
+"pdf.ocr" = "自动 OCR";
+"pdf.ocrHelp" = "使用已安装的中英文模型识别扫描件里的文字。速度较慢、占用内存较高，文字版 PDF 无需开启。";
 "pdf.elapsed" = "耗时 %.1f 秒";
-"pdf.emptyText" = "未提取到文字，可能是扫描件；当前版本不包含 OCR。";
+"pdf.emptyText" = "自动 OCR 后仍未得到文字，页面可能没有文字或清晰度不足。";
+"pdf.emptyTextNoOCR" = "未提取到文字。如果是扫描件，请开启自动 OCR 后重新转换。";
 "pdf.imageFailures" = "部分图片提取失败，页码：%@";
 "pdf.imageCount" = "导出时将在文末附加 %ld 张位图。";
 "pdf.truncated" = "预览仅显示前 200,000 字符；导出包含全文。";
@@ -1489,7 +1492,7 @@
 "pdf.error.locked" = "此 PDF 受密码保护，请解锁后再转换。";
 "pdf.error.selection" = "请选择或拖入一个本地 PDF 文件。";
 "pdf.error.export" = "无法创建导出文件，请选择其他位置。";
-"release.2.9.0.pdf" = "使用 MarkItDown 本地转换 PDF，预览、复制 Markdown，并导出位图。";
+"release.2.9.0.pdf" = "使用 PyMuPDF Layout 本地模型转换 PDF，预览、复制 Markdown，并导出位图；扫描件的自动 OCR 由窗口中的开关控制，默认关闭。";
 "release.2.9.0.performance" = "缩小工具面板刷新范围，并缓存手帐 Markdown 解析结果。";
 "pdf.stage.idle" = "请选择 PDF";
 "pdf.stage.download" = "正在下载转换组件…";
@@ -1497,7 +1500,8 @@
 "pdf.stage.dependencies" = "正在安装转换依赖…";
 "pdf.stage.verify" = "正在验证安装…";
 "pdf.stage.ready" = "转换组件已就绪";
-"pdf.stage.text" = "正在提取文字与表格…";
+"pdf.stage.text" = "正在分析版面并提取文字…";
+"pdf.stage.textOCR" = "正在分析版面、提取文字并按需 OCR…";
 "pdf.stage.images" = "正在提取位图…";
 "pdf.stage.finished" = "转换完成";
 "pdf.stage.exporting" = "正在导出…";

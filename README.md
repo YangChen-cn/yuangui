@@ -23,9 +23,9 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The next version under development is `2.9.0` (build `22`). It adds local PDF-to-Markdown conversion with Microsoft MarkItDown, bitmap export, and reduced tool-panel and diary-preview refresh work. See the [2.9.0 release notes](RELEASE_NOTES.md#290--pdf-to-markdown).
+The next version under development is `2.9.0` (build `22`). It adds local PDF-to-Markdown conversion with PyMuPDF Layout 1.28.2 and automatic Chinese/English OCR, bitmap export, and reduced tool-panel and diary-preview refresh work. See the [2.9.0 release notes](RELEASE_NOTES.md#290--pdf-to-markdown).
 
-Open **Tools → PDF to Markdown**, install the conversion components once, then choose or drop one PDF. Conversion stays on your Mac. Preview or copy the Markdown text, or export it with a companion image folder. Complex columns, formulas, scanned text and vector figures are not reconstructed; extracted bitmap regions are appended by page. See [conversion details and third-party notices](docs/PDF_CONVERSION.md).
+Open **Tools → PDF to Markdown**, install the conversion components once, then choose or drop one PDF. Conversion stays on your Mac. Preview or copy the Markdown text, or export it with a companion image folder. Automatic OCR for scanned pages is a checkbox that is off by default. Complex columns, formulas and vector figures are not reconstructed; extracted bitmap regions are appended by page. See [conversion details and third-party notices](docs/PDF_CONVERSION.md).
 
 ## Interface preview
 

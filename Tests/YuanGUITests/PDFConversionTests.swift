@@ -3,6 +3,11 @@ import AppKit
 import PDFKit
 @testable import YuanGUI
 
+private actor OCRRecorder {
+    private(set) var values: [Bool] = []
+    func record(_ value: Bool) { values.append(value) }
+}
+
 final class PDFConversionTests: XCTestCase {
     private var root: URL!
 
@@ -119,7 +124,7 @@ final class PDFConversionTests: XCTestCase {
             try FileManager.default.createSymbolicLink(at: environment.python, withDestinationURL: URL(fileURLWithPath: "/usr/bin/true"))
             try Data().write(to: environment.directory.appendingPathComponent("ready"))
             let converted = try result()
-            let store = PDFConversionStore(environment: environment, convert: { _, _ in
+            let store = PDFConversionStore(environment: environment, convert: { _, _, _ in
                 await withCheckedContinuation { continuation in
                     DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { continuation.resume() }
                 }
@@ -137,6 +142,75 @@ final class PDFConversionTests: XCTestCase {
             XCTAssertNil(store.result)
             XCTAssertFalse(FileManager.default.fileExists(atPath: converted.directory.path))
         }
+    }
+
+    /// The Python worker must only load RapidOCR and ONNX Runtime when the user opted in.
+    func testOCRFlagReachesWorkerOnlyWhenEnabled() async throws {
+        let environment = PDFConversionEnvironment(root: root.appendingPathComponent("fake"))
+        try FileManager.default.createDirectory(at: environment.python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: environment.directory.appendingPathComponent("ready"))
+        let log = root.appendingPathComponent("arguments.txt")
+        // Stand in for the installed Python: record the arguments and write a minimal result.
+        let script = """
+        #!/bin/sh
+        printf '%s\\n' "$@" > "\(log.path)"
+        mkdir -p "$4"
+        printf 'text' > "$4/body.md"
+        printf '{"images":[],"failedPages":[],"emptyText":false}' > "$4/result.json"
+        """
+        try Data(script.utf8).write(to: environment.python)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: environment.python.path)
+        let source = root.appendingPathComponent("paper.pdf")
+        try Data("pdf".utf8).write(to: source)
+        let service = PDFConversionService(environment: environment)
+        for useOCR in [false, true] {
+            let converted = try await service.convert(source, useOCR: useOCR) { _ in }
+            defer { try? FileManager.default.removeItem(at: converted.directory) }
+            let arguments = try String(contentsOf: log, encoding: .utf8)
+            XCTAssertEqual(arguments.contains("--ocr"), useOCR)
+            XCTAssertTrue(arguments.hasPrefix("-I\n"), "convert.py must not run with the user's Python startup paths")
+            XCTAssertEqual(converted.preview, "text")
+        }
+    }
+
+    @MainActor
+    func testOCRToggleDefaultsOffPersistsAndDrivesConversion() async throws {
+        let suite = "PDFConversionTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let environment = PDFConversionEnvironment(root: root.appendingPathComponent("toggle"))
+        try FileManager.default.createDirectory(at: environment.python.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: environment.python, withDestinationURL: URL(fileURLWithPath: "/usr/bin/true"))
+        try Data().write(to: environment.directory.appendingPathComponent("ready"))
+        let recorded = OCRRecorder()
+        let defaultResult = try result()
+        let ocrResult = try result()
+        let store = PDFConversionStore(environment: environment, defaults: defaults, convert: { _, useOCR, _ in
+            await recorded.record(useOCR)
+            return useOCR ? ocrResult : defaultResult
+        })
+        store.select([root.appendingPathComponent("paper.pdf")])
+        XCTAssertFalse(store.ocrEnabled)
+        store.convert()
+        await drain(store)
+        XCTAssertFalse(store.ocrApplied)
+        store.setOCR(true)
+        XCTAssertTrue(defaults.bool(forKey: "pdf.ocrEnabled"))
+        store.convert()
+        await drain(store)
+        XCTAssertTrue(store.ocrApplied)
+        XCTAssertTrue(PDFConversionStore(environment: environment, defaults: defaults).ocrEnabled)
+        let recordedValues = await recorded.values
+        XCTAssertEqual(recordedValues, [false, true])
+    }
+
+    @MainActor
+    private func drain(_ store: PDFConversionStore) async {
+        for _ in 0..<200 {
+            if !store.isBusy { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(store.isBusy)
     }
 
     @MainActor
@@ -193,13 +267,34 @@ final class PDFConversionTests: XCTestCase {
         XCTAssertTrue(converted.manifest.failedPages.isEmpty)
         let export = try PDFConversionService.export(converted, to: root, name: "converted")
         XCTAssertTrue(FileManager.default.fileExists(atPath: export.path))
+        let scannedText = root.appendingPathComponent("扫描文字 OCR.pdf")
+        let rasterize = """
+        import pymupdf, sys
+        with pymupdf.open(sys.argv[1]) as original, pymupdf.open() as scanned:
+            page = original[0]
+            scanned.new_page(width=page.rect.width, height=page.rect.height).insert_image(
+                page.rect, pixmap=page.get_pixmap(matrix=pymupdf.Matrix(2, 2)))
+            scanned.save(sys.argv[2])
+        """
+        _ = try await PDFProcessRunner().run(environment.python, arguments: ["-I", "-c", rasterize, pdf.path, scannedText.path])
+        let textOnly = try await service.convert(scannedText) { _ in }
+        defer { try? FileManager.default.removeItem(at: textOnly.directory) }
+        // Without the opt-in flag there is no text layer to extract from the rasterized page.
+        XCTAssertFalse(textOnly.preview.lowercased().contains("research paper"))
+        let recognized = try await service.convert(scannedText, useOCR: true) { _ in }
+        defer { try? FileManager.default.removeItem(at: recognized.directory) }
+        XCTAssertTrue(recognized.preview.lowercased().contains("research paper"))
+        XCTAssertTrue(recognized.preview.contains("中文"))
+        XCTAssertFalse(recognized.manifest.emptyText)
         let partial = root.appendingPathComponent("partial")
         let script = """
         import runpy, sys
         from unittest.mock import patch
         from pathlib import Path
         worker = runpy.run_path(sys.argv[1])
-        with patch('pdfplumber.page.Page.to_image', side_effect=RuntimeError('simulated image failure')):
+        def fail_image(*args):
+            raise RuntimeError('simulated image failure')
+        with patch.dict(worker['convert'].__globals__, render_image=fail_image):
             worker['convert'](Path(sys.argv[2]), Path(sys.argv[3]))
         """
         _ = try await PDFProcessRunner().run(environment.python, arguments: ["-I", "-c", script,

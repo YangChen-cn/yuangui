@@ -11,22 +11,38 @@ final class PDFConversionStore: ObservableObject {
     @Published private(set) var exportedURL: URL?
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var startedAt: Date?
+    /// Automatic OCR is off unless the user opts in; text PDFs need no recognition.
+    @Published private(set) var ocrEnabled: Bool
+    /// Whether the current task, or the finished result on screen, ran with OCR.
+    @Published private(set) var ocrApplied = false
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var closed = false
     private let environment: PDFConversionEnvironment
+    private let defaults: UserDefaults
     private let installOperation: @Sendable (@escaping @Sendable (String) async -> Void) async throws -> Void
-    private let convertOperation: @Sendable (URL, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult
+    private let convertOperation: @Sendable (URL, Bool, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult
+
+    private static let ocrKey = "pdf.ocrEnabled"
 
     init(environment: PDFConversionEnvironment = PDFConversionEnvironment(),
+         defaults: UserDefaults = .standard,
          install: (@Sendable (@escaping @Sendable (String) async -> Void) async throws -> Void)? = nil,
-         convert: (@Sendable (URL, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult)? = nil) {
+         convert: (@Sendable (URL, Bool, @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult)? = nil) {
         self.environment = environment
+        self.defaults = defaults
         isReady = environment.isReady
+        ocrEnabled = defaults.bool(forKey: Self.ocrKey)
         installOperation = install ?? { progress in try await environment.install(progress: progress) }
-        convertOperation = convert ?? { url, progress in
-            try await PDFConversionService(environment: environment).convert(url, progress: progress)
+        convertOperation = convert ?? { url, useOCR, progress in
+            try await PDFConversionService(environment: environment).convert(url, useOCR: useOCR, progress: progress)
         }
+    }
+
+    func setOCR(_ enabled: Bool) {
+        guard !isBusy else { return }
+        ocrEnabled = enabled
+        defaults.set(enabled, forKey: Self.ocrKey)
     }
 
     func select(_ urls: [URL]) {
@@ -55,8 +71,10 @@ final class PDFConversionStore: ObservableObject {
     func convert() {
         guard !isBusy, !closed, isReady, let source else { return }
         clearResult()
+        let useOCR = ocrEnabled
+        ocrApplied = useOCR
         start(stage: "text") { [self] token in
-            let converted = try await convertOperation(source) { [weak self] stage in await self?.update(stage, token: token) }
+            let converted = try await convertOperation(source, useOCR) { [weak self] stage in await self?.update(stage, token: token) }
             guard accepts(token) else {
                 try? FileManager.default.removeItem(at: converted.directory)
                 return
