@@ -42,7 +42,9 @@ enum DashboardDesign {
                 bottomGlow: Color(red: 0.48, green: 0.71, blue: 1.0),
                 ambientOpacity: 0.11,
                 preferredColorScheme: nil,
-                treatment: .ambient
+                treatment: .ambient,
+                lightSurface: Color(red: 0.96, green: 0.97, blue: 0.99),
+                darkSurface: Color(red: 0.12, green: 0.14, blue: 0.18)
             )
         case .sakura:
             DashboardPalette(
@@ -51,7 +53,9 @@ enum DashboardDesign {
                 bottomGlow: Color(red: 0.96, green: 0.73, blue: 0.55),
                 ambientOpacity: 0.14,
                 preferredColorScheme: nil,
-                treatment: .ambient
+                treatment: .ambient,
+                lightSurface: Color(red: 1.0, green: 0.94, blue: 0.95),
+                darkSurface: Color(red: 0.20, green: 0.12, blue: 0.16)
             )
         case .mint:
             DashboardPalette(
@@ -60,7 +64,9 @@ enum DashboardDesign {
                 bottomGlow: Color(red: 0.36, green: 0.66, blue: 0.82),
                 ambientOpacity: 0.12,
                 preferredColorScheme: nil,
-                treatment: .ambient
+                treatment: .ambient,
+                lightSurface: Color(red: 0.91, green: 0.97, blue: 0.94),
+                darkSurface: Color(red: 0.09, green: 0.17, blue: 0.15)
             )
         case .midnight:
             DashboardPalette(
@@ -69,7 +75,9 @@ enum DashboardDesign {
                 bottomGlow: Color(red: 0.20, green: 0.46, blue: 0.82),
                 ambientOpacity: 0.20,
                 preferredColorScheme: .dark,
-                treatment: .ambient
+                treatment: .ambient,
+                lightSurface: Color(red: 0.10, green: 0.12, blue: 0.19),
+                darkSurface: Color(red: 0.10, green: 0.12, blue: 0.19)
             )
         case .liquidGlass:
             DashboardPalette(
@@ -96,6 +104,8 @@ struct DashboardPalette {
     let ambientOpacity: Double
     let preferredColorScheme: ColorScheme?
     let treatment: DashboardVisualTreatment
+    var lightSurface: Color = Color(nsColor: .windowBackgroundColor)
+    var darkSurface: Color = Color(nsColor: .windowBackgroundColor)
 }
 
 private struct DashboardVisualTreatmentKey: EnvironmentKey {

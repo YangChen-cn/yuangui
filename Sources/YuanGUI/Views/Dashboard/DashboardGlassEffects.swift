@@ -10,10 +10,12 @@ private struct DashboardSystemGlassButtonStyleModifier: ViewModifier {
     let isProminent: Bool
 
     @Environment(\.dashboardVisualTreatment) private var treatment
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if treatment == .liquidGlass {
+        if treatment == .liquidGlass && !reduceTransparency && contrast != .increased {
             if #available(macOS 26.0, *) {
                 content.yuanSystemGlassButton(isProminent: isProminent)
             } else {

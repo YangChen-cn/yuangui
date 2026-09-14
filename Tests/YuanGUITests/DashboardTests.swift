@@ -4,6 +4,23 @@ import XCTest
 @testable import YuanGUI
 
 final class DashboardTests: XCTestCase {
+    func testMidnightSurfaceKeepsSecondaryTextReadable() throws {
+        let palette = DashboardDesign.palette(for: .midnight)
+        XCTAssertEqual(palette.preferredColorScheme, .dark)
+        let background = try XCTUnwrap(NSColor(palette.darkSurface).usingColorSpace(.sRGB))
+        func luminance(_ components: [CGFloat]) -> Double {
+            let linear = components.map { value -> Double in
+                let v = Double(value)
+                return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
+        }
+        let channels = [background.redComponent, background.greenComponent, background.blueComponent]
+        let secondary = channels.map { 0.65 + $0 * 0.35 }
+        XCTAssertGreaterThan((luminance(secondary) + 0.05) / (luminance(channels) + 0.05), 4.5)
+        XCTAssertEqual(background.alphaComponent, 1)
+    }
+
     func testPreferredWidthFitsFooterControls() {
         XCTAssertGreaterThanOrEqual(DashboardDesign.preferredWidth, 400)
         XCTAssertLessThanOrEqual(DashboardDesign.preferredWidth, 430)

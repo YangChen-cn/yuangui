@@ -52,15 +52,15 @@ struct DashboardToolsView: View {
                     DashboardQuickAction(title: "区域截图", subtitle: settings.screenshotHotKey.displayText, systemImage: "viewfinder", role: .system) {
                         launch { _ = quickTools.beginRegionScreenshot() }
                     }
+                    DashboardQuickAction(title: "截图翻译", subtitle: settings.screenshotTranslationHotKey.displayText, systemImage: "text.viewfinder", role: .system) {
+                        launch { _ = quickTools.beginScreenshotTranslation() }
+                    }
                 }
                 Text(AppLocalizer.string("更多工具"))
                     .font(.caption)
                     .bold()
                     .padding(.top, 2)
                 VStack(spacing: 1) {
-                    compact("capture.multifunction", settings.screenshotHotKey.displayText, "viewfinder", .system) {
-                        launch { _ = quickTools.beginRegionScreenshot() }
-                    }
                     compact("capture.openImage", "capture.edit", "photo", .system) {
                         launch { quickTools.openImage() }
                     }
@@ -69,9 +69,6 @@ struct DashboardToolsView: View {
                     }
                     compact("划词翻译", settings.translationHotKey.displayText, "translate", .system) {
                         launch(quickTools.translateSelection)
-                    }
-                    compact("截图翻译", settings.screenshotTranslationHotKey.displayText, "text.viewfinder", .system) {
-                        launch { _ = quickTools.beginScreenshotTranslation() }
                     }
                     compact("清理屋", "扫描缓存与残留", "sparkles", .maintenance) {
                         launch { appActions.open(.maintenance(tab: 0)) }
@@ -104,7 +101,7 @@ struct DashboardToolsView: View {
         Button(action: action) {
             DashboardCompactActionLabel(title: title, subtitle: subtitle, systemImage: systemImage, role: role)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DashboardPressButtonStyle())
     }
 
     private func launch(_ action: @escaping () -> Void) {
@@ -147,7 +144,7 @@ struct DashboardQuickAction: View {
             )
             .contentShape(.rect(cornerRadius: DashboardDesign.sectionRadius))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DashboardPressButtonStyle())
         .onHover { isHovering = $0 }
         .accessibilityLabel("\(AppLocalizer.string(title))，\(AppLocalizer.string(subtitle))")
     }
@@ -164,6 +161,10 @@ private struct DashboardQuickActionSurfaceModifier: ViewModifier {
             backgroundColor,
             in: .rect(cornerRadius: DashboardDesign.sectionRadius)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: DashboardDesign.sectionRadius)
+                .strokeBorder(Color.primary.opacity(isHovering ? 0.14 : 0.045), lineWidth: 1)
+        }
     }
 
     private var backgroundColor: Color {
@@ -173,6 +174,15 @@ private struct DashboardQuickActionSurfaceModifier: ViewModifier {
         case .system, .maintenance:
             Color.primary.opacity(isHovering ? 0.07 : 0.035)
         }
+    }
+}
+
+struct DashboardPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .background(Color.primary.opacity(configuration.isPressed ? 0.06 : 0),
+                        in: .rect(cornerRadius: DashboardDesign.controlRadius))
     }
 }
 

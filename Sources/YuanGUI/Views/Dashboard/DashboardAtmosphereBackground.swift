@@ -7,6 +7,7 @@ struct DashboardAtmosphereBackground: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     init(
         palette: DashboardPalette,
@@ -20,7 +21,7 @@ struct DashboardAtmosphereBackground: View {
 
     @ViewBuilder
     var body: some View {
-        if palette.treatment == .liquidGlass {
+        if palette.treatment == .liquidGlass && !reduceTransparency && colorSchemeContrast != .increased {
             if #available(macOS 26.0, *) {
                 ZStack {
                     ambientColorLayer
@@ -39,9 +40,12 @@ struct DashboardAtmosphereBackground: View {
 
     private var fallbackBackground: some View {
         ZStack {
+            if palette.treatment == .liquidGlass && !reduceTransparency && colorSchemeContrast != .increased {
+                RoundedRectangle(cornerRadius: 20).fill(.regularMaterial)
+            } else {
+                (effectiveColorScheme == .dark ? palette.darkSurface : palette.lightSurface)
+            }
             ambientColorLayer
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.regularMaterial)
         }
         .clipShape(.rect(cornerRadius: 20))
         .allowsHitTesting(false)
@@ -73,11 +77,13 @@ struct DashboardAtmosphereBackground: View {
     }
 
     private var ambientOpacity: Double {
-        let requested = min(max(palette.ambientOpacity, 0.025), 0.12)
-        let darkMultiplier = colorScheme == .dark ? 0.72 : 1
+        let requested = min(max(palette.ambientOpacity, 0.025), 0.20)
+        let darkMultiplier = effectiveColorScheme == .dark ? 0.45 : 1
         let contrastMultiplier = colorSchemeContrast == .increased ? 0.32 : 1
         return requested * darkMultiplier * contrastMultiplier
     }
+
+    private var effectiveColorScheme: ColorScheme { palette.preferredColorScheme ?? colorScheme }
 
     private var characterGlow: Color {
         guard palette.treatment == .liquidGlass else {

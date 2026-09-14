@@ -19,11 +19,14 @@ struct DashboardHeaderContainer: View {
 struct DashboardAppearanceContainer<Content: View>: View {
     @ObservedObject var store: PetStore
     @ViewBuilder let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let palette = DashboardDesign.palette(for: store.dashboardStyle)
         content
             .tint(palette.accent)
+            .accentColor(palette.accent)
+            .environment(\.colorScheme, palette.preferredColorScheme ?? colorScheme)
             .environment(\.dashboardVisualTreatment, palette.treatment)
             .preferredColorScheme(palette.preferredColorScheme)
     }
