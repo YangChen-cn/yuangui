@@ -45,9 +45,10 @@ struct TranslationSourceSection: View {
                     .focused($isFocused)
                 if text.isEmpty {
                     Text("输入要翻译的文字…")
+                        .font(.body)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 11)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 6)
                         .allowsHitTesting(false)
                 }
             }

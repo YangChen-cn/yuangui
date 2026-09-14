@@ -1584,3 +1584,4 @@
 "document.error.encoding" = "Save this text file as UTF-8 or UTF-16, then try again.";
 "pdf.stage.imageOCR" = "Recognizing image text locally…";
 "release.2.9.0.capture" = "Adjust screenshot regions before capture, copy or recognize text directly, pin images, and select, move or edit annotations inline.";
+"capture.multifunction" = "Multifunction Screenshot";

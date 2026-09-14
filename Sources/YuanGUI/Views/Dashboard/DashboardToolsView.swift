@@ -17,12 +17,21 @@ enum DashboardActionRole {
 struct DashboardToolsView: View {
     static let toolIdentifiers = DashboardToolIdentifier.allCases
 
-    @ObservedObject var quickTools: QuickToolsController
+    let quickTools: QuickToolsController
+    @ObservedObject private var settings: QuickToolsSettingsStore
     let updater: AppUpdateStore
     let openSettings: () -> Void
     let dismiss: () -> Void
 
     @Environment(\.appActions) private var appActions
+
+    init(quickTools: QuickToolsController, updater: AppUpdateStore, openSettings: @escaping () -> Void, dismiss: @escaping () -> Void) {
+        self.quickTools = quickTools
+        self.settings = quickTools.settings
+        self.updater = updater
+        self.openSettings = openSettings
+        self.dismiss = dismiss
+    }
 
     var body: some View {
         ScrollView {
@@ -40,11 +49,8 @@ struct DashboardToolsView: View {
                     DashboardQuickAction(title: "手帐本", subtitle: "记录今天的故事", systemImage: "book.closed.fill", role: .yuanGUI) {
                         launch { appActions.open(.diary) }
                     }
-                    DashboardQuickAction(title: "区域截图", subtitle: quickTools.settings.screenshotHotKey.displayText, systemImage: "viewfinder", role: .system) {
+                    DashboardQuickAction(title: "区域截图", subtitle: settings.screenshotHotKey.displayText, systemImage: "viewfinder", role: .system) {
                         launch { _ = quickTools.beginRegionScreenshot() }
-                    }
-                    DashboardQuickAction(title: "截图翻译", subtitle: quickTools.settings.screenshotTranslationHotKey.displayText, systemImage: "text.viewfinder", role: .system) {
-                        launch { _ = quickTools.beginScreenshotTranslation() }
                     }
                 }
                 Text(AppLocalizer.string("更多工具"))
@@ -52,14 +58,8 @@ struct DashboardToolsView: View {
                     .bold()
                     .padding(.top, 2)
                 VStack(spacing: 1) {
-                    compact("capture.ocr", quickTools.settings.screenshotOCRHotKey.displayText, "text.viewfinder", .system) {
-                        launch { _ = quickTools.beginScreenshotOCR() }
-                    }
-                    compact("capture.mode.window", "capture.options", "macwindow", .system) {
-                        launch { _ = quickTools.beginRegionScreenshot(mode: .window) }
-                    }
-                    compact("capture.mode.screen", "capture.options", "display", .system) {
-                        launch { _ = quickTools.beginRegionScreenshot(mode: .screen) }
+                    compact("capture.multifunction", settings.screenshotHotKey.displayText, "viewfinder", .system) {
+                        launch { _ = quickTools.beginRegionScreenshot() }
                     }
                     compact("capture.openImage", "capture.edit", "photo", .system) {
                         launch { quickTools.openImage() }
@@ -67,8 +67,11 @@ struct DashboardToolsView: View {
                     compact("pdf.title", "pdf.toolSubtitle", "doc.richtext", .yuanGUI) {
                         launch { appActions.open(.pdfToMarkdown) }
                     }
-                    compact("划词翻译", quickTools.settings.translationHotKey.displayText, "translate", .system) {
+                    compact("划词翻译", settings.translationHotKey.displayText, "translate", .system) {
                         launch(quickTools.translateSelection)
+                    }
+                    compact("截图翻译", settings.screenshotTranslationHotKey.displayText, "text.viewfinder", .system) {
+                        launch { _ = quickTools.beginScreenshotTranslation() }
                     }
                     compact("清理屋", "扫描缓存与残留", "sparkles", .maintenance) {
                         launch { appActions.open(.maintenance(tab: 0)) }
