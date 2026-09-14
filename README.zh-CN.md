@@ -22,9 +22,9 @@
 
 应用提供元圭、蓝猫 VCC 和两人一起三种角色模式。桌宠会根据电池、内存、天气与时间自动改变动作，也可以播放日常对白、贴边收纳、显示迷你状态，或在需要时打开完整状态面板。
 
-下一开发版本为 `2.9.0`（build `22`），新增 Apple Silicon 上基于 PyMuPDF Layout 1.28.2 本地模型的 PDF 转 Markdown、可选自动中英文 OCR、插图导出，并减少工具面板和手帐预览的重复刷新开销。详情见 [2.9.0 更新说明](RELEASE_NOTES.zh-CN.md#290--pdf-转-markdown)。
+下一开发版本为 `2.9.0`（build `22`），新增可调整截图选区、直接复制/保存/识字、截图固定和更完整的标注编辑器，同时提供本地文档转 Markdown。详情见 [2.9.0 更新说明](RELEASE_NOTES.zh-CN.md#290--pdf-转-markdown)和[截图操作说明](docs/SCREENSHOT_TOOLS.md)。
 
-从 **工具 → PDF 转 Markdown** 进入，首次安装转换组件（窗口会显示其磁盘占用，也可随时卸载）后，选择或拖入一个 PDF 即可本地转换。可以预览、复制正文，或导出 Markdown 和配套 `_assets` 文件夹：插图（含矢量图）保留在正文对应位置。默认移除每页重复的页眉页脚；混合式 OCR 默认开启，只识别扫描页（关闭开关即可停用）。复杂分栏和公式仍需人工整理。参见[转换说明与第三方声明](docs/PDF_CONVERSION.md)。
+从 **工具 → 文档转 Markdown** 进入，选择或拖入 PDF、XPS、EPUB、FB2、TXT、PNG、JPEG 或 TIFF。PDF/XPS/EPUB/FB2 复用现有 Apple Silicon 专用 PyMuPDF Layout 1.28.2 运行时；图片使用原生 Vision 识字，TXT 无需模型。PDF/XPS 保留自动 OCR 和页眉页脚选项，其他格式隐藏不相关设置。可以预览、复制正文，或导出 Markdown 和正文原位插图资源。窗口仍显示运行时磁盘占用并支持卸载，复杂排版仍需人工检查。参见[转换说明与第三方声明](docs/PDF_CONVERSION.md)。
 
 ## 界面预览
 

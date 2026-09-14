@@ -50,6 +50,9 @@ struct PDFConversionService: Sendable {
     func convert(_ source: URL, options: PDFConversionOptions,
                  progress: @escaping @Sendable (String) async -> Void) async throws -> PDFConversionResult {
         try Self.validate(source)
+        if let kind = DocumentInput(url: source), !kind.needsRuntime {
+            return try await NativeDocumentConversionService().convert(source, progress: progress)
+        }
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("YuanGUI-PDF-\(UUID().uuidString)")
@@ -73,7 +76,7 @@ struct PDFConversionService: Sendable {
     }
 
     private static func validate(_ source: URL) throws {
-        guard source.isFileURL, source.pathExtension.lowercased() == "pdf" else {
+        guard DocumentInput(url: source) != nil else {
             throw PDFConversionError.message("pdf.error.invalid")
         }
     }

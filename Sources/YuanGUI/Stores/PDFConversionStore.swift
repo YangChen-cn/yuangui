@@ -22,6 +22,8 @@ final class PDFConversionStore: ObservableObject {
     @Published private(set) var probe: PDFProbe?
     /// Bytes of disk the installed runtime occupies.
     @Published private(set) var runtimeBytes: Int64 = 0
+    var inputKind: DocumentInput? { source.flatMap(DocumentInput.init(url:)) }
+    var canConvert: Bool { source != nil && (isReady || inputKind?.needsRuntime == false) }
     private var task: Task<Void, Never>?
     private var probeTask: Task<Void, Never>?
     /// Startup housekeeping holds the install lock, so both install and uninstall wait
@@ -70,9 +72,11 @@ final class PDFConversionStore: ObservableObject {
     /// Measuring walks the whole runtime, so it runs off the main thread.
     private func refreshRuntimeBytes() {
         let environment = environment
+        let token = generation
         Task { [weak self] in
             let bytes = await Task.detached(priority: .utility) { environment.sizeOnDisk() }.value
-            self?.runtimeBytes = bytes
+            guard let self, !closed, generation == token else { return }
+            runtimeBytes = bytes
         }
     }
 
@@ -83,6 +87,7 @@ final class PDFConversionStore: ObservableObject {
         probe = nil
         start(stage: "uninstalling") { [self] token in
             await housekeeping?.value
+            guard accepts(token) else { return }
             try await uninstallOperation()
             guard accepts(token) else { return }
             isReady = environment.isReady
@@ -105,7 +110,7 @@ final class PDFConversionStore: ObservableObject {
 
     func select(_ urls: [URL]) {
         guard !isBusy, !closed else { return }
-        guard urls.count == 1, let url = urls.first, url.isFileURL, url.pathExtension.lowercased() == "pdf" else {
+        guard urls.count == 1, let url = urls.first, DocumentInput(url: url) != nil else {
             error = AppLocalizer.string("pdf.error.selection")
             return
         }
@@ -120,6 +125,7 @@ final class PDFConversionStore: ObservableObject {
     func install() {
         start(stage: "download") { [self] token in
             await housekeeping?.value
+            guard accepts(token) else { return }
             try await installOperation { [weak self] stage in await self?.update(stage, token: token) }
             guard accepts(token) else { return }
             isReady = environment.isReady
@@ -131,12 +137,12 @@ final class PDFConversionStore: ObservableObject {
     }
 
     func convert() {
-        guard !isBusy, !closed, isReady, let source else { return }
+        guard !isBusy, !closed, canConvert, let source else { return }
         clearResult()
         probeTask?.cancel()
-        let useOCR = ocrEnabled
+        let useOCR = inputKind == .image || (inputKind?.showsPageOptions == true && ocrEnabled)
         ocrApplied = useOCR
-        let options = PDFConversionOptions(useOCR: useOCR, removeHeaderFooter: removeHeaderFooter)
+        let options = PDFConversionOptions(useOCR: useOCR, removeHeaderFooter: inputKind?.showsPageOptions == true && removeHeaderFooter)
         start(stage: "text") { [self] token in
             let converted = try await convertOperation(source, options) { [weak self] stage in await self?.update(stage, token: token) }
             guard accepts(token) else {
@@ -184,7 +190,7 @@ final class PDFConversionStore: ObservableObject {
     private func startProbe(_ url: URL) {
         probeTask?.cancel()
         probe = nil
-        guard isReady, !closed else { return }
+        guard isReady, !closed, DocumentInput(url: url)?.needsRuntime == true else { return }
         let operation = probeOperation
         probeTask = Task { [self] in
             let facts = try? await operation(url)

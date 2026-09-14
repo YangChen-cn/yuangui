@@ -152,7 +152,7 @@ final class PDFConversionTests: XCTestCase {
         let neighbour = root.appendingPathComponent("unrelated")
         try Data("keep".utf8).write(to: neighbour)
         try environment.uninstall()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: environment.root.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: environment.root.path), [".install-lock"])
         XCTAssertFalse(environment.isReady)
         XCTAssertEqual(environment.sizeOnDisk(), 0)
         XCTAssertEqual(try String(contentsOf: neighbour, encoding: .utf8), "keep")
@@ -167,6 +167,23 @@ final class PDFConversionTests: XCTestCase {
         do { try environment.uninstall(); XCTFail("The lock must protect the runtime") }
         catch { XCTAssertEqual(error.localizedDescription, AppLocalizer.string("pdf.error.busy")) }
         XCTAssertEqual(environment.sizeOnDisk(), payload)
+    }
+
+    func testUninstallPreservesLockIdentityForWaitingInstallers() throws {
+        let (environment, _) = try installedEnvironment("lock-identity")
+        let path = environment.root.appendingPathComponent(".install-lock").path
+        let waitingDescriptor = Darwin.open(path, O_CREAT | O_RDWR, 0o600)
+        XCTAssertGreaterThanOrEqual(waitingDescriptor, 0)
+        defer { flock(waitingDescriptor, LOCK_UN); Darwin.close(waitingDescriptor) }
+        var before = stat(), after = stat()
+        XCTAssertEqual(fstat(waitingDescriptor, &before), 0)
+        try environment.uninstall()
+        XCTAssertEqual(lstat(path, &after), 0)
+        XCTAssertEqual(before.st_ino, after.st_ino)
+        // A descriptor opened before uninstall must still protect the pathname used
+        // by the next install/uninstall, even after all payload files are removed.
+        XCTAssertEqual(flock(waitingDescriptor, LOCK_EX | LOCK_NB), 0)
+        XCTAssertThrowsError(try environment.uninstall())
     }
 
     /// The installer may only delete files the pinned engine never reads.
@@ -209,7 +226,7 @@ final class PDFConversionTests: XCTestCase {
         XCTAssertEqual(store.runtimeBytes, 0)
         XCTAssertEqual(store.stage, "uninstalled")
         XCTAssertNil(store.error)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: environment.root.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: environment.root.path), [".install-lock"])
     }
 
     func testConcurrentInstallerCannotRemoveActiveEnvironment() async throws {
@@ -430,9 +447,9 @@ final class PDFConversionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: environment.directory.appendingPathComponent("bin").path))
         // The installer keeps only what the conversion path reads.
         let site = environment.directory.appendingPathComponent("venv/lib/python3.12/site-packages")
-        for relative in ["uv-aarch64-apple-darwin", "sympy", "mpmath", "networkx",
-                         "venv/lib/python3.12/site-packages/onnxruntime/tools"] {
-            XCTAssertFalse(FileManager.default.fileExists(atPath: environment.directory.appendingPathComponent(relative).path), relative)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: environment.directory.appendingPathComponent("uv-aarch64-apple-darwin").path))
+        for relative in ["sympy", "mpmath", "networkx", "onnxruntime/tools"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: site.appendingPathComponent(relative).path), relative)
         }
         let models = site.appendingPathComponent("pymupdf/layout/resources/onnx")
         for name in ["layout_rf2.4.1+imf1.onnx", "layout_rf2.4.1+imf1.yaml", "feature_imf1.onnx", "table_grid_model_v4_ep.onnx"] {
@@ -445,6 +462,10 @@ final class PDFConversionTests: XCTestCase {
             atPath: site.appendingPathComponent("pymupdf/mupdf-devel").path), "mupdf-devel")
         let installedBytes = environment.sizeOnDisk()
         print("PDF runtime size: \(installedBytes / 1_048_576) MB")
+        let formatScript = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("script/test_document_formats.py")
+        _ = try await PDFProcessRunner().run(environment.python, arguments: ["-I", formatScript.path,
+            try PDFConversionEnvironment.resource("convert.py").path, root.appendingPathComponent("document-formats").path])
         XCTAssertGreaterThan(installedBytes, 100 * 1_048_576)
         XCTAssertLessThan(installedBytes, 420 * 1_048_576, "Pruned runtime must stay well under the unpruned 490 MB")
         // A second install is a read-only fast path.

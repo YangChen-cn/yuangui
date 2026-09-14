@@ -115,6 +115,7 @@ final class GlobalHotKeyManager {
         case .regionScreenshot: id = 1
         case .translateSelection: id = 2
         case .screenshotTranslation: id = 3
+        case .screenshotOCR: id = 4
         }
         var reference: EventHotKeyRef?
         let status = RegisterEventHotKey(

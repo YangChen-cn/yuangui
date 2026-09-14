@@ -23,9 +23,9 @@ YuanGUI is a native macOS companion and productivity tool built with SwiftUI, Ap
 
 Choose YuanGUI, VCC, or both. The companions react to battery, memory, weather, and time, and can speak short lines, tuck against an edge, show a mini status view, or open the full status panel.
 
-The next version under development is `2.9.0` (build `22`). It adds local PDF-to-Markdown conversion with PyMuPDF Layout 1.28.2 on Apple Silicon, optional Chinese/English OCR, figure export, and reduced tool-panel and diary-preview refresh work. See the [2.9.0 release notes](RELEASE_NOTES.md#290--pdf-to-markdown).
+The next version under development is `2.9.0` (build `22`). It adds adjustable screenshot selection, direct copy/save/OCR, screenshot pins and a more capable annotation editor, plus local document-to-Markdown conversion. See the [2.9.0 release notes](RELEASE_NOTES.md#290--pdf-to-markdown) and [screenshot controls](docs/SCREENSHOT_TOOLS.md).
 
-Open **Tools → PDF to Markdown**, install the conversion components once — the window shows how much disk they occupy and can remove them again — then choose or drop one PDF. Conversion stays on your Mac. Preview or copy the Markdown text, or export it with a companion `_assets` folder, where figures — including vector diagrams — stay next to their position in the text. Repeated page headers and footers are removed by default, and hybrid OCR reads scanned pages — and only those — unless the checkbox is cleared. Complex columns and formulas still need review. See [conversion details and third-party notices](docs/PDF_CONVERSION.md).
+Open **Tools → Document to Markdown** and choose or drop a PDF, XPS, EPUB, FB2, TXT, PNG, JPEG or TIFF. PDF/XPS/EPUB/FB2 use the existing PyMuPDF Layout 1.28.2 runtime on Apple Silicon; images use native Vision OCR and TXT needs no model. PDF/XPS retain automatic OCR and header/footer controls, while other formats hide irrelevant options. Preview, copy or export Markdown and its inline picture assets. The window shows runtime disk usage and supports uninstalling it. Complex layouts still need review. See [conversion details and third-party notices](docs/PDF_CONVERSION.md).
 
 ## Interface preview
 

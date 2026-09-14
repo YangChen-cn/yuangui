@@ -5,6 +5,7 @@ struct QuickToolsSettingsView: View {
     @ObservedObject var controller: QuickToolsController
     @ObservedObject var settings: QuickToolsSettingsStore
     @ObservedObject var finderExtension: FinderExtensionController
+    @State private var captureDelay = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsDesign.pageSpacing) {
@@ -18,9 +19,28 @@ struct QuickToolsSettingsView: View {
             Section(AppLocalizer.string("全局快捷键")) {
                 shortcutRow(.regionScreenshot, binding: settings.screenshotHotKey)
                 shortcutRow(.screenshotTranslation, binding: settings.screenshotTranslationHotKey)
+                shortcutRow(.screenshotOCR, binding: settings.screenshotOCRHotKey)
                 shortcutRow(.translateSelection, binding: settings.translationHotKey)
                 Text(AppLocalizer.string("点击快捷键框后录制新组合；Esc 取消录制。"))
                     .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section(AppLocalizer.string("capture.options")) {
+                Picker(AppLocalizer.string("capture.defaultAction"), selection: Binding(get: { settings.captureDefaultAction }, set: settings.setCaptureDefaultAction)) {
+                    ForEach([CaptureAction.quickAccess, .edit, .copy, .save], id: \.rawValue) { action in
+                        Text(AppLocalizer.string("capture.\(action.rawValue)")).tag(action)
+                    }
+                }
+                Picker(AppLocalizer.string("capture.delay"), selection: $captureDelay) {
+                    ForEach([0, 3, 5], id: \.self) { Text(AppLocalizer.format("capture.delaySeconds", $0)).tag($0) }
+                }
+                HStack {
+                    ForEach(CaptureMode.allCases, id: \.rawValue) { mode in
+                        Button(AppLocalizer.string("capture.mode.\(mode.rawValue)")) { controller.beginRegionScreenshot(mode: mode, delay: TimeInterval(captureDelay)) }
+                            .disabled(controller.isCapturing)
+                    }
+                    Button(AppLocalizer.string("capture.openImage")) { controller.openImage() }
+                }
             }
 
             Section(AppLocalizer.string("Finder 右键扩展")) {
@@ -183,6 +203,7 @@ private extension QuickToolAction {
         switch self {
         case .regionScreenshot: "scissors"
         case .screenshotTranslation: "viewfinder.circle"
+        case .screenshotOCR: "text.viewfinder"
         case .translateSelection: "translate"
         }
     }

@@ -37,7 +37,7 @@ struct PDFConversionView: View {
                     ProgressView().controlSize(.small)
                     Button(AppLocalizer.string("pdf.cancel"), action: store.cancel)
                         .keyboardShortcut(.cancelAction)
-                } else if store.isReady {
+                } else if store.isReady || store.inputKind?.needsRuntime == false {
                     Button(AppLocalizer.string("pdf.convert"), action: store.convert)
                         .buttonStyle(.borderedProminent).disabled(store.source == nil)
                         .keyboardShortcut(.return, modifiers: .command)
@@ -50,12 +50,13 @@ struct PDFConversionView: View {
             .dropDestination(for: URL.self) { urls, _ in
                 guard !store.isBusy else { return false }
                 store.select(urls)
-                return urls.count == 1 && urls.first?.pathExtension.lowercased() == "pdf"
+                return urls.count == 1 && urls.first.flatMap(DocumentInput.init(url:)) != nil
             } isTargeted: { dropTargeted = $0 }
-            if !store.isReady {
+            if !store.isReady, store.inputKind?.needsRuntime != false {
                 Text(AppLocalizer.string("pdf.installHelp")).font(.caption).foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 4) {
+            if store.inputKind == nil || store.inputKind?.showsPageOptions == true {
+              VStack(alignment: .leading, spacing: 4) {
                 Toggle(isOn: Binding(get: { store.ocrEnabled }, set: store.setOCR)) {
                     Text(AppLocalizer.string("pdf.ocr")).font(.callout)
                 }
@@ -72,6 +73,11 @@ struct PDFConversionView: View {
                 .toggleStyle(.checkbox)
                 .disabled(store.isBusy)
                 Text(AppLocalizer.string("pdf.marginsHelp")).font(.caption).foregroundStyle(.secondary)
+              }
+            } else if store.inputKind == .image {
+                Text(AppLocalizer.string("document.imageHelp")).font(.caption).foregroundStyle(.secondary)
+            } else if store.inputKind == .text {
+                Text(AppLocalizer.string("document.textHelp")).font(.caption).foregroundStyle(.secondary)
             }
             if store.isReady, store.runtimeBytes > 0 {
                 HStack {
@@ -117,7 +123,7 @@ struct PDFConversionView: View {
                 }.disabled(store.isBusy)
             } else {
                 ContentUnavailableView(AppLocalizer.string("pdf.emptyTitle"), systemImage: "doc.text.magnifyingglass",
-                    description: Text(AppLocalizer.string("pdf.limitations")))
+                    description: Text(AppLocalizer.string(store.inputKind == .image ? "document.imageHelp" : store.inputKind == .text ? "document.textHelp" : "pdf.limitations")))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }

@@ -41,7 +41,7 @@ final class PDFConversionWindowController: NSObject, NSWindowDelegate {
     private func chooseFile() {
         guard let window, !store.isBusy else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
+        panel.allowedContentTypes = DocumentInput.contentTypes
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.beginSheetModal(for: window) { [weak self] response in

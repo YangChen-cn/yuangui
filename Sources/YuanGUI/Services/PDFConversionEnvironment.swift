@@ -64,8 +64,12 @@ struct PDFConversionEnvironment: Sendable {
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { throw PDFConversionError.message("pdf.error.busy") }
         defer { flock(descriptor, LOCK_UN) }
         try Task.checkCancellation()
-        // Only this feature's own directory is ever removed.
-        try fm.removeItem(at: root)
+        // Keep the lock inode and its parent alive. Unlinking a locked file lets a
+        // concurrent installer create a different inode and acquire a second lock.
+        for child in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+            guard child.lastPathComponent != ".install-lock" else { continue }
+            try fm.removeItem(at: child)
+        }
     }
 
     /// Delete the parts of the pinned engine that this configuration never reads. The

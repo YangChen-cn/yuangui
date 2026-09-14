@@ -13,7 +13,7 @@ import json
 import re
 import shutil
 import sys
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from functools import lru_cache
 from pathlib import Path
 
@@ -161,6 +161,21 @@ def rewrite_links(body, renames):
     return RENDERED_LINK.sub(replace, body)
 
 
+@contextmanager
+def conversion_document(source):
+    import pymupdf
+    with pymupdf.open(source) as original:
+        if original.needs_pass:
+            raise ValueError("password protected document")
+        if original.is_pdf:
+            yield original
+        else:
+            # Layout edits pages during OCR and requires PDF page methods. Convert
+            # supported read-only formats in memory without changing the runtime.
+            with pymupdf.open("pdf", original.convert_to_pdf()) as document:
+                yield document
+
+
 def convert(source, destination, use_ocr=False, keep_header_footer=False):
     import pymupdf
 
@@ -169,7 +184,7 @@ def convert(source, destination, use_ocr=False, keep_header_footer=False):
     rendered = destination / "rendered"
     # Third-party informational output belongs on stderr, not the JSON event channel.
     with redirect_stdout(sys.stderr):
-        with pymupdf.open(source) as document:
+        with conversion_document(source) as document:
             # Refuse locked documents before the Layout model costs seconds of work.
             if document.needs_pass:
                 raise ValueError("password protected PDF")
@@ -179,6 +194,9 @@ def convert(source, destination, use_ocr=False, keep_header_footer=False):
                 if page.rotation:
                     page.set_rotation(0)
             converter = engine()
+            if source.suffix.lower() in (".epub", ".fb2"):
+                use_ocr = False
+                keep_header_footer = True
             # Pictures are written next to their position in the text, including vector
             # figures, which Layout reports as picture areas of the page.
             body = converter.to_markdown(

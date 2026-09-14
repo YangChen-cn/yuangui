@@ -5,6 +5,7 @@ import Foundation
 enum QuickToolAction: String, CaseIterable, Codable, Identifiable, Sendable {
     case regionScreenshot
     case screenshotTranslation
+    case screenshotOCR
     case translateSelection
 
     var id: String { rawValue }
@@ -13,6 +14,7 @@ enum QuickToolAction: String, CaseIterable, Codable, Identifiable, Sendable {
         switch self {
         case .regionScreenshot: AppLocalizer.string("区域截图")
         case .screenshotTranslation: AppLocalizer.string("截图翻译")
+        case .screenshotOCR: AppLocalizer.string("capture.ocr")
         case .translateSelection: AppLocalizer.string("翻译所选文字")
         }
     }
@@ -81,6 +83,7 @@ struct HotKeyBinding: Codable, Equatable, Sendable {
         modifiers: [.control],
         keyLabel: "Z"
     )
+    static let screenshotOCRDefault = HotKeyBinding(keyCode: UInt32(kVK_ANSI_O), modifiers: [.control, .shift], keyLabel: "O")
 
     var displayText: String { modifiers.symbols + keyLabel }
 
@@ -137,6 +140,7 @@ enum TranslationEngine: String, CaseIterable, Codable, Identifiable, Sendable {
 }
 
 enum ScreenshotTool: String, CaseIterable, Identifiable, Sendable {
+    case select
     case pen
     case highlighter
     case line
@@ -145,11 +149,16 @@ enum ScreenshotTool: String, CaseIterable, Identifiable, Sendable {
     case ellipse
     case text
     case mosaic
+    case blur
+    case marker
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .select: AppLocalizer.string("capture.select")
+        case .blur: AppLocalizer.string("capture.blur")
+        case .marker: AppLocalizer.string("capture.marker")
         case .pen: AppLocalizer.string("画笔")
         case .highlighter: AppLocalizer.string("高亮")
         case .line: AppLocalizer.string("直线")
@@ -163,6 +172,9 @@ enum ScreenshotTool: String, CaseIterable, Identifiable, Sendable {
 
     var systemImage: String {
         switch self {
+        case .select: "cursorarrow"
+        case .blur: "drop.halffull"
+        case .marker: "1.circle"
         case .pen: "pencil.tip"
         case .highlighter: "highlighter"
         case .line: "line.diagonal"
@@ -171,6 +183,21 @@ enum ScreenshotTool: String, CaseIterable, Identifiable, Sendable {
         case .ellipse: "circle"
         case .text: "textformat"
         case .mosaic: "square.grid.3x3.fill"
+        }
+    }
+    var shortcut: String {
+        switch self {
+        case .select: "v"
+        case .pen: "p"
+        case .highlighter: "h"
+        case .line: "l"
+        case .arrow: "a"
+        case .rectangle: "r"
+        case .ellipse: "e"
+        case .text: "t"
+        case .mosaic: "b"
+        case .blur: "u"
+        case .marker: "n"
         }
     }
 }
@@ -187,11 +214,13 @@ enum ScreenshotAnnotation: Identifiable, Equatable {
     case rectangle(id: UUID, rect: CGRect, style: AnnotationStyle, ellipse: Bool)
     case text(id: UUID, origin: CGPoint, text: String, style: AnnotationStyle)
     case mosaic(id: UUID, points: [CGPoint], width: CGFloat)
+    case blur(id: UUID, rect: CGRect)
+    case marker(id: UUID, center: CGPoint, number: Int, style: AnnotationStyle)
 
     var id: UUID {
         switch self {
         case let .stroke(id, _, _, _), let .line(id, _, _, _, _), let .rectangle(id, _, _, _),
-             let .text(id, _, _, _), let .mosaic(id, _, _): id
+             let .text(id, _, _, _), let .mosaic(id, _, _), let .blur(id, _), let .marker(id, _, _, _): id
         }
     }
 }

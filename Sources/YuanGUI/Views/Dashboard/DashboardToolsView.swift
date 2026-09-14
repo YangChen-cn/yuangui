@@ -52,6 +52,18 @@ struct DashboardToolsView: View {
                     .bold()
                     .padding(.top, 2)
                 VStack(spacing: 1) {
+                    compact("capture.ocr", quickTools.settings.screenshotOCRHotKey.displayText, "text.viewfinder", .system) {
+                        launch { _ = quickTools.beginScreenshotOCR() }
+                    }
+                    compact("capture.mode.window", "capture.options", "macwindow", .system) {
+                        launch { _ = quickTools.beginRegionScreenshot(mode: .window) }
+                    }
+                    compact("capture.mode.screen", "capture.options", "display", .system) {
+                        launch { _ = quickTools.beginRegionScreenshot(mode: .screen) }
+                    }
+                    compact("capture.openImage", "capture.edit", "photo", .system) {
+                        launch { quickTools.openImage() }
+                    }
                     compact("pdf.title", "pdf.toolSubtitle", "doc.richtext", .yuanGUI) {
                         launch { appActions.open(.pdfToMarkdown) }
                     }

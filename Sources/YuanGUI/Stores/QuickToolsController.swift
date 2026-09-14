@@ -1,12 +1,14 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import UniformTypeIdentifiers
 
 @MainActor
 final class QuickToolsController: ObservableObject {
     private enum CapturePurpose {
         case edit
         case translate
+        case ocr
     }
 
     let settings: QuickToolsSettingsStore
@@ -27,6 +29,12 @@ final class QuickToolsController: ObservableObject {
 
     private var activeCaptureSessionID: UUID?
     private var captureSessionDidEnd = false
+    private var captureTask: Task<Void, Never>?
+    private var captureGeneration = UUID()
+    private var quickAccess: ScreenshotQuickAccessController?
+    private var pins: [UUID: ScreenshotPinController] = [:]
+    private let toast = CaptureToastController()
+    private let screenshotOutput = ScreenshotOutputService()
 
     private lazy var hotKeyManager = GlobalHotKeyManager { [weak self] action in
         self?.perform(action)
@@ -63,6 +71,7 @@ final class QuickToolsController: ObservableObject {
             try hotKeyManager.start(bindings: [
                 .regionScreenshot: settings.screenshotHotKey,
                 .screenshotTranslation: settings.screenshotTranslationHotKey,
+                .screenshotOCR: settings.screenshotOCRHotKey,
                 .translateSelection: settings.translationHotKey
             ])
             message = nil
@@ -74,12 +83,20 @@ final class QuickToolsController: ObservableObject {
     func stop() {
         hotKeyManager.stop()
         selectionController.cancel()
+        captureTask?.cancel()
+        captureGeneration = UUID()
+        if let id = activeCaptureSessionID { endCaptureSession(false, sessionID: id) }
+        quickAccess?.close()
+        Array(pins.values).forEach { $0.close() }
+        pins.removeAll()
+        toast.close()
     }
 
     func perform(_ action: QuickToolAction) {
         switch action {
         case .regionScreenshot: beginRegionScreenshot()
         case .screenshotTranslation: beginScreenshotTranslation()
+        case .screenshotOCR: beginScreenshotOCR()
         case .translateSelection: translateSelection()
         }
     }
@@ -111,8 +128,8 @@ final class QuickToolsController: ObservableObject {
     ///   start (already capturing, permission denied, …). A failed start never
     ///   reports an ended callback, so callers must not wait for one.
     @discardableResult
-    func beginRegionScreenshot() -> Bool {
-        beginCapture(for: .edit)
+    func beginRegionScreenshot(mode: CaptureMode = .region, delay: TimeInterval = 0) -> Bool {
+        beginCapture(for: .edit, mode: mode, delay: delay)
     }
 
     /// Starts a screenshot-translation session. Contract identical to
@@ -121,8 +138,10 @@ final class QuickToolsController: ObservableObject {
     func beginScreenshotTranslation() -> Bool {
         beginCapture(for: .translate)
     }
+    @discardableResult
+    func beginScreenshotOCR() -> Bool { beginCapture(for: .ocr) }
 
-    private func beginCapture(for purpose: CapturePurpose) -> Bool {
+    private func beginCapture(for purpose: CapturePurpose, mode: CaptureMode = .region, delay: TimeInterval = 0) -> Bool {
         guard !isCapturing else { return false }
         screenshotTranslationOverlay?.close()
         if ScreenCapturePermission.state != .granted, !ScreenCapturePermission.request() {
@@ -138,19 +157,37 @@ final class QuickToolsController: ObservableObject {
         }
 
         let sessionID = UUID()
+        captureTask?.cancel()
+        captureGeneration = sessionID
+        quickAccess?.close()
         activeCaptureSessionID = sessionID
         captureSessionDidEnd = false
         isCapturing = true
         message = nil
-        onQuickToolUsed?(purpose == .translate ? .screenshotTranslation : .regionScreenshot)
-        selectionController.begin { [weak self] result in
+        onQuickToolUsed?(purpose == .translate ? .screenshotTranslation : purpose == .ocr ? .screenshotOCR : .regionScreenshot)
+        captureTask = Task { [weak self] in
             guard let self else { return }
-            switch result {
-            case let .success(selection):
-                let excludedWindows = selectionController.windowNumbers
-                Task { await self.capture(selection, excluding: excludedWindows, for: purpose, sessionID: sessionID) }
-            case let .failure(error):
-                self.endCaptureSession(false, sessionID: sessionID)
+            do {
+                if delay > 0 {
+                    toast.show(AppLocalizer.format("capture.delayNotice", Int(delay)))
+                    try await Task.sleep(for: .seconds(delay))
+                }
+                let windows = mode == .window ? try await ScreenCaptureService.selectableWindows() : []
+                guard !Task.isCancelled, captureGeneration == sessionID else { return }
+                selectionController.begin(mode: mode, windows: windows) { [weak self] result in
+                    guard let self, captureGeneration == sessionID else { return }
+                    switch result {
+                    case let .success(selection):
+                        let excludedWindows = selectionController.windowNumbers
+                        captureTask = Task { await self.capture(selection, excluding: excludedWindows, for: purpose, sessionID: sessionID) }
+                    case let .failure(error):
+                        self.endCaptureSession(false, sessionID: sessionID)
+                        if !(error is CancellationError) { present(error, title: AppLocalizer.string("截图失败")) }
+                    }
+                }
+            } catch {
+                guard captureGeneration == sessionID else { return }
+                endCaptureSession(false, sessionID: sessionID)
                 if !(error is CancellationError) { present(error, title: AppLocalizer.string("截图失败")) }
             }
         }
@@ -211,18 +248,53 @@ final class QuickToolsController: ObservableObject {
             let captured = try await TranslationPerformance.measure(.capture) {
                 try await captureService.capture(selection, excludingWindowNumbers: windows)
             }
+            guard !Task.isCancelled, captureGeneration == sessionID else { return }
             selectionController.cancel()
             endCaptureSession(true, sessionID: sessionID)
-            switch purpose {
-            case .edit:
-                screenshotEditor = nil
-                let controller = ScreenshotEditorWindowController(
-                    image: captured.image,
-                    directoryPath: { [weak self] in self?.settings.screenshotDirectoryPath ?? "" },
-                    onClose: { [weak self] in self?.screenshotEditor = nil }
-                )
-                screenshotEditor = controller
-                controller.show()
+            let defaultAction: CaptureAction = purpose == .translate ? .translate : purpose == .ocr ? .ocr : settings.captureDefaultAction
+            await deliver(captured, action: selection.action == .confirm ? defaultAction : selection.action, token: sessionID)
+        } catch {
+            guard !Task.isCancelled, captureGeneration == sessionID else { return }
+            selectionController.cancel()
+            endCaptureSession(false, sessionID: sessionID)
+            present(error, title: AppLocalizer.string("截图失败"))
+        }
+    }
+
+    private func deliver(_ captured: CapturedScreenshot, action: CaptureAction, token: UUID) async {
+        guard captureGeneration == token, !Task.isCancelled else { return }
+        let selection = captured.selection
+        do {
+            switch action {
+            case .edit: showScreenshotEditor(captured.image)
+            case .quickAccess, .confirm:
+                quickAccess = ScreenshotQuickAccessController(image: captured.image, onClose: { [weak self] in self?.quickAccess = nil }) { [weak self] action in
+                    guard let self, self.captureGeneration == token else { return }
+                    self.quickAccess?.close()
+                    self.captureTask = Task { await self.deliver(captured, action: action, token: token) }
+                }
+                quickAccess?.show()
+            case .pin:
+                let id = UUID()
+                let panel = ScreenshotPinController(image: captured.image, directoryPath: { [weak self] in self?.settings.screenshotDirectoryPath ?? "" },
+                                                    onClose: { [weak self] in self?.pins[id] = nil })
+                pins[id] = panel
+                panel.show()
+            case .copy, .save:
+                let data = try await screenshotOutput.pngData(image: captured.image, annotations: [])
+                guard captureGeneration == token, !Task.isCancelled else { return }
+                if action == .copy { try screenshotOutput.copyPNG(data) }
+                else { _ = try screenshotOutput.savePNG(data, directoryPath: settings.screenshotDirectoryPath) }
+                toast.show(AppLocalizer.string(action == .copy ? "capture.copied" : "capture.saved"))
+            case .ocr:
+                let recognition = try await ocrService.recognizeLayout(in: captured.image)
+                guard captureGeneration == token, !Task.isCancelled else { return }
+                let text = recognition.text
+                if !text.isEmpty {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+                toast.show(text.isEmpty ? AppLocalizer.string("capture.noText") : AppLocalizer.format("capture.ocrCopied", text.count))
             case .translate:
                 let presenter: ScreenshotTranslationPresenting
                 if settings.screenshotTranslationOverlayEnabled {
@@ -250,6 +322,7 @@ final class QuickToolsController: ObservableObject {
                 presenter.setMessage(AppLocalizer.string("正在识别截图文字…"))
                 do {
                     let recognition = try await ocrService.recognizeLayout(in: captured.image)
+                    guard captureGeneration == token, !Task.isCancelled else { return }
                     let text = recognition.text
                     presenter.updateRecognition(recognition)
                     let status = text.isEmpty
@@ -266,6 +339,7 @@ final class QuickToolsController: ObservableObject {
                         ))
                     }
                 } catch {
+                    guard captureGeneration == token, !Task.isCancelled else { return }
                     presenter.setMessage(error.localizedDescription)
                     message = error.localizedDescription
                     petTranslationEvents?.handle(.translationFailed(
@@ -275,16 +349,29 @@ final class QuickToolsController: ObservableObject {
                 }
             }
         } catch {
-            selectionController.cancel()
-            endCaptureSession(false, sessionID: sessionID)
-            let openSettings: (() -> Void)?
-            if let captureError = error as? ScreenCaptureServiceError, case .permissionDenied = captureError {
-                openSettings = ScreenCapturePermission.openSettings
-            } else {
-                openSettings = nil
-            }
-            present(error, title: AppLocalizer.string("截图失败"), openSettings: openSettings)
+            guard captureGeneration == token, !Task.isCancelled else { return }
+            toast.show(error.localizedDescription)
         }
+    }
+
+    func openImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .tiff]
+        panel.allowsMultipleSelection = false
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            do { self?.showScreenshotEditor(try ScreenshotImageLoader.load(url)) }
+            catch { self?.toast.show(error.localizedDescription) }
+        }
+    }
+
+    private func showScreenshotEditor(_ image: CGImage) {
+        screenshotEditor?.close()
+        let controller = ScreenshotEditorWindowController(image: image,
+            directoryPath: { [weak self] in self?.settings.screenshotDirectoryPath ?? "" },
+            onClose: { [weak self] in self?.screenshotEditor = nil })
+        screenshotEditor = controller
+        controller.show()
     }
 
     @discardableResult

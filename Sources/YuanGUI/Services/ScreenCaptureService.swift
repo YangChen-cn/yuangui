@@ -27,6 +27,8 @@ struct ScreenshotSelection: Equatable {
     let displayID: CGDirectDisplayID
     let displayFrame: CGRect
     let scale: CGFloat
+    var action: CaptureAction = .confirm
+    var windowID: CGWindowID? = nil
 
     var displayLocalSourceRect: CGRect {
         CGRect(
@@ -65,6 +67,19 @@ enum ScreenCapturePermission {
 }
 
 struct ScreenCaptureService: ScreenCapturing {
+    static func selectableWindows() async throws -> [CaptureWindowTarget] {
+        let content = try await ScreenCaptureContentCache.shared.content(containingWindowNumbers: [])
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        // CGWindow ordering is front-to-back; SCK's window array has no ordering contract.
+        let order = (CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? [])
+            .compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value }
+        let rank = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        return content.windows.filter {
+            $0.owningApplication?.processID != ownPID && $0.isOnScreen && $0.windowLayer == 0 && $0.frame.width >= 3 && $0.frame.height >= 3
+        }.sorted { (rank[$0.windowID] ?? .max) < (rank[$1.windowID] ?? .max) }
+            .map { CaptureWindowTarget(id: $0.windowID, frame: $0.frame) }
+    }
+
     func capture(_ selection: ScreenshotSelection, excludingWindowNumbers: Set<Int>) async throws -> CapturedScreenshot {
         guard selection.globalRect.width >= 3, selection.globalRect.height >= 3 else {
             throw ScreenCaptureServiceError.invalidSelection
@@ -79,13 +94,25 @@ struct ScreenCaptureService: ScreenCapturing {
         guard let display = content.displays.first(where: { $0.displayID == selection.displayID }) else {
             throw ScreenCaptureServiceError.displayUnavailable
         }
-        let excludedWindows = content.windows.filter { excludingWindowNumbers.contains(Int($0.windowID)) }
-        let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+        let excludedWindows = content.windows.filter {
+            excludingWindowNumbers.contains(Int($0.windowID)) || $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier
+        }
+        let filter: SCContentFilter
+        if let id = selection.windowID {
+            guard let window = content.windows.first(where: { $0.windowID == id }),
+                  window.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier else {
+                throw ScreenCaptureServiceError.invalidSelection
+            }
+            filter = SCContentFilter(desktopIndependentWindow: window)
+        } else {
+            filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+        }
         let configuration = SCStreamConfiguration()
-        configuration.sourceRect = selection.displayLocalSourceRect
+        if selection.windowID == nil { configuration.sourceRect = selection.displayLocalSourceRect }
         configuration.width = max(1, Int((selection.globalRect.width * selection.scale).rounded()))
         configuration.height = max(1, Int((selection.globalRect.height * selection.scale).rounded()))
         configuration.showsCursor = false
+        configuration.ignoreShadowsSingleWindow = true
         configuration.scalesToFit = false
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
 

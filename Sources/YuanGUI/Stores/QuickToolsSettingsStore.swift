@@ -5,6 +5,8 @@ import Foundation
 final class QuickToolsSettingsStore: ObservableObject {
     @Published private(set) var screenshotHotKey: HotKeyBinding
     @Published private(set) var screenshotTranslationHotKey: HotKeyBinding
+    @Published private(set) var screenshotOCRHotKey: HotKeyBinding
+    @Published private(set) var captureDefaultAction: CaptureAction
     @Published private(set) var translationHotKey: HotKeyBinding
     @Published private(set) var screenshotDirectoryPath: String
     @Published private(set) var screenshotTranslationOverlayEnabled: Bool
@@ -48,6 +50,10 @@ final class QuickToolsSettingsStore: ObservableObject {
             : storedScreenshot ?? .screenshotDefault
         screenshotTranslationHotKey = Self.decodeHotKey(defaults.data(forKey: Key.screenshotTranslationHotKey))
             ?? .screenshotTranslationDefault
+        screenshotOCRHotKey = Self.decodeHotKey(defaults.data(forKey: "quickTools.screenshotOCRHotKey")) ?? .screenshotOCRDefault
+        let storedAction = CaptureAction(rawValue: defaults.string(forKey: "quickTools.captureDefaultAction") ?? "")
+        // Preserve existing hotkey users' editor workflow; new installs use Quick Access.
+        captureDefaultAction = storedAction ?? (storedScreenshot != nil ? .edit : .quickAccess)
         translationHotKey = storedTranslation == Self.legacyTranslationDefault
             ? .translationDefault
             : storedTranslation ?? .translationDefault
@@ -72,6 +78,7 @@ final class QuickToolsSettingsStore: ObservableObject {
         switch action {
         case .regionScreenshot: screenshotHotKey
         case .screenshotTranslation: screenshotTranslationHotKey
+        case .screenshotOCR: screenshotOCRHotKey
         case .translateSelection: translationHotKey
         }
     }
@@ -84,6 +91,9 @@ final class QuickToolsSettingsStore: ObservableObject {
         case .screenshotTranslation:
             screenshotTranslationHotKey = binding
             defaults.set(try? encoder.encode(binding), forKey: Key.screenshotTranslationHotKey)
+        case .screenshotOCR:
+            screenshotOCRHotKey = binding
+            defaults.set(try? encoder.encode(binding), forKey: "quickTools.screenshotOCRHotKey")
         case .translateSelection:
             translationHotKey = binding
             defaults.set(try? encoder.encode(binding), forKey: Key.translationHotKey)
@@ -92,6 +102,11 @@ final class QuickToolsSettingsStore: ObservableObject {
 
     func resetHotKey(for action: QuickToolAction) {
         saveHotKey(action.defaultHotKey, for: action)
+    }
+    func setCaptureDefaultAction(_ action: CaptureAction) {
+        guard [.quickAccess, .edit, .copy, .save].contains(action) else { return }
+        captureDefaultAction = action
+        defaults.set(action.rawValue, forKey: "quickTools.captureDefaultAction")
     }
 
     func setScreenshotDirectory(_ url: URL) {
@@ -130,6 +145,7 @@ extension QuickToolAction {
         switch self {
         case .regionScreenshot: .screenshotDefault
         case .screenshotTranslation: .screenshotTranslationDefault
+        case .screenshotOCR: .screenshotOCRDefault
         case .translateSelection: .translationDefault
         }
     }

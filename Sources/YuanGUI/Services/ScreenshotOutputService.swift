@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -54,6 +55,17 @@ struct ScreenshotOutputService {
     }
 }
 
+final class ScreenshotRenderEffects {
+    let image: CGImage
+    init(image: CGImage) { self.image = image }
+    lazy var pixelated = ScreenshotRenderer.pixelatedImage(image)
+    lazy var blurred: CGImage? = {
+        let original = CIImage(cgImage: image)
+        let filtered = original.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 12]).cropped(to: original.extent)
+        return CIContext().createCGImage(filtered, from: original.extent)
+    }()
+}
+
 enum ScreenshotRenderer {
     static func pngData(image: CGImage, annotations: [ScreenshotAnnotation]) throws -> Data {
         guard let rendered = render(image: image, annotations: annotations) else {
@@ -91,6 +103,7 @@ enum ScreenshotRenderer {
         _ annotations: [ScreenshotAnnotation],
         activeAnnotation: ScreenshotAnnotation? = nil,
         image: CGImage,
+        effects: ScreenshotRenderEffects? = nil,
         in context: CGContext
     ) {
         let completedHasMosaic = annotations.contains(where: {
@@ -101,13 +114,16 @@ enum ScreenshotRenderer {
             if case .mosaic = $0 { return true }
             return false
         } ?? false
-        let pixelated = completedHasMosaic || activeHasMosaic ? pixelatedImage(image) : nil
+        let effects = effects ?? ScreenshotRenderEffects(image: image)
+        let pixelated = completedHasMosaic || activeHasMosaic ? effects.pixelated : nil
+        let hasBlur = (annotations + (activeAnnotation.map { [$0] } ?? [])).contains { if case .blur = $0 { return true }; return false }
+        let blurred = hasBlur ? effects.blurred : nil
 
         for annotation in annotations {
-            drawAnnotation(annotation, image: image, pixelated: pixelated, in: context)
+            drawAnnotation(annotation, image: image, pixelated: pixelated, blurred: blurred, in: context)
         }
         if let activeAnnotation {
-            drawAnnotation(activeAnnotation, image: image, pixelated: pixelated, in: context)
+            drawAnnotation(activeAnnotation, image: image, pixelated: pixelated, blurred: blurred, in: context)
         }
     }
 
@@ -115,9 +131,29 @@ enum ScreenshotRenderer {
         _ annotation: ScreenshotAnnotation,
         image: CGImage,
         pixelated: CGImage?,
+        blurred: CGImage?,
         in context: CGContext
     ) {
         switch annotation {
+            case let .blur(_, rect):
+                guard let blurred else { return }
+                context.saveGState()
+                context.clip(to: rect)
+                context.draw(blurred, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                context.restoreGState()
+            case let .marker(_, _, number, style):
+                context.saveGState()
+                let rect = annotation.bounds
+                context.setFillColor(style.color.cgColor)
+                context.fillEllipse(in: rect)
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+                let text = String(number)
+                let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: style.fontSize), .foregroundColor: NSColor.white]
+                let size = text.size(withAttributes: attributes)
+                text.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
+                NSGraphicsContext.restoreGraphicsState()
+                context.restoreGState()
             case let .stroke(_, points, style, _):
                 guard points.count > 1 else { return }
                 context.saveGState()
@@ -193,7 +229,7 @@ enum ScreenshotRenderer {
         context.strokePath()
     }
 
-    private static func pixelatedImage(_ image: CGImage) -> CGImage? {
+    fileprivate static func pixelatedImage(_ image: CGImage) -> CGImage? {
         let block = 12
         let smallWidth = max(1, image.width / block)
         let smallHeight = max(1, image.height / block)

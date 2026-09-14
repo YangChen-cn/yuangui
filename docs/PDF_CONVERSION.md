@@ -1,9 +1,28 @@
-# PDF conversion
+# Document conversion
 
-YuanGUI 2.9.0 converts one local PDF at a time on Apple Silicon Macs. First-use
+YuanGUI 2.9.0 converts one local document at a time on Apple Silicon Macs. First-use
 installation is explicit; opening the app does not install anything. Documents are
 processed locally, without cloud converters or third-party plugins. Closing the window
 cancels its active task.
+
+## Input formats
+
+The first supported set is PDF, XPS, EPUB, FB2, TXT, PNG, JPEG and TIFF. PDF and XPS
+show automatic OCR and header/footer options. EPUB/FB2 hide both options and retain
+their content; the pinned PyMuPDF converts these read-only formats to an in-memory
+PDF for Layout without saving over the source. The runtime versions, pruning rules,
+hybrid PDF OCR and inline image output are unchanged.
+
+TXT is read directly (UTF-8 or UTF-16). Images go straight to `VisionOCRService` for
+local text recognition, one correctly oriented frame at a time, including multi-page
+TIFF. Neither path needs Python installed. Image input provides recognized text,
+not Python Layout's document reconstruction. Screenshot OCR uses this same Vision
+backend; PDF OCR keeps its separate existing backend, with no Swift/Python OCR bridge.
+
+MOBI is supported by PyMuPDF in principle but is not exposed in this first set because
+we do not yet have a verified fixture. Office formats and scrolling capture are not
+part of this change. `script/test_document_formats.py` generates local EPUB/FB2/XPS
+fixtures and is exercised by the opt-in real installation test.
 
 ## Runtime installation
 
@@ -39,6 +58,13 @@ is a revision installed after it, which a newer app version may own. A failed in
 deletes only its own partial directory, nothing outside
 Application Support/YuanGUI/PDFConversion is touched, and the install lock is held
 during the cleanup so a concurrent installer is never disturbed.
+
+Uninstall removes payload children while preserving the root and `.install-lock` inode.
+Deleting the locked file would allow another installer to open a new inode and hold a
+second independent lock. The regression test retains a descriptor across uninstall
+and verifies that it still excludes subsequent operations. Real pruning assertions
+for `sympy`, `mpmath` and `networkx` all resolve beneath the same
+`venv/lib/python3.12/site-packages` directory.
 
 ## Runtime size
 
@@ -171,6 +197,9 @@ pass and OCR enabled; that heavier path no longer exists. These are local observ
 one Apple Silicon Mac, not cross-device guarantees.
 
 ## Reusing Apple Vision OCR (design note, not implemented)
+
+Standalone image input now uses Vision directly as described above. The following
+note concerns replacing the existing **PDF** OCR backend, which remains out of scope.
 
 YuanGUI already ships `VisionOCRService` for screenshot translation, with bounding
 boxes, confidence, detected language, reading order and low-confidence retries. Moving

@@ -161,7 +161,7 @@ final class AppRuntime {
                 self?.guideCoordinator.recordFeatureUsed(.screenshotTranslation)
             case .translateSelection:
                 self?.guideCoordinator.recordFeatureUsed(.selectionTranslation)
-            case .regionScreenshot:
+            case .regionScreenshot, .screenshotOCR:
                 break
             }
         }
@@ -442,6 +442,10 @@ final class WindowCoordinator: NSObject {
         switch route {
         case .regionScreenshot: _ = quickTools.beginRegionScreenshot()
         case .screenshotTranslation: _ = quickTools.beginScreenshotTranslation()
+        case .screenshotOCR: _ = quickTools.beginScreenshotOCR()
+        case .windowScreenshot: _ = quickTools.beginRegionScreenshot(mode: .window)
+        case .screenScreenshot: _ = quickTools.beginRegionScreenshot(mode: .screen)
+        case .openImage: quickTools.openImage()
         case .translateSelection: quickTools.translateSelection()
         }
     }
@@ -473,6 +477,10 @@ final class WindowCoordinator: NSObject {
         let toolsMenu = NSMenu(title: AppLocalizer.string("menu.tools"))
         toolsMenu.addItem(withTitle: AppLocalizer.string("menu.regionScreenshot"), action: #selector(startRegionScreenshot), keyEquivalent: "")
         toolsMenu.addItem(withTitle: AppLocalizer.string("menu.screenshotTranslation"), action: #selector(startScreenshotTranslation), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: AppLocalizer.string("capture.ocr"), action: #selector(startScreenshotOCR), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: AppLocalizer.string("capture.mode.window"), action: #selector(startWindowScreenshot), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: AppLocalizer.string("capture.mode.screen"), action: #selector(startScreenScreenshot), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: AppLocalizer.string("capture.openImage"), action: #selector(openScreenshotImage), keyEquivalent: "")
         toolsMenu.addItem(withTitle: AppLocalizer.string("menu.translateSelection"), action: #selector(translateSelection), keyEquivalent: "")
         toolsMenu.addItem(NSMenuItem.separator())
         let diaryItem = toolsMenu.addItem(withTitle: AppLocalizer.string("手帐本"), action: #selector(showDiaryFromMenu), keyEquivalent: "d")
@@ -612,6 +620,10 @@ final class WindowCoordinator: NSObject {
     @objc private func startScreenshotTranslation() {
         runQuickTool(.screenshotTranslation)
     }
+    @objc private func startScreenshotOCR() { runQuickTool(.screenshotOCR) }
+    @objc private func startWindowScreenshot() { runQuickTool(.windowScreenshot) }
+    @objc private func startScreenScreenshot() { runQuickTool(.screenScreenshot) }
+    @objc private func openScreenshotImage() { runQuickTool(.openImage) }
 
     @objc private func showDiaryFromMenu() {
         open(.diary)

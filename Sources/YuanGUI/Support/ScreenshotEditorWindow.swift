@@ -8,6 +8,7 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
     private let outputService = ScreenshotOutputService()
     private let directoryPath: () -> String
     private let onClose: () -> Void
+    private var closed = false
 
     init(image: CGImage, directoryPath: @escaping () -> String, onClose: @escaping () -> Void) {
         store = ScreenshotEditorStore(image: image)
@@ -20,7 +21,7 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         super.init()
-        window.title = "编辑截图"
+        window.title = AppLocalizer.string("编辑截图")
         window.minSize = NSSize(width: 760, height: 520)
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -38,8 +39,10 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
+    func close() { window.close() }
 
     func windowWillClose(_ notification: Notification) {
+        closed = true
         onClose()
     }
 
@@ -49,6 +52,7 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
         store.message = nil
         do {
             let data = try await outputService.pngData(image: store.image, annotations: store.annotations)
+            guard !closed, !Task.isCancelled else { store.isExporting = false; return }
             var savedURL: URL?
             if copy { try outputService.copyPNG(data) }
             if save { savedURL = try outputService.savePNG(data, directoryPath: directoryPath()) }

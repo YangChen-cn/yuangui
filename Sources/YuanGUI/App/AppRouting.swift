@@ -28,6 +28,10 @@ enum AppRoute: Equatable, Sendable {
 enum QuickToolRoute: Equatable, Sendable {
     case regionScreenshot
     case screenshotTranslation
+    case screenshotOCR
+    case windowScreenshot
+    case screenScreenshot
+    case openImage
     case translateSelection
 }
 

@@ -206,6 +206,7 @@ struct PetSpriteLayer: View {
     private var contextMenu: some View {
         Button(AppLocalizer.string("pet.menu.screenshot")) { appActions.runQuickTool(.regionScreenshot) }
         Button(AppLocalizer.string("pet.menu.screenshotTranslation")) { appActions.runQuickTool(.screenshotTranslation) }
+        Button(AppLocalizer.string("capture.ocr")) { appActions.runQuickTool(.screenshotOCR) }
         Button(AppLocalizer.string("pet.menu.translateSelection")) { appActions.runQuickTool(.translateSelection) }
         Divider()
         Menu("番茄钟") {

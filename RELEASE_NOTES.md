@@ -4,6 +4,11 @@
 
 ## 2.9.0 — PDF to Markdown
 
+- Screenshot selection now stays adjustable after dragging, with eight handles, keyboard nudging, square/center constraints and a compact action toolbar. Region, window and display capture share Copy, Save, Annotate, OCR, Translate and Pin actions; Quick Access avoids opening an editor for every image.
+- Added Capture Text with a separate hotkey and direct clipboard output, floating screenshot pins, capture delay and reuse of the last region. The editor supports selecting/moving/deleting/restyling annotations, inline text, numbered markers, Core Image blur and opening/dropping/pasting images.
+- Expanded the window to Document to Markdown: PDF/XPS/EPUB/FB2 reuse the pinned runtime; TXT and PNG/JPEG/TIFF use native text/Vision paths without Python. Format-specific controls hide irrelevant PDF options.
+- Fixed uninstall lock identity and corrected real runtime pruning assertions. Runtime versions and pruning scope remain unchanged.
+
 - Added a local PDF-to-Markdown window powered by PyMuPDF Layout 1.28.2 running on Apple Silicon: choose or drop one PDF, preview the source, copy text, and export Markdown with a companion `_assets` folder. Figures — including vector diagrams — now stay next to their position in the text instead of being appended at the end.
 - Repeated page headers and footers such as running titles, page numbers and copyright lines are removed by default, with a checkbox to keep them.
 - Selecting a PDF preflights it in under a second: page count, encryption and whether a text layer exists. Locked documents fail before the layout model is loaded, and documents that look scanned are flagged with a hint to enable OCR.

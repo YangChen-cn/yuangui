@@ -19,6 +19,7 @@ enum AppVersionInfo {
     }
 
     static let currentReleaseHighlightKeys = [
+        "release.2.9.0.capture",
         "release.2.9.0.pdf",
         "release.2.9.0.pdfMargins",
         "release.2.9.0.pdfSize",
