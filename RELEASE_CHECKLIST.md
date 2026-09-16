@@ -1,8 +1,15 @@
 # 2.9.0 release preparation checklist
 
-This version is in development and has not been published. This checklist records the intended release values and required local
-verification. The release scripts remain authoritative for asset, manifest,
-and mirror validation.
+Status: the GitHub Release is published (`v2.9.0`, 2026-09-16, DMG
+`7f2f06d1f705e7a8b2ce33b67745d76f289e1d99ca0d546258e573194f18bac4`) and the
+Gitee release and tag exist. The Gitee DMG and `.sha256` sidecar still have to
+be uploaded by hand — the upload stalled on this network — and
+`updates/latest.json` is still on 2.8.2 until
+`script/mirror_manifest_locally.sh` runs after that upload.
+
+This checklist records the release values and required local verification. The
+release scripts remain authoritative for asset, manifest, and mirror
+validation.
 
 - Tag: `v2.9.0`
 - Title: `YuanGUI 2.9.0`
@@ -40,3 +47,18 @@ The script packages the DMG once, uploads that exact file plus both bilingual
 notes to GitHub, verifies and mirrors the same bytes to Gitee, generates the
 manifest from the stable GitHub Release timestamp, and checks both raw
 manifests before reporting success.
+
+If the Gitee upload stalls (large multipart POSTs hang on a flaky connection),
+run it with `--skip-gitee-upload` instead. That still packages the DMG, creates
+the GitHub Release and the Gitee release and tag, but leaves the assets to the
+publisher and prints the two files to upload plus the command that finishes the
+release:
+
+```sh
+VERSION=2.9.0 BUILD=22 GITEE_TOKEN=... ./script/release.sh --skip-gitee-upload
+VERSION=2.9.0 BUILD=22 GITEE_TOKEN=... ./script/mirror_manifest_locally.sh
+```
+
+Do not re-run the packaging step to retry an upload: a second DMG is not
+byte-identical to the published one, and the manifest step verifies the local
+DMG against the GitHub asset digest.

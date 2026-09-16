@@ -16,6 +16,11 @@ set -euo pipefail
 #
 # 用法：
 #   VERSION=2.9.0 BUILD=22 GITEE_TOKEN=xxx ./script/release.sh
+#   VERSION=2.9.0 BUILD=22 GITEE_TOKEN=xxx ./script/release.sh --skip-gitee-upload
+#
+# --skip-gitee-upload：Gitee 上传大文件卡住时使用。仍然打包 DMG、创建 GitHub
+# Release 和 Gitee release/tag，但不上传资产；脚本会打印需要手动上传的两个文件
+# 与之后收尾的 manifest 命令。
 #
 # 脚本本身不修改任何源码或仓库配置；所有发布动作都是 gh/curl 调用。
 
@@ -23,6 +28,18 @@ script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 GITEE_OWNER="yangchen716"
 GITEE_REPO="yuangui"
+
+SKIP_GITEE_UPLOAD=false
+for arg in "$@"; do
+  case "$arg" in
+    --skip-gitee-upload) SKIP_GITEE_UPLOAD=true ;;
+    *)
+      print -u2 "unknown argument: $arg"
+      print -u2 "usage: VERSION=x.y.z BUILD=n GITEE_TOKEN=... $0 [--skip-gitee-upload]"
+      exit 2
+      ;;
+  esac
+done
 
 : "${VERSION:?VERSION is required, for example VERSION=2.8.0}"
 : "${BUILD:?BUILD is required, for example BUILD=19}"
@@ -74,7 +91,25 @@ else
   rm -f "$BODY"
 fi
 
-# 3. 从本机上传 DMG + sidecar 到 Gitee（云 runner 上传会挂起）
+# 3. 从本机上传 DMG + sidecar 到 Gitee（云 runner 上传会挂起）。网络不通时用
+# --skip-gitee-upload 只创建 release 与 tag，资产留给发布者手动上传。
+if $SKIP_GITEE_UPLOAD; then
+  print "== 3/5 create the Gitee release and tag only"
+  printf '%s  %s\n' "$(shasum -a 256 "$DMG" | awk '{print $1}')" "YuanGUI-$VERSION.dmg" > "$DMG.sha256"
+  release_id="$(GITEE_OWNER="$GITEE_OWNER" GITEE_REPO="$GITEE_REPO" GITEE_TOKEN="$GITEE_TOKEN" \
+    ./script/gitee_release_assets.sh ensure-release "$TAG" "YuanGUI $VERSION")"
+  print "Gitee release id=$release_id"
+  print ""
+  print "Gitee tag $TAG is ready, but its assets are not uploaded. By hand:"
+  print "  upload $DMG"
+  print "  upload $DMG.sha256"
+  print "  https://gitee.com/$GITEE_OWNER/$GITEE_REPO/releases/edit/$TAG"
+  print ""
+  print "Then finish the release (steps 4-5) with:"
+  print "  VERSION=$VERSION BUILD=$BUILD GITEE_TOKEN=... ./script/mirror_manifest_locally.sh"
+  exit 0
+fi
+
 print "== 3/5 publish to Gitee"
 VERSION="$VERSION" BUILD="$BUILD" GITEE_TOKEN="$GITEE_TOKEN" \
   ./script/publish_gitee_release.sh
