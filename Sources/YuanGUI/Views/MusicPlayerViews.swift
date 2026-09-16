@@ -298,8 +298,8 @@ private struct MusicPlayerContentRoot: View {
                     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 330)
             } detail: {
                 detail
-                    .modifier(UnobscuredWindowContent())
             }
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .frame(minWidth: 760, minHeight: 520)
         .onAppear { selectedTrackID = music.playback.currentTrack?.id }

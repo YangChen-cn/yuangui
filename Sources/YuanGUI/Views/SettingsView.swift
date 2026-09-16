@@ -84,6 +84,7 @@ struct SettingsView: View {
                 restartOnboarding: restartOnboarding
             )
         }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 700, idealWidth: 760, minHeight: 520, idealHeight: 560)
         .alert(
             AppLocalizer.string("settings.language.restartTitle"),
@@ -183,6 +184,5 @@ struct SettingsDetailView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .modifier(UnobscuredWindowContent())
     }
 }
