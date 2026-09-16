@@ -298,6 +298,7 @@ private struct MusicPlayerContentRoot: View {
                     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 330)
             } detail: {
                 detail
+                    .modifier(UnobscuredWindowContent())
             }
         }
         .frame(minWidth: 760, minHeight: 520)

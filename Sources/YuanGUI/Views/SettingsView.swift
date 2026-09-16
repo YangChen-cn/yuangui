@@ -183,5 +183,6 @@ struct SettingsDetailView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .modifier(UnobscuredWindowContent())
     }
 }
