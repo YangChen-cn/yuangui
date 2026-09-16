@@ -14,6 +14,7 @@ final class ChatHistoryWindowController {
         )
         window.title = "元圭与 VCC 对话历史"
         window.isReleasedWhenClosed = false
+        SplitViewWindowChrome.apply(to: window)
         window.minSize = NSSize(width: 660, height: 420)
         window.contentView = NSHostingView(rootView: ChatHistoryView(chat: chat))
         window.center()

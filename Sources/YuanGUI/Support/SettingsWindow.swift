@@ -15,6 +15,7 @@ final class SettingsWindowController {
         )
         window.title = AppLocalizer.string("window.settings")
         window.isReleasedWhenClosed = false
+        SplitViewWindowChrome.apply(to: window)
         window.center()
         window.contentMinSize = NSSize(width: 700, height: 520)
         window.contentView = NSHostingView(rootView:

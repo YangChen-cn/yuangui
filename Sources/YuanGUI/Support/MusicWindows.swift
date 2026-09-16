@@ -36,6 +36,7 @@ final class MusicWindowController: NSObject, NSWindowDelegate {
         super.init()
         window.title = AppLocalizer.string("音乐播放器")
         window.isReleasedWhenClosed = false
+        SplitViewWindowChrome.apply(to: window)
         window.delegate = self
         window.collectionBehavior.formUnion(Self.windowCollectionBehavior)
         window.minSize = NSSize(width: 760, height: 520)

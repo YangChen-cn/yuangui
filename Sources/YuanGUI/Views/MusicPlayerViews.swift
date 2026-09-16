@@ -299,7 +299,6 @@ private struct MusicPlayerContentRoot: View {
             } detail: {
                 detail
             }
-            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .frame(minWidth: 760, minHeight: 520)
         .onAppear { selectedTrackID = music.playback.currentTrack?.id }

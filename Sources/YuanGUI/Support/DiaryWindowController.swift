@@ -38,6 +38,7 @@ final class DiaryWindowController: NSObject, NSWindowDelegate {
         )
         window.title = AppLocalizer.string("手帐本")
         window.isReleasedWhenClosed = false
+        SplitViewWindowChrome.apply(to: window)
         window.minSize = NSSize(width: 700, height: 450)
         window.setFrameAutosaveName("YuanGUI.DiaryWindow")
         if !window.setFrameUsingName("YuanGUI.DiaryWindow") { window.center() }

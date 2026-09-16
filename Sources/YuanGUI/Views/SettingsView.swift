@@ -84,7 +84,6 @@ struct SettingsView: View {
                 restartOnboarding: restartOnboarding
             )
         }
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 700, idealWidth: 760, minHeight: 520, idealHeight: 560)
         .alert(
             AppLocalizer.string("settings.language.restartTitle"),
