@@ -1,11 +1,11 @@
 # 2.9.0 release preparation checklist
 
-Status: the GitHub Release is published (`v2.9.0`, 2026-09-16, DMG
+Status: released on 2026-09-16. The GitHub Release (`v2.9.0`, DMG
 `7f2f06d1f705e7a8b2ce33b67745d76f289e1d99ca0d546258e573194f18bac4`) and the
-Gitee release and tag exist. The Gitee DMG and `.sha256` sidecar still have to
-be uploaded by hand — the upload stalled on this network — and
-`updates/latest.json` is still on 2.8.2 until
-`script/mirror_manifest_locally.sh` runs after that upload.
+Gitee release with the same DMG bytes and its `.sha256` sidecar are published,
+and both raw `updates/latest.json` files report `2.9.0` (build `22`). The Gitee
+DMG upload stalled on the publisher's network and was completed by hand, which
+is why the release flow now has `--skip-gitee-upload`.
 
 This checklist records the release values and required local verification. The
 release scripts remain authoritative for asset, manifest, and mirror
