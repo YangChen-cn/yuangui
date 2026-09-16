@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "version": "2.8.2",
-  "build": 21,
+  "version": "2.9.0",
+  "build": 22,
   "minimumSystemVersion": "15.0",
-  "publishedAt": "2026-08-28T16:53:39Z",
-  "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.8.2",
+  "publishedAt": "2026-09-16T12:43:00Z",
+  "releasePageURL": "https://github.com/YangChen-cn/yuangui/releases/tag/v2.9.0",
   "highlights": {
     "zh-Hans": [
-      "Finder 新建文档会直接弹出原生命名框，并预选完整建议文件名；下一步直接输入名称即可，扩展名也能一起修改。",
-      "菜单栏音乐面板会为最近显示过的本地和在线封面保留受限内存缓存；重新打开时不再闪现占位封面，同时不会让隐藏面板继续进行 SwiftUI 刷新。"
+      "截图编辑工具按用途分组，直接显示快捷键字母，并提供快捷键速查弹出层、明确的 T 图标、小型颜色圆点和上下文尺寸控件。快捷键统一由窗口分发，文字输入仍保留正常打字和编辑操作。",
+      "画布支持捏合或 Command 滚动缩放、空格拖动平移、适应窗口/原始大小快捷键及工具光标反馈。连续调整样式只需撤销一次；文字输入外的第一次点击仅提交文字，不会同时新建标注。"
     ],
     "en": [
-      "New Finder documents now open a native naming prompt with the suggested complete filename selected, so the next…",
-      "Recently displayed local and online covers now use a bounded in-memory cache when the menu-bar music panel reopens.…"
+      "Reorganized the screenshot editor into tool groups with visible shortcut badges, a keyboard-reference popover, a…",
+      "Added canvas zoom (pinch or Command-scroll), Space-drag pan, Fit/100% shortcuts and tool-specific cursor feedback.…"
     ]
   },
   "assets": [
     {
       "provider": "gitee",
-      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.8.2/YuanGUI-2.8.2.dmg",
-      "sha256": "f1e2528a7f140038acaa776b868016571c8273ab0c998c42fcbd5ef3baf08b92",
-      "size": 29154080
+      "url": "https://gitee.com/yangchen716/yuangui/releases/download/v2.9.0/YuanGUI-2.9.0.dmg",
+      "sha256": "7f2f06d1f705e7a8b2ce33b67745d76f289e1d99ca0d546258e573194f18bac4",
+      "size": 29463150
     },
     {
       "provider": "github",
-      "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.8.2/YuanGUI-2.8.2.dmg",
-      "sha256": "f1e2528a7f140038acaa776b868016571c8273ab0c998c42fcbd5ef3baf08b92",
-      "size": 29154080
+      "url": "https://github.com/YangChen-cn/yuangui/releases/download/v2.9.0/YuanGUI-2.9.0.dmg",
+      "sha256": "7f2f06d1f705e7a8b2ce33b67745d76f289e1d99ca0d546258e573194f18bac4",
+      "size": 29463150
     }
   ]
 }
