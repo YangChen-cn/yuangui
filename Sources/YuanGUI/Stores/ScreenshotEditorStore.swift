@@ -12,10 +12,10 @@ final class ScreenshotEditorStore: ObservableObject {
     @Published private(set) var image: CGImage
     var imageSize: CGSize { CGSize(width: image.width, height: image.height) }
 
-    @Published var selectedTool: ScreenshotTool = .pen
-    @Published var color: NSColor = .systemRed { didSet { updateSelectedStyle() } }
-    @Published var lineWidth: CGFloat = 5 { didSet { updateSelectedStyle() } }
-    @Published var fontSize: CGFloat = 28 { didSet { updateSelectedStyle() } }
+    @Published private(set) var selectedTool: ScreenshotTool = .pen
+    @Published var color: NSColor = .systemRed { didSet { updateSelectedStyle(); saveStyle() } }
+    @Published var lineWidth: CGFloat = 5 { didSet { updateSelectedStyle(); saveStyle() } }
+    @Published var fontSize: CGFloat = 28 { didSet { updateSelectedStyle(); saveStyle() } }
     @Published private(set) var selectedAnnotationID: UUID?
     @Published private(set) var annotations: [ScreenshotAnnotation] = []
     @Published var textRequest: TextRequest?
@@ -31,6 +31,34 @@ final class ScreenshotEditorStore: ObservableObject {
     private var nextMarker = 1
     private var styleSnapshot: [ScreenshotAnnotation]?
     private var loadingStyle = false
+    private let defaults: UserDefaults?
+    private var lastDrawingTool: ScreenshotTool = .pen
+    private static let preferencesKey = "screenshotEditor.style"
+
+    func selectTool(_ tool: ScreenshotTool) {
+        endStyleEditing()
+        cancelGesture()
+        selectedTool = tool
+        if tool != .select {
+            selectedAnnotationID = nil
+            lastDrawingTool = tool
+        }
+        saveStyle()
+    }
+    private func saveStyle() {
+        guard !loadingStyle, let defaults, let rgb = color.usingColorSpace(.sRGB) else { return }
+        defaults.set([
+            "tool": lastDrawingTool.rawValue,
+            "color": [rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent],
+            "lineWidth": lineWidth, "fontSize": fontSize
+        ], forKey: Self.preferencesKey)
+    }
+    private func updateNextMarker() {
+        nextMarker = (annotations.compactMap { annotation -> Int? in
+            if case let .marker(_, _, number, _) = annotation { return number }
+            return nil
+        }.max() ?? 0) + 1
+    }
 
     var selectedAnnotation: ScreenshotAnnotation? { annotations.first { $0.id == selectedAnnotationID } }
     var styleTool: ScreenshotTool? { selectedTool == .select ? selectedAnnotation?.tool : selectedTool }
@@ -65,8 +93,20 @@ final class ScreenshotEditorStore: ObservableObject {
 
     var activeAnnotation: ScreenshotAnnotation? { activeAnnotationValue }
 
-    init(image: CGImage) {
+    init(image: CGImage, defaults: UserDefaults? = nil) {
         self.image = image
+        self.defaults = defaults
+        if let saved = defaults?.dictionary(forKey: Self.preferencesKey) {
+            if let raw = saved["tool"] as? String, let tool = ScreenshotTool(rawValue: raw), tool != .select {
+                selectedTool = tool; lastDrawingTool = tool
+            }
+            if let components = saved["color"] as? [Double], components.count == 4,
+               components.allSatisfy({ $0.isFinite && (0...1).contains($0) }) {
+                color = NSColor(srgbRed: components[0], green: components[1], blue: components[2], alpha: components[3])
+            }
+            if let value = saved["lineWidth"] as? Double, value.isFinite { lineWidth = min(24, max(2, value)) }
+            if let value = saved["fontSize"] as? Double, value.isFinite { fontSize = min(96, max(10, value)) }
+        }
     }
 
     var canUndo: Bool { !undoStack.isEmpty }
@@ -198,6 +238,7 @@ final class ScreenshotEditorStore: ObservableObject {
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(annotations)
         annotations = previous
+        updateNextMarker()
         if selectedAnnotation == nil { selectedAnnotationID = nil }
         loadSelectedStyle()
     }
@@ -207,6 +248,7 @@ final class ScreenshotEditorStore: ObservableObject {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(annotations)
         annotations = next
+        updateNextMarker()
         if selectedAnnotation == nil { selectedAnnotationID = nil }
         loadSelectedStyle()
     }
@@ -231,7 +273,7 @@ final class ScreenshotEditorStore: ObservableObject {
         selectedAnnotationID = nil
     }
     private func updateSelectedStyle() {
-        guard !loadingStyle else { return }
+        guard !loadingStyle, selectedTool == .select else { return }
         guard let index = annotations.firstIndex(where: { $0.id == selectedAnnotationID }) else { return }
         let updated = annotations[index].transformed(style: style)
         guard updated != annotations[index] else { return }

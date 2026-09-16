@@ -1600,3 +1600,5 @@
 "capture.fitActual" = "Fit / Actual size";
 "capture.undoShortcut" = "Undo · ⌘Z";
 "capture.redoShortcut" = "Redo · ⇧⌘Z";
+"release.2.9.0.editor" = "Grouped annotation tools show shortcut badges and a keyboard reference. Zoom/pan, remembered drawing styles and single-step style undo make detailed editing easier.";
+"release.2.9.0.appearance" = "Restored the paired capture shortcuts, synchronized custom hotkey labels and improved theme contrast, including a readable opaque Midnight background.";

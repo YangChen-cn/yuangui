@@ -13,7 +13,7 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
     deinit { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
 
     init(image: CGImage, directoryPath: @escaping () -> String, onClose: @escaping () -> Void) {
-        store = ScreenshotEditorStore(image: image)
+        store = ScreenshotEditorStore(image: image, defaults: .standard)
         self.directoryPath = directoryPath
         self.onClose = onClose
         window = NSWindow(
@@ -94,7 +94,7 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
         }
         if event.keyCode == 51 || event.keyCode == 117 { store.deleteSelected(); return true }
         if let tool = ScreenshotTool.allCases.first(where: { $0.shortcut == key }) {
-            store.endStyleEditing(); store.cancelGesture(); store.selectedTool = tool
+            store.selectTool(tool)
             canvas?.refreshCursor(); return true
         }
         if key == "[" || key == "]" { store.adjustSize(by: key == "[" ? -1 : 1); return true }

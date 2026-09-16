@@ -1327,7 +1327,7 @@ final class QuickToolsTests: XCTestCase {
     func testScreenshotEditorUpdatesGeometryOnlyWhenGestureEnds() throws {
         let store = ScreenshotEditorStore(image: try makeImage(width: 80, height: 60))
 
-        store.selectedTool = .line
+        store.selectTool(.line)
         store.beginDrawing(at: CGPoint(x: 40, y: 40))
         store.continueDrawing(to: CGPoint(x: 10, y: 20))
         XCTAssertTrue(store.annotations.isEmpty)
@@ -1346,7 +1346,7 @@ final class QuickToolsTests: XCTestCase {
         store.redo()
         XCTAssertEqual(store.annotations.count, 1)
 
-        store.selectedTool = .rectangle
+        store.selectTool(.rectangle)
         store.beginDrawing(at: CGPoint(x: 50, y: 45))
         store.continueDrawing(to: CGPoint(x: 20, y: 10))
         XCTAssertEqual(store.annotations.count, 1)

@@ -65,6 +65,10 @@ Selected annotations have an outline. Color and stroke-width controls update the
 selection with undo support. A continuous slider drag or color-panel interaction
 forms one undo transaction. Clear All cancels active gestures, clears selection and
 starts marker numbering at 1; deleting one marker does not renumber other markers.
+Undo/Redo recalculate the next number from the restored annotations. Switching from
+Select to a drawing tool clears the selected annotation, so later style changes only
+affect new drawing. The last drawing tool, color, width and font size are saved locally
+for the next editor; Select itself is never saved as the default tool.
 Shift constrains lines/arrows to 45-degree increments and rectangles/ellipses to
 squares/circles. Text is entered on the canvas: Command-Enter or an outside click
 commits, Escape cancels. The first outside click only commits text and is consumed.

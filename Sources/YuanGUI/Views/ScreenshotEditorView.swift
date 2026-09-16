@@ -237,17 +237,6 @@ final class ScreenshotCanvasNSView: NSView {
         window?.makeFirstResponder(self)
         needsDisplay = true
     }
-    override func keyDown(with event: NSEvent) {
-        guard !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.control), !event.modifierFlags.contains(.option) else {
-            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "v" { paste(nil); return }
-            super.keyDown(with: event); return
-        }
-        if event.keyCode == 51 || event.keyCode == 117 { store.deleteSelected(); needsDisplay = true; return }
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        if let tool = ScreenshotTool.allCases.first(where: { $0.shortcut == key }) { store.selectedTool = tool; return }
-        if key == "[" || key == "]" { store.lineWidth = min(24, max(2, store.lineWidth + (key == "[" ? -1 : 1))); return }
-        super.keyDown(with: event)
-    }
     override func scrollWheel(with event: NSEvent) {
         if event.modifierFlags.contains(.command) { zoomBy(exp(event.scrollingDeltaY * 0.01)) }
         else if event.modifierFlags.contains(.option) {

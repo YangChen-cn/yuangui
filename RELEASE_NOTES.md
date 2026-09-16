@@ -2,7 +2,12 @@
 
 [简体中文](RELEASE_NOTES.zh-CN.md)
 
-## 2.9.0 — PDF to Markdown
+## 2.9.0 — Screenshot editing and document conversion
+
+- Reorganized the screenshot editor into tool groups with visible shortcut badges, a keyboard-reference popover, a clear T icon, a compact color swatch and contextual size controls. Tool shortcuts now dispatch at window level while text inputs retain normal typing and editing commands.
+- Added canvas zoom (pinch or Command-scroll), Space-drag pan, Fit/100% shortcuts and tool-specific cursor feedback. Continuous style edits undo in one step; an outside click commits inline text without starting another annotation.
+- Drawing tool, color, stroke width and font size are remembered between editor sessions. Select never becomes the next session's default. Switching back to drawing clears the old selection, and Undo/Redo restore marker numbering from current annotations; Clear All resets it to 1.
+- Restored Screenshot Translation beside Region Screenshot and removed redundant entries. Custom shortcut labels update immediately. Tightened the capture HUD, retained the square constraint through Shift release, aligned the translator placeholder and improved themed backgrounds, button feedback and accessibility fallbacks for Liquid Glass.
 
 - Screenshot selection now stays adjustable after dragging, with eight handles, keyboard nudging, square/center constraints and a compact action toolbar. Region, window and display capture share Copy, Save, Annotate, OCR, Translate and Pin actions; Quick Access avoids opening an editor for every image.
 - Added Capture Text with a separate hotkey and direct clipboard output, floating screenshot pins, capture delay and reuse of the last region. The editor supports selecting/moving/deleting/restyling annotations, inline text, numbered markers, Core Image blur and opening/dropping/pasting images.

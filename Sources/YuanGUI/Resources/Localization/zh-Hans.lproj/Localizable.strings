@@ -1600,3 +1600,5 @@
 "capture.fitActual" = "适应窗口 / 原始大小";
 "capture.undoShortcut" = "撤销 · ⌘Z";
 "capture.redoShortcut" = "重做 · ⇧⌘Z";
+"release.2.9.0.editor" = "标注工具分组展示快捷键，并提供键盘速查、缩放平移、绘图样式记忆和整次样式调整撤销，方便精细编辑。";
+"release.2.9.0.appearance" = "恢复并排截图入口，自定义快捷键同步显示；主题配色更清晰，夜色采用不透明深色背景，改善可读性。";

@@ -23,7 +23,7 @@ struct ScreenshotEditorToolbar: View {
                 if index > 0 { separator }
                 HStack(spacing: 2) {
                     ForEach(groups[index]) { tool in
-                        Button { store.endStyleEditing(); store.selectedTool = tool } label: {
+                        Button { store.selectTool(tool) } label: {
                             VStack(spacing: 0) {
                                 Group {
                                     if tool == .text { Text("T").font(.system(size: 17, weight: .medium, design: .serif)) }
