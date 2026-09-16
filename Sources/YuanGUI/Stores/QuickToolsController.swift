@@ -172,7 +172,9 @@ final class QuickToolsController: ObservableObject {
                     toast.show(AppLocalizer.format("capture.delayNotice", Int(delay)))
                     try await Task.sleep(for: .seconds(delay))
                 }
-                let windows = mode == .window ? try await ScreenCaptureService.selectableWindows() : []
+                let windows = mode == .window
+                    ? try await ScreenCaptureService.selectableWindows(excludingWindowNumbers: selectionController.windowNumbers)
+                    : []
                 guard !Task.isCancelled, captureGeneration == sessionID else { return }
                 selectionController.begin(mode: mode, windows: windows) { [weak self] result in
                     guard let self, captureGeneration == sessionID else { return }

@@ -274,6 +274,39 @@ final class CaptureWorkflowTests: XCTestCase {
         returning.setCaptureDefaultAction(.copy)
         XCTAssertEqual(QuickToolsSettingsStore(defaults: defaults).captureDefaultAction, .copy)
     }
+    func testOwnProcessWindowsStayCaptureTargets() {
+        // 501/502 stand for YuanGUI's own windows (settings, chat history,
+        // diary, music …). Capture decides by window number, never by owning
+        // process, so the app's own windows must remain valid targets.
+        let settings = descriptor(501)
+        let chat = descriptor(502)
+        XCTAssertTrue(CaptureWindowPolicy.isSelectable(settings, overlays: []))
+        XCTAssertTrue(CaptureWindowPolicy.isSelectable(chat, overlays: []))
+        XCTAssertFalse(CaptureWindowPolicy.isHiddenFromRegionCapture(settings, overlays: []))
+        XCTAssertFalse(CaptureWindowPolicy.isHiddenFromRegionCapture(chat, overlays: [900]))
+    }
+    func testOnlyTheRunningCaptureOverlayIsHidden() {
+        let overlay = descriptor(900, layer: 25)
+        let settings = descriptor(501)
+        let overlays: Set<Int> = [900]
+        XCTAssertTrue(CaptureWindowPolicy.isHiddenFromRegionCapture(overlay, overlays: overlays))
+        XCTAssertFalse(CaptureWindowPolicy.isSelectable(overlay, overlays: overlays))
+        // The same process' ordinary windows are untouched by the overlay set.
+        XCTAssertFalse(CaptureWindowPolicy.isHiddenFromRegionCapture(settings, overlays: overlays))
+        XCTAssertTrue(CaptureWindowPolicy.isSelectable(settings, overlays: overlays))
+    }
+    func testSelectableWindowsKeepOnScreenLayerAndSizeRules() {
+        XCTAssertFalse(CaptureWindowPolicy.isSelectable(descriptor(501, isOnScreen: false), overlays: []))
+        XCTAssertFalse(CaptureWindowPolicy.isSelectable(descriptor(501, layer: 3), overlays: []))
+        XCTAssertFalse(CaptureWindowPolicy.isSelectable(descriptor(501, size: CGSize(width: 2, height: 40)), overlays: []))
+        XCTAssertFalse(CaptureWindowPolicy.isSelectable(descriptor(501, size: CGSize(width: 40, height: 2)), overlays: []))
+        XCTAssertTrue(CaptureWindowPolicy.isSelectable(descriptor(501, size: CGSize(width: 3, height: 3)), overlays: []))
+    }
+    private func descriptor(_ number: Int, isOnScreen: Bool = true, layer: Int = 0,
+                            size: CGSize = CGSize(width: 760, height: 560)) -> CaptureWindowDescriptor {
+        CaptureWindowDescriptor(windowNumber: number, isOnScreen: isOnScreen, layer: layer,
+                               frame: CGRect(origin: .zero, size: size))
+    }
     private func image() throws -> CGImage {
         let context = try XCTUnwrap(CGContext(data: nil, width: 240, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))

@@ -3,8 +3,14 @@
 YuanGUI keeps capture geometry and pointer drawing in AppKit. No OCR, screenshot,
 window enumeration or asynchronous work runs from selection dragging. Window targets
 are fetched once before a window-selection session using the existing ScreenCaptureKit
-cache. Commit captures a display region or a `desktopIndependentWindow` filter;
-YuanGUI's own windows are excluded.
+cache. Commit captures a display region or a `desktopIndependentWindow` filter.
+
+YuanGUI's own windows are ordinary capture targets: a screenshot may include the pet,
+dashboard, settings, chat history, diary, music player, screenshot editor and pinned
+shots, and Window mode may pick any of them. Capture hides exactly one thing — the
+running session's own selection overlays, matched by window number through
+`CaptureSelectionController.windowNumbers`. Nothing is filtered by owning process, and
+`CaptureWindowPolicy` is where that rule lives so it stays testable.
 
 ## Capture
 
@@ -87,7 +93,9 @@ and [Capso's product description](https://github.com/lzhgus/Capso#readme).
 The implementation is original YuanGUI code. No Capso source was copied.
 
 Automated coverage exercises selection states, handles, screen clamping, keyboard
-geometry, annotation edits/undo, constrained drawing, marker numbering and rendering.
+geometry, annotation edits/undo, constrained drawing, marker numbering, rendering and
+the capture window policy (own-process windows stay selectable, only session overlays
+are hidden).
 Run `swift test --skip 'YuanGUIBenchmarks'` and `./script/build_and_run.sh --verify`.
 Actual capture permissions, display arrangements/scales, window hover targets,
 Spaces, keyboard focus, dragging, paste/drop, HUD placement and visual appearance
