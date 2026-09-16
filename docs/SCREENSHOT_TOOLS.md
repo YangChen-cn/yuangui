@@ -48,14 +48,30 @@ Image actions use the same editor store, renderer and PNG output service.
 | B / U | Mosaic / Gaussian blur |
 | N | Numbered marker |
 | Delete / Backspace | Delete the selected annotation |
-| [ / ] or Option-scroll | Adjust stroke width |
+| [ / ] or Option-scroll | Adjust stroke width, text size or marker size |
 | Command-Z / Command-Shift-Z | Undo / Redo |
+| Command-C / Command-S / Command-Shift-C | Copy / Save / Copy and Save |
+| Pinch / Command-scroll | Zoom (25–800%) |
+| Space-drag | Pan |
+| 0 / 1 | Fit to window / 100% |
+
+The grouped toolbar displays shortcut badges when space permits and keeps tool/key
+tooltips at every width. The keyboard button opens a grouped shortcut reference.
+The text icon is a literal T, independent of system symbol localization. Color uses
+a 24-point swatch; size lives in a small popover and follows the selected tool or
+annotation. Blur exposes no unsupported intensity setting.
 
 Selected annotations have an outline. Color and stroke-width controls update the
-selection with undo support. Markers increment without renumbering deleted markers.
+selection with undo support. A continuous slider drag or color-panel interaction
+forms one undo transaction. Clear All cancels active gestures, clears selection and
+starts marker numbering at 1; deleting one marker does not renumber other markers.
 Shift constrains lines/arrows to 45-degree increments and rectangles/ellipses to
 squares/circles. Text is entered on the canvas: Command-Enter or an outside click
-commits, Escape cancels. Single-key tool shortcuts do not intercept typing there.
+commits, Escape cancels. The first outside click only commits text and is consumed.
+Window-level shortcuts work after toolbar interactions but leave text responders
+and system menu shortcuts alone. Escape cancels an active drawing gesture before
+closing the editor. Zoom and pan remain in the AppKit canvas and do not change
+export resolution or annotation coordinates.
 Mosaic/blur images are cached for the current canvas image, rather than regenerated
 on every pointer event. The blur uses Core Image with a region clip; no new dependency.
 

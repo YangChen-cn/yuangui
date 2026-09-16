@@ -29,6 +29,39 @@ final class ScreenshotEditorStore: ObservableObject {
     private var activeDrawingStart: CGPoint?
     private var movingAnnotation: ScreenshotAnnotation?
     private var nextMarker = 1
+    private var styleSnapshot: [ScreenshotAnnotation]?
+    private var loadingStyle = false
+
+    var selectedAnnotation: ScreenshotAnnotation? { annotations.first { $0.id == selectedAnnotationID } }
+    var styleTool: ScreenshotTool? { selectedTool == .select ? selectedAnnotation?.tool : selectedTool }
+    var usesFontSize: Bool { styleTool == .text || styleTool == .marker }
+    var canEditStyle: Bool { styleTool != nil && styleTool != .blur }
+    var canEditColor: Bool { canEditStyle && styleTool != .mosaic }
+    var hasActiveGesture: Bool { activeDrawingStart != nil || activeAnnotationValue != nil }
+
+    func beginStyleEditing() { if styleSnapshot == nil { styleSnapshot = annotations } }
+    func endStyleEditing() {
+        if let snapshot = styleSnapshot, snapshot != annotations {
+            objectWillChange.send()
+            undoStack.append(snapshot); redoStack.removeAll()
+        }
+        styleSnapshot = nil
+    }
+    func adjustSize(by delta: CGFloat) {
+        guard canEditStyle else { return }
+        if usesFontSize { fontSize = min(96, max(10, fontSize + delta)) }
+        else { lineWidth = min(24, max(2, lineWidth + delta)) }
+    }
+    func cancelGesture() {
+        activeAnnotationValue = nil; activeDrawingStart = nil
+        movingAnnotation = nil; gestureStartSnapshot = nil
+    }
+    private func loadSelectedStyle() {
+        guard let value = selectedAnnotation?.editingStyle else { return }
+        loadingStyle = true
+        color = value.color; lineWidth = value.lineWidth; fontSize = value.fontSize
+        loadingStyle = false
+    }
 
     var activeAnnotation: ScreenshotAnnotation? { activeAnnotationValue }
 
@@ -44,10 +77,12 @@ final class ScreenshotEditorStore: ObservableObject {
     }
 
     func beginDrawing(at point: CGPoint) {
+        endStyleEditing()
         guard imageBounds.contains(point) else { return }
         if selectedTool == .select {
             let hit = annotations.last(where: { $0.contains(point) })
             selectedAnnotationID = hit?.id
+            loadSelectedStyle()
             movingAnnotation = hit
             activeDrawingStart = point
             gestureStartSnapshot = annotations
@@ -137,7 +172,7 @@ final class ScreenshotEditorStore: ObservableObject {
 
     func endDrawing(at point: CGPoint, constrained: Bool = false) {
         continueDrawing(to: point, constrained: constrained)
-        guard let completed = activeAnnotationValue else { return }
+        guard let completed = activeAnnotationValue else { cancelGesture(); return }
         activeAnnotationValue = nil
         activeDrawingStart = nil
         if movingAnnotation != nil, let index = annotations.firstIndex(where: { $0.id == completed.id }) {
@@ -159,15 +194,21 @@ final class ScreenshotEditorStore: ObservableObject {
     }
 
     func undo() {
+        endStyleEditing(); cancelGesture()
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(annotations)
         annotations = previous
+        if selectedAnnotation == nil { selectedAnnotationID = nil }
+        loadSelectedStyle()
     }
 
     func redo() {
+        endStyleEditing(); cancelGesture()
         guard let next = redoStack.popLast() else { return }
         undoStack.append(annotations)
         annotations = next
+        if selectedAnnotation == nil { selectedAnnotationID = nil }
+        loadSelectedStyle()
     }
 
     func removeLast() {
@@ -183,16 +224,18 @@ final class ScreenshotEditorStore: ObservableObject {
         return annotations.first(where: { $0.id == selectedAnnotationID })?.bounds
     }
     func deleteSelected() {
+        endStyleEditing(); cancelGesture()
         guard let id = selectedAnnotationID, annotations.contains(where: { $0.id == id }) else { return }
         pushUndoSnapshot()
         annotations.removeAll { $0.id == id }
         selectedAnnotationID = nil
     }
     private func updateSelectedStyle() {
+        guard !loadingStyle else { return }
         guard let index = annotations.firstIndex(where: { $0.id == selectedAnnotationID }) else { return }
         let updated = annotations[index].transformed(style: style)
         guard updated != annotations[index] else { return }
-        pushUndoSnapshot()
+        if styleSnapshot == nil { pushUndoSnapshot() }
         annotations[index] = updated
     }
     func replaceImage(_ image: CGImage) {
@@ -202,12 +245,15 @@ final class ScreenshotEditorStore: ObservableObject {
         undoStack = []; redoStack = []
         activeAnnotationValue = nil; movingAnnotation = nil; gestureStartSnapshot = nil; activeDrawingStart = nil
         selectedAnnotationID = nil; textRequest = nil; nextMarker = 1
+        styleSnapshot = nil
     }
 
     func clear() {
-        guard !annotations.isEmpty else { return }
-        pushUndoSnapshot()
+        endStyleEditing()
+        if !annotations.isEmpty { pushUndoSnapshot() }
         annotations.removeAll()
+        selectedAnnotationID = nil; textRequest = nil; nextMarker = 1
+        cancelGesture()
     }
 
     private var imageBounds: CGRect { CGRect(origin: .zero, size: imageSize) }

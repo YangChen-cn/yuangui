@@ -1,6 +1,28 @@
 import AppKit
 
 extension ScreenshotAnnotation {
+    var tool: ScreenshotTool {
+        switch self {
+        case let .stroke(_, _, _, highlighter): highlighter ? .highlighter : .pen
+        case let .line(_, _, _, _, arrow): arrow ? .arrow : .line
+        case let .rectangle(_, _, _, ellipse): ellipse ? .ellipse : .rectangle
+        case .text: .text
+        case .marker: .marker
+        case .mosaic: .mosaic
+        case .blur: .blur
+        }
+    }
+    var editingStyle: AnnotationStyle? {
+        switch self {
+        case let .stroke(_, _, style, highlighter):
+            var result = style
+            if highlighter { result.color = style.color.withAlphaComponent(1); result.lineWidth /= 2.4 }
+            return result
+        case let .line(_, _, _, style, _), let .rectangle(_, _, style, _), let .text(_, _, _, style), let .marker(_, _, _, style): return style
+        case let .mosaic(_, _, width): return AnnotationStyle(color: .systemRed, lineWidth: width / 3, fontSize: 28)
+        case .blur: return nil
+        }
+    }
     func contains(_ point: CGPoint, tolerance: CGFloat = 5) -> Bool {
         func near(_ points: [CGPoint], radius: CGFloat) -> Bool {
             guard let first = points.first else { return false }

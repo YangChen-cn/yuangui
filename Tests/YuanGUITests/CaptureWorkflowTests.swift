@@ -3,6 +3,82 @@ import AppKit
 @testable import YuanGUI
 
 final class CaptureWorkflowTests: XCTestCase {
+    @MainActor func testCanvasZoomLimitsFitAndActiveGestureProtection() throws {
+        let store = ScreenshotEditorStore(image: try image())
+        let canvas = ScreenshotCanvasNSView(store: store)
+        canvas.frame = CGRect(x: 0, y: 0, width: 516, height: 436)
+        XCTAssertEqual(canvas.imageRect.size, CGSize(width: 480, height: 400))
+        canvas.setZoom(1)
+        XCTAssertEqual(canvas.imageRect.size, store.imageSize)
+        canvas.setZoom(100)
+        XCTAssertEqual(canvas.imageRect.width, 240 * 8)
+        canvas.setZoom(0.01)
+        XCTAssertEqual(canvas.imageRect.width, 240 * 0.25)
+        canvas.setZoom(nil)
+        let fit = canvas.imageRect
+        store.beginDrawing(at: CGPoint(x: 30, y: 30))
+        canvas.setZoom(1)
+        XCTAssertEqual(canvas.imageRect, fit)
+        store.cancelGesture()
+        canvas.setZoom(1)
+        XCTAssertEqual(canvas.imageRect.size, store.imageSize)
+    }
+    @MainActor func testStyleDragIsOneUndoTransaction() throws {
+        let store = ScreenshotEditorStore(image: try image())
+        store.selectedTool = .rectangle
+        store.beginDrawing(at: CGPoint(x: 30, y: 30)); store.endDrawing(at: CGPoint(x: 130, y: 130))
+        store.selectedTool = .select
+        store.beginDrawing(at: CGPoint(x: 60, y: 60)); store.endDrawing(at: CGPoint(x: 60, y: 60))
+        let original = store.annotations
+        store.beginStyleEditing()
+        for width in 6...14 { store.lineWidth = CGFloat(width) }
+        store.color = .systemBlue
+        store.endStyleEditing()
+        let edited = store.annotations
+        XCTAssertNotEqual(edited, original)
+        store.undo()
+        XCTAssertEqual(store.annotations, original)
+        XCTAssertEqual(store.lineWidth, 5)
+        store.redo()
+        XCTAssertEqual(store.annotations, edited)
+        XCTAssertEqual(store.lineWidth, 14)
+    }
+
+    @MainActor func testClearResetsGestureSelectionAndMarkerSequence() throws {
+        let store = ScreenshotEditorStore(image: try image())
+        store.selectedTool = .marker
+        store.beginDrawing(at: CGPoint(x: 40, y: 40)); store.endDrawing(at: CGPoint(x: 40, y: 40))
+        store.selectedTool = .select
+        store.beginDrawing(at: CGPoint(x: 40, y: 40)); store.continueDrawing(to: CGPoint(x: 80, y: 80))
+        store.clear()
+        XCTAssertTrue(store.annotations.isEmpty)
+        XCTAssertNil(store.selectedAnnotationID)
+        XCTAssertNil(store.activeAnnotation)
+        XCTAssertFalse(store.hasActiveGesture)
+        store.endDrawing(at: CGPoint(x: 80, y: 80))
+        XCTAssertTrue(store.annotations.isEmpty)
+        store.selectedTool = .marker
+        store.beginDrawing(at: CGPoint(x: 40, y: 40)); store.endDrawing(at: CGPoint(x: 40, y: 40))
+        guard case let .marker(_, _, number, _) = store.annotations.first else { return XCTFail("Missing marker") }
+        XCTAssertEqual(number, 1)
+    }
+
+    @MainActor func testTextContextUsesFontSizeAndTextRespondersAreProtected() throws {
+        let store = ScreenshotEditorStore(image: try image())
+        store.selectedTool = .text
+        store.adjustSize(by: 1)
+        XCTAssertEqual(store.fontSize, 29)
+        XCTAssertEqual(store.lineWidth, 5)
+        store.selectedTool = .select
+        XCTAssertFalse(store.canEditStyle)
+        store.selectedTool = .blur
+        XCTAssertFalse(store.canEditStyle)
+        store.selectedTool = .mosaic
+        XCTAssertFalse(store.canEditColor)
+        XCTAssertTrue(ScreenshotEditorWindowController.isTextInput(NSTextView()))
+        XCTAssertTrue(ScreenshotEditorWindowController.isTextInput(NSTextField()))
+        XCTAssertFalse(ScreenshotEditorWindowController.isTextInput(NSButton()))
+    }
     let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
     func testMouseUpRetainsSelectionUntilExplicitCommit() {
         var state = CaptureSelectionState()

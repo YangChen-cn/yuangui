@@ -9,6 +9,8 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
     private let directoryPath: () -> String
     private let onClose: () -> Void
     private var closed = false
+    private var keyMonitor: Any?
+    deinit { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
 
     init(image: CGImage, directoryPath: @escaping () -> String, onClose: @escaping () -> Void) {
         store = ScreenshotEditorStore(image: image)
@@ -33,6 +35,11 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
             close: { [weak self] in self?.window.close() }
         ))
         window.center()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self, event.window === self.window, self.window.isKeyWindow,
+                  !Self.isTextInput(self.window.firstResponder) else { return event }
+            return self.dispatch(event) ? nil : event
+        }
     }
 
     func show() {
@@ -40,14 +47,65 @@ final class ScreenshotEditorWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
     func close() { window.close() }
+    func windowDidResignKey(_ notification: Notification) {
+        canvas?.spaceHeld = false
+        store.endStyleEditing()
+    }
 
     func windowWillClose(_ notification: Notification) {
         closed = true
+        store.endStyleEditing(); store.cancelGesture()
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         onClose()
+    }
+
+    static func isTextInput(_ responder: NSResponder?) -> Bool {
+        responder is NSTextView || responder is NSTextField
+    }
+    private var canvas: ScreenshotCanvasNSView? {
+        func find(_ view: NSView?) -> ScreenshotCanvasNSView? {
+            if let canvas = view as? ScreenshotCanvasNSView { return canvas }
+            for child in view?.subviews ?? [] { if let found = find(child) { return found } }
+            return nil
+        }
+        return find(window.contentView)
+    }
+    private func dispatch(_ event: NSEvent) -> Bool {
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if event.type == .keyUp {
+            if key == " " { canvas?.spaceHeld = false; return true }
+            return false
+        }
+        if flags.contains(.command), !flags.contains(.control), !flags.contains(.option) {
+            switch key {
+            case "c": Task { await export(copy: true, save: flags.contains(.shift)) }; return true
+            case "s": Task { await export(copy: false, save: true) }; return true
+            case "v": canvas?.paste(nil); return true
+            case "z": if flags.contains(.shift) { store.redo() } else { store.undo() }; return true
+            default: return false
+            }
+        }
+        guard flags.isEmpty else { return false }
+        if event.keyCode == 53 {
+            if store.hasActiveGesture { store.cancelGesture(); canvas?.needsDisplay = true }
+            else { window.close() }
+            return true
+        }
+        if event.keyCode == 51 || event.keyCode == 117 { store.deleteSelected(); return true }
+        if let tool = ScreenshotTool.allCases.first(where: { $0.shortcut == key }) {
+            store.endStyleEditing(); store.cancelGesture(); store.selectedTool = tool
+            canvas?.refreshCursor(); return true
+        }
+        if key == "[" || key == "]" { store.adjustSize(by: key == "[" ? -1 : 1); return true }
+        if key == " " { canvas?.spaceHeld = true; return true }
+        if key == "0" || key == "1" { canvas?.setZoom(key == "0" ? nil : 1); return true }
+        return false
     }
 
     private func export(copy: Bool, save: Bool) async {
         guard !store.isExporting else { return }
+        store.endStyleEditing()
         store.isExporting = true
         store.message = nil
         do {

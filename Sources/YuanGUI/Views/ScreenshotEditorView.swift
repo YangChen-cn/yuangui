@@ -10,7 +10,7 @@ struct ScreenshotEditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbar
+            ScreenshotEditorToolbar(store: store)
             Divider()
             ScreenshotCanvas(store: store)
                 .background(Color(nsColor: .underPageBackgroundColor))
@@ -18,47 +18,6 @@ struct ScreenshotEditorView: View {
             footer
         }
         .frame(minWidth: 760, minHeight: 520)
-    }
-
-    private var toolbar: some View {
-        HStack(spacing: 8) {
-            ForEach(ScreenshotTool.allCases) { tool in
-                Button {
-                    store.selectedTool = tool
-                } label: {
-                    Image(systemName: tool.systemImage)
-                        .frame(width: 22, height: 22)
-                        .background(store.selectedTool == tool ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
-                }
-                .buttonStyle(.plain)
-                .help("\(tool.title) (\(tool.shortcut.uppercased()))")
-                .accessibilityLabel(tool.title)
-            }
-
-            Divider().frame(height: 22)
-            ColorPicker("颜色", selection: Binding(
-                get: { Color(nsColor: store.color) },
-                set: { store.color = NSColor($0) }
-            )).labelsHidden().frame(width: 28)
-            Slider(value: $store.lineWidth, in: 2...24, step: 1).frame(width: 100)
-            Text("\(Int(store.lineWidth))").monospacedDigit().frame(width: 24)
-
-            Spacer()
-            Button { store.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                .disabled(!store.canUndo)
-                .keyboardShortcut("z", modifiers: .command)
-            Button { store.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                .disabled(!store.canRedo)
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-            Button { store.deleteSelected() } label: { Image(systemName: "delete.backward") }
-                .disabled(store.selectedAnnotationID == nil)
-                .help(AppLocalizer.string("capture.deleteSelected"))
-            Button(role: .destructive) { store.clear() } label: { Image(systemName: "trash") }
-                .disabled(store.annotations.isEmpty)
-                .help("清除全部标注")
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 48)
     }
 
     private var footer: some View {
@@ -105,11 +64,15 @@ private struct ScreenshotCanvas: NSViewRepresentable {
     }
 }
 
-private final class ScreenshotCanvasNSView: NSView {
+final class ScreenshotCanvasNSView: NSView {
     var store: ScreenshotEditorStore
     private var effects: ScreenshotRenderEffects
     private var inlineEditor: ScreenshotInlineTextView?
     private var textClickMonitor: Any?
+    private var zoom: CGFloat?
+    private var pan = CGPoint.zero
+    private var panStart: CGPoint?
+    var spaceHeld = false { didSet { refreshCursor() } }
     deinit { if let textClickMonitor { NSEvent.removeMonitor(textClickMonitor) } }
 
     init(store: ScreenshotEditorStore) {
@@ -128,7 +91,8 @@ private final class ScreenshotCanvasNSView: NSView {
         else { finishText(cancel: true) }
     }
     func synchronizeImage() {
-        if effects.image !== store.image { effects = ScreenshotRenderEffects(image: store.image); finishText(cancel: true) }
+        if effects.image !== store.image { effects = ScreenshotRenderEffects(image: store.image); finishText(cancel: true); setZoom(nil) }
+        refreshCursor()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -155,13 +119,17 @@ private final class ScreenshotCanvasNSView: NSView {
             context.stroke(selected.insetBy(dx: -4, dy: -4))
         }
         context.restoreGState()
+        let label = "\(Int((zoom ?? fitScale) * 100))%"
+        label.draw(at: CGPoint(x: 12, y: 10), withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.labelColor, .backgroundColor: NSColor.windowBackgroundColor])
     }
 
     override func mouseDown(with event: NSEvent) {
-        finishText(cancel: false)
+        if inlineEditor != nil { finishText(cancel: false); return }
         window?.makeFirstResponder(self)
+        if spaceHeld { panStart = convert(event.locationInWindow, from: nil); NSCursor.closedHand.set(); return }
         guard let point = imagePoint(for: event) else { return }
         store.beginDrawing(at: point)
+        if store.selectedTool == .select, store.selectedAnnotationID != nil { NSCursor.closedHand.set() }
         if let request = store.textRequest {
             let editor = ScreenshotInlineTextView()
             let rect = imageRect
@@ -180,7 +148,7 @@ private final class ScreenshotCanvasNSView: NSView {
             window?.makeFirstResponder(editor)
             textClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 guard let self, event.window === self.window, let editor = self.inlineEditor else { return event }
-                if !editor.frame.contains(self.convert(event.locationInWindow, from: nil)) { self.finishText(cancel: false) }
+                if !editor.frame.contains(self.convert(event.locationInWindow, from: nil)) { self.finishText(cancel: false); return nil }
                 return event
             }
         }
@@ -188,23 +156,65 @@ private final class ScreenshotCanvasNSView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let start = panStart {
+            let point = convert(event.locationInWindow, from: nil)
+            pan.x += point.x - start.x; pan.y += point.y - start.y
+            panStart = point; constrainPan(); needsDisplay = true; return
+        }
         guard inlineEditor == nil, let point = imagePoint(for: event, clamp: true) else { return }
         store.continueDrawing(to: point, constrained: event.modifierFlags.contains(.shift))
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
+        if panStart != nil { panStart = nil; refreshCursor(); return }
         guard inlineEditor == nil, let point = imagePoint(for: event, clamp: true) else { return }
         store.endDrawing(at: point, constrained: event.modifierFlags.contains(.shift))
+        refreshCursor()
         needsDisplay = true
     }
 
-    private var imageRect: CGRect {
+    var imageRect: CGRect {
         let insetBounds = bounds.insetBy(dx: 18, dy: 18)
         guard insetBounds.width > 0, insetBounds.height > 0 else { return .zero }
-        let scale = min(insetBounds.width / store.imageSize.width, insetBounds.height / store.imageSize.height)
+        let scale = zoom ?? fitScale
         let size = CGSize(width: store.imageSize.width * scale, height: store.imageSize.height * scale)
-        return CGRect(x: insetBounds.midX - size.width / 2, y: insetBounds.midY - size.height / 2, width: size.width, height: size.height)
+        return CGRect(x: insetBounds.midX - size.width / 2 + pan.x, y: insetBounds.midY - size.height / 2 + pan.y, width: size.width, height: size.height)
+    }
+    private var fitScale: CGFloat { max(0.01, min((bounds.width - 36) / store.imageSize.width, (bounds.height - 36) / store.imageSize.height)) }
+    func setZoom(_ value: CGFloat?) {
+        guard inlineEditor == nil, !store.hasActiveGesture else { return }
+        zoom = value.map { min(8, max(0.25, $0)) }; pan = .zero
+        needsDisplay = true
+    }
+    private func constrainPan() {
+        let scale = zoom ?? fitScale
+        let x = max(0, (store.imageSize.width * scale - bounds.width + 36) / 2)
+        let y = max(0, (store.imageSize.height * scale - bounds.height + 36) / 2)
+        pan.x = min(x, max(-x, pan.x)); pan.y = min(y, max(-y, pan.y))
+    }
+    private func zoomBy(_ multiplier: CGFloat) {
+        guard inlineEditor == nil, !store.hasActiveGesture else { return }
+        zoom = min(8, max(0.25, (zoom ?? fitScale) * multiplier))
+        constrainPan(); needsDisplay = true
+    }
+    override func magnify(with event: NSEvent) { zoomBy(1 + event.magnification) }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseMoved, .cursorUpdate, .inVisibleRect], owner: self))
+    }
+    override func cursorUpdate(with event: NSEvent) { refreshCursor() }
+    override func mouseMoved(with event: NSEvent) {
+        if store.selectedTool == .select, let point = imagePoint(for: event), store.annotations.contains(where: { $0.contains(point) }) { NSCursor.openHand.set() }
+        else { refreshCursor() }
+    }
+    func refreshCursor() {
+        guard inlineEditor == nil else { return }
+        if spaceHeld { NSCursor.openHand.set() }
+        else if store.selectedTool == .text { NSCursor.iBeam.set() }
+        else if store.selectedTool == .select { NSCursor.arrow.set() }
+        else { NSCursor.crosshair.set() }
     }
 
     private func imagePoint(for event: NSEvent, clamp: Bool = false) -> CGPoint? {
@@ -239,7 +249,12 @@ private final class ScreenshotCanvasNSView: NSView {
         super.keyDown(with: event)
     }
     override func scrollWheel(with event: NSEvent) {
-        if event.modifierFlags.contains(.option) { store.lineWidth = min(24, max(2, store.lineWidth + (event.scrollingDeltaY > 0 ? 1 : -1))) }
+        if event.modifierFlags.contains(.command) { zoomBy(exp(event.scrollingDeltaY * 0.01)) }
+        else if event.modifierFlags.contains(.option) {
+            if event.phase == .began { store.beginStyleEditing() }
+            if event.scrollingDeltaY != 0 { store.adjustSize(by: event.scrollingDeltaY > 0 ? 1 : -1) }
+            if event.phase == .ended || event.phase == .cancelled { store.endStyleEditing() }
+        }
         else { super.scrollWheel(with: event) }
     }
     @objc func paste(_ sender: Any?) {
